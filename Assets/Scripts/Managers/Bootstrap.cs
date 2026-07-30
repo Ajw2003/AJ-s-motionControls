@@ -39,9 +39,10 @@ namespace Managers
             // join screen. That reads as a networking bug but is a lifecycle one.
             _ = Net.RelayClient.Instance;
 
-            if (showDebugHud) CreateDebugHud();
+            // Created after RelayClient so it can subscribe before any phone joins.
+            _ = TurnManager.Instance;
 
-            // M2+: RoomManager and TurnManager belong in this list too.
+            if (showDebugHud) CreateDebugHud();
         }
 
         /// <summary>

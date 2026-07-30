@@ -185,7 +185,7 @@ namespace Net
                 case MessageType.PlayerLeft:
                 {
                     var left = JsonUtility.FromJson<PlayerLeftMessage>(json);
-                    Debug.Log($"[RelayClient] {left.playerId} left");
+                    EventManager.Instance?.Publish(new PlayerLeftEvent(left.playerId));
                     break;
                 }
 

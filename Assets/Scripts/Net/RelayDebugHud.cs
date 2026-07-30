@@ -108,6 +108,10 @@ namespace Net
             GUILayout.Label($"<b>Relay</b>  {(_client.IsConnected ? "connected" : "offline — is the relay running?")}   " +
                             $"room <b>{(string.IsNullOrEmpty(_client.RoomCode) ? "----" : _client.RoomCode)}</b>", rich);
 
+            var turns = Managers.TurnManager.HasInstance ? Managers.TurnManager.Instance : null;
+            GUILayout.Label($"<b>Turn</b>   {turns?.ActivePlayer ?? "nobody"}   " +
+                            $"players {turns?.Players.Count ?? 0}   (press N for next)", rich);
+
             GUILayout.Space(6);
             GUILayout.Label($"<b>Aim</b>   {_aimHz:F0} Hz (target 20)", rich);
 
