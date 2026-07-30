@@ -24,6 +24,9 @@ namespace Managers
         [Tooltip("On-screen relay/throw readout. M1 scaffolding; turn off for real play.")]
         [SerializeField] private bool showDebugHud = true;
 
+        [Tooltip("Live trajectory arc plus placeholder water. Scaffolding until the real lake scene exists.")]
+        [SerializeField] private bool showAimPreview = true;
+
         private void Awake()
         {
             EventManager.DebugLoggingEnabled = eventDebugLogging;
@@ -43,6 +46,21 @@ namespace Managers
             _ = TurnManager.Instance;
 
             if (showDebugHud) CreateDebugHud();
+            if (showAimPreview) CreateAimPreview();
+        }
+
+        private static void CreateAimPreview()
+        {
+            if (FindFirstObjectByType<Game.AimPreview>() != null) return;
+
+            var preview = new GameObject("AimPreview");
+            preview.AddComponent<Game.AimPreview>();
+
+            // Same object so the launcher can share the preview's throw origin and
+            // tuning — a live throw that used a different rig would make the arc lie.
+            preview.AddComponent<Game.RockLauncher>();
+
+            DontDestroyOnLoad(preview);
         }
 
         /// <summary>

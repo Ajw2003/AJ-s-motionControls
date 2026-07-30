@@ -25,6 +25,7 @@ namespace Net
         private float _aimRateWindowStart;
         private float _aimHz;
         private RelayClient _client;
+        private Game.AimPreview _preview;
 
         private void OnDestroy()
         {
@@ -41,6 +42,9 @@ namespace Net
         /// </summary>
         private void EnsureBound()
         {
+            // Cached rather than looked up in OnGUI, which runs several times a frame.
+            if (_preview == null) _preview = FindFirstObjectByType<Game.AimPreview>();
+
             if (_client != null || !RelayClient.HasInstance) return;
 
             _client = RelayClient.Instance;
@@ -123,6 +127,13 @@ namespace Net
             else
             {
                 GUILayout.Label("  no aim frames yet — grip on the phone");
+            }
+
+            if (_preview != null)
+            {
+                GUILayout.Label(_preview.HasSignal
+                    ? $"  predicted {_preview.PredictedSkips} skips over {_preview.PredictedDistance:F1} m"
+                    : "  arc hidden (no recent aim frames)");
             }
 
             GUILayout.Space(6);
