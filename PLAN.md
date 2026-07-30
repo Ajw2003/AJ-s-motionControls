@@ -20,6 +20,7 @@ The game itself is a rock skipping game modelled on **Wii Play: Motion**'s "Skip
 
 Confirmed with the project owner:
 - **Controllers only** on iOS/Android — the game itself runs on a Windows PC driving the TV. No app store, no mobile Unity build.
+- **Android is the only test platform available.** iOS code paths are written from spec but unverified. See Test device policy below.
 - **Turn-based, 2–8 players.** One player throws at a time. Only one rock in flight.
 - **Vertical slice quality.** One polished lake, motion pipeline working end-to-end.
 
@@ -86,6 +87,19 @@ Two of these are landmines:
 - **Compass heading runs in opposite directions** on the two platforms, off different norths. Any aiming logic built on absolute yaw will steer backwards on one platform.
 
 Also note `requestPermission()` **throws** on Android if called unconditionally — it must be feature-detected.
+
+### Test device policy — Android only for now
+
+**No iOS device is available to test on.** That constrains what any milestone can honestly claim:
+
+- **All testing and every acceptance criterion is Android (Chrome).** A milestone is "done" when it works on Android. Do not gate progress on iOS behaviour that cannot be observed.
+- **iOS code paths are still written, but treated as unverified.** The permission gate, the `accelerationIncludingGravity` fallback, and the compass-heading handling all go in now — writing them later means retrofitting the normalization layer, which is exactly the rework this design exists to avoid. They are implemented from spec and marked as untested.
+- **Every iOS-specific branch carries an `// UNVERIFIED (iOS):` comment** naming what it assumes. That makes the untested surface greppable the day a device shows up, instead of a hunt through the whole file.
+- **Do not claim cross-platform parity.** The 10% iPhone-vs-Android agreement check in Verification is deferred, not passed. Until it runs, treat iOS as designed-for but unproven.
+
+The single highest-risk unverified assumption is that **iOS lacks `DeviceMotionEvent.acceleration`**, so the code must never read it. Because Android *does* expose it, an Android-only test will never catch a regression that reintroduces it. Guard this in code rather than by discipline — read `accelerationIncludingGravity` behind one accessor in `sensors.js` and never touch `event.acceleration` anywhere else.
+
+When an iPhone becomes available, the catch-up work is: run the same gesture on both devices, compare descriptor values, and confirm the permission prompt appears and is honoured. That is a session's work, not a redesign — provided the branches were written now.
 
 ### The governing rule
 
@@ -509,12 +523,12 @@ Harden `server.js`. The existing prototype has real defects to fix:
 
 Deploy relay to Fly.io, controller to Cloudflare Pages.
 
-**Done when:** a real iPhone *and* a real Android phone both load the HTTPS page, grant motion permission, and log live sensor values to a Unity console via the relay.
+**Done when:** a real Android phone loads the HTTPS page and logs live sensor values to a Unity console via the relay. (iOS deferred — no device.)
 
 ### M1 — Motion pipeline + aim preview
 Sensor normalization, calibration, state machine, both message channels. `AimPreview` smoothing with the predicted arc.
 
-**Done when:** an on-screen debug readout in Unity shows sane, *comparable* values from an iPhone and an Android performing the same gesture — and the TV arc tracks phone movement smoothly with no visible stutter.
+**Done when:** an on-screen debug readout in Unity shows sane, repeatable values from an **Android** phone — the same gesture twice produces descriptors within ~10% of each other — and the TV arc tracks phone movement smoothly with no visible stutter. iOS branches are written and commented `// UNVERIFIED (iOS):`, but are not part of the done criteria.
 
 ### M2 — Skip physics + rocks
 Pure solver, `SkipTuning`, `RockDefinition` assets for basic + all four specials, spawner with stat rolling, one lake scene, three ring gates, follow camera.
@@ -533,10 +547,11 @@ Water shader and ripples, splash/skip VFX and SFX, camera framing, controller ha
 
 ## Verification
 
-**Test on real hardware from M0 onward.** The single biggest risk is discovering an iOS sensor problem late. Desktop browser device emulation does **not** reproduce iOS motion behaviour — it will report `acceleration` values that no real iPhone provides.
+**Test on real hardware from M0 onward.** Desktop browser device emulation does **not** reproduce mobile motion behaviour — notably it reports `acceleration` values that no real iPhone provides, so emulation actively hides the biggest iOS pitfall.
 
-- **Minimum device matrix:** one iPhone (Safari), one Android (Chrome). Test both at every milestone, not just at the end.
-- **Cross-platform sanity check:** the same physical gesture on iPhone and Android must produce descriptor values within roughly 10% of each other. Divergence here means the normalization layer is wrong — fix it before building anything on top.
+- **Current device matrix: Android (Chrome) only.** Test on it at every milestone rather than at the end. See Test device policy for what this does and does not let us claim.
+- **Repeatability check (runnable now):** the same physical gesture performed twice on the same Android device must produce descriptor values within roughly 10% of each other. Noisy or drifting output means the gravity filter or calibration is wrong — fix it before building anything on top.
+- **Cross-platform parity check (deferred, needs an iPhone):** the same gesture on iPhone and Android must agree within roughly 10%. Until this runs, iOS is designed-for but unproven; do not report it as working.
 - **Aim preview under stress:** throttle the connection (Chrome DevTools → Slow 3G) and confirm the preview degrades to sluggish-but-smooth, never jittery, and that throws still register correctly. This is the key test that the two-channel split is working.
 - **Predict/live parity:** the previewed arc at nominal power must match an actual throw at that same power. Divergence means preview and live have drifted onto different code paths — they should be calling the same `SkipPhysics.Step`.
 - **Relay resilience:** kill the relay mid-match and confirm both Unity and phones reconnect and resume. Send deliberately malformed JSON and confirm the server survives.

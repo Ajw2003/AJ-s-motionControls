@@ -16,7 +16,19 @@ namespace Verification
 
         public void Listen()
         {
-            EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, _ => Received++);
+            // Parameter is named 'evt', not '_', so the discard below is actually a
+            // discard rather than an assignment to the lambda parameter.
+            EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, evt =>
+            {
+                Received++;
+
+                // Touch a Unity-native member on purpose. A destroyed MonoBehaviour
+                // tolerates plain C# field access, so a probe that only did Received++
+                // would sit there as a harmless zombie. Real handlers read transforms
+                // and components, which throw MissingReferenceException once the object
+                // is destroyed — that is the failure this probe needs to reproduce.
+                _ = transform.position;
+            });
         }
     }
 }

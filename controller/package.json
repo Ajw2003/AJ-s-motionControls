@@ -1,0 +1,14 @@
+{
+  "name": "rockskipping-controller",
+  "version": "1.0.0",
+  "description": "Phone controller web app — sensor normalization and throw gestures",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test-sensors.js",
+    "serve": "node serve.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

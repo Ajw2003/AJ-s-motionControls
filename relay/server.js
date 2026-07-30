@@ -14,6 +14,9 @@
 
 const { WebSocketServer, WebSocket } = require('ws');
 const crypto = require('crypto');
+const http = require('http');
+const fs = require('fs');
+const nodePath = require('path');
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_PLAYERS_PER_ROOM = 8;
@@ -212,7 +215,54 @@ function relayToPlayers(ws, data) {
 // server
 // ---------------------------------------------------------------------------
 
-const wss = new WebSocketServer({ port: PORT, maxPayload: MAX_MESSAGE_BYTES });
+// The controller page is served from this same origin on purpose. Motion sensors
+// need a secure context, and an HTTPS page cannot open a plain ws:// socket — so
+// splitting the page and the socket across two origins means fighting mixed
+// content forever. One origin gives HTTPS and WSS together, and one tunnel
+// (or one Fly app) covers both.
+const STATIC_DIR = nodePath.resolve(__dirname, '..', 'controller');
+
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+};
+
+function serveStatic(req, res) {
+  const requested = decodeURIComponent((req.url || '/').split('?')[0]);
+  const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
+  const resolved = nodePath.resolve(STATIC_DIR, relative);
+
+  // Refuse anything that escapes the static root.
+  if (!resolved.startsWith(STATIC_DIR)) {
+    res.writeHead(403).end('Forbidden');
+    return;
+  }
+
+  fs.readFile(resolved, (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+      return;
+    }
+    const type = CONTENT_TYPES[nodePath.extname(resolved).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' }).end(data);
+  });
+}
+
+const httpServer = http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ ok: true, rooms: rooms.size }));
+    return;
+  }
+  serveStatic(req, res);
+});
+
+const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
 
 wss.on('connection', (ws) => {
   ws.meta = {
@@ -320,11 +370,16 @@ function shutdown() {
   clearInterval(heartbeat);
   clearInterval(roomSweep);
   for (const room of [...rooms.values()]) closeRoom(room, 'Server shutting down');
-  wss.close(() => process.exit(0));
+  wss.close(() => httpServer.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
 }
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-log(`Rock Skipping relay listening on :${PORT}`);
+httpServer.listen(PORT, () => {
+  log(`Rock Skipping relay listening on :${PORT}`);
+  log(`  controller page  http://localhost:${PORT}/`);
+  log(`  websocket        ws://localhost:${PORT}/`);
+  log(`  serving static from ${STATIC_DIR}`);
+});

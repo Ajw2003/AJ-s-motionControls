@@ -1,6 +1,10 @@
+// Deliberately no `using System;` — it makes the bare `Object` used below ambiguous
+// between System.Object and UnityEngine.Object. System types are qualified instead.
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Managers;
+using Unity.CodeEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -54,6 +58,43 @@ namespace RockSkippingEditor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[ProjectSetup] Build settings: " + string.Join(" -> ", SceneOrder));
+        }
+
+        /// <summary>
+        /// Writes the .sln and .csproj files Rider and Visual Studio need. These are
+        /// generated artifacts, not source — they are gitignored, and every machine
+        /// regenerates its own. Requires com.unity.ide.rider or com.unity.ide.visualstudio.
+        /// </summary>
+        [MenuItem("RockSkipping/Setup/Regenerate Solution And Project Files")]
+        public static void GenerateProjectFiles()
+        {
+            var projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
+            Debug.Log($"[ProjectSetup] External script editor: '{CodeEditor.CurrentEditorInstallation}'");
+
+            try
+            {
+                CodeEditor.CurrentEditor.SyncAll();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[ProjectSetup] CodeEditor.SyncAll failed: {e.Message}");
+            }
+
+            // Fallback for when no external editor is configured yet — SyncAll can
+            // no-op in that case, but the built-in generator still works.
+            if (Directory.GetFiles(projectRoot, "*.sln").Length == 0)
+            {
+                var syncVs = typeof(UnityEditor.Editor).Assembly.GetType("UnityEditor.SyncVS");
+                syncVs?.GetMethod("SyncSolution", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+                    ?.Invoke(null, null);
+            }
+
+            var solutions = Directory.GetFiles(projectRoot, "*.sln").Select(Path.GetFileName).ToArray();
+            var projects = Directory.GetFiles(projectRoot, "*.csproj").Length;
+
+            Debug.Log(solutions.Length > 0
+                ? $"[ProjectSetup] Generated {string.Join(", ", solutions)} and {projects} .csproj file(s)."
+                : "[ProjectSetup] No .sln produced. Set Edit > Preferences > External Tools > External Script Editor first.");
         }
 
         [MenuItem("RockSkipping/Verify/Run Event System Verification")]

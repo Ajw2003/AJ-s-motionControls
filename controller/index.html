@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1b2a">
+  <title>Rock Skipping — Controller</title>
+  <style>
+    :root {
+      --bg: #0d1b2a;
+      --surface: #1b263b;
+      --accent: #4cc9f0;
+      --good: #57cc99;
+      --bad: #ef476f;
+      --text: #e0e1dd;
+      --muted: #7d8597;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      touch-action: manipulation;
+      user-select: none;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    #status {
+      padding: 8px 12px;
+      font-size: 12px;
+      text-align: center;
+      color: var(--muted);
+      background: rgba(0,0,0,0.25);
+      flex: 0 0 auto;
+    }
+    #status.ok { color: var(--good); }
+    #status.bad { color: var(--bad); }
+
+    .screen { display: none; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; padding: 20px; gap: 14px; }
+    .screen.active { display: flex; }
+
+    h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 2px; text-align: center; }
+    h2 { margin: 0; font-size: 20px; font-weight: 600; text-align: center; }
+    p  { margin: 0; color: var(--muted); text-align: center; font-size: 15px; line-height: 1.5; }
+
+    input {
+      width: 100%; max-width: 320px; padding: 16px;
+      border-radius: 12px; border: 2px solid #2f3e56;
+      background: var(--surface); color: var(--text);
+      font-size: 20px; text-align: center; text-transform: uppercase;
+    }
+    input:focus { border-color: var(--accent); outline: none; }
+
+    button {
+      padding: 16px 36px; border: none; border-radius: 999px;
+      background: var(--accent); color: #06263a;
+      font-size: 18px; font-weight: 700; cursor: pointer;
+    }
+    button:disabled { opacity: 0.4; }
+
+    #gripBtn {
+      width: min(70vw, 260px); aspect-ratio: 1; border-radius: 50%;
+      background: var(--bad); color: #fff; font-size: 26px; letter-spacing: 1px;
+      box-shadow: 0 10px 0 #b3204a; transition: transform 80ms, box-shadow 80ms;
+      touch-action: none;
+    }
+    #gripBtn.held { transform: translateY(8px); box-shadow: 0 2px 0 #b3204a; background: var(--good); }
+
+    .error { color: var(--bad); font-weight: 600; min-height: 20px; text-align: center; }
+
+    .scores { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 6px; }
+    .score-row { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--surface); border-radius: 10px; font-size: 15px; }
+    .score-row.active { border-left: 4px solid var(--accent); }
+
+    #debug {
+      flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 11px;
+      color: var(--muted); background: rgba(0,0,0,0.35); padding: 8px 12px;
+      display: none; white-space: pre; overflow-x: auto;
+    }
+    #debug.visible { display: block; }
+    #debugToggle { position: fixed; top: 4px; right: 8px; font-size: 10px; padding: 6px 10px; background: transparent; color: var(--muted); box-shadow: none; }
+  </style>
+</head>
+<body>
+  <div id="status">Connecting…</div>
+  <button id="debugToggle">debug</button>
+
+  <!-- Join -->
+  <section id="joinScreen" class="screen active">
+    <h1>ROCK SKIPPING</h1>
+    <div id="joinError" class="error"></div>
+    <input id="nameInput" type="text" placeholder="YOUR NAME" maxlength="12" autocomplete="off">
+    <input id="codeInput" type="text" placeholder="ROOM CODE" maxlength="4" autocomplete="off">
+    <button id="joinBtn">JOIN GAME</button>
+    <p>Enter the code shown on the TV.</p>
+  </section>
+
+  <!-- Spectating -->
+  <section id="waitScreen" class="screen">
+    <h2 id="waitTitle">Waiting for your turn</h2>
+    <p id="waitDetail">Watch the TV.</p>
+    <div id="scores" class="scores"></div>
+  </section>
+
+  <!-- Your turn -->
+  <section id="throwScreen" class="screen">
+    <h2 id="throwTitle">Your turn!</h2>
+    <p id="throwHint">Point your phone at the lake, hold, swing, and let go.</p>
+    <button id="gripBtn">HOLD</button>
+    <p id="throwResult"></p>
+  </section>
+
+  <pre id="debug"></pre>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
