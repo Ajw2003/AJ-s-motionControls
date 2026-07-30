@@ -21,6 +21,13 @@ namespace Managers
         [Tooltip("Verbose EventManager logging. Turn on while wiring new events.")]
         [SerializeField] private bool eventDebugLogging;
 
+        [Tooltip("Start the relay and the public HTTPS tunnel automatically. Turn off only " +
+                 "if you are running them yourself in a terminal.")]
+        [SerializeField] private bool startLocalServices = true;
+
+        [Tooltip("TV screen showing the room code, join URL and QR. This is what guests read.")]
+        [SerializeField] private bool showJoinScreen = true;
+
         [Tooltip("On-screen relay/throw readout. M1 scaffolding; turn off for real play.")]
         [SerializeField] private bool showDebugHud = true;
 
@@ -37,6 +44,11 @@ namespace Managers
             _ = EventManager.Instance;
             _ = ScoreManager.Instance;
 
+            // Before RelayClient on purpose: this is what spawns the relay the client is
+            // about to connect to. The client retries with backoff regardless, so the
+            // order is not load-bearing — it just avoids a guaranteed first failure.
+            if (startLocalServices) _ = Net.LocalServices.Instance;
+
             // RelayClient must be created here, never per-scene: a scene-local socket
             // is torn down on every transition and every phone bounces back to the
             // join screen. That reads as a networking bug but is a lifecycle one.
@@ -45,8 +57,22 @@ namespace Managers
             // Created after RelayClient so it can subscribe before any phone joins.
             _ = TurnManager.Instance;
 
+            if (showJoinScreen) CreateJoinScreen();
             if (showDebugHud) CreateDebugHud();
             if (showAimPreview) CreateAimPreview();
+        }
+
+        /// <summary>
+        /// Persistent because the room code stays valid across every scene — a latecomer
+        /// scanning during the Game scene must still be able to get in.
+        /// </summary>
+        private static void CreateJoinScreen()
+        {
+            if (FindFirstObjectByType<Ui.JoinScreen>() != null) return;
+
+            var screen = new GameObject("JoinScreen");
+            screen.AddComponent<Ui.JoinScreen>();
+            DontDestroyOnLoad(screen);
         }
 
         private static void CreateAimPreview()

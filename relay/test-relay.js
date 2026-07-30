@@ -7,6 +7,7 @@
 
 const { WebSocket } = require('ws');
 const { spawn } = require('child_process');
+const http = require('http');
 const path = require('path');
 
 const PORT = 3999;
@@ -46,6 +47,16 @@ function next(ws, timeoutMs = 2000) {
 
 function send(ws, obj) {
   ws.send(JSON.stringify(obj));
+}
+
+function httpGet(pathAndQuery) {
+  return new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: PORT, path: pathAndQuery }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -111,6 +122,31 @@ async function run() {
   const rejoined = await next(rejoin);
   check('reconnect is accepted', rejoined.type === 'JOINED');
   check('reconnect is flagged as such', rejoined.reconnected === true);
+
+  // ---- QR endpoint: the join URL players actually scan ---------------------
+  const joinUrl = `https://sample-words-here.trycloudflare.com/?room=${code}`;
+  const qr = await httpGet(`/qr?data=${encodeURIComponent(joinUrl)}`);
+  check('/qr answers 200', qr.status === 200, String(qr.status));
+
+  const grid = JSON.parse(qr.body);
+  check('/qr returns a square matrix',
+    Number.isInteger(grid.size) && grid.size >= 21 && grid.rows.length === grid.size,
+    `${grid.size}x${grid.size}`);
+  check('/qr rows are 0/1 strings of the right width',
+    grid.rows.every((r) => r.length === grid.size && /^[01]+$/.test(r)));
+  // The finder pattern is what a scanner locks onto; an all-white corner means
+  // the matrix came back empty or transposed into nonsense.
+  check('/qr has a dark finder pattern in the top-left corner',
+    grid.rows[0][0] === '1' && grid.rows[6][6] === '1' && grid.rows[1][1] === '0');
+
+  const tooLong = await httpGet(`/qr?data=${'x'.repeat(600)}`);
+  check('/qr rejects oversized data', tooLong.status === 400, String(tooLong.status));
+
+  const missing = await httpGet('/qr');
+  check('/qr rejects a missing data parameter', missing.status === 400, String(missing.status));
+
+  const health = await httpGet('/health');
+  check('/health still answers', health.status === 200 && JSON.parse(health.body).ok === true);
 
   // ---- host disconnect closes the room ------------------------------------
   host.close();

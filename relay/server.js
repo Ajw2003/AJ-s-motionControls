@@ -13,6 +13,7 @@
  */
 
 const { WebSocketServer, WebSocket } = require('ws');
+const qrcode = require('qrcode-generator');
 const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
@@ -31,6 +32,10 @@ const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_LENGTH = 4;
 const MAX_PLAYER_ID_LENGTH = 16;
+
+// A join URL is well under this. The endpoint is reachable through the public
+// tunnel, so it takes a bound rather than trusting the caller.
+const MAX_QR_DATA_LENGTH = 512;
 
 /** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number}>} */
 const rooms = new Map();
@@ -253,12 +258,61 @@ function serveStatic(req, res) {
   });
 }
 
+/**
+ * QR module matrix for an arbitrary string, as JSON.
+ *
+ * Returns the raw black/white grid rather than a PNG so the caller renders it at
+ * whatever size it needs — Unity draws this on a TV, where a fixed-resolution
+ * image would either band or blur. Rows are strings of '0'/'1' because Unity's
+ * JsonUtility cannot deserialize nested arrays.
+ */
+function serveQr(req, res, query) {
+  const data = query.get('data');
+
+  if (!data || data.length > MAX_QR_DATA_LENGTH) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: `data must be 1..${MAX_QR_DATA_LENGTH} characters` }));
+    return;
+  }
+
+  try {
+    // Type 0 picks the smallest version that fits. Level M survives the glare and
+    // off-angle scanning you get pointing a phone at a television.
+    const qr = qrcode(0, 'M');
+    qr.addData(data);
+    qr.make();
+
+    const size = qr.getModuleCount();
+    const rows = [];
+    for (let row = 0; row < size; row++) {
+      let bits = '';
+      for (let col = 0; col < size; col++) bits += qr.isDark(row, col) ? '1' : '0';
+      rows.push(bits);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
+      .end(JSON.stringify({ size, rows }));
+  } catch (err) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: String(err.message || err) }));
+  }
+}
+
 const httpServer = http.createServer((req, res) => {
-  if (req.url === '/health') {
+  // Base is a formality — only the path and query are ever read.
+  const url = new URL(req.url || '/', 'http://localhost');
+
+  if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ ok: true, rooms: rooms.size }));
     return;
   }
+
+  if (url.pathname === '/qr') {
+    serveQr(req, res, url.searchParams);
+    return;
+  }
+
   serveStatic(req, res);
 });
 
