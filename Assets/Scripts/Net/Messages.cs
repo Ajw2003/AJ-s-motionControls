@@ -110,15 +110,22 @@ namespace Net
         /// Broadcast match state to every phone. Hand-written because the score map
         /// is a dictionary, which JsonUtility cannot serialise.
         /// </summary>
+        /// <param name="phase">LOBBY, PLAYING or RESULTS. Without it an idle phone cannot
+        /// tell "waiting to start" from "final scores" and shows the wrong caption in two
+        /// of the three phases.</param>
         public static string BuildSpectate(
             string activePlayer, string rockName, int liveSkips, float liveDistance,
-            IReadOnlyDictionary<string, int> scores)
+            IReadOnlyDictionary<string, int> scores,
+            string phase = "PLAYING", int round = 1, int totalRounds = 1)
         {
-            var sb = new StringBuilder(256);
+            var sb = new StringBuilder(288);
             sb.Append('{')
               .Append($"\"type\":\"{MessageType.Spectate}\",")
               .Append($"\"activePlayer\":\"{Escape(activePlayer)}\",")
               .Append($"\"rockName\":\"{Escape(rockName)}\",")
+              .Append($"\"phase\":\"{Escape(phase)}\",")
+              .Append($"\"round\":{round},")
+              .Append($"\"totalRounds\":{totalRounds},")
               .Append($"\"liveSkips\":{liveSkips},")
               .Append($"\"liveDistance\":{liveDistance.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},")
               .Append("\"scores\":{");

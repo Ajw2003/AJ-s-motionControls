@@ -61,7 +61,8 @@ const thrower = new ThrowController(motion, {
     connection?.send(payload);
     lastThrow = payload;
     ui.throwResult.textContent =
-      `Power ${(payload.power * 100).toFixed(0)}% · Timing ${(payload.timingQuality * 100).toFixed(0)}%`;
+      `Power ${(payload.power * 100).toFixed(0)}% · Timing ${(payload.timingQuality * 100).toFixed(0)}%` +
+      (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
   onStateChange: (state) => {
     ui.gripBtn.classList.toggle('held', state === ThrowState.GRIPPED);
@@ -132,18 +133,46 @@ function handleMessage(message) {
   }
 }
 
+/** Highest scorer, or null when nobody leads outright. */
+function leader(scores) {
+  const entries = Object.entries(scores ?? {});
+  if (entries.length === 0) return null;
+
+  entries.sort((a, b) => b[1] - a[1]);
+  if (entries.length > 1 && entries[0][1] === entries[1][1]) return null; // tied
+  return entries[0][0];
+}
+
 function renderSpectate(message) {
   if (thrower.state === ThrowState.GRIPPED) return; // don't yank the screen mid-throw
 
-  ui.waitTitle.textContent = message.activePlayer
-    ? `${message.activePlayer} is throwing`
-    : 'Waiting for the next turn';
+  // Without the phase, every idle moment reads "Waiting for the next turn" — including
+  // the lobby before anything has started and the results screen after it has ended.
+  const phase = message.phase ?? 'PLAYING';
 
-  const parts = [];
-  if (message.rockName) parts.push(message.rockName);
-  if (typeof message.liveSkips === 'number') parts.push(`${message.liveSkips} skips`);
-  if (typeof message.liveDistance === 'number') parts.push(`${message.liveDistance.toFixed(1)} m`);
-  ui.waitDetail.textContent = parts.join(' · ') || 'Watch the TV.';
+  if (phase === 'LOBBY') {
+    ui.waitTitle.textContent = 'Waiting for the game to start';
+    ui.waitDetail.textContent = 'You are in. Watch the TV.';
+  } else if (phase === 'RESULTS') {
+    const winner = leader(message.scores);
+    ui.waitTitle.textContent = 'Final scores';
+    ui.waitDetail.textContent = winner
+      ? (winner === myPlayerId ? 'You win!' : `${winner} wins`)
+      : 'It is a tie.';
+  } else {
+    ui.waitTitle.textContent = message.activePlayer
+      ? `${message.activePlayer} is throwing`
+      : 'Waiting for the next turn';
+
+    const parts = [];
+    if (message.round && message.totalRounds) {
+      parts.push(`Round ${message.round}/${message.totalRounds}`);
+    }
+    if (message.rockName) parts.push(message.rockName);
+    if (typeof message.liveSkips === 'number') parts.push(`${message.liveSkips} skips`);
+    if (typeof message.liveDistance === 'number') parts.push(`${message.liveDistance.toFixed(1)} m`);
+    ui.waitDetail.textContent = parts.join(' · ') || 'Watch the TV.';
+  }
 
   ui.scores.innerHTML = '';
   for (const [player, score] of Object.entries(message.scores ?? {})) {

@@ -67,10 +67,17 @@ namespace Game
 
         private void OnThrow(ThrowMessage message)
         {
-            // Only the player whose turn it is may throw. Without this, a phone that
-            // never got a TURN update could still fling rocks into someone else's turn.
-            var active = TurnManager.HasInstance ? TurnManager.Instance.ActivePlayer : null;
-            if (!string.IsNullOrEmpty(active) && message.playerId != active) return;
+            // Only the player whose turn it is, and only while a match is running.
+            // Both halves matter: a phone that never got a TURN update could otherwise
+            // fling rocks into someone else's turn, and ActivePlayer is null outside the
+            // Playing phase — so an "is it your turn" check alone would let anyone throw
+            // across the lobby and the results screen.
+            if (TurnManager.HasInstance)
+            {
+                var turns = TurnManager.Instance;
+                if (turns.Phase != MatchPhase.Playing) return;
+                if (message.playerId != turns.ActivePlayer) return;
+            }
 
             if (_preview == null)
             {

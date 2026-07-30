@@ -21,7 +21,14 @@ import {
   readRotationRate,
 } from './js/sensors.js';
 
-import { computeThrowDescriptor, buildAimPayload, ThrowTuning } from './js/throw.js';
+import {
+  computeThrowDescriptor,
+  computeSimulatedThrowDescriptor,
+  buildAimPayload,
+  ThrowController,
+  ThrowTuning,
+  SimulatedThrow,
+} from './js/throw.js';
 
 let failures = 0;
 
@@ -191,6 +198,103 @@ console.log('\nbuildAimPayload');
   check('attack angle survives', payload.attackAngleDeg === 22);
   check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
+}
+
+// ------------------------------------------------- simulated throw (sensorless)
+console.log('\ncomputeSimulatedThrowDescriptor');
+{
+  const mid = () => 0.5; // jitter() maps 0.5 onto exactly zero deflection
+
+  const brief = computeSimulatedThrowDescriptor(0, mid);
+  const long = computeSimulatedThrowDescriptor(5000, mid);
+
+  check('a brief tap gives minimum power', near(brief.power, SimulatedThrow.minPower));
+  check('a long hold saturates at maximum power', near(long.power, SimulatedThrow.maxPower));
+  check('hold duration scales power in between',
+    computeSimulatedThrowDescriptor(600, mid).power > brief.power &&
+    computeSimulatedThrowDescriptor(600, mid).power < long.power);
+
+  check('centred randomness gives a dead-straight throw',
+    near(brief.aimDeg, 0) && near(brief.attackAngleDeg, 0));
+
+  // The whole point of the jitter bounds: SkipTuning maps a neutral grip onto the
+  // optimal angle with a 12 degree tolerance, so a simulated throw must land inside
+  // that window or every test throw sinks and every score is zero.
+  const extremes = [computeSimulatedThrowDescriptor(600, () => 0),
+                    computeSimulatedThrowDescriptor(600, () => 1)];
+  check('attack angle stays inside the skip tolerance window',
+    extremes.every((d) => Math.abs(d.attackAngleDeg) <= SimulatedThrow.attackJitterDeg),
+    extremes.map((d) => d.attackAngleDeg.toFixed(1)).join(' / '));
+
+  check('is flagged as simulated', brief.simulated === true);
+  check('reports zero samples, which is the tell on the TV readout',
+    brief.sampleCount === 0 && brief.peakAccel === 0);
+}
+
+// ------------------------------------------------- release() fallback selection
+console.log('\nThrowController.release fallback');
+{
+  // Minimal stand-ins: enough surface for grip()/release(), no browser needed.
+  const makeMotion = (latest, samples) => ({
+    latest,
+    buffer: { toArray: () => samples, clear() {} },
+    calibrate() {},
+  });
+
+  const realSwing = [];
+  for (let i = 0; i <= 10; i++) realSwing.push(makeSample(i * 10, i * 3));
+
+  // A device with sensors and a genuine swing: the measured throw must win.
+  {
+    const sent = [];
+    const c = new ThrowController(makeMotion(realSwing[10], realSwing), {
+      onThrow: (p) => sent.push(p),
+      aimHz: 1000,
+    });
+    c.grip();
+    const d = c.release();
+    check('a real swing produces a measured throw, not a simulated one',
+      sent.length === 1 && !sent[0].simulated && d.sampleCount === realSwing.length);
+  }
+
+  // A device with sensors but a limp gesture: still a fumble. Falling back here
+  // would turn every pocket bump on a real phone into a throw.
+  {
+    const sent = [];
+    const fumble = [makeSample(0, 1), makeSample(10, 2)];
+    const c = new ThrowController(makeMotion(fumble[1], fumble), {
+      onThrow: (p) => sent.push(p),
+      aimHz: 1000,
+    });
+    c.grip();
+    check('a fumble on a real device stays a fumble',
+      c.release() === null && sent.length === 0);
+  }
+
+  // A device that never produced a single motion event has no sensors at all.
+  {
+    const sent = [];
+    const c = new ThrowController(makeMotion(null, []), {
+      onThrow: (p) => sent.push(p),
+      aimHz: 1000,
+    });
+    c.grip();
+    const d = c.release();
+    check('a sensorless device falls back to a simulated throw',
+      sent.length === 1 && sent[0].simulated === true && d.simulated === true);
+    check('the simulated throw is typed THROW like any other', sent[0].type === 'THROW');
+  }
+
+  // Releasing without gripping must stay a no-op rather than firing a simulated throw.
+  {
+    const sent = [];
+    const c = new ThrowController(makeMotion(null, []), {
+      onThrow: (p) => sent.push(p),
+      aimHz: 1000,
+    });
+    check('release without grip sends nothing',
+      c.release() === null && sent.length === 0);
+  }
 }
 
 console.log(failures === 0

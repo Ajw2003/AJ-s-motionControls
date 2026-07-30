@@ -28,6 +28,9 @@ namespace Managers
         [Tooltip("TV screen showing the room code, join URL and QR. This is what guests read.")]
         [SerializeField] private bool showJoinScreen = true;
 
+        [Tooltip("Final standings when a match ends.")]
+        [SerializeField] private bool showResultsScreen = true;
+
         [Tooltip("On-screen relay/throw readout. M1 scaffolding; turn off for real play.")]
         [SerializeField] private bool showDebugHud = true;
 
@@ -42,6 +45,12 @@ namespace Managers
             // here sets persistBetweenScenes = true in its own Awake, so each one
             // survives from here to Results.
             _ = EventManager.Instance;
+
+            // Before TurnManager, and that ordering is load-bearing. Both subscribe to
+            // ThrowCompletedEvent, and EventManager delivers in subscription order — so
+            // ScoreManager banks the final throw's points before TurnManager sees the
+            // same event, ends the match and reads the standings. Created the other way
+            // round, the winning throw would be missing from the results screen.
             _ = ScoreManager.Instance;
 
             // Before RelayClient on purpose: this is what spawns the relay the client is
@@ -54,10 +63,12 @@ namespace Managers
             // join screen. That reads as a networking bug but is a lifecycle one.
             _ = Net.RelayClient.Instance;
 
-            // Created after RelayClient so it can subscribe before any phone joins.
+            // After RelayClient so it can subscribe before any phone joins, and after
+            // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;
 
             if (showJoinScreen) CreateJoinScreen();
+            if (showResultsScreen) CreateResultsScreen();
             if (showDebugHud) CreateDebugHud();
             if (showAimPreview) CreateAimPreview();
         }
@@ -72,6 +83,16 @@ namespace Managers
 
             var screen = new GameObject("JoinScreen");
             screen.AddComponent<Ui.JoinScreen>();
+            DontDestroyOnLoad(screen);
+        }
+
+        /// <summary>Persistent for the same reason as the rest: it outlives any one scene.</summary>
+        private static void CreateResultsScreen()
+        {
+            if (FindFirstObjectByType<Ui.ResultsScreen>() != null) return;
+
+            var screen = new GameObject("ResultsScreen");
+            screen.AddComponent<Ui.ResultsScreen>();
             DontDestroyOnLoad(screen);
         }
 

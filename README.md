@@ -22,12 +22,16 @@ what currently exists.
 app normalizes sensors and sends `AIM`/`THROW`, and the pure skip solver plus the aim
 preview are in. Verified end to end with one Android phone.
 
-Hosting is now one click: pressing Play brings up the relay and a public HTTPS tunnel,
-then puts the room code, join URL and a QR on screen.
+Hosting is one click: pressing Play brings up the relay and a public HTTPS tunnel, then
+puts the room code, join URL and a QR on screen. A match runs a fixed number of rounds and
+ends with a standings screen — see Match flow below.
 
 Still open in M2: `RockDefinition`/`RockSpawner` and the four specials, `RingGate`
 (nothing publishes `RingPassedEvent` yet, so `ScoreManager.pointsPerRing` is currently
 dead), and an authored lake scene to replace the runtime placeholder geometry.
+
+Not yet run with more than one real player — turn rotation, the spectator view and the
+results screen are written and unit-tested but have not been exercised at a party.
 
 ## Running the game
 
@@ -39,6 +43,36 @@ Open the **Bootstrap** scene and press Play. `LocalServices` then:
 3. hands the URL to `JoinScreen`, which shows it with the room code and a scannable QR
 
 Players scan the QR — it pre-fills the room code via `?room=CODE` — and type only a name.
+
+## Match flow
+
+`TurnManager` owns a three-phase lifecycle, and nothing advances on its own:
+
+| Phase | What is on screen | How it advances |
+|---|---|---|
+| **Lobby** | room code, join URL, QR, roster | press **Space** to start |
+| **Playing** | the lake; join details shrink to a corner card | each throw completing rotates the turn |
+| **Results** | final standings, winner highlighted | press **Space** to play again |
+
+A match is `Rounds Per Match` rounds (default 3), each giving every player one throw. The
+turn advances on `ThrowCompletedEvent` — a sunk rock is what drives the match forward — so
+**Space** and **N** (force next turn) are the only keys needed to run a session.
+
+The match never starts by itself: somebody arriving mid-lobby should not begin it for
+everyone already waiting. Throws are refused outside the Playing phase, so a stale phone
+cannot fling rocks across the results screen.
+
+### Verifying with a second PC
+
+A desktop browser has no motion sensors, so a real swing produces nothing. Rather than
+letting that seat deadlock the match, `release()` synthesizes a throw from how long the
+grip button was held — but **only on a device that has never produced a single motion
+event**, which a phone does within a frame of joining. A weak gesture on a real phone
+stays a fumble. Simulated throws are labelled on the controller and report zero samples,
+which is how the TV debug readout (**F1**) tells them apart.
+
+So: open the join URL on a second PC, join with a different name, and press Space on the
+host. Both seats take turns, scores accumulate, and the match ends on the final round.
 
 **Requires** Node 20+ and cloudflared:
 

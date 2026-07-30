@@ -29,8 +29,9 @@ namespace Ui
         [SerializeField] private bool visible = true;
         [SerializeField] private KeyCode toggleKey = KeyCode.F2;
 
-        [Tooltip("Shrink to a corner card once somebody has joined, so the lake is visible.")]
-        [SerializeField] private bool compactAfterFirstJoin = true;
+        [Tooltip("Shrink to a corner card once the match is under way, so the lake is visible. " +
+                 "The card stays up so latecomers can still scan in.")]
+        [SerializeField] private bool compactDuringMatch = true;
 
         [Header("QR")]
         [Tooltip("White border around the code, in modules. Below 4 many scanners fail to lock on.")]
@@ -213,8 +214,12 @@ namespace Ui
 
             EnsureStyles();
 
-            var joined = TurnManager.HasInstance ? TurnManager.Instance.Players.Count : 0;
-            var compact = compactAfterFirstJoin && joined > 0 &&
+            var turns = TurnManager.HasInstance ? TurnManager.Instance : null;
+            var joined = turns?.Players.Count ?? 0;
+
+            // Driven by phase, not by headcount: during the lobby the code and the start
+            // prompt are the whole point of the screen, however many people have joined.
+            var compact = compactDuringMatch && turns != null && turns.Phase != MatchPhase.Lobby &&
                           _services != null && _services.State == ServiceState.Ready;
 
             if (compact) DrawCompactCard();
@@ -323,10 +328,29 @@ namespace Ui
             GUILayout.Label(_services.PublicUrl ?? string.Empty, _url);
             GUILayout.Label(code, _code);
 
+            var turns = TurnManager.HasInstance ? TurnManager.Instance : null;
+
             GUILayout.Label(joined == 0
                 ? "No players yet"
-                : $"{joined} player{(joined == 1 ? "" : "s")}: {string.Join(", ", TurnManager.Instance.Players)}",
+                : $"{joined} player{(joined == 1 ? "" : "s")}: {string.Join(", ", turns.Players)}",
                 _body);
+
+            GUILayout.Space(10);
+
+            // The match never starts on its own — somebody walking in mid-lobby should not
+            // begin it for everyone else, so it waits for a deliberate press.
+            if (turns != null && turns.CanStartMatch)
+            {
+                var previous = GUI.color;
+                GUI.color = new Color(0.6f, 1f, 0.7f);
+                GUILayout.Label($"Press {turns.StartMatchKey} to start — " +
+                                $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")}", _status);
+                GUI.color = previous;
+            }
+            else if (turns != null)
+            {
+                GUILayout.Label("Waiting for at least one player…", _hint);
+            }
 
             GUILayout.FlexibleSpace();
             GUILayout.Label($"{toggleKey} hides this screen", _hint);

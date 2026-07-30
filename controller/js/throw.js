@@ -35,6 +35,59 @@ export const ThrowTuning = {
   minValidPeakAccel: 3,
 };
 
+/**
+ * Shape of a throw synthesized on a device with no motion sensors.
+ *
+ * This exists so a desktop browser can occupy a seat during multi-player testing.
+ * A second phone is the real test; a second PC is the one most people can actually
+ * arrange, and without this it can join, take its turn, and then deadlock the match
+ * — the turn only advances when a throw completes.
+ */
+export const SimulatedThrow = {
+  minHoldMs: 150,
+  maxHoldMs: 1200,
+  minPower: 0.2,
+  maxPower: 0.95,
+
+  // attackAngleDeg is a delta from the player's grip, and SkipTuning maps a neutral
+  // grip onto the stone's optimal angle — so 0 is already a good throw. The jitter
+  // stays well inside the tolerance window so simulated throws skip rather than
+  // sinking, which would make every test score identically zero.
+  attackJitterDeg: 6,
+  aimJitterDeg: 10,
+  spinRate: 120,
+  timingQuality: 0.85,
+};
+
+/**
+ * Build a throw from nothing but how long the button was held.
+ *
+ * Pure, and takes its randomness as a parameter, so tests can pin it.
+ *
+ * @param {number} holdMs how long the grip was held
+ * @param {function} random source of 0..1 randomness
+ */
+export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
+  const charge = normalize01(holdMs, SimulatedThrow.minHoldMs, SimulatedThrow.maxHoldMs);
+  const jitter = (range) => (random() * 2 - 1) * range;
+
+  return {
+    power: SimulatedThrow.minPower + charge * (SimulatedThrow.maxPower - SimulatedThrow.minPower),
+    timingQuality: SimulatedThrow.timingQuality,
+    aimDeg: jitter(SimulatedThrow.aimJitterDeg),
+    attackAngleDeg: jitter(SimulatedThrow.attackJitterDeg),
+    rollDeg: 0,
+    spinRate: SimulatedThrow.spinRate,
+
+    // Zero samples is the tell. A real gesture always has some, so the TV debug
+    // readout distinguishes a simulated throw from a genuine one at a glance.
+    peakAccel: 0,
+    releaseDelayMs: 0,
+    sampleCount: 0,
+    simulated: true,
+  };
+}
+
 export const ThrowState = {
   IDLE: 'IDLE',
   GRIPPED: 'GRIPPED',
@@ -114,12 +167,14 @@ export class ThrowController {
     this.state = ThrowState.IDLE;
     this.seq = 0;
     this._timer = null;
+    this._grippedAt = 0;
   }
 
   /** Player pressed and held. Captures the aim reference and starts streaming. */
   grip() {
     if (this.state !== ThrowState.IDLE) return;
 
+    this._grippedAt = performance.now();
     this.motion.calibrate();
     this._setState(ThrowState.GRIPPED);
 
@@ -133,12 +188,28 @@ export class ThrowController {
   release() {
     if (this.state !== ThrowState.GRIPPED) return null;
 
+    const holdMs = performance.now() - this._grippedAt;
+
     this._stopTimer();
     this._setState(ThrowState.IDLE);
 
     const descriptor = computeThrowDescriptor(this.motion.buffer.toArray());
-    if (descriptor) this.onThrow({ type: 'THROW', ...descriptor });
-    return descriptor;
+    if (descriptor) {
+      this.onThrow({ type: 'THROW', ...descriptor });
+      return descriptor;
+    }
+
+    // A real device that produced samples but a weak gesture is a fumble, and must
+    // stay one. Only a device that has never produced a single motion event has no
+    // sensors at all — a phone sets `latest` within a frame of start(), long before
+    // anyone can grip, so this branch is unreachable on real hardware.
+    if (this.motion.latest === null) {
+      const simulated = computeSimulatedThrowDescriptor(holdMs);
+      this.onThrow({ type: 'THROW', ...simulated });
+      return simulated;
+    }
+
+    return null;
   }
 
   /** Turn ended or connection dropped mid-grip — abandon without throwing. */
