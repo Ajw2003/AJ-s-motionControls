@@ -1,0 +1,17 @@
+{
+  "name": "rockskipping-relay",
+  "version": "1.0.0",
+  "description": "WebSocket relay between the Unity host and phone controllers",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-relay.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
