@@ -5,8 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-sensors.js",
-    "serve": "node serve.js"
+    "test": "node test-sensors.js"
   },
   "engines": {
     "node": ">=20"

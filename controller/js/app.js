@@ -63,6 +63,8 @@ const motion = new MotionSource({ gravityK: GRAVITY_K });
 let connection = null;
 let lastThrow = null;
 let myPlayerId = '';
+let lastRttMs = null;
+let waitForOpen = null;
 
 function showScreen(name) {
   for (const screen of [ui.joinScreen, ui.waitScreen, ui.throwScreen]) {
@@ -80,7 +82,10 @@ function setStatus(text, kind = '') {
 
 const thrower = new ThrowController(motion, {
   gesture: GESTURE,
-  onAim: (payload) => connection?.send(payload),
+  // Latest-wins: an AIM frame is skipped while the socket still has bytes queued,
+  // because a fresher one is at most a sensor tick away. THROW below uses send()
+  // — the one authoritative message must always be transmitted.
+  onAim: (payload) => connection?.sendIfClear(payload),
   onThrow: (payload) => {
     connection?.send(payload);
     lastThrow = payload;
@@ -178,6 +183,10 @@ function handleMessage(message) {
       showScreen('join');
       ui.joinBtn.disabled = false;
       break;
+
+    case 'PONG':
+      if (typeof message.t === 'number') lastRttMs = performance.now() - message.t;
+      break;
   }
 }
 
@@ -267,17 +276,39 @@ async function join() {
     connection = new RelayConnection({
       onMessage: handleMessage,
       onStatus: (status) => {
-        if (status === ConnectionStatus.RECONNECTING) setStatus('Reconnecting…', 'bad');
-        else if (status === ConnectionStatus.CONNECTING) setStatus('Connecting…');
+        if (status === ConnectionStatus.RECONNECTING) {
+          // The aim stream is pointless on a dead socket — and without this the
+          // grip timer keeps burning seq numbers into the void.
+          thrower.cancel();
+          setStatus('Reconnecting…', 'bad');
+        } else if (status === ConnectionStatus.ERROR) {
+          thrower.cancel();
+          setStatus('Connection error — retrying…', 'bad');
+        } else if (status === ConnectionStatus.CONNECTING) {
+          setStatus('Connecting…');
+        }
       },
     });
     connection.connect();
   }
 
-  const waitForOpen = setInterval(() => {
+  // One waiter at a time, with a deadline. The old version leaked an interval per
+  // press against an unreachable server, and a second press then double-joined.
+  if (waitForOpen !== null) clearInterval(waitForOpen);
+  const deadline = performance.now() + 10_000;
+  waitForOpen = setInterval(() => {
     if (connection.status === ConnectionStatus.CONNECTED || connection.status === ConnectionStatus.JOINED) {
       clearInterval(waitForOpen);
+      waitForOpen = null;
       connection.joinRoom(code, name);
+      return;
+    }
+
+    if (performance.now() > deadline) {
+      clearInterval(waitForOpen);
+      waitForOpen = null;
+      ui.joinError.textContent = 'Could not reach the server. Check the connection and try again.';
+      ui.joinBtn.disabled = false;
     }
   }, 100);
 }
@@ -303,7 +334,8 @@ function updateDebug() {
   const s = motion.latest;
   ui.debug.textContent = [
     `state    ${thrower.state}   seq ${thrower.seq}`,
-    `socket   ${connection?.status ?? 'not connected'}`,
+    `socket   ${connection?.status ?? 'not connected'}` +
+      (lastRttMs !== null ? `   rtt ${lastRttMs.toFixed(0)}ms` : ''),
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
     `heading  ${motion.headingDeg === null ? 'none' : motion.headingDeg.toFixed(1)}` +
       `   turn ${motion.headingRateDegPerSec.toFixed(0)}°/s`,
@@ -339,6 +371,15 @@ function init() {
   }
 
   setInterval(updateDebug, 100);
+
+  // Round-trip probe. The relay echoes the timestamp; the result separates fixed
+  // tunnel latency from anything the app is doing wrong.
+  setInterval(() => {
+    if (connection?.status === ConnectionStatus.JOINED) {
+      connection.send({ type: 'PING', t: performance.now() });
+    }
+  }, 2000);
+
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') requestWakeLock();
   });

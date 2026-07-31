@@ -57,8 +57,9 @@ namespace Net
             if (Input.GetKeyDown(toggleKey)) visible = !visible;
             EnsureBound();
 
-            // Measured, not assumed: if this reads well under 20 the phone or the
-            // network is dropping aim frames and the preview will look choppy.
+            // Measured, not assumed: if this reads well under the sensor rate (~60)
+            // the phone or the network is dropping aim frames and the preview will
+            // look choppy.
             if (Time.time - _aimRateWindowStart >= 1f)
             {
                 _aimHz = _aimFrames / (Time.time - _aimRateWindowStart);
@@ -117,7 +118,10 @@ namespace Net
                             $"players {turns?.Players.Count ?? 0}   (press N for next)", rich);
 
             GUILayout.Space(6);
-            GUILayout.Label($"<b>Aim</b>   {_aimHz:F0} Hz (target 20)", rich);
+            // "queued" is the backlog behind the main-thread drain. 0–2 is healthy;
+            // a number that climbs during a grip means intake is falling behind and
+            // the arc is showing progressively older frames.
+            GUILayout.Label($"<b>Aim</b>   {_aimHz:F0} Hz (sensor-rate ~60)   queued {_client.PendingInbound}", rich);
 
             if (_latestAim != null)
             {

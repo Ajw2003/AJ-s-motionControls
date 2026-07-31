@@ -63,15 +63,15 @@ export const HEADING_CORRECTION_GAIN = 0.15;
  *
  * `rotationRate` arrives with `devicemotion` at the full sensor rate and is very close
  * to instantaneous, where `deviceorientation` is a fused estimate that both lags and
- * arrives on its own slower schedule. Integrating this is what lets a fast swing be
- * tracked at all: sampling the fused angle alone means the heading in every sample is
- * from tens of milliseconds ago, so the arc trails the phone and the release frame
- * reports where the player was pointing a moment before they let go.
+ * arrives on its own slower schedule.
  *
  * Derived from the Z-X'-Y'' Euler kinematics and checked numerically against a
  * finite-difference of the rotation matrix: exact to ~5e-7 deg/s across 600 poses up
- * to 500 deg/s. The 1/cos(beta) term is the same singularity `pointingHeading` guards
- * — the caller must not integrate through a near-vertical phone.
+ * to 500 deg/s. The 1/cos(beta) term is the same singularity `pointingHeading` guards,
+ * which is why this scalar is used only as a turn-speed signal (the debug display, and
+ * gating how hard the fused correction pulls). The heading itself is integrated as a
+ * full quaternion attitude, which has no such singularity — see quatIntegrate and
+ * pointingFromQuat.
  *
  * @param rotationRate DeviceMotionEvent.rotationRate, deg/s (alpha about Z, beta about
  *                     X, gamma about Y)
@@ -120,6 +120,118 @@ export function pointingHeading(alpha, beta) {
   return {
     headingDeg: (Math.atan2(east, north) * 180) / Math.PI,
     confidence: cosBeta,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Quaternion attitude — {w,x,y,z}, unit, mapping device-frame vectors into the
+// world frame (X east, Y north, Z up).
+//
+// WHY A FULL ATTITUDE AND NOT A SCALAR HEADING: the pointing bearing is
+// degenerate while the phone is near vertical — exactly the middle of a swing.
+// Integrating the bearing directly forces a choice there between freezing (all
+// yaw applied through the steep part of the swing is lost forever) and dividing
+// by cos(pitch) (gyro noise amplified without bound). Integrating the full 3D
+// attitude has neither failure: rotation is well-defined in every pose, and the
+// bearing is simply *read out* of the attitude whenever the phone points
+// somewhere near the horizon again — with everything that happened in between
+// accounted for.
+//
+// Integrating the world-vertical rotation component alone is NOT equivalent and
+// was tried and reverted: rolling a tilted phone about its long axis sweeps a
+// large world-vertical rotation while the top of the phone keeps pointing
+// exactly where it did. The attitude form keeps that roll-immunity by
+// construction — rotation about the pointing axis cannot move the pointing axis.
+// ---------------------------------------------------------------------------
+
+/** Intrinsic Z-X'-Y'' (deviceorientation alpha/beta/gamma) -> quaternion. */
+export function quatFromEuler(alphaDeg, betaDeg, gammaDeg) {
+  const a = (alphaDeg * Math.PI) / 360; // half angles
+  const b = (betaDeg * Math.PI) / 360;
+  const g = (gammaDeg * Math.PI) / 360;
+  const qz = { w: Math.cos(a), x: 0, y: 0, z: Math.sin(a) };
+  const qx = { w: Math.cos(b), x: Math.sin(b), y: 0, z: 0 };
+  const qy = { w: Math.cos(g), x: 0, y: Math.sin(g), z: 0 };
+  return quatMultiply(quatMultiply(qz, qx), qy);
+}
+
+export function quatMultiply(q, r) {
+  return {
+    w: q.w * r.w - q.x * r.x - q.y * r.y - q.z * r.z,
+    x: q.w * r.x + q.x * r.w + q.y * r.z - q.z * r.y,
+    y: q.w * r.y - q.x * r.z + q.y * r.w + q.z * r.x,
+    z: q.w * r.z + q.x * r.y - q.y * r.x + q.z * r.w,
+  };
+}
+
+export function quatNormalize(q) {
+  const n = Math.hypot(q.w, q.x, q.y, q.z);
+  if (n < 1e-12) return { w: 1, x: 0, y: 0, z: 0 };
+  return { w: q.w / n, x: q.x / n, y: q.y / n, z: q.z / n };
+}
+
+/**
+ * Advance an attitude by one gyro sample. `rotationRate` is deg/s in the DEVICE
+ * frame (alpha about Z, beta about X, gamma about Y), so the delta rotation is
+ * applied on the right — a body-frame update.
+ */
+export function quatIntegrate(q, rotationRate, dtMs) {
+  const dt = dtMs / 1000;
+  const wx = ((rotationRate.beta * Math.PI) / 180) * dt;
+  const wy = ((rotationRate.gamma * Math.PI) / 180) * dt;
+  const wz = ((rotationRate.alpha * Math.PI) / 180) * dt;
+  const angle = Math.hypot(wx, wy, wz);
+  if (angle < 1e-9) return q;
+
+  const s = Math.sin(angle / 2) / angle;
+  const dq = { w: Math.cos(angle / 2), x: wx * s, y: wy * s, z: wz * s };
+  return quatNormalize(quatMultiply(q, dq));
+}
+
+/** Shortest-path slerp; t=0 returns a, t=1 returns b. */
+export function quatSlerp(a, b, t) {
+  let dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+  let bw = b.w, bx = b.x, by = b.y, bz = b.z;
+  if (dot < 0) { dot = -dot; bw = -bw; bx = -bx; by = -by; bz = -bz; }
+
+  // Nearly parallel: lerp, which is faster and numerically safer here.
+  if (dot > 0.9995) {
+    return quatNormalize({
+      w: a.w + (bw - a.w) * t,
+      x: a.x + (bx - a.x) * t,
+      y: a.y + (by - a.y) * t,
+      z: a.z + (bz - a.z) * t,
+    });
+  }
+
+  const theta = Math.acos(Math.min(1, dot));
+  const sinTheta = Math.sin(theta);
+  const wa = Math.sin((1 - t) * theta) / sinTheta;
+  const wb = Math.sin(t * theta) / sinTheta;
+  return quatNormalize({
+    w: wa * a.w + wb * bw,
+    x: wa * a.x + wb * bx,
+    y: wa * a.y + wb * by,
+    z: wa * a.z + wb * bz,
+  });
+}
+
+/**
+ * Bearing of the device's +Y axis (the top of the phone) read out of an
+ * attitude, plus the length of its horizontal projection as confidence.
+ * Agrees with pointingHeading(alpha, beta) for the poses that function accepts;
+ * unlike it, this stays meaningful for an attitude the gyro carried through the
+ * steep part of a swing.
+ */
+export function pointingFromQuat(q) {
+  // R(q) * (0,1,0) — the middle column of the rotation matrix. Only the
+  // horizontal components matter for a bearing.
+  const east = 2 * (q.x * q.y - q.w * q.z);
+  const north = q.w * q.w - q.x * q.x + q.y * q.y - q.z * q.z;
+
+  return {
+    headingDeg: (Math.atan2(east, north) * 180) / Math.PI,
+    confidence: Math.hypot(east, north),
   };
 }
 
@@ -303,14 +415,26 @@ export class MotionSource {
     this.latest = null;
     this.running = false;
 
-    // Last heading the phone was pointing while it was still well-conditioned, and
-    // the heading captured at calibration. Held rather than recomputed through the
-    // steep middle of a swing, where the pointing direction is meaningless — see
-    // pointingHeading. This is what makes "point at the screen and let go" work:
-    // the aim comes from the pose you aimed in, not from wherever the phone happened
-    // to be flailing at the instant of release.
+    // Full device attitude, integrated from the gyro at the sensor rate and slowly
+    // corrected toward the fused deviceorientation reading. The bearing below is
+    // READ OUT of this whenever the phone points somewhere near the horizon, and
+    // held through the steep middle of a swing where a bearing means nothing — but
+    // the attitude keeps integrating there, so every degree of turn applied while
+    // the phone was steep is still present in the bearing that comes back out.
+    this._attitude = null;
+
+    // Bearing of the phone's +Y axis, and the bearing captured at calibration.
     this.headingDeg = null;
     this.referenceHeading = null;
+
+    // Set when a grip was taken before the first confident heading existed; the
+    // reference latches the moment one does — see calibrate().
+    this._awaitingReferenceHeading = false;
+
+    // Called with every normalized sample. The aim stream hangs off this so a
+    // frame leaves the phone the instant the sensor produced it, instead of
+    // waiting for a timer tick to come around.
+    this.onSample = null;
 
     // Last gyro-derived turn rate, deg/s. Also decides how far the fused orientation
     // reading is allowed to pull the estimate — see _onOrientation.
@@ -349,12 +473,37 @@ export class MotionSource {
   calibrate() {
     this.reference = { ...this.latestOrientation };
     this.referenceHeading = this.headingDeg;
+
+    // Gripped before the first confident heading fix (first turn of a session, or
+    // the phone held steep): latch the reference the moment a heading exists,
+    // instead of pinning dYaw to zero for the whole grip and sending every rock
+    // dead straight regardless of aim.
+    this._awaitingReferenceHeading = this.headingDeg === null;
+
     this.gravityFilter.reset();
     this.buffer.clear();
   }
 
   hasReference() {
     return this.reference !== null;
+  }
+
+  /**
+   * Read the bearing out of the integrated attitude. Held (not updated) while the
+   * horizontal projection of the pointing axis is too short to mean anything; the
+   * attitude keeps integrating regardless, so the first well-conditioned pose
+   * after a steep swing yields a bearing with the whole swing accounted for.
+   */
+  _refreshHeading() {
+    const { headingDeg, confidence } = pointingFromQuat(this._attitude);
+    if (confidence < MIN_POINTING_CONFIDENCE) return;
+
+    this.headingDeg = headingDeg;
+
+    if (this._awaitingReferenceHeading) {
+      this.referenceHeading = headingDeg;
+      this._awaitingReferenceHeading = false;
+    }
   }
 
   _onOrientation(event) {
@@ -368,16 +517,21 @@ export class MotionSource {
       gamma: event.gamma ?? 0,
     };
 
-    // Only trust the heading while the phone is actually pointing somewhere on the
-    // horizon. Through the steep part of a swing this keeps the last good value
-    // instead of tracking a direction that flips 180 degrees over two degrees of tilt.
-    const { headingDeg, confidence } = pointingHeading(
+    // Only trust the fused pose while the phone is actually pointing somewhere on
+    // the horizon — near vertical its Euler angles are degenerate (see
+    // pointingHeading) and would steer the attitude with garbage. Through the
+    // steep part of a swing the gyro carries the attitude alone.
+    const { confidence } = pointingHeading(
       this.latestOrientation.alpha, this.latestOrientation.beta);
 
     if (confidence < MIN_POINTING_CONFIDENCE) return;
 
-    if (this.headingDeg === null) {
-      this.headingDeg = headingDeg;
+    const fused = quatFromEuler(
+      this.latestOrientation.alpha, this.latestOrientation.beta, this.latestOrientation.gamma);
+
+    if (this._attitude === null) {
+      this._attitude = fused;
+      this._refreshHeading();
       return;
     }
 
@@ -389,8 +543,8 @@ export class MotionSource {
     const trust = clamp(
       1 - Math.abs(this.headingRateDegPerSec) / FAST_ROTATION_DEG_PER_SEC, 0, 1);
 
-    this.headingDeg += HEADING_CORRECTION_GAIN * trust *
-      shortestAngleDelta(headingDeg, this.headingDeg);
+    this._attitude = quatSlerp(this._attitude, fused, HEADING_CORRECTION_GAIN * trust);
+    this._refreshHeading();
   }
 
   _onMotion(event) {
@@ -407,17 +561,21 @@ export class MotionSource {
 
     const rotationRate = readRotationRate(event);
 
-    // Advance the heading by the gyro at the full sensor rate. This is the half of the
-    // filter that makes a fast swing survive: orientation events arrive on their own,
-    // slower schedule and are already stale when they do, so between them the heading
-    // would otherwise sit frozen at a value from tens of milliseconds ago — and the
-    // release frame would report exactly that stale angle.
+    // Turn-speed signal only (the debug display, and the trust gate in
+    // _onOrientation). The heading itself no longer integrates this scalar: near
+    // vertical it is singular, and the old freeze-past-70° gate silently
+    // discarded every degree of turn applied through the steep part of a swing.
     this.headingRateDegPerSec = headingRateFromGyro(
       this.latestOrientation.beta, this.latestOrientation.gamma, rotationRate);
 
-    const forwardLean = Math.cos((this.latestOrientation.beta * Math.PI) / 180);
-    if (this.headingDeg !== null && forwardLean >= MIN_POINTING_CONFIDENCE) {
-      this.headingDeg += this.headingRateDegPerSec * (dtMs / 1000);
+    // Advance the full attitude by the gyro at the sensor rate. This is the half
+    // of the filter that makes a fast swing survive: orientation events arrive on
+    // their own, slower schedule and are already stale when they do, so between
+    // them the attitude would otherwise sit frozen at a pose from tens of
+    // milliseconds ago — and the release frame would report exactly that stale angle.
+    if (this._attitude !== null) {
+      this._attitude = quatIntegrate(this._attitude, rotationRate, dtMs);
+      this._refreshHeading();
     }
 
     const linearRaw = this.gravityFilter.update(accel, dtMs);
@@ -450,5 +608,6 @@ export class MotionSource {
 
     this.latest = sample;
     this.buffer.push(sample);
+    this.onSample?.(sample);
   }
 }

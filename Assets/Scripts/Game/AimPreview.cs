@@ -10,7 +10,7 @@ namespace Game
     /// </summary>
     /// <remarks>
     /// Smoothing is not polish here, it is what makes the feature work: AIM frames
-    /// arrive at only ~20Hz over a jittery connection, so applying them raw looks
+    /// arrive at ~60Hz over a jittery connection, so applying them raw looks
     /// choppy. Values are smoothed toward their targets every frame instead.
     ///
     /// The arc comes from SkipPhysics.Predict — the same solver the live throw uses,
@@ -81,6 +81,10 @@ namespace Game
 
         private readonly List<Vector3> _path = new(512);
 
+        // Reused every frame — the arc redraws while aiming, and allocating a fresh
+        // ~500-element array per frame put steady GC pressure on the input path.
+        private Vector3[] _pathBuffer = new Vector3[512];
+
         private int _lastSeq = -1;
         private string _lastAimPlayer;
         private float _lastAimTime = -999f;
@@ -148,7 +152,7 @@ namespace Game
             HasSignal = Time.time - _lastAimTime <= staleAfterSeconds;
 
             // Smooth every frame regardless of packet arrival — this is what turns
-            // 20Hz of network data into something that reads as continuous motion.
+            // jittery network data into something that reads as continuous motion.
             _curAim = Mathf.SmoothDampAngle(_curAim, _targetAim, ref _velAim, smoothTime);
             _curAttack = Mathf.SmoothDampAngle(_curAttack, _targetAttack, ref _velAttack, smoothTime);
             _curRoll = Mathf.SmoothDampAngle(_curRoll, _targetRoll, ref _velRoll, smoothTime);
@@ -195,8 +199,15 @@ namespace Game
 
             // Within one player, this is still the ordering guard it was meant to be:
             // TCP preserves order per socket, but a reconnect can interleave, and a
-            // stale frame overwriting a newer one looks like a stutter.
-            if (aim.seq <= _lastSeq) return;
+            // stale frame overwriting a newer one looks like a stutter. A LARGE
+            // backward jump is different — a reloaded controller page restarts its
+            // counter at 1, and without a resync every frame it ever sends is
+            // silently dropped and its preview is dead for the rest of the session.
+            if (aim.seq <= _lastSeq)
+            {
+                if (_lastSeq - aim.seq < 1000) return;
+                _lastSeq = -1;
+            }
             _lastSeq = aim.seq;
 
             // First frame of a new aim, rather than a continuation of one in progress.
@@ -246,7 +257,12 @@ namespace Game
             PredictedDistance = Vector3.Distance(throwOrigin.position, final.Position);
 
             _line.positionCount = _path.Count;
-            _line.SetPositions(_path.ToArray());
+            if (_pathBuffer.Length < _path.Count)
+            {
+                _pathBuffer = new Vector3[Mathf.NextPowerOfTwo(_path.Count)];
+            }
+            _path.CopyTo(_pathBuffer);
+            _line.SetPositions(_pathBuffer); // copies positionCount entries
 
             // Green when the angle is working, red when the stone is going to plough in.
             var health = Mathf.Clamp01(PredictedSkips / 5f);
@@ -261,9 +277,12 @@ namespace Game
 
             // Built on ThrowForward, not on world axes, so the ghost tilts about the
             // same heading the arc leaves along. Then pitch by the stone's face angle,
-            // yaw by aim, roll by wrist tilt.
+            // yaw by aim, roll by wrist tilt. The face angle includes the same offset
+            // the solver applies (SkipPhysics: attack + AttackAngleOffsetDeg), so the
+            // ghost shows the attitude the physics actually simulates; negative
+            // X-euler is nose-up for a +Z-facing object.
             _ghost.rotation = Quaternion.LookRotation(ThrowForward, Vector3.up)
-                            * Quaternion.Euler(-_curAttack, _curAim, _curRoll);
+                            * Quaternion.Euler(-(_curAttack + tuning.AttackAngleOffsetDeg), _curAim, _curRoll);
 
             var scale = Mathf.Lerp(1f, 1.35f, _curWindup);
             _ghost.localScale = new Vector3(0.45f * scale, 0.08f * scale, 0.45f * scale);

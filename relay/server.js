@@ -42,6 +42,14 @@ const MAX_PLAYER_ID_LENGTH = 16;
 // tunnel, so it takes a bound rather than trusting the caller.
 const MAX_QR_DATA_LENGTH = 512;
 
+// Latest-value-wins streams: when the destination socket is backed up, delivering
+// these late is strictly worse than not delivering them at all, because a fresher
+// frame is at most a sensor tick behind. TCP would otherwise queue every stale
+// frame and replay the whole backlog in order. The relay stays game-agnostic
+// apart from this two-entry drop list.
+const LATEST_WINS_TYPES = new Set(['AIM', 'SPECTATE']);
+const BACKPRESSURE_BYTES = 4096;
+
 /** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number}>} */
 const rooms = new Map();
 
@@ -66,6 +74,13 @@ function send(ws, payload) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
   }
+}
+
+/** Pre-serialized send, so a broadcast stringifies once, not once per recipient. */
+function sendRaw(ws, json, dropWhenCongested = false) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (dropWhenCongested && ws.bufferedAmount > BACKPRESSURE_BYTES) return;
+  ws.send(json);
 }
 
 function sendError(ws, code, message) {
@@ -106,6 +121,18 @@ function closeRoom(room, reason) {
     playerWs.close(1000, reason);
   }
   room.players.clear();
+
+  // Tell the host too, and clear its registration so a re-sent CREATE_ROOM
+  // succeeds. Without this an idle-swept room left the Unity host alive but
+  // permanently bricked: every broadcast hit NOT_IN_ROOM and CREATE_ROOM bounced
+  // off ALREADY_REGISTERED, with no way back short of restarting the game.
+  // When the host itself disconnected, the send is a no-op on a closed socket.
+  send(room.host, { type: 'ROOM_CLOSED', reason });
+  if (room.host.meta) {
+    room.host.meta.role = null;
+    room.host.meta.roomCode = null;
+  }
+
   rooms.delete(room.code);
   log(`room ${room.code} closed (${reason})`);
 }
@@ -162,6 +189,20 @@ function handleJoinRoom(ws, data) {
     return;
   }
 
+  // A connection already registered as a player that joins again under a
+  // different name or room would otherwise leave its old slot pointing at this
+  // socket forever — a ghost that counts toward the room cap, never gets a
+  // PLAYER_LEFT, and shows a stale name on the TV.
+  if (ws.meta.role === 'player' && ws.meta.roomCode &&
+      (ws.meta.roomCode !== code || ws.meta.playerId !== playerId)) {
+    const oldRoom = rooms.get(ws.meta.roomCode);
+    if (oldRoom && oldRoom.players.get(ws.meta.playerId) === ws) {
+      oldRoom.players.delete(ws.meta.playerId);
+      send(oldRoom.host, { type: 'PLAYER_LEFT', playerId: ws.meta.playerId });
+      log(`room ${oldRoom.code}: ${ws.meta.playerId} left (rejoined as someone else)`);
+    }
+  }
+
   const existing = room.players.get(playerId);
   const isReconnect = Boolean(existing);
 
@@ -198,6 +239,11 @@ function relayToHost(ws, data) {
   room.lastActivity = Date.now();
   // Stamp the sender server-side so a phone cannot spoof another player.
   data.playerId = ws.meta.playerId;
+
+  // Latest-wins streams are dropped rather than queued behind a backed-up host
+  // socket — a queued AIM frame is already obsolete by the time it would drain.
+  if (LATEST_WINS_TYPES.has(data.type) && room.host.bufferedAmount > BACKPRESSURE_BYTES) return;
+
   send(room.host, data);
 }
 
@@ -210,14 +256,19 @@ function relayToPlayers(ws, data) {
   }
   room.lastActivity = Date.now();
 
+  const dropWhenCongested = LATEST_WINS_TYPES.has(data.type);
+  const json = JSON.stringify(data);
+
   if (data.targetPlayerId) {
-    const target = room.players.get(String(data.targetPlayerId).toUpperCase());
-    if (target) send(target, data);
+    // Sanitized with the same rules used when the key was stored, or a long name
+    // can never match its truncated slot.
+    const target = room.players.get(sanitizePlayerId(data.targetPlayerId) ?? '');
+    if (target) sendRaw(target, json, dropWhenCongested);
     return;
   }
 
   for (const [, playerWs] of room.players) {
-    send(playerWs, data);
+    sendRaw(playerWs, json, dropWhenCongested);
   }
 }
 
@@ -247,8 +298,10 @@ function serveStatic(req, res) {
   const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
   const resolved = nodePath.resolve(STATIC_DIR, relative);
 
-  // Refuse anything that escapes the static root.
-  if (!resolved.startsWith(STATIC_DIR)) {
+  // Refuse anything that escapes the static root. The path-separator check
+  // matters: a bare prefix test also accepts sibling directories whose names
+  // merely start with "controller".
+  if (resolved !== STATIC_DIR && !resolved.startsWith(STATIC_DIR + nodePath.sep)) {
     res.writeHead(403).end('Forbidden');
     return;
   }
@@ -363,7 +416,9 @@ wss.on('connection', (ws) => {
         handleJoinRoom(ws, data);
         return;
       case 'PING':
-        send(ws, { type: 'PONG' });
+        // Echo the client's timestamp so it can measure round-trip time — the
+        // number that separates tunnel latency from everything the code owns.
+        send(ws, { type: 'PONG', t: typeof data.t === 'number' ? data.t : undefined });
         return;
       default:
         if (ws.meta.role === 'player') relayToHost(ws, data);

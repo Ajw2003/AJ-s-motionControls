@@ -75,7 +75,19 @@ namespace Managers
 
             EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnPlayerJoined);
             EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnPlayerLeft);
-            EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, _ => NextTurn());
+            EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
+        }
+
+        private void OnThrowCompleted(ThrowCompletedEvent e)
+        {
+            // Only the active player's rock advances the turn. When the active player
+            // disconnects mid-flight, OnPlayerLeft has already handed the turn on —
+            // the orphaned rock landing later must not advance it a second time and
+            // cost the newly-promoted player their throw.
+            if (Phase != MatchPhase.Playing) return;
+            if (!string.IsNullOrEmpty(e.PlayerId) && e.PlayerId != ActivePlayer) return;
+
+            NextTurn();
         }
 
         private void Update()

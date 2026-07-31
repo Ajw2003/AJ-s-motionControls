@@ -24,7 +24,13 @@ import {
   MotionSource,
   headingRateFromGyro,
   FAST_ROTATION_DEG_PER_SEC,
+  quatFromEuler,
+  quatIntegrate,
+  quatSlerp,
+  pointingFromQuat,
 } from './js/sensors.js';
+
+import { RelayConnection } from './js/net.js';
 
 import {
   computeThrowDescriptor,
@@ -368,7 +374,6 @@ console.log('\nThrowController.release fallback');
     const sent = [];
     const c = new ThrowController(makeMotion(realSwing[10], realSwing), {
       onThrow: (p) => sent.push(p),
-      aimHz: 1000,
     });
     c.grip();
     const d = c.release();
@@ -383,7 +388,6 @@ console.log('\nThrowController.release fallback');
     const fumble = [makeSample(0, 1), makeSample(10, 2)];
     const c = new ThrowController(makeMotion(fumble[1], fumble), {
       onThrow: (p) => sent.push(p),
-      aimHz: 1000,
     });
     c.grip();
     check('a fumble on a real device stays a fumble',
@@ -395,7 +399,6 @@ console.log('\nThrowController.release fallback');
     const sent = [];
     const c = new ThrowController(makeMotion(null, []), {
       onThrow: (p) => sent.push(p),
-      aimHz: 1000,
     });
     c.grip();
     const d = c.release();
@@ -409,7 +412,6 @@ console.log('\nThrowController.release fallback');
     const sent = [];
     const c = new ThrowController(makeMotion(null, []), {
       onThrow: (p) => sent.push(p),
-      aimHz: 1000,
     });
     check('release without grip sends nothing',
       c.release() === null && sent.length === 0);
@@ -447,6 +449,62 @@ console.log('\nheadingRateFromGyro');
 
   check('a near-vertical phone reports no rate rather than exploding',
     headingRateFromGyro(90, 0, rate(300)) === 0);
+}
+
+// ------------------------------------------------------------- quaternion attitude
+console.log('\nquaternion attitude');
+{
+  const rate = (alpha, beta = 0, gamma = 0) => ({ alpha, beta, gamma });
+
+  // The attitude read-out must agree with the Euler-based pointingHeading for the
+  // poses that function accepts. gamma varies to prove roll cannot move the bearing.
+  for (const [a, b] of [[0, 0], [30, 20], [-70, 45], [120, -30], [200, 60]]) {
+    const fromQuat = pointingFromQuat(quatFromEuler(a, b, 25));
+    const fromEuler = pointingHeading(a, b);
+    check(`readout matches pointingHeading at alpha ${a}, beta ${b}`,
+      Math.abs(shortestAngleDelta(fromQuat.headingDeg, fromEuler.headingDeg)) < 1e-9 &&
+        near(fromQuat.confidence, Math.abs(fromEuler.confidence), 1e-9),
+      `${fromQuat.headingDeg.toFixed(4)} vs ${fromEuler.headingDeg.toFixed(4)}`);
+  }
+
+  // A level phone spinning about the screen normal: alpha counts counter-clockwise,
+  // the bearing clockwise.
+  let q = quatFromEuler(0, 0, 0);
+  for (let i = 0; i < 50; i++) q = quatIntegrate(q, rate(90), 20); // 90 deg/s for 1s
+  check('integrating a level spin turns the bearing the opposite way',
+    near(shortestAngleDelta(pointingFromQuat(q).headingDeg, -90), 0, 1e-6),
+    pointingFromQuat(q).headingDeg.toFixed(3));
+
+  // THE CASE THAT KILLED THE SCALAR WORLD-YAW ATTEMPT, preserved by construction:
+  // rolling a tilted phone about its own long axis sweeps a large world-vertical
+  // rotation while the top of the phone keeps pointing exactly where it did.
+  q = quatFromEuler(0, 55, 0);
+  const beforeRoll = pointingFromQuat(q).headingDeg;
+  for (let i = 0; i < 50; i++) q = quatIntegrate(q, rate(0, 0, 250), 20);
+  check('rolling a tilted phone leaves the attitude bearing unchanged',
+    near(shortestAngleDelta(pointingFromQuat(q).headingDeg, beforeRoll), 0, 1e-6),
+    `${beforeRoll.toFixed(3)} -> ${pointingFromQuat(q).headingDeg.toFixed(3)}`);
+
+  // Yaw applied while the phone is vertical must survive. The old scalar
+  // integration froze past ~70 degrees of pitch and lost it entirely.
+  q = quatFromEuler(0, 0, 0);
+  q = quatIntegrate(q, rate(0, 900, 0), 100);  // pitch +90: pointing straight up
+  check('confidence collapses while vertical, so the bearing is held, not read',
+    pointingFromQuat(q).confidence < MIN_POINTING_CONFIDENCE,
+    pointingFromQuat(q).confidence.toFixed(4));
+  q = quatIntegrate(q, rate(0, 0, 400), 100);  // 40 degrees about device Y while up
+  q = quatIntegrate(q, rate(0, -900, 0), 100); // pitch back down level
+  check('yaw applied while vertical survives the round trip',
+    near(pointingFromQuat(q).headingDeg, -40, 1e-6),
+    pointingFromQuat(q).headingDeg.toFixed(3));
+
+  // Slerp endpoints and midpoint, which is all the correction filter asks of it.
+  const qa = quatFromEuler(0, 0, 0);
+  const qb = quatFromEuler(40, 0, 0);
+  const at = (t) => pointingFromQuat(quatSlerp(qa, qb, t)).headingDeg;
+  check('slerp t=0 returns the start', near(shortestAngleDelta(at(0), 0), 0, 1e-9));
+  check('slerp t=1 returns the end', near(shortestAngleDelta(at(1), -40), 0, 1e-9));
+  check('slerp midpoint lands halfway', near(shortestAngleDelta(at(0.5), -20), 0, 1e-9));
 }
 
 // ------------------------------------------------ aim tracks live, right to release
@@ -571,6 +629,92 @@ console.log('\ngyro integration');
   if (!hadWindow) delete globalThis.window;
 }
 
+// ---------------------------------------- reference latches once a heading exists
+console.log('\ncalibrate before the first heading fix');
+{
+  const hadWindow = 'window' in globalThis;
+  if (!hadWindow) globalThis.window = { screen: {} };
+
+  const motion = new MotionSource({ gravityK: 0.8 });
+  const move = () => motion._onMotion({
+    accelerationIncludingGravity: { x: 0, y: 0, z: 9.8 },
+    rotationRate: { alpha: 0, beta: 0, gamma: 0 },
+  });
+
+  // Grip before any orientation event: no heading exists yet. This used to pin
+  // dYaw to zero for the entire grip — every first-turn rock flew dead straight.
+  move();
+  motion.calibrate();
+  move();
+  check('dYaw is zero while no heading exists', motion.latest.dYaw === 0);
+  check('the reference is pending rather than permanently null',
+    motion.referenceHeading === null);
+
+  // The first confident fix arrives mid-grip: the reference latches to it...
+  motion._onOrientation({ alpha: 30, beta: 10, gamma: 0 });
+  check('reference latches on the first confident heading',
+    motion.referenceHeading !== null && near(motion.referenceHeading, -30, 1e-6),
+    `${motion.referenceHeading}`);
+
+  // ...so aim measured from there works for the rest of the grip.
+  for (let i = 0; i < 200; i++) motion._onOrientation({ alpha: 50, beta: 10, gamma: 0 });
+  move();
+  check('aim now tracks relative to the latched reference',
+    near(motion.latest.dYaw, -20, 0.5), motion.latest.dYaw.toFixed(2));
+
+  if (!hadWindow) delete globalThis.window;
+}
+
+// --------------------------------- the swing keeps its yaw through the steep part
+console.log('\nattitude carries yaw through a steep swing');
+{
+  const hadWindow = 'window' in globalThis;
+  if (!hadWindow) globalThis.window = { screen: {} };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const motion = new MotionSource({ gravityK: 0.8 });
+  const spin = (alphaRate, betaRate = 0, gammaRate = 0) => motion._onMotion({
+    accelerationIncludingGravity: { x: 0, y: 0, z: 9.8 },
+    rotationRate: { alpha: alphaRate, beta: betaRate, gamma: gammaRate },
+  });
+
+  motion._onOrientation({ alpha: 0, beta: 0, gamma: 0 });
+  spin(0);
+  motion.calibrate();
+
+  // Pitch up until the bearing is unreadable, gated on the attitude itself so
+  // timer jitter cannot overshoot the pose the test needs.
+  let guard = 0;
+  while (pointingFromQuat(motion._attitude).confidence > 0.2 && guard++ < 60) {
+    await sleep(10);
+    spin(0, 400);
+  }
+  check('the pointing axis went steep',
+    pointingFromQuat(motion._attitude).confidence <= 0.2);
+  const heldMidSwing = motion.headingDeg;
+
+  // Yaw hard while steep: the reported bearing holds...
+  const yawT0 = performance.now();
+  for (let i = 0; i < 6; i++) { await sleep(12); spin(0, 0, 500); }
+  const yawAppliedDeg = 500 * ((performance.now() - yawT0) / 1000);
+  check('the bearing is held, not thrashed, while steep',
+    motion.headingDeg === heldMidSwing, `${motion.headingDeg}`);
+
+  // ...and pitching back down recovers a bearing that carries that yaw. The old
+  // scalar integration froze at the gate and lost every degree of it.
+  guard = 0;
+  while (pointingFromQuat(motion._attitude).confidence < 0.6 && guard++ < 80) {
+    await sleep(10);
+    spin(0, -400);
+  }
+  const recovered = shortestAngleDelta(motion.headingDeg, heldMidSwing);
+  check('the yaw applied while steep is present in the recovered bearing',
+    recovered < -15 && recovered > -yawAppliedDeg - 30,
+    `moved ${recovered.toFixed(1)} deg (applied ~${yawAppliedDeg.toFixed(0)})`);
+
+  if (!hadWindow) delete globalThis.window;
+}
+
 // --------------------------------------------------------- tap-swing-tap gesture
 console.log('\nTAP gesture');
 {
@@ -584,7 +728,6 @@ console.log('\nTAP gesture');
   for (let i = 0; i <= 10; i++) swing.push(makeSample(i * 10, i * 3));
 
   const tapController = (options = {}) => new ThrowController(makeMotion(swing[10], swing), {
-    aimHz: 1000,
     gesture: ThrowGesture.TAP,
     minArmMs: 0,
     ...options,
@@ -616,7 +759,7 @@ console.log('\nTAP gesture');
     // HOLD mode must be untouched by any of this — it is the fallback.
     const sent = [];
     const c = new ThrowController(makeMotion(swing[10], swing), {
-      onThrow: (p) => sent.push(p), aimHz: 1000, gesture: ThrowGesture.HOLD,
+      onThrow: (p) => sent.push(p), gesture: ThrowGesture.HOLD,
     });
     c.grip();
     check('hold mode still throws on release', c.release() !== null && sent.length === 1);
@@ -630,7 +773,6 @@ console.log('\nTAP gesture');
     const c = tapController({
       onThrow: (p) => sent.push(p),
       onExpire: () => { expired = true; },
-      aimHz: 200,
       maxArmMs: 20,
     });
     c.tap();
@@ -647,7 +789,7 @@ console.log('\nTAP gesture');
     let expired = false;
     const c = new ThrowController(makeMotion(swing[10], swing), {
       onExpire: () => { expired = true; },
-      aimHz: 200, gesture: ThrowGesture.HOLD, maxArmMs: 20,
+      gesture: ThrowGesture.HOLD, maxArmMs: 20,
     });
     c.grip();
 
@@ -656,6 +798,75 @@ console.log('\nTAP gesture');
     check('a held gesture never times out', !expired && c.state === ThrowState.GRIPPED);
     c.cancel();
   }
+}
+
+// ------------------------------------------------------------ event-driven aim
+console.log('\nevent-driven AIM stream');
+{
+  const makeMotion = (latest, samples) => ({
+    latest,
+    buffer: { toArray: () => samples, clear() {} },
+    calibrate() {},
+  });
+
+  const swing = [];
+  for (let i = 0; i <= 10; i++) swing.push(makeSample(i * 10, i * 3));
+
+  const sent = [];
+  const c = new ThrowController(makeMotion(swing[10], swing), {
+    onAim: (p) => sent.push(p),
+    gesture: ThrowGesture.HOLD,
+  });
+
+  c.grip();
+  check('gripping attaches to the sensor stream',
+    typeof c.motion.onSample === 'function');
+
+  // One frame per sample, the instant it lands — no timer between sensor and send.
+  c.motion.onSample(makeSample(0, 10, { dYaw: 5 }));
+  c.motion.onSample(makeSample(16, 11, { dYaw: 6 }));
+  c.motion.onSample(makeSample(33, 12, { dYaw: 7 }));
+  check('one AIM frame per sample, sequenced',
+    sent.length === 3 && sent[0].seq === 1 && sent[2].seq === 3,
+    `${sent.length} frames`);
+  check('each frame carries the sample it was born from', near(sent[2].aimDeg, 7));
+
+  c.release();
+  check('release detaches from the sensor stream', c.motion.onSample === null);
+
+  const c2 = new ThrowController(makeMotion(swing[10], swing), { gesture: ThrowGesture.HOLD });
+  c2.grip();
+  c2.cancel();
+  check('cancel detaches too', c2.motion.onSample === null);
+}
+
+// ----------------------------------------------------------- latest-wins sending
+console.log('\nRelayConnection.sendIfClear');
+{
+  // Node >= 22 has a global WebSocket; provide the one constant used on older runtimes.
+  if (typeof globalThis.WebSocket === 'undefined') globalThis.WebSocket = { OPEN: 1 };
+
+  const conn = new RelayConnection({ url: 'ws://test' });
+  const frames = [];
+  conn.socket = {
+    readyState: WebSocket.OPEN,
+    bufferedAmount: 0,
+    send: (json) => frames.push(json),
+  };
+
+  check('sends while the socket is clear',
+    conn.sendIfClear({ type: 'AIM', seq: 1 }) === true && frames.length === 1);
+
+  conn.socket.bufferedAmount = 1;
+  check('skips the frame while bytes are still queued',
+    conn.sendIfClear({ type: 'AIM', seq: 2 }) === false && frames.length === 1);
+
+  check('send() still transmits regardless of buffering — THROW must always go',
+    conn.send({ type: 'THROW' }) === true && frames.length === 2);
+
+  conn.socket.readyState = 99;
+  check('drops cleanly when the socket is not open',
+    conn.sendIfClear({ type: 'AIM', seq: 3 }) === false && frames.length === 2);
 }
 
 console.log(failures === 0

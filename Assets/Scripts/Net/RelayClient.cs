@@ -31,7 +31,14 @@ namespace Net
     /// ClientWebSocket is thread-affine for sends, so all sends funnel through a
     /// semaphore, and all received messages are marshalled onto the main thread via
     /// a queue drained in Update — Unity APIs cannot be touched from the socket task.
+    ///
+    /// The receive loop MUST stay off the Unity SynchronizationContext (Task.Run +
+    /// ConfigureAwait(false)). When its awaits resumed on the main thread, intake was
+    /// capped at ~one message per rendered frame — against a 60Hz aim stream at
+    /// vsync that is zero headroom, so any hitch built a backlog that never drained
+    /// and the aim preview fell progressively behind the phone.
     /// </remarks>
+    [DefaultExecutionOrder(-100)] // drain the inbound queue before AimPreview reads it
     public class RelayClient : SingletonBase<RelayClient>
     {
         [Tooltip("ws://localhost:3000 for local dev; wss://<your-app>.fly.dev in production.")]
@@ -59,6 +66,13 @@ namespace Net
         private float _retryDelay = 1f;
         private const float MaxRetryDelay = 10f;
 
+        // The receive loop runs on the thread pool where Time.time would throw, so it
+        // raises this flag and Update stamps the retry clock on the main thread.
+        private volatile bool _receiveLoopEnded;
+
+        /// <summary>Messages waiting for the main-thread drain. Diagnostic: should sit at 0–2.</summary>
+        public int PendingInbound => _inbound.Count;
+
         protected override void Awake()
         {
             persistBetweenScenes = true;
@@ -72,10 +86,25 @@ namespace Net
 
         private void Update()
         {
-            // Everything that touches Unity happens here, on the main thread.
+            if (_receiveLoopEnded)
+            {
+                _receiveLoopEnded = false;
+                _nextRetryTime = Time.time + _retryDelay;
+            }
+
+            // Everything that touches Unity happens here, on the main thread. Each
+            // message is guarded individually: one bad payload or throwing subscriber
+            // must not abandon the rest of the queue mid-drain.
             while (_inbound.TryDequeue(out var json))
             {
-                Dispatch(json);
+                try
+                {
+                    Dispatch(json);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
 
             if (!IsConnected && !_connecting && Time.time >= _nextRetryTime)
@@ -103,7 +132,11 @@ namespace Net
                 _retryDelay = 1f;
                 await SendRawAsync($"{{\"type\":\"{MessageType.CreateRoom}\"}}");
 
-                _ = ReceiveLoopAsync(_socket, _cts.Token);
+                // Off the Unity sync context, or every ReceiveAsync resumption waits
+                // for the player loop and intake caps at one message per frame.
+                var socket = _socket;
+                var token = _cts.Token;
+                _ = Task.Run(() => ReceiveLoopAsync(socket, token));
             }
             catch (Exception e)
             {
@@ -127,7 +160,8 @@ namespace Net
             {
                 while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
                 {
-                    var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token)
+                        .ConfigureAwait(false);
 
                     if (result.MessageType == WebSocketMessageType.Close) break;
 
@@ -146,7 +180,8 @@ namespace Net
                 Debug.LogWarning($"[RelayClient] Receive loop ended: {e.Message}");
             }
 
-            _nextRetryTime = Time.time + _retryDelay;
+            // This runs on a pool thread — Unity APIs (Time.time) would throw here.
+            _receiveLoopEnded = true;
         }
 
         private void Dispatch(string json)
@@ -197,6 +232,17 @@ namespace Net
                     ThrowReceived?.Invoke(JsonUtility.FromJson<ThrowMessage>(json));
                     break;
 
+                case MessageType.RoomClosed:
+                {
+                    // The relay idle-sweeps rooms; it also clears this connection's
+                    // registration when it does, so a fresh CREATE_ROOM succeeds and
+                    // the TV gets a new code instead of sitting bricked on a dead one.
+                    Debug.LogWarning("[RelayClient] Room closed by relay — creating a new one");
+                    RoomCode = null;
+                    _ = SendRawAsync($"{{\"type\":\"{MessageType.CreateRoom}\"}}");
+                    break;
+                }
+
                 case MessageType.Error:
                 {
                     var error = JsonUtility.FromJson<ErrorMessage>(json);
@@ -216,12 +262,13 @@ namespace Net
         private async Task SendRawAsync(string json)
         {
             // ClientWebSocket forbids overlapping sends; the semaphore serialises them.
-            await _sendLock.WaitAsync();
+            await _sendLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (_socket?.State != WebSocketState.Open) return;
                 var bytes = Encoding.UTF8.GetBytes(json);
-                await _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+                await _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token)
+                    .ConfigureAwait(false);
             }
             catch (Exception e)
             {
@@ -237,7 +284,9 @@ namespace Net
         {
             _cts?.Cancel();
             _socket?.Dispose();
-            _sendLock.Dispose();
+            // _sendLock is deliberately NOT disposed: an in-flight SendRawAsync may
+            // still be awaiting it, and SemaphoreSlim only needs disposal when its
+            // AvailableWaitHandle has been touched (it never is here).
             EventManager.Instance?.UnsubscribeFromAllEvents(this);
             base.OnDestroy();
         }

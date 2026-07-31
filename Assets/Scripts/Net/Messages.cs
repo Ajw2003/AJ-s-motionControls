@@ -63,8 +63,9 @@ namespace Net
     }
 
     /// <summary>
-    /// Cosmetic aim frame, ~20Hz. Never authoritative — dropping these may only
-    /// degrade the preview, never change a throw's outcome.
+    /// Cosmetic aim frame, streamed at the phone's sensor rate (~60Hz). Never
+    /// authoritative — dropping these may only degrade the preview, never change
+    /// a throw's outcome.
     /// </summary>
     [Serializable]
     public class AimMessage

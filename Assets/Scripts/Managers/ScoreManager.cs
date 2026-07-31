@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using EventSystems;
+using EventTypes.MatchEvents;
 using EventTypes.SkipEvents;
 using Singleton;
 using UnityEngine;
@@ -34,6 +35,15 @@ namespace Managers
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, OnSkipOccurred);
             EventManager.Instance?.Subscribe<RingPassedEvent>(this, OnRingPassed);
             EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
+            EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnTurnStarted);
+        }
+
+        private void OnTurnStarted(TurnStartedEvent e)
+        {
+            // The bucket is global, not per-player. A throw that never completes —
+            // its player disconnected mid-flight, say — would otherwise leave banked
+            // skip points to be silently credited to whoever throws next.
+            _pendingThrowPoints = 0;
         }
 
         private void OnSkipOccurred(SkipOccurredEvent e)

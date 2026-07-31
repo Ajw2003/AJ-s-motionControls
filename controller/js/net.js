@@ -90,6 +90,20 @@ export class RelayConnection {
     return true;
   }
 
+  /**
+   * Latest-wins send for cosmetic streams. Skipped whenever bytes are still queued
+   * on the socket: TCP delivers everything in order, so once the radio stalls,
+   * every buffered AIM frame arrives late and replays a swing the player already
+   * finished. The newest sample is the only one worth sending — a skipped frame
+   * costs nothing because a fresher one is at most a sensor tick away.
+   */
+  sendIfClear(payload) {
+    if (this.socket?.readyState !== WebSocket.OPEN) return false;
+    if (this.socket.bufferedAmount > 0) return false;
+    this.socket.send(JSON.stringify(payload));
+    return true;
+  }
+
   close() {
     this.closedByUs = true;
     this.socket?.close();

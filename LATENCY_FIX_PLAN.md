@@ -1,5 +1,17 @@
 # Latency & Correctness Fix Plan
 
+> **STATUS: IMPLEMENTED (2026-07-31).** All phases landed; controller test suite
+> passes 132/132 (`node controller/test-sensors.js`). One deviation from the plan
+> as written: fix 2.2 was implemented as **full quaternion attitude integration**
+> (see `quatIntegrate`/`pointingFromQuat` in `controller/js/sensors.js`) rather
+> than the scalar world-yaw projection specified below — the repo's own tests
+> document that the scalar world-yaw approach was tried before and rejected
+> because wrist roll on a tilted phone fakes heading change. The quaternion form
+> keeps roll-immunity *and* carries yaw through the steep part of the swing.
+> Remaining manual steps: open the project in Unity to confirm compilation, then
+> run the Phase-0/Verification comparisons on real hardware. Fix 2.4
+> (gyro-filtered pitch/roll) remains deferred by design.
+
 ## Context
 
 Phone rotation lags the in-game aim preview, and the rock is thrown toward a direction that

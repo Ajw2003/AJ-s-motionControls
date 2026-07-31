@@ -3,8 +3,10 @@
  *
  * Two channels leave this module, with deliberately different reliability:
  *
- *   AIM   — streamed ~20Hz while gripped. Lossy and cosmetic. Dropping every one
- *           of these must only make the TV preview stutter, never change a throw.
+ *   AIM   — streamed at the sensor rate (~60Hz) while gripped, each frame sent
+ *           the instant its devicemotion sample lands. Lossy and cosmetic.
+ *           Dropping every one of these must only make the TV preview stutter,
+ *           never change a throw.
  *   THROW — one authoritative payload on release, computed from the whole swing.
  *
  * That split is why a network hiccup can never cause a "the game read my throw
@@ -31,7 +33,7 @@ import { clamp, normalize01 } from './sensors.js';
  */
 let yawSign = 1;
 
-/** @param {number} sign -1 (default) or +1 */
+/** @param {number} sign +1 (default) or -1 */
 export function setYawSign(sign) {
   yawSign = sign < 0 ? -1 : 1;
 }
@@ -61,6 +63,8 @@ export const ThrowTuning = {
   // rock left on a line the player had not chosen. dYaw is already a shortest-angle
   // delta in (-180, 180], so at 180 nothing is clipped and aiming behind you is
   // simply allowed — if a player turns right around, that is a choice they made.
+  // Long-grip drift is bounded by the fused-orientation correction in sensors.js,
+  // not by this clamp.
   maxAimDeg: 180,
 
   minAttackDeg: -60,
@@ -221,13 +225,10 @@ export class ThrowController {
   constructor(motion, {
     onAim, onThrow, onStateChange, onExpire,
 
-    // Matched to the sensor rate rather than the 20Hz the plan specified. 20Hz means
-    // every aim frame is up to 50ms stale before it leaves the phone, which during a
-    // swing is several degrees of error baked in before the network is even involved
-    // — and the arc has to track the swing accurately, not just smoothly. Still only
-    // a few KB/s, and only ever for the one player whose turn it is.
-    aimHz = 60,
-    gesture = ThrowGesture.TAP,
+    // HOLD matches app.js — tap-swing-tap was tried in playtest and reverted
+    // there. The two defaults agreeing means a caller that forgets to pass a
+    // gesture gets the behaviour the app actually ships.
+    gesture = ThrowGesture.HOLD,
     minArmMs = 150,
     maxArmMs = 10_000,
   } = {}) {
@@ -236,7 +237,6 @@ export class ThrowController {
     this.onThrow = onThrow ?? (() => {});
     this.onStateChange = onStateChange ?? (() => {});
     this.onExpire = onExpire ?? (() => {});
-    this.aimIntervalMs = 1000 / aimHz;
 
     this.gesture = gesture;
 
@@ -282,19 +282,27 @@ export class ThrowController {
     this.motion.calibrate();
     this._setState(ThrowState.GRIPPED);
 
-    this._timer = setInterval(() => {
-      // Only TAP mode can be armed-and-forgotten; see maxArmMs.
-      if (this.gesture === ThrowGesture.TAP &&
-          this.maxArmMs > 0 &&
-          performance.now() - this._grippedAt > this.maxArmMs) {
-        this.cancel();
-        this.onExpire();
-        return;
-      }
-
-      const payload = buildAimPayload(this.motion.latest, ++this.seq);
+    // Event-driven, not a timer: a frame leaves the instant its sensor sample
+    // lands, so the arc never shows a value that is a timer tick stale. Flood
+    // control lives in the network layer (sendIfClear), which skips frames while
+    // the socket still has bytes queued.
+    this.motion.onSample = (sample) => {
+      const payload = buildAimPayload(sample, ++this.seq);
       if (payload) this.onAim(payload);
-    }, this.aimIntervalMs);
+    };
+
+    // Only TAP mode can be armed-and-forgotten; see maxArmMs. This clock decides
+    // expiry only — aim cadence comes from the sensor — so it runs slow, scaled
+    // to the deadline it is checking.
+    if (this.gesture === ThrowGesture.TAP && this.maxArmMs > 0) {
+      const checkMs = Math.min(250, Math.max(this.maxArmMs / 2, 5));
+      this._timer = setInterval(() => {
+        if (performance.now() - this._grippedAt > this.maxArmMs) {
+          this.cancel();
+          this.onExpire();
+        }
+      }, checkMs);
+    }
   }
 
   /** Player let go. Analyses the swing and emits exactly one THROW. */
@@ -303,7 +311,7 @@ export class ThrowController {
 
     const holdMs = performance.now() - this._grippedAt;
 
-    this._stopTimer();
+    this._stopAim();
     this._setState(ThrowState.IDLE);
 
     const descriptor = computeThrowDescriptor(this.motion.buffer.toArray());
@@ -333,15 +341,17 @@ export class ThrowController {
 
   /** Turn ended or connection dropped mid-grip — abandon without throwing. */
   cancel() {
-    this._stopTimer();
+    this._stopAim();
     this._setState(ThrowState.IDLE);
   }
 
-  _stopTimer() {
+  /** Stop streaming: detach from the sensor and kill the expiry clock. */
+  _stopAim() {
     if (this._timer !== null) {
       clearInterval(this._timer);
       this._timer = null;
     }
+    this.motion.onSample = null;
   }
 
   _setState(next) {
