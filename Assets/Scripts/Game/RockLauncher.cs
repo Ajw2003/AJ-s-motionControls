@@ -27,6 +27,7 @@ namespace Game
         private Vector3 _cameraHome;
         private Quaternion _cameraHomeRotation;
         private Vector3 _cameraVelocity;
+        private bool _returningHome;
         private float _nextSpectateTime;
 
         public RockController ActiveRock => _active;
@@ -116,13 +117,31 @@ namespace Game
                     _camera.transform.rotation,
                     Quaternion.LookRotation(_active.transform.position - _camera.transform.position),
                     Time.deltaTime * 5f);
+
+                _returningHome = true;
                 return;
             }
+
+            // Parked. Deliberately touch nothing: both of the interpolations below
+            // approach their target asymptotically and never actually arrive, so
+            // running them every idle frame left the aiming camera permanently
+            // creeping by a hair instead of sitting square on to the lake.
+            if (!_returningHome) return;
 
             _camera.transform.position = Vector3.SmoothDamp(
                 _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
             _camera.transform.rotation = Quaternion.Slerp(
                 _camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
+
+            var settled = Vector3.Distance(_camera.transform.position, _cameraHome) < 0.02f &&
+                          Quaternion.Angle(_camera.transform.rotation, _cameraHomeRotation) < 0.1f;
+
+            if (!settled) return;
+
+            // Snap the last hair exactly onto the authored pose, then stop.
+            _camera.transform.SetPositionAndRotation(_cameraHome, _cameraHomeRotation);
+            _cameraVelocity = Vector3.zero;
+            _returningHome = false;
         }
 
         private void BroadcastLiveState()

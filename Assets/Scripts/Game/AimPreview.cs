@@ -255,18 +255,27 @@ namespace Game
 
         private void BuildPlaceholderScene()
         {
+            // Square, and starting at the player's feet rather than floating ahead of
+            // them. A Unity plane is 10 units per unit of scale, so this is 200x200.
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "PlaceholderWater";
-            water.transform.position = new Vector3(0f, tuning.WaterY, 60f);
-            water.transform.localScale = new Vector3(12f, 1f, 20f);
+            water.transform.position = new Vector3(0f, tuning.WaterY, 100f);
+            water.transform.localScale = new Vector3(20f, 1f, 20f);
             Destroy(water.GetComponent<Collider>());
             water.GetComponent<MeshRenderer>().material = CreateUnlitMaterial(new Color(0.06f, 0.16f, 0.28f));
 
             var camera = Camera.main;
             if (camera == null) return;
 
-            camera.transform.position = new Vector3(-5f, 4.5f, -7f);
-            camera.transform.LookAt(new Vector3(0f, 0f, 14f));
+            // Square on to the lake, looking straight down +Z with no yaw, pitch or
+            // roll. Any rotation here is a rotation the player has to unconsciously
+            // correct for: a camera even a few degrees off-axis makes a dead-centre
+            // throw visibly drift, and ThrowForward inherits whatever tilt is left in.
+            // Identity rotation is what makes "straight" mean the same thing to the
+            // solver, the preview, and the person holding the phone.
+            camera.transform.SetPositionAndRotation(
+                new Vector3(0f, 3.5f, -9f), Quaternion.identity);
+
             camera.backgroundColor = new Color(0.05f, 0.09f, 0.15f);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 500f;

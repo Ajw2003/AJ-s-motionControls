@@ -63,11 +63,21 @@ A side effect worth keeping: wrist roll (`gamma`) cannot change where the top of
 phone points, so aim is immune to it for free.
 
 **In Unity**, `aimDeg = 0` means "along `AimPreview.ThrowForward`", which is derived
-from the aiming camera flattened onto the horizontal plane — not world +Z. Straight has
-to mean straight *to the player looking at the TV*; with a hardcoded forward, a camera
-framed even slightly off-axis makes a centred throw visibly drift and no amount of
-correct phone aiming can fix it. The preview arc, the ghost rock and the live throw all
-read the same value, so the preview cannot promise a line the throw does not take.
+from the aiming camera flattened onto the horizontal plane. Straight has to mean
+straight *to the player looking at the TV*; a camera framed even slightly off-axis makes
+a centred throw visibly drift, and no amount of correct phone aiming can fix it. The
+preview arc, the ghost rock and the live throw all read the same value, so the preview
+cannot promise a line the throw does not take.
+
+The aiming camera is therefore square on to the lake — identity rotation, looking
+straight down +Z, so `ThrowForward` comes out as exactly +Z. Keep it that way when the
+real lake is authored: any yaw left in the aiming view is yaw the player has to
+unconsciously correct for.
+
+The camera only moves while a rock is in flight. Once it has returned it snaps exactly
+onto the home pose and stops being touched at all — the smoothing used to run every
+idle frame, and since both interpolations approach their target asymptotically, the
+aiming view never quite settled.
 
 Bearings and Unity's yaw are both clockwise-from-above, so the sign passes straight
 through. If a platform turns out to disagree, open the controller with `?yawSign=-1` to
