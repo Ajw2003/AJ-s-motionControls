@@ -44,6 +44,35 @@ Open the **Bootstrap** scene and press Play. `LocalServices` then:
 
 Players scan the QR — it pre-fills the room code via `?room=CODE` — and type only a name.
 
+## How aiming works
+
+Two conventions have to agree, and both were wrong in the first playtest.
+
+**On the phone**, aim is the compass bearing of the direction the top of the phone
+points — derived from the device's full rotation and projected onto the ground, *not*
+from the DeviceOrientation `alpha` angle. Alpha is a Euler yaw and is degenerate near
+vertical: at `beta = 89` a phone reads a bearing of -30°, and at `beta = 91` the same
+phone reads +150°. A throwing swing sweeps straight through that singularity, so
+physically straight throws veered hard left or right depending on where in the arc the
+release landed. `pointingHeading` returns a `confidence` alongside the bearing, and the
+heading is only updated while the phone is actually pointing at the horizon — through
+the steep middle of a swing the last good bearing is held. That is what makes "point at
+the screen and let go" behave.
+
+A side effect worth keeping: wrist roll (`gamma`) cannot change where the top of the
+phone points, so aim is immune to it for free.
+
+**In Unity**, `aimDeg = 0` means "along `AimPreview.ThrowForward`", which is derived
+from the aiming camera flattened onto the horizontal plane — not world +Z. Straight has
+to mean straight *to the player looking at the TV*; with a hardcoded forward, a camera
+framed even slightly off-axis makes a centred throw visibly drift and no amount of
+correct phone aiming can fix it. The preview arc, the ghost rock and the live throw all
+read the same value, so the preview cannot promise a line the throw does not take.
+
+Bearings and Unity's yaw are both clockwise-from-above, so the sign passes straight
+through. If a platform turns out to disagree, open the controller with `?yawSign=-1` to
+confirm it on the device before changing any code.
+
 ## Match flow
 
 `TurnManager` owns a three-phase lifecycle, and nothing advances on its own:

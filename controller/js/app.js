@@ -36,10 +36,9 @@ const ui = {
 // The right value depends on the device's real sample rate — tune on hardware.
 const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) || 0.8;
 
-// Which way device yaw maps onto game yaw. Default -1 is derived from the specs
-// (DeviceOrientation alpha counts counter-clockwise, Unity's yaw clockwise), and is
-// what Android needs. Overridable per-device — open the controller with ?yawSign=1
-// on a handset that steers backwards to confirm the platforms disagree, without a
+// Which way device heading maps onto game yaw. Both are clockwise-from-above, so the
+// default is +1. Overridable per-device — open the controller with ?yawSign=-1 on a
+// handset that steers backwards, to find out whether the platforms disagree without a
 // redeploy. See the comment on setYawSign in throw.js.
 const YAW_SIGN = Number(new URLSearchParams(location.search).get('yawSign'));
 if (YAW_SIGN === 1 || YAW_SIGN === -1) setYawSign(YAW_SIGN);
@@ -265,9 +264,14 @@ function updateDebug() {
     `state    ${thrower.state}   seq ${thrower.seq}`,
     `socket   ${connection?.status ?? 'not connected'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
-    s ? `dA ${s.dAlpha.toFixed(1).padStart(7)}  dB ${s.dBeta.toFixed(1).padStart(7)}  dG ${s.dGamma.toFixed(1).padStart(7)}`
+    // "held" means the phone is currently too steep for its bearing to mean anything,
+    // so aim is coasting on the last good one — the normal state mid-swing.
+    `heading  ${motion.headingDeg === null ? 'none' : motion.headingDeg.toFixed(1)}` +
+      `${motion.hasReference() && motion.headingDeg !== null ? '' : '  (held)'}`,
+    s ? `dYaw ${s.dYaw.toFixed(1).padStart(7)}  dB ${s.dBeta.toFixed(1).padStart(7)}  dG ${s.dGamma.toFixed(1).padStart(7)}`
       : 'no samples yet — is this page on HTTPS?',
-    s ? `power ${s.power.toFixed(2).padStart(6)} m/s²   samples ${motion.buffer.length}   k=${GRAVITY_K}` : '',
+    s ? `power ${s.power.toFixed(2).padStart(6)} m/s²   samples ${motion.buffer.length}   ` +
+        `${motion.sampleHz.toFixed(0)}Hz   k=${GRAVITY_K}` : '',
     lastThrow
       ? `throw  pow ${lastThrow.power.toFixed(2)} tim ${lastThrow.timingQuality.toFixed(2)} aim ${lastThrow.aimDeg.toFixed(0)} atk ${lastThrow.attackAngleDeg.toFixed(0)} spin ${lastThrow.spinRate.toFixed(0)}`
       : 'no throw yet',

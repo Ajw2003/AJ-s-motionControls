@@ -90,8 +90,10 @@ namespace Game
             var tuning = _preview.Tuning;
             var stats = RockStats.Default;
 
+            // Same forward the preview drew with — a live throw down a different axis
+            // than the arc promised would make the preview a liar.
             var launch = SkipPhysics.CreateLaunch(
-                _preview.ThrowOrigin.position, Vector3.forward,
+                _preview.ThrowOrigin.position, _preview.ThrowForward,
                 message.power, message.timingQuality,
                 message.aimDeg, message.attackAngleDeg, message.spinRate,
                 stats, tuning);

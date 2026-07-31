@@ -19,6 +19,8 @@ import {
   RingBuffer,
   readAcceleration,
   readRotationRate,
+  pointingHeading,
+  MIN_POINTING_CONFIDENCE,
 } from './js/sensors.js';
 
 import {
@@ -49,7 +51,7 @@ function makeSample(t, power, extra = {}) {
     t,
     linear: { x: power, y: 0, z: 0 },
     power,
-    dAlpha: extra.dAlpha ?? 0,
+    dYaw: extra.dYaw ?? 0,
     dBeta: extra.dBeta ?? 0,
     dGamma: extra.dGamma ?? 0,
     rotationRate: extra.rotationRate ?? { alpha: 0, beta: 0, gamma: 0 },
@@ -180,11 +182,10 @@ console.log('\ncomputeThrowDescriptor');
   check('empty input returns null', computeThrowDescriptor([]) === null);
   check('null input returns null', computeThrowDescriptor(null) === null);
 
-  // Clamping at release. Note the aim sign: device yaw is negated into game yaw,
-  // so a positive dAlpha (phone turned left) clamps to the NEGATIVE limit.
-  const wild = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 90, dBeta: -120, dGamma: 17 })];
+  // Clamping at release.
+  const wild = [makeSample(0, 5), makeSample(10, 30, { dYaw: 90, dBeta: -120, dGamma: 17 })];
   const dWild = computeThrowDescriptor(wild);
-  check('aim clamps to +/-45', dWild.aimDeg === -ThrowTuning.maxAimDeg, `${dWild.aimDeg}`);
+  check('aim clamps to +/-45', dWild.aimDeg === ThrowTuning.maxAimDeg, `${dWild.aimDeg}`);
   check('attack angle clamps to its floor', dWild.attackAngleDeg === ThrowTuning.minAttackDeg);
   check('roll is passed through unclamped', dWild.rollDeg === 17);
 
@@ -210,37 +211,75 @@ console.log('\ncomputeThrowDescriptor');
 // ---------------------------------------------------------------- aim payload
 console.log('\nbuildAimPayload');
 {
-  const payload = buildAimPayload(makeSample(0, 20, { dAlpha: 60, dBeta: 22, dGamma: 3 }), 42);
+  const payload = buildAimPayload(makeSample(0, 20, { dYaw: 60, dBeta: 22, dGamma: 3 }), 42);
   check('carries a sequence number', payload.seq === 42);
   check('is typed AIM', payload.type === 'AIM');
-  check('aim is clamped like a throw', payload.aimDeg === -ThrowTuning.maxAimDeg);
+  check('aim is clamped like a throw', payload.aimDeg === ThrowTuning.maxAimDeg);
   check('attack angle survives', payload.attackAngleDeg === 22);
   check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
 }
 
-// ---------------------------------------------------------------- aim yaw sign
-console.log('\ndevice yaw -> game yaw');
+// ------------------------------------------------------------- pointing heading
+console.log('\npointingHeading (the gimbal fix)');
 {
-  // The bug this guards: DeviceOrientation alpha counts counter-clockwise viewed
-  // from above, Unity's AngleAxis(deg, up) counts clockwise. Passing the delta
-  // through unchanged made the rock steer the opposite way to the phone.
-  check('default sign inverts device yaw', getYawSign() === -1);
-  check('turning the phone left aims left, not right', toGameYaw(30) === -30);
-  check('and the mirror case holds', toGameYaw(-30) === 30);
+  // Flat phone, top pointing at magnetic north.
+  const north = pointingHeading(0, 0);
+  check('a level phone at alpha 0 heads due north',
+    near(north.headingDeg, 0) && near(north.confidence, 1));
+
+  // alpha counts counter-clockwise, so the resulting bearing is its negation.
+  check('turning the phone left gives a left (negative) bearing',
+    near(pointingHeading(30, 0).headingDeg, -30));
+  check('turning the phone right gives a right bearing',
+    near(pointingHeading(-30, 0).headingDeg, 30));
+
+  // Roll cannot move where the top of the phone points, and the function does not
+  // even accept gamma — this documents that as intent rather than omission.
+  check('bearing is unaffected by pitch while the phone still points forward',
+    near(pointingHeading(30, 45).headingDeg, -30));
+
+  // THE BUG. Two degrees of pitch either side of vertical used to flip the aim by
+  // 180 degrees, because Euler alpha is degenerate there. Confidence is what lets
+  // the caller refuse to believe the heading through that region.
+  const justUnder = pointingHeading(30, 89);
+  const justOver = pointingHeading(30, 91);
+  check('heading really does flip 180 degrees across vertical',
+    Math.abs(shortestAngleDelta(justOver.headingDeg, justUnder.headingDeg)) > 179,
+    `${justUnder.headingDeg.toFixed(1)} -> ${justOver.headingDeg.toFixed(1)}`);
+  check('but confidence collapses there, so both are rejected',
+    justUnder.confidence < MIN_POINTING_CONFIDENCE &&
+    justOver.confidence < MIN_POINTING_CONFIDENCE,
+    `${justUnder.confidence.toFixed(3)} / ${justOver.confidence.toFixed(3)}`);
+
+  check('a phone aimed at the sky is rejected',
+    pointingHeading(0, 90).confidence < MIN_POINTING_CONFIDENCE);
+  check('a phone pointing backwards over the shoulder is rejected',
+    pointingHeading(0, 150).confidence < MIN_POINTING_CONFIDENCE);
+  check('a normally-held phone is accepted',
+    pointingHeading(0, 20).confidence >= MIN_POINTING_CONFIDENCE);
+}
+
+// ---------------------------------------------------------------- aim yaw sign
+console.log('\ndevice heading -> game yaw');
+{
+  // Bearings are clockwise-positive and so is Unity's yaw, so this passes through.
+  check('default sign passes the bearing through', getYawSign() === 1);
+  check('a right bearing aims right', toGameYaw(30) === 30);
+  check('and the mirror case holds', toGameYaw(-30) === -30);
   check('zero stays zero', toGameYaw(0) === 0);
 
-  const straight = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 20 })];
+  const straight = [makeSample(0, 5), makeSample(10, 30, { dYaw: 20 })];
   check('a throw inherits the same convention',
-    computeThrowDescriptor(straight).aimDeg === -20);
+    computeThrowDescriptor(straight).aimDeg === 20);
 
-  setYawSign(1);
-  check('the override flips it for a platform that disagrees', toGameYaw(30) === 30);
+  setYawSign(-1);
+  check('the override flips it for a platform that disagrees', toGameYaw(30) === -30);
   check('an aim frame follows the override too',
-    buildAimPayload(makeSample(0, 10, { dAlpha: 20 }), 1).aimDeg === 20);
+    buildAimPayload(makeSample(0, 10, { dYaw: 20 }), 1).aimDeg === -20);
 
-  setYawSign(-1); // restore, later tests assume the default
-  check('restoring the default works', getYawSign() === -1);
+  setYawSign(1); // restore, later tests assume the default
+  check('restoring the default works', getYawSign() === 1);
 }
 
 // ------------------------------------------------- sample-rate independence

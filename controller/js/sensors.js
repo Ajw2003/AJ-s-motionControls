@@ -41,6 +41,49 @@ export function magnitude(v) {
   return Math.hypot(v.x, v.y, v.z);
 }
 
+/**
+ * Minimum forward lean of the phone's pointing axis before its heading is trusted.
+ * 0.35 is about 70 degrees of pitch either side of level.
+ */
+export const MIN_POINTING_CONFIDENCE = 0.35;
+
+/**
+ * Compass-style bearing of the direction the top of the phone points, plus how much
+ * to trust it.
+ *
+ * WHY NOT JUST USE `alpha`: alpha is the Euler yaw of a Z-X'-Y'' rotation, and it is
+ * degenerate when the phone pitches toward vertical — exactly what a throwing swing
+ * does. At beta = 89 the heading reads -30; at beta = 91 the same phone reads +150.
+ * A two degree difference in pitch mid-swing flips the aim completely around, which
+ * is why physically straight throws veered hard left or right at random.
+ *
+ * Instead this takes the device's +Y axis (out of the top of the phone, the end you
+ * point at the screen), rotates it into world space, and projects it onto the ground.
+ * Deriving it from the full rotation rather than one Euler angle is what removes the
+ * singularity. `confidence` is the length of that projection, signed by whether the
+ * phone points forward or backward — near zero means the phone is aimed at the sky or
+ * the floor and its heading means nothing.
+ *
+ * gamma is deliberately absent: rolling the phone about its long axis cannot change
+ * where its top points, so aim is immune to wrist roll for free.
+ *
+ * @returns {{headingDeg: number, confidence: number}} bearing, clockwise-positive
+ */
+export function pointingHeading(alpha, beta) {
+  const a = (alpha * Math.PI) / 180;
+  const b = (beta * Math.PI) / 180;
+
+  // Device +Y expressed in world coordinates (X east, Y north, Z up).
+  const cosBeta = Math.cos(b);
+  const east = -Math.sin(a) * cosBeta;
+  const north = Math.cos(a) * cosBeta;
+
+  return {
+    headingDeg: (Math.atan2(east, north) * 180) / Math.PI,
+    confidence: cosBeta,
+  };
+}
+
 export function clamp(value, min, max) {
   return value < min ? min : value > max ? max : value;
 }
@@ -221,6 +264,15 @@ export class MotionSource {
     this.latest = null;
     this.running = false;
 
+    // Last heading the phone was pointing while it was still well-conditioned, and
+    // the heading captured at calibration. Held rather than recomputed through the
+    // steep middle of a swing, where the pointing direction is meaningless — see
+    // pointingHeading. This is what makes "point at the screen and let go" work:
+    // the aim comes from the pose you aimed in, not from wherever the phone happened
+    // to be flailing at the instant of release.
+    this.headingDeg = null;
+    this.referenceHeading = null;
+
     // Measured, not assumed. The whole cross-platform question comes down to
     // whether the two devices are actually feeding us data at comparable rates,
     // and this is the number that answers it.
@@ -253,6 +305,7 @@ export class MotionSource {
    */
   calibrate() {
     this.reference = { ...this.latestOrientation };
+    this.referenceHeading = this.headingDeg;
     this.gravityFilter.reset();
     this.buffer.clear();
   }
@@ -271,6 +324,14 @@ export class MotionSource {
       beta: event.beta ?? 0,
       gamma: event.gamma ?? 0,
     };
+
+    // Only trust the heading while the phone is actually pointing somewhere on the
+    // horizon. Through the steep part of a swing this keeps the last good value
+    // instead of tracking a direction that flips 180 degrees over two degrees of tilt.
+    const { headingDeg, confidence } = pointingHeading(
+      this.latestOrientation.alpha, this.latestOrientation.beta);
+
+    if (confidence >= MIN_POINTING_CONFIDENCE) this.headingDeg = headingDeg;
   }
 
   _onMotion(event) {
@@ -298,7 +359,14 @@ export class MotionSource {
       t: now,
       linear,
       power: magnitude(linear),
-      dAlpha: shortestAngleDelta(this.latestOrientation.alpha, ref.alpha),
+
+      // Yaw comes from the projected pointing direction, not from Euler alpha. Zero
+      // until a confident heading exists, so an uncalibrated throw goes straight
+      // rather than somewhere arbitrary.
+      dYaw: this.headingDeg !== null && this.referenceHeading !== null
+        ? shortestAngleDelta(this.headingDeg, this.referenceHeading)
+        : 0,
+
       dBeta: shortestAngleDelta(this.latestOrientation.beta, ref.beta),
       dGamma: shortestAngleDelta(this.latestOrientation.gamma, ref.gamma),
       rotationRate: readRotationRate(event),

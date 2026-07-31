@@ -134,10 +134,50 @@ const angle = screen.orientation?.angle ?? 0;
 rotateXY(linear, -angle);
 
 // 4. Orientation ALWAYS as delta from calibration — never absolute
-const dAlpha = shortestAngleDelta(event.alpha, alpha0);
 const dBeta  = shortestAngleDelta(event.beta,  beta0);
 const dGamma = shortestAngleDelta(event.gamma, gamma0);
+
+// 5. Yaw is NOT an alpha delta. See "Yaw must not come from alpha" below.
+const { headingDeg, confidence } = pointingHeading(event.alpha, event.beta);
+if (confidence >= MIN_POINTING_CONFIDENCE) heading = headingDeg;   // else hold
+const dYaw = shortestAngleDelta(heading, headingRef);
 ```
+
+### Yaw must not come from alpha
+
+**Revised after the first multi-device playtest (2026-07-30), which this got wrong.**
+
+The original design took aim from `shortestAngleDelta(event.alpha, alpha0)`, reasoning
+that a delta from a calibrated zero is comparable across platforms. That reasoning has
+two holes, and the second one is fatal:
+
+- A delta cancels a difference in **origin** (where zero sits), not a difference in
+  **direction** (which way the angle counts). It does not, on its own, make the two
+  platforms agree.
+- `alpha` is the Euler yaw of a Z-X'-Y'' rotation and is **degenerate near vertical**.
+  At `beta = 89°` a phone reads a bearing of −30°; at `beta = 91°` the same phone reads
+  +150°. A throwing swing sweeps directly through that singularity, so a physically
+  straight throw veers hard left or right depending on nothing but where in the arc the
+  release sample happened to land.
+
+The fix is to stop using a single Euler angle. Rotate the device's **+Y axis** (out of
+the top of the phone, the end the player points at the screen) into world space, project
+it onto the ground plane, and take its bearing:
+
+```
+east  = -sin(alpha) * cos(beta)
+north =  cos(alpha) * cos(beta)
+heading    = atan2(east, north)   // clockwise-positive, matching Unity's yaw
+confidence = cos(beta)            // projection length, signed by forward/backward
+```
+
+`confidence` near zero means the phone is aimed at the sky or the floor and its bearing
+is meaningless — hold the last good one rather than believing it. That hold is what
+makes "point at the screen and let go" work: aim comes from the pose the player aimed
+in, not from wherever the phone was flailing at the instant of release.
+
+`gamma` is absent on purpose. Rolling the phone about its long axis cannot move where
+its top points, so aim is immune to wrist roll for free.
 
 Lock the page to portrait (`screen.orientation.lock('portrait')` where supported) so `beta`/`gamma` don't swap physical axes mid-throw. Treat the lock as best-effort and keep the rotation compensation in step 3 as the real fix.
 
@@ -178,7 +218,10 @@ Computed once on release from the sample buffer:
 
 - **power** — peak magnitude of linear acceleration during the swing, clamped, mapped 0..1. Use peak, not integral: more forgiving and better matched to perceived effort.
 - **timingQuality** — locate the acceleration peak; score from `|t_release − t_peak|`. This reproduces Skip Skimmer's "release at the right moment."
-- **aimDeg** — `dAlpha` at release, clamped to ±45°
+- **aimDeg** — `dYaw` at release (pointing-vector bearing, not an alpha delta — see
+  "Yaw must not come from alpha"), clamped to ±45°. Zero means "along
+  `AimPreview.ThrowForward`", which is derived from the aiming camera rather than being
+  world +Z, so straight means straight to the player looking at the TV.
 - **attackAngleDeg** — `dBeta` at release. The stone's pitch relative to the water; the single most important variable.
 - **rollDeg** — `dGamma` at release
 - **spinRate** — `rotationRate` magnitude at release, feeding gyroscopic stability

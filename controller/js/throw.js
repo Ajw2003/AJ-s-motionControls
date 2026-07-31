@@ -14,20 +14,22 @@
 import { clamp, normalize01 } from './sensors.js';
 
 /**
- * Sign that converts device yaw into game yaw. This is the one place the two
+ * Sign that converts device heading into game yaw. This is the one place the two
  * coordinate conventions meet, so it is the one place that can get it backwards.
  *
- * DeviceOrientation `alpha` counts COUNTER-CLOCKWISE viewed from above the screen,
- * so yawing the phone left increases it. Unity's `Quaternion.AngleAxis(deg, up)`
- * rotates CLOCKWISE viewed from above, taking +Z toward +X. Passing the delta
- * through unchanged therefore steers the rock the wrong way: turn left, aim right.
+ * `dYaw` is a compass-style bearing delta from `pointingHeading` — clockwise-positive
+ * viewed from above. Unity's `Quaternion.AngleAxis(deg, up)` is also clockwise viewed
+ * from above, taking +Z toward +X. So the two already agree and the default is +1.
+ *
+ * (This was -1 while aim came straight from Euler `alpha`, which counts the other way.
+ * Deriving the heading from the pointing vector changed the handedness of the source
+ * value, so the correction that used to be needed would now reintroduce the error.)
  *
  * GAME-SPACE CONTRACT: positive aimDeg means aim to the player's right.
  *
- * Overridable per-device from the URL (?yawSign=1) because the platforms may not
- * agree on direction — see setYawSign.
+ * Overridable per-device from the URL (?yawSign=-1) — see setYawSign.
  */
-let yawSign = -1;
+let yawSign = 1;
 
 /** @param {number} sign -1 (default) or +1 */
 export function setYawSign(sign) {
@@ -38,9 +40,9 @@ export function getYawSign() {
   return yawSign;
 }
 
-/** Device yaw delta -> game yaw. Positive is right. */
-export function toGameYaw(dAlpha) {
-  return yawSign * dAlpha;
+/** Device heading delta -> game yaw. Positive is right. */
+export function toGameYaw(dYaw) {
+  return yawSign * dYaw;
 }
 
 export const ThrowTuning = {
@@ -161,7 +163,7 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
   return {
     power: normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel),
     timingQuality: 1 - normalize01(releaseDelayMs, 0, tuning.peakWindowMs),
-    aimDeg: clamp(toGameYaw(release.dAlpha), -tuning.maxAimDeg, tuning.maxAimDeg),
+    aimDeg: clamp(toGameYaw(release.dYaw), -tuning.maxAimDeg, tuning.maxAimDeg),
     attackAngleDeg: clamp(release.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
     rollDeg: release.dGamma,
     spinRate: Math.hypot(
@@ -183,7 +185,7 @@ export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
   return {
     type: 'AIM',
     seq,
-    aimDeg: clamp(toGameYaw(sample.dAlpha), -tuning.maxAimDeg, tuning.maxAimDeg),
+    aimDeg: clamp(toGameYaw(sample.dYaw), -tuning.maxAimDeg, tuning.maxAimDeg),
     attackAngleDeg: clamp(sample.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
     rollDeg: sample.dGamma,
     windup: normalize01(sample.power, tuning.minPeakAccel, tuning.maxPeakAccel),

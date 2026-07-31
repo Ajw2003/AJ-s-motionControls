@@ -51,6 +51,24 @@ namespace Game
         public Transform ThrowOrigin => throwOrigin;
         public SkipTuning Tuning => tuning;
 
+        /// <summary>
+        /// Which way "straight ahead" points, at aimDeg = 0.
+        /// </summary>
+        /// <remarks>
+        /// Derived from the aiming camera rather than being world +Z, because straight
+        /// has to mean straight *to the player looking at the TV*. With a hardcoded
+        /// forward, a camera framed even slightly off-axis makes a dead-centre throw
+        /// visibly drift to one side, and no amount of correct phone aiming fixes it —
+        /// the player just learns the game is lying to them.
+        ///
+        /// Flattened onto the horizontal plane: only the heading matters here, since
+        /// the launch pitch comes from SkipTuning.
+        ///
+        /// Captured once, from the aiming view. Reading it live would swing the arc
+        /// around as the follow camera chases a rock downrange.
+        /// </remarks>
+        public Vector3 ThrowForward { get; private set; } = Vector3.forward;
+
         private RelayClient _client;
         private LineRenderer _line;
         private Transform _ghost;
@@ -70,6 +88,9 @@ namespace Game
             if (tuning == null) tuning = SkipTuning.CreateDefault();
             if (createPlaceholderScene) BuildPlaceholderScene();
             if (throwOrigin == null) throwOrigin = CreateOrigin();
+
+            // After BuildPlaceholderScene, which is what frames the camera.
+            RefreshThrowForward();
 
             BuildLine();
             BuildGhost();
@@ -148,7 +169,7 @@ namespace Game
         private void UpdateArc()
         {
             var launch = SkipPhysics.CreateLaunch(
-                throwOrigin.position, Vector3.forward,
+                throwOrigin.position, ThrowForward,
                 previewPower, 1f,
                 _curAim, _curAttack, previewSpin,
                 RockStats.Default, tuning);
@@ -171,14 +192,36 @@ namespace Game
         private void UpdateGhost()
         {
             _ghost.position = throwOrigin.position;
-            // Pitch by the stone's face angle, yaw by aim, roll by wrist tilt.
-            _ghost.rotation = Quaternion.Euler(-_curAttack, _curAim, _curRoll);
+
+            // Built on ThrowForward, not on world axes, so the ghost tilts about the
+            // same heading the arc leaves along. Then pitch by the stone's face angle,
+            // yaw by aim, roll by wrist tilt.
+            _ghost.rotation = Quaternion.LookRotation(ThrowForward, Vector3.up)
+                            * Quaternion.Euler(-_curAttack, _curAim, _curRoll);
 
             var scale = Mathf.Lerp(1f, 1.35f, _curWindup);
             _ghost.localScale = new Vector3(0.45f * scale, 0.08f * scale, 0.45f * scale);
         }
 
         // ---------------------------------------------------------------- scaffolding
+
+        /// <summary>
+        /// Re-reads "straight ahead" from the main camera. Call after moving the aiming
+        /// camera; the real lake scene will want this once its framing is authored.
+        /// </summary>
+        public void RefreshThrowForward()
+        {
+            var camera = Camera.main;
+            if (camera == null) return;
+
+            var flattened = Vector3.ProjectOnPlane(camera.transform.forward, Vector3.up);
+
+            // A camera pointing straight down has no heading to inherit; keep the last
+            // good value rather than collapsing the aim to a zero vector.
+            if (flattened.sqrMagnitude < 1e-4f) return;
+
+            ThrowForward = flattened.normalized;
+        }
 
         private Transform CreateOrigin()
         {
