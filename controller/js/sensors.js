@@ -48,6 +48,45 @@ export function magnitude(v) {
 export const MIN_POINTING_CONFIDENCE = 0.35;
 
 /**
+ * Rotation speed above which the fused orientation reading is not trusted at all.
+ *
+ * `deviceorientation` is sensor-fused and lags real motion by tens of milliseconds —
+ * fine while aiming, useless mid-swing, which is precisely when accuracy matters.
+ */
+export const FAST_ROTATION_DEG_PER_SEC = 120;
+
+/** How hard a trusted orientation reading pulls the integrated heading, per update. */
+export const HEADING_CORRECTION_GAIN = 0.15;
+
+/**
+ * Rate of change of the pointing bearing, in deg/s, from the gyroscope.
+ *
+ * `rotationRate` arrives with `devicemotion` at the full sensor rate and is very close
+ * to instantaneous, where `deviceorientation` is a fused estimate that both lags and
+ * arrives on its own slower schedule. Integrating this is what lets a fast swing be
+ * tracked at all: sampling the fused angle alone means the heading in every sample is
+ * from tens of milliseconds ago, so the arc trails the phone and the release frame
+ * reports where the player was pointing a moment before they let go.
+ *
+ * Derived from the Z-X'-Y'' Euler kinematics and checked numerically against a
+ * finite-difference of the rotation matrix: exact to ~5e-7 deg/s across 600 poses up
+ * to 500 deg/s. The 1/cos(beta) term is the same singularity `pointingHeading` guards
+ * — the caller must not integrate through a near-vertical phone.
+ *
+ * @param rotationRate DeviceMotionEvent.rotationRate, deg/s (alpha about Z, beta about
+ *                     X, gamma about Y)
+ */
+export function headingRateFromGyro(beta, gamma, rotationRate) {
+  const b = (beta * Math.PI) / 180;
+  const g = (gamma * Math.PI) / 180;
+
+  const cosBeta = Math.cos(b);
+  if (Math.abs(cosBeta) < 1e-3) return 0;
+
+  return (rotationRate.beta * Math.sin(g) - rotationRate.alpha * Math.cos(g)) / cosBeta;
+}
+
+/**
  * Compass-style bearing of the direction the top of the phone points, plus how much
  * to trust it.
  *
@@ -273,6 +312,10 @@ export class MotionSource {
     this.headingDeg = null;
     this.referenceHeading = null;
 
+    // Last gyro-derived turn rate, deg/s. Also decides how far the fused orientation
+    // reading is allowed to pull the estimate — see _onOrientation.
+    this.headingRateDegPerSec = 0;
+
     // Measured, not assumed. The whole cross-platform question comes down to
     // whether the two devices are actually feeding us data at comparable rates,
     // and this is the number that answers it.
@@ -331,7 +374,23 @@ export class MotionSource {
     const { headingDeg, confidence } = pointingHeading(
       this.latestOrientation.alpha, this.latestOrientation.beta);
 
-    if (confidence >= MIN_POINTING_CONFIDENCE) this.headingDeg = headingDeg;
+    if (confidence < MIN_POINTING_CONFIDENCE) return;
+
+    if (this.headingDeg === null) {
+      this.headingDeg = headingDeg;
+      return;
+    }
+
+    // Correct rather than overwrite, and only in proportion to how slowly the phone is
+    // turning. This reading is drift-free but lags; the integrated one is immediate but
+    // drifts. Snapping to this mid-swing would hand the lag straight back — so while the
+    // phone is whipping around the gyro is believed outright, and the fused value only
+    // reasserts itself once things settle, which is when its lag costs nothing.
+    const trust = clamp(
+      1 - Math.abs(this.headingRateDegPerSec) / FAST_ROTATION_DEG_PER_SEC, 0, 1);
+
+    this.headingDeg += HEADING_CORRECTION_GAIN * trust *
+      shortestAngleDelta(headingDeg, this.headingDeg);
   }
 
   _onMotion(event) {
@@ -345,6 +404,21 @@ export class MotionSource {
     // Smoothed so one hitched frame does not swing the reported rate around.
     this._intervalMs = this._intervalMs > 0 ? this._intervalMs * 0.9 + dtMs * 0.1 : dtMs;
     this.sampleHz = this._intervalMs > 0 ? 1000 / this._intervalMs : 0;
+
+    const rotationRate = readRotationRate(event);
+
+    // Advance the heading by the gyro at the full sensor rate. This is the half of the
+    // filter that makes a fast swing survive: orientation events arrive on their own,
+    // slower schedule and are already stale when they do, so between them the heading
+    // would otherwise sit frozen at a value from tens of milliseconds ago — and the
+    // release frame would report exactly that stale angle.
+    this.headingRateDegPerSec = headingRateFromGyro(
+      this.latestOrientation.beta, this.latestOrientation.gamma, rotationRate);
+
+    const forwardLean = Math.cos((this.latestOrientation.beta * Math.PI) / 180);
+    if (this.headingDeg !== null && forwardLean >= MIN_POINTING_CONFIDENCE) {
+      this.headingDeg += this.headingRateDegPerSec * (dtMs / 1000);
+    }
 
     const linearRaw = this.gravityFilter.update(accel, dtMs);
 
@@ -360,16 +434,18 @@ export class MotionSource {
       linear,
       power: magnitude(linear),
 
-      // Yaw comes from the projected pointing direction, not from Euler alpha. Zero
-      // until a confident heading exists, so an uncalibrated throw goes straight
-      // rather than somewhere arbitrary.
+      // Live, every sample, right through the swing. Aim is whatever the phone is
+      // pointing at now — the throw is taken from the last sample before release, so
+      // freezing this earlier would throw away the aim the player actually released
+      // on. Zero until a confident heading exists, so an uncalibrated throw goes
+      // straight rather than somewhere arbitrary.
       dYaw: this.headingDeg !== null && this.referenceHeading !== null
         ? shortestAngleDelta(this.headingDeg, this.referenceHeading)
         : 0,
 
       dBeta: shortestAngleDelta(this.latestOrientation.beta, ref.beta),
       dGamma: shortestAngleDelta(this.latestOrientation.gamma, ref.gamma),
-      rotationRate: readRotationRate(event),
+      rotationRate,
     };
 
     this.latest = sample;

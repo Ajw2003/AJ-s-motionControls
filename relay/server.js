@@ -26,7 +26,12 @@ const HEARTBEAT_MS = 30_000;
 const ROOM_IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const ROOM_SWEEP_MS = 5 * 60 * 1000;
 const RATE_WINDOW_MS = 1000;
-const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
+// AIM streams at the sensor rate (60Hz) while a player is gripping, so the ceiling
+// has to sit well clear of that. At exactly 60 the limiter starts discarding aim
+// frames the moment a throw or a heartbeat shares the same second — silently, since
+// a flooding client deliberately gets no feedback — and the arc stutters for reasons
+// that look nothing like rate limiting from the game side.
+const RATE_MAX_MESSAGES = 180;
 
 // No I and no O — these are read aloud off a TV and typed on a phone.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';

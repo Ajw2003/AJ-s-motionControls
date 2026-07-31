@@ -85,32 +85,87 @@ confirm it on the device before changing any code.
 
 ## The throw gesture
 
-**Tap to aim, swing, tap again to throw.** The second tap is what marks the release —
-it is bound to the press rather than the lift, since the press is the instant the player
-chose and waiting for their thumb to come back up would add that delay to the moment the
-physics reads as the release.
+**Point at the lake, hold, swing, let go.** The hold is load-bearing: it is the only
+window in which the player sees the predicted arc and can adjust before committing.
 
-This replaced press-and-hold-and-let-go, on the theory that lifting a finger mid-swing is
-an imprecise moment: the thumb leaves the glass whenever the swing shakes it loose, not
-necessarily when the player means to let go.
+Tap-swing-tap was tried in playtest and reverted. It did not sharpen the release so much
+as delete the aiming phase — with no hold there is barely any time when the arc is on
+screen and steady. `?gesture=tap` still opts back into it; `ThrowController` keeps both,
+along with the two guards tap mode needs (`minArmMs`, so one bouncy tap cannot arm and
+fire in the same motion; `maxArmMs`, because an armed-and-forgotten throw is invisible
+when no finger is on the glass and would stall the match).
 
-`?gesture=hold` restores the old gesture, so the two can be compared back to back on the
-same handset.
+### Aim is live to the last frame, and the throw is that frame
 
-Two guards, both in `ThrowController`:
+Aim tracks the phone continuously, right through the swing, and the throw is computed
+from the **last sensor sample before release**. Nothing freezes or averages it: the
+value the player released on is the value that gets thrown.
 
-- `minArmMs` (150ms) — the shortest gap between arming and throwing, so one bouncy tap
-  or a double-tap cannot arm and fire in the same motion and launch a rock with no swing
-  behind it.
-- `maxArmMs` (10s) — in tap mode nothing is on the glass, so an armed-and-forgotten
-  throw is invisible and would stream aim frames forever and stall the match. Hold mode
-  has a finger physically down, which is unambiguous intent, so the timeout is not
-  applied there.
+### Heading is integrated from the gyro, not sampled from fused orientation
 
-Worth watching on the next playtest: tapping the screen at the end of a swing is itself
-an impulse the accelerometer sees. A thumb tap should be well below a throwing peak, so
-it should not win the peak search — but if power readings come out inflated in tap mode
-and not in hold mode, that is the first thing to suspect.
+`deviceorientation` is a *fused* estimate: it lags real motion by tens of milliseconds
+and arrives on its own schedule, independent of `devicemotion`. Reading the heading out
+of it means every sample carries an angle from a moment ago — during a fast swing, the
+heading barely moves at all between orientation events, and the release frame reports
+where the phone was pointing before the swing finished. Fast swings simply got lost.
+
+`rotationRate` arrives with `devicemotion` at the full sensor rate and is essentially
+instantaneous. `headingRateFromGyro` converts it into the rate of change of the pointing
+bearing, and `MotionSource` integrates that every sample, so the heading is current at
+the moment of release rather than a stale snapshot.
+
+The fused reading is still used, as the drift-free reference — but it corrects the
+integrated value *in proportion to how slowly the phone is turning*
+(`FAST_ROTATION_DEG_PER_SEC`). Above that rate it is ignored outright, because snapping
+to it mid-swing would hand back exactly the lag this exists to remove. Once the phone
+settles, it reasserts itself and drift goes away.
+
+The conversion is the Z-X'-Y'' Euler kinematics:
+
+```
+headingRate = (rotationRate.beta * sin(gamma) - rotationRate.alpha * cos(gamma)) / cos(beta)
+```
+
+Checked numerically against a finite difference of the rotation matrix — exact to
+~5e-7 deg/s across 600 poses at up to 500 deg/s. The obvious-looking shortcut of taking
+the world-vertical component of the angular velocity is **wrong**: rolling a tilted phone
+about its own long axis sweeps a large vertical rotation while the top of the phone does
+not change heading at all, and that shortcut reports a couple of hundred deg/s of aim
+drift the player never performed. There is a test for exactly that case.
+
+`1/cos(beta)` is the same singularity `pointingHeading` has, so integration is gated on
+the same forward-lean check.
+
+### Aim covers the full rotation
+
+`maxAimDeg` is 180, not 45. A 45 degree ceiling silently discarded the top of every fast
+swing: any turn past it flattened to exactly 45, so hard throws all reported the same aim
+regardless of where the phone actually pointed. `dYaw` is already a shortest-angle delta
+in (-180, 180], so nothing is clipped — and aiming behind you is simply allowed.
+
+Two more things are sized for aim-stream accuracy:
+
+- **AIM streams at 60Hz**, matching the sensor rate, not the 20Hz the plan originally
+  specified. At 20Hz every frame is up to 50ms stale before it leaves the phone, which
+  during a swing is degrees of error baked in before the network is involved.
+- **The relay's rate limit is 180 msg/sec**, not 60. At exactly 60 the limiter began
+  discarding aim frames as soon as a throw or heartbeat shared the same second — and it
+  drops silently, so the arc would stutter for reasons that look nothing like rate
+  limiting from the game side.
+
+`AimPreview.smoothTime` is the remaining lag: `SmoothDamp` trails its target by roughly
+that long, so it wants to be only just large enough to hide packet jitter. It is 0.035s
+against a 60Hz stream.
+
+**On release the arc snaps to the throw that actually happened** and holds there while it
+fades, redrawn with the throw's real power, timing and spin instead of the nominal ones.
+So the last thing on screen is the line the rock is genuinely on — which also makes any
+remaining preview/throw disagreement visible rather than something to squint at frame by
+frame.
+
+While still predicting, power and timing are unknown, so the arc is drawn at a nominal
+0.7 power with perfect timing. Until release the arc promises a *line*, not a landing
+spot.
 
 ## Match flow
 

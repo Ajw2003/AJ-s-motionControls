@@ -44,11 +44,13 @@ const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) |
 const YAW_SIGN = Number(new URLSearchParams(location.search).get('yawSign'));
 if (YAW_SIGN === 1 || YAW_SIGN === -1) setYawSign(YAW_SIGN);
 
-// Tap-swing-tap by default. ?gesture=hold restores press-and-release, so the two can
-// be compared back to back on the same handset without a redeploy.
-const GESTURE = new URLSearchParams(location.search).get('gesture') === ThrowGesture.HOLD
-  ? ThrowGesture.HOLD
-  : ThrowGesture.TAP;
+// Press-and-hold by default. Tap-swing-tap was tried in playtest and reverted: it
+// shortened the aiming phase rather than sharpening the release, because the hold is
+// what gives the player a window to see the arc and adjust before committing.
+// ?gesture=tap opts back into it for comparison.
+const GESTURE = new URLSearchParams(location.search).get('gesture') === ThrowGesture.TAP
+  ? ThrowGesture.TAP
+  : ThrowGesture.HOLD;
 
 const GESTURE_LABELS = {
   [ThrowGesture.TAP]: { idle: 'TAP TO AIM', armed: 'TAP TO THROW',
@@ -303,10 +305,8 @@ function updateDebug() {
     `state    ${thrower.state}   seq ${thrower.seq}`,
     `socket   ${connection?.status ?? 'not connected'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
-    // "held" means the phone is currently too steep for its bearing to mean anything,
-    // so aim is coasting on the last good one — the normal state mid-swing.
     `heading  ${motion.headingDeg === null ? 'none' : motion.headingDeg.toFixed(1)}` +
-      `${motion.hasReference() && motion.headingDeg !== null ? '' : '  (held)'}`,
+      `   turn ${motion.headingRateDegPerSec.toFixed(0)}°/s`,
     s ? `dYaw ${s.dYaw.toFixed(1).padStart(7)}  dB ${s.dBeta.toFixed(1).padStart(7)}  dG ${s.dGamma.toFixed(1).padStart(7)}`
       : 'no samples yet — is this page on HTTPS?',
     s ? `power ${s.power.toFixed(2).padStart(6)} m/s²   samples ${motion.buffer.length}   ` +

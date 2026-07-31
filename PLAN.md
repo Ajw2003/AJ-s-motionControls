@@ -179,6 +179,26 @@ in, not from wherever the phone was flailing at the instant of release.
 `gamma` is absent on purpose. Rolling the phone about its long axis cannot move where
 its top points, so aim is immune to wrist roll for free.
 
+### And the bearing must be carried by the gyro between orientation events
+
+**Also revised after playtest.** `deviceorientation` is sensor-fused: it lags real motion
+and fires on its own schedule, independent of `devicemotion`. Sampling the bearing out of
+it means the heading barely moves during a fast swing — the release frame reports where
+the phone was pointing before the swing finished, so hard throws land nowhere near where
+they were aimed.
+
+`rotationRate` comes with `devicemotion` at the full sensor rate and is near-instant.
+Integrate it, and use the fused reading only as a slow drift correction, weighted by how
+slowly the phone is turning:
+
+```
+headingRate = (rotationRate.beta * sin(gamma) - rotationRate.alpha * cos(gamma)) / cos(beta)
+```
+
+Do **not** shortcut this to the world-vertical component of angular velocity. Rolling a
+tilted phone about its own long axis sweeps a large vertical rotation while its top does
+not change bearing at all, and that shortcut invents hundreds of deg/s of aim drift.
+
 Lock the page to portrait (`screen.orientation.lock('portrait')` where supported) so `beta`/`gamma` don't swap physical axes mid-throw. Treat the lock as best-effort and keep the rotation compensation in step 3 as the real fix.
 
 Permission gate, which must sit behind a real tap:
@@ -218,10 +238,12 @@ Computed once on release from the sample buffer:
 
 - **power** — peak magnitude of linear acceleration during the swing, clamped, mapped 0..1. Use peak, not integral: more forgiving and better matched to perceived effort.
 - **timingQuality** — locate the acceleration peak; score from `|t_release − t_peak|`. This reproduces Skip Skimmer's "release at the right moment."
-- **aimDeg** — `dYaw` at release (pointing-vector bearing, not an alpha delta — see
-  "Yaw must not come from alpha"), clamped to ±45°. Zero means "along
-  `AimPreview.ThrowForward`", which is derived from the aiming camera rather than being
-  world +Z, so straight means straight to the player looking at the TV.
+- **aimDeg** — `dYaw` at release: the pointing-vector bearing, integrated from the gyro
+  rather than sampled from fused orientation (see "Yaw must not come from alpha"), over
+  the **full rotation** rather than the ±45° this originally specified. The narrow clamp
+  flattened every fast swing to the limit, so hard throws all reported the same aim. Zero
+  means "along `AimPreview.ThrowForward`", which is derived from the aiming camera rather
+  than being world +Z, so straight means straight to the player looking at the TV.
 - **attackAngleDeg** — `dBeta` at release. The stone's pitch relative to the water; the single most important variable.
 - **rollDeg** — `dGamma` at release
 - **spinRate** — `rotationRate` magnitude at release, feeding gyroscopic stability

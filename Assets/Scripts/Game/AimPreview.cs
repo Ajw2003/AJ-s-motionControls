@@ -39,9 +39,15 @@ namespace Game
                  "buys angle tolerance, so predicting with zero spin draws a far harsher " +
                  "throw than the player will actually get. Measured throws land near 1000.")]
         [SerializeField] private float previewSpin = 800f;
-        [SerializeField] private float smoothTime = 0.08f;
-        [Tooltip("Hide the preview after this long with no aim frames — surfaces a dropped phone.")]
-        [SerializeField] private float staleAfterSeconds = 0.5f;
+        [Tooltip("Lag deliberately traded against jitter. SmoothDamp trails its target by " +
+                 "roughly this long, which during a fast swing is degrees of error — so " +
+                 "this wants to be only just large enough to hide packet jitter, no more. " +
+                 "Sized against a 60Hz aim stream; raise it if the arc looks noisy.")]
+        [SerializeField] private float smoothTime = 0.035f;
+        [Tooltip("Hide the preview after this long with no aim frames — surfaces a dropped phone. " +
+                 "Also how long the arc lingers after a throw, which is the only chance the " +
+                 "player gets to compare the line they were shown against the rock that left.")]
+        [SerializeField] private float staleAfterSeconds = 1f;
 
         public int PredictedSkips { get; private set; }
         public float PredictedDistance { get; private set; }
@@ -79,6 +85,11 @@ namespace Game
         private string _lastAimPlayer;
         private float _lastAimTime = -999f;
 
+        // Set while the arc is showing a throw that already happened rather than a
+        // prediction of one that has not.
+        private bool _showingThrow;
+        private float _thrownPower, _thrownTiming, _thrownSpin;
+
         private float _targetAim, _targetAttack, _targetRoll, _targetWindup;
         private float _curAim, _curAttack, _curRoll, _curWindup;
         private float _velAim, _velAttack, _velRoll, _velWindup;
@@ -100,6 +111,34 @@ namespace Game
         {
             if (_client == null) return;
             _client.AimReceived -= OnAim;
+            _client.ThrowReceived -= OnThrow;
+        }
+
+        /// <summary>
+        /// Redraw the arc from the throw that actually happened, and hold it there while
+        /// it fades.
+        /// </summary>
+        /// <remarks>
+        /// The throw is computed from the last sensor sample before release, while the
+        /// arc was drawn from the most recent AIM frame smoothed over several more — so
+        /// at the instant of release they are close but not identical. Snapping here
+        /// means the final thing the player sees is the line the rock is on, not the
+        /// line it was very nearly on, and it makes a mismatch between preview and
+        /// throw visible instead of something to squint at frame by frame.
+        /// </remarks>
+        private void OnThrow(ThrowMessage message)
+        {
+            _targetAim = _curAim = message.aimDeg;
+            _targetAttack = _curAttack = message.attackAngleDeg;
+            _targetRoll = _curRoll = message.rollDeg;
+            _velAim = _velAttack = _velRoll = 0f;
+
+            _thrownPower = message.power;
+            _thrownTiming = message.timingQuality;
+            _thrownSpin = message.spinRate;
+            _showingThrow = true;
+
+            _lastAimTime = Time.time;
         }
 
         private void Update()
@@ -132,6 +171,7 @@ namespace Game
 
             _client = RelayClient.Instance;
             _client.AimReceived += OnAim;
+            _client.ThrowReceived += OnThrow;
         }
 
         private void OnAim(AimMessage aim)
@@ -159,19 +199,45 @@ namespace Game
             if (aim.seq <= _lastSeq) return;
             _lastSeq = aim.seq;
 
+            // First frame of a new aim, rather than a continuation of one in progress.
+            // A throw still on screen also counts: the next gesture has begun, so the
+            // arc must stop showing the previous throw and start tracking again.
+            var reacquired = _showingThrow || Time.time - _lastAimTime > staleAfterSeconds;
+            _showingThrow = false;
+
             _targetAim = aim.aimDeg;
             _targetAttack = aim.attackAngleDeg;
             _targetRoll = aim.rollDeg;
             _targetWindup = aim.windup;
             _lastAimTime = Time.time;
+
+            if (!reacquired) return;
+
+            // Nothing was carried over from the last throw, so start exactly on the new
+            // values instead of easing across from them. Smoothing in from a stale
+            // target meant every turn opened by sweeping the arc over from wherever the
+            // PREVIOUS player had been aiming, and spent the first fraction of a second
+            // — a real share of the time the preview is on screen at all — showing a
+            // line nobody had asked for.
+            _curAim = _targetAim;
+            _curAttack = _targetAttack;
+            _curRoll = _targetRoll;
+            _curWindup = _targetWindup;
+            _velAim = _velAttack = _velRoll = _velWindup = 0f;
         }
 
         private void UpdateArc()
         {
+            // While predicting, power and timing are unknown, so the arc is drawn at a
+            // nominal effort and promises a line rather than a landing spot. Once the
+            // throw has actually happened they are known exactly, so the fading arc
+            // switches to the real thing and traces the rock's own path.
             var launch = SkipPhysics.CreateLaunch(
                 throwOrigin.position, ThrowForward,
-                previewPower, 1f,
-                _curAim, _curAttack, previewSpin,
+                _showingThrow ? _thrownPower : previewPower,
+                _showingThrow ? _thrownTiming : 1f,
+                _curAim, _curAttack,
+                _showingThrow ? _thrownSpin : previewSpin,
                 RockStats.Default, tuning);
 
             var final = SkipPhysics.Predict(launch, RockStats.Default, tuning, _path);

@@ -21,6 +21,9 @@ import {
   readRotationRate,
   pointingHeading,
   MIN_POINTING_CONFIDENCE,
+  MotionSource,
+  headingRateFromGyro,
+  FAST_ROTATION_DEG_PER_SEC,
 } from './js/sensors.js';
 
 import {
@@ -184,10 +187,14 @@ console.log('\ncomputeThrowDescriptor');
   check('empty input returns null', computeThrowDescriptor([]) === null);
   check('null input returns null', computeThrowDescriptor(null) === null);
 
-  // Clamping at release.
+  // Clamping at release. Aim is deliberately NOT narrowed: a 45 degree ceiling made
+  // every fast swing report the same aim, because anything past it flattened to the
+  // limit and the rock left on a line the player had not chosen.
   const wild = [makeSample(0, 5), makeSample(10, 30, { dYaw: 90, dBeta: -120, dGamma: 17 })];
   const dWild = computeThrowDescriptor(wild);
-  check('aim clamps to +/-45', dWild.aimDeg === ThrowTuning.maxAimDeg, `${dWild.aimDeg}`);
+  check('a wide aim survives instead of being clipped to 45', dWild.aimDeg === 90,
+    `${dWild.aimDeg}`);
+  check('aim allows the full rotation', ThrowTuning.maxAimDeg === 180);
   check('attack angle clamps to its floor', dWild.attackAngleDeg === ThrowTuning.minAttackDeg);
   check('roll is passed through unclamped', dWild.rollDeg === 17);
 
@@ -216,7 +223,7 @@ console.log('\nbuildAimPayload');
   const payload = buildAimPayload(makeSample(0, 20, { dYaw: 60, dBeta: 22, dGamma: 3 }), 42);
   check('carries a sequence number', payload.seq === 42);
   check('is typed AIM', payload.type === 'AIM');
-  check('aim is clamped like a throw', payload.aimDeg === ThrowTuning.maxAimDeg);
+  check('aim is passed through like a throw', payload.aimDeg === 60);
   check('attack angle survives', payload.attackAngleDeg === 22);
   check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
@@ -407,6 +414,161 @@ console.log('\nThrowController.release fallback');
     check('release without grip sends nothing',
       c.release() === null && sent.length === 0);
   }
+}
+
+// -------------------------------------------------------------- gyro heading rate
+console.log('\nheadingRateFromGyro');
+{
+  const rate = (alpha, beta = 0, gamma = 0) => ({ alpha, beta, gamma });
+
+  // Level phone spun about the screen normal: alpha counts counter-clockwise and the
+  // bearing is clockwise, so they are negatives of each other.
+  check('a level phone turning left reads as a left bearing rate',
+    near(headingRateFromGyro(0, 0, rate(200)), -200, 1e-9));
+  check('and the mirror case holds',
+    near(headingRateFromGyro(0, 0, rate(-200)), 200, 1e-9));
+
+  // THE CASE THAT KILLED THE FIRST ATTEMPT. Rolling a tilted phone about its own long
+  // axis sweeps a large world-vertical rotation, but the top of the phone does not
+  // change heading at all. Anything using the world-vertical component alone reports a
+  // couple of hundred deg/s of aim drift here that the player never performed.
+  check('rolling a tilted phone produces no heading rate',
+    near(headingRateFromGyro(55, 0, rate(0, 0, 250)), 0, 1e-9),
+    `${headingRateFromGyro(55, 0, rate(0, 0, 250)).toFixed(3)}`);
+
+  check('pitching produces no heading rate either',
+    near(headingRateFromGyro(0, 0, rate(0, 200, 0)), 0, 1e-9));
+
+  // Tilt divides through cos(beta), so the same body rate turns the bearing faster
+  // the more the phone is pitched.
+  check('tilt scales the bearing rate',
+    headingRateFromGyro(60, 0, rate(100)) < headingRateFromGyro(0, 0, rate(100)),
+    `${headingRateFromGyro(60, 0, rate(100)).toFixed(1)} vs -100`);
+
+  check('a near-vertical phone reports no rate rather than exploding',
+    headingRateFromGyro(90, 0, rate(300)) === 0);
+}
+
+// ------------------------------------------------ aim tracks live, right to release
+console.log('\nlive aim tracking');
+{
+  // MotionSource reads window.screen for rotation compensation. Nothing else in the
+  // path touches the DOM, so a stub is enough to drive it in Node.
+  const hadWindow = 'window' in globalThis;
+  if (!hadWindow) globalThis.window = { screen: {} };
+
+  const motion = new MotionSource({ gravityK: 0.8 });
+  const orient = (alpha, beta = 0) => motion._onOrientation({ alpha, beta, gamma: 0 });
+  const move = (extraZ, alphaRate = 0) => motion._onMotion({
+    accelerationIncludingGravity: { x: 0, y: 0, z: 9.8 + extraZ },
+    rotationRate: { alpha: alphaRate, beta: 0, gamma: 0 },
+  });
+
+  // Turn the phone and let it come to rest. The fused reading only reasserts itself
+  // once the gyro says the phone is slow, so settling is what a real aiming pause is.
+  const aimAt = (alpha) => {
+    move(0);                                  // report the phone as still first, or
+    for (let i = 0; i < 60; i++) orient(alpha); // the correction stays gated off
+    move(0);                                  // sample carries the settled heading
+  };
+
+  // Grip: point somewhere and calibrate.
+  orient(0);
+  move(0);
+  motion.calibrate();
+  move(0);          // re-seed the gravity filter that calibrate() reset
+
+  aimAt(20);
+  check('aim follows the phone while aiming',
+    near(motion.latest.dYaw, -20, 0.5), `${motion.latest.dYaw.toFixed(2)}`);
+
+  // The arc has to keep tracking through the swing, not freeze at its start — and the
+  // throw is taken from the last sample before release, so this value IS the throw.
+  // Anything that held it steady here would discard the aim the player released on.
+  const beforeSwing = motion.latest.dYaw;
+  for (let i = 0; i < 4; i++) {
+    await new Promise((r) => setTimeout(r, 15));
+    move(18, 300);
+  }
+  check('aim keeps tracking once the swing is under way',
+    motion.latest.dYaw < beforeSwing - 5,
+    `${beforeSwing.toFixed(1)} -> ${motion.latest.dYaw.toFixed(1)}`);
+
+  // The release frame is what the descriptor reads.
+  const atRelease = motion.latest.dYaw;
+  const descriptor = computeThrowDescriptor(motion.buffer.toArray());
+  check('the throw is computed from the release frame, not an earlier one',
+    near(descriptor.aimDeg, toGameYaw(atRelease), 1e-6),
+    `${descriptor.aimDeg.toFixed(2)} vs ${toGameYaw(atRelease).toFixed(2)}`);
+
+  // A hard swing turns well past the old 45 degree ceiling. Clamping there made every
+  // fast throw report the same aim regardless of where the phone actually pointed.
+  aimAt(120);
+  const wide = computeThrowDescriptor(motion.buffer.toArray());
+  check('a wide turn is not flattened to a 45 degree ceiling',
+    Math.abs(wide.aimDeg) > 45, `${wide.aimDeg.toFixed(1)}`);
+
+  if (!hadWindow) delete globalThis.window;
+}
+
+// ------------------------------------------- gyro carries heading between updates
+console.log('\ngyro integration');
+{
+  const hadWindow = 'window' in globalThis;
+  if (!hadWindow) globalThis.window = { screen: {} };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const motion = new MotionSource({ gravityK: 0.8 });
+  const orient = (alpha, beta = 0) => motion._onOrientation({ alpha, beta, gamma: 0 });
+  const spin = (alphaRate) => motion._onMotion({
+    accelerationIncludingGravity: { x: 0, y: 0, z: 9.8 },
+    rotationRate: { alpha: alphaRate, beta: 0, gamma: 0 },
+  });
+
+  orient(0);
+  spin(0);
+  const start = motion.headingDeg;
+
+  // THE BUG: deviceorientation fires on its own slower schedule, so between its
+  // updates the heading used to sit frozen — a fast swing simply did not register,
+  // and the release frame reported an angle from tens of milliseconds earlier.
+  // No orientation events at all here: only the gyro is feeding it.
+  const t0 = performance.now();
+  for (let i = 0; i < 6; i++) {
+    await sleep(15);
+    spin(300);            // turning left hard
+  }
+  const elapsedSec = (performance.now() - t0) / 1000;
+  const moved = motion.headingDeg - start;
+
+  check('heading advances with no orientation events at all', Math.abs(moved) > 1,
+    `${moved.toFixed(1)} deg over ${elapsedSec.toFixed(2)}s`);
+  check('it advances in the direction the gyro reported', moved < 0, `${moved.toFixed(1)}`);
+  check('and by roughly the integral of the turn rate',
+    Math.abs(moved) > 300 * elapsedSec * 0.5 && Math.abs(moved) < 300 * elapsedSec * 1.5,
+    `${Math.abs(moved).toFixed(0)} vs ~${(300 * elapsedSec).toFixed(0)}`);
+
+  // While turning fast the fused reading must not drag the estimate back to its own
+  // stale value — that would hand back exactly the lag this exists to remove.
+  const beforeCorrection = motion.headingDeg;
+  orient(0);                       // fused sensor still insisting on the old bearing
+  const pulled = Math.abs(motion.headingDeg - beforeCorrection);
+  check('a stale orientation reading barely moves it mid-swing', pulled < 1,
+    `pulled ${pulled.toFixed(2)} deg`);
+
+  // Once the phone settles, the drift-free reading is allowed to reassert itself.
+  motion.headingRateDegPerSec = 0;
+  const beforeSettled = motion.headingDeg;
+  orient(0);
+  check('but it does correct once the phone is still',
+    Math.abs(motion.headingDeg - beforeSettled) > 1,
+    `${Math.abs(motion.headingDeg - beforeSettled).toFixed(2)} deg`);
+
+  check('the fast-rotation threshold is well below a real swing',
+    FAST_ROTATION_DEG_PER_SEC < 300);
+
+  if (!hadWindow) delete globalThis.window;
 }
 
 // --------------------------------------------------------- tap-swing-tap gesture

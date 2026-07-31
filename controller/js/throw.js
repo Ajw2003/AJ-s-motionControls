@@ -55,9 +55,13 @@ export const ThrowTuning = {
   // decays to zero. This is the Skip Skimmer "release at the right moment" beat.
   peakWindowMs: 250,
 
-  // Aim is clamped so a player who twists too far still gets a usable throw
-  // rather than one aimed off the lake entirely.
-  maxAimDeg: 45,
+  // Full rotation. This was 45, which silently threw away the top of every fast
+  // swing: any turn past 45 degrees flattened to exactly 45, so hard throws all
+  // reported the same aim no matter where the phone was actually pointing, and the
+  // rock left on a line the player had not chosen. dYaw is already a shortest-angle
+  // delta in (-180, 180], so at 180 nothing is clipped and aiming behind you is
+  // simply allowed — if a player turns right around, that is a choice they made.
+  maxAimDeg: 180,
 
   minAttackDeg: -60,
   maxAttackDeg: 60,
@@ -215,7 +219,14 @@ export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
  */
 export class ThrowController {
   constructor(motion, {
-    onAim, onThrow, onStateChange, onExpire, aimHz = 20,
+    onAim, onThrow, onStateChange, onExpire,
+
+    // Matched to the sensor rate rather than the 20Hz the plan specified. 20Hz means
+    // every aim frame is up to 50ms stale before it leaves the phone, which during a
+    // swing is several degrees of error baked in before the network is even involved
+    // — and the arc has to track the swing accurately, not just smoothly. Still only
+    // a few KB/s, and only ever for the one player whose turn it is.
+    aimHz = 60,
     gesture = ThrowGesture.TAP,
     minArmMs = 150,
     maxArmMs = 10_000,
