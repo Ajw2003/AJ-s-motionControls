@@ -28,6 +28,9 @@ import {
   ThrowController,
   ThrowTuning,
   SimulatedThrow,
+  toGameYaw,
+  setYawSign,
+  getYawSign,
 } from './js/throw.js';
 
 let failures = 0;
@@ -177,12 +180,28 @@ console.log('\ncomputeThrowDescriptor');
   check('empty input returns null', computeThrowDescriptor([]) === null);
   check('null input returns null', computeThrowDescriptor(null) === null);
 
-  // Clamping at release.
+  // Clamping at release. Note the aim sign: device yaw is negated into game yaw,
+  // so a positive dAlpha (phone turned left) clamps to the NEGATIVE limit.
   const wild = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 90, dBeta: -120, dGamma: 17 })];
   const dWild = computeThrowDescriptor(wild);
-  check('aim clamps to +/-45', dWild.aimDeg === ThrowTuning.maxAimDeg, `${dWild.aimDeg}`);
+  check('aim clamps to +/-45', dWild.aimDeg === -ThrowTuning.maxAimDeg, `${dWild.aimDeg}`);
   check('attack angle clamps to its floor', dWild.attackAngleDeg === ThrowTuning.minAttackDeg);
   check('roll is passed through unclamped', dWild.rollDeg === 17);
+
+  // Peak selection must not reach back past the swing. A device reporting at half
+  // the assumed rate fills the fixed-size ring buffer with twice as much history,
+  // and without the time bound this "peak" from two seconds ago would win, making
+  // releaseDelayMs enormous and timingQuality zero.
+  const stale = [makeSample(0, 30), makeSample(2000, 8), makeSample(2010, 9)];
+  const dStale = computeThrowDescriptor(stale);
+  check('a peak older than the swing window is ignored',
+    near(dStale.peakAccel, 9), `peakAccel ${dStale.peakAccel}`);
+  check('ignoring it keeps timing meaningful',
+    dStale.timingQuality > 0.9, dStale.timingQuality.toFixed(3));
+
+  const allStale = [makeSample(0, 30), makeSample(5000, 0.5)];
+  check('a window containing only a fumble still returns null',
+    computeThrowDescriptor(allStale) === null);
 
   const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: 3, beta: 4, gamma: 0 } })];
   check('spin rate is the rotation magnitude', near(computeThrowDescriptor(spun).spinRate, 5));
@@ -194,10 +213,62 @@ console.log('\nbuildAimPayload');
   const payload = buildAimPayload(makeSample(0, 20, { dAlpha: 60, dBeta: 22, dGamma: 3 }), 42);
   check('carries a sequence number', payload.seq === 42);
   check('is typed AIM', payload.type === 'AIM');
-  check('aim is clamped like a throw', payload.aimDeg === ThrowTuning.maxAimDeg);
+  check('aim is clamped like a throw', payload.aimDeg === -ThrowTuning.maxAimDeg);
   check('attack angle survives', payload.attackAngleDeg === 22);
   check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
+}
+
+// ---------------------------------------------------------------- aim yaw sign
+console.log('\ndevice yaw -> game yaw');
+{
+  // The bug this guards: DeviceOrientation alpha counts counter-clockwise viewed
+  // from above, Unity's AngleAxis(deg, up) counts clockwise. Passing the delta
+  // through unchanged made the rock steer the opposite way to the phone.
+  check('default sign inverts device yaw', getYawSign() === -1);
+  check('turning the phone left aims left, not right', toGameYaw(30) === -30);
+  check('and the mirror case holds', toGameYaw(-30) === 30);
+  check('zero stays zero', toGameYaw(0) === 0);
+
+  const straight = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 20 })];
+  check('a throw inherits the same convention',
+    computeThrowDescriptor(straight).aimDeg === -20);
+
+  setYawSign(1);
+  check('the override flips it for a platform that disagrees', toGameYaw(30) === 30);
+  check('an aim frame follows the override too',
+    buildAimPayload(makeSample(0, 10, { dAlpha: 20 }), 1).aimDeg === 20);
+
+  setYawSign(-1); // restore, later tests assume the default
+  check('restoring the default works', getYawSign() === -1);
+}
+
+// ------------------------------------------------- sample-rate independence
+console.log('\nGravityFilter sample-rate independence');
+{
+  // At the 60Hz reference the filter must behave exactly as it did when the
+  // coefficient was a fixed per-sample 0.8, or Android regresses.
+  const reference = new GravityFilter(0.8);
+  reference.update({ x: 0, y: 0, z: 9.8 });
+  const atReference = reference.update({ x: 0, y: 0, z: 19.6 });
+  check('60Hz reproduces the original fixed-k behaviour',
+    near(atReference.z, 19.6 - (0.8 * 9.8 + 0.2 * 19.6), 1e-9),
+    atReference.z.toFixed(6));
+
+  // Half the rate means twice the elapsed time per sample, so the gravity estimate
+  // must move further per sample to keep the same wall-clock time constant.
+  const slow = new GravityFilter(0.8);
+  slow.update({ x: 0, y: 0, z: 9.8 });
+  const atHalfRate = slow.update({ x: 0, y: 0, z: 19.6 }, 1000 / 30);
+  check('a 30Hz device adapts further per sample',
+    atHalfRate.z < atReference.z,
+    `${atHalfRate.z.toFixed(3)} vs ${atReference.z.toFixed(3)}`);
+
+  const fast = new GravityFilter(0.8);
+  fast.update({ x: 0, y: 0, z: 9.8 });
+  const atDoubleRate = fast.update({ x: 0, y: 0, z: 19.6 }, 1000 / 120);
+  check('a 120Hz device adapts less per sample', atDoubleRate.z > atReference.z,
+    atDoubleRate.z.toFixed(3));
 }
 
 // ------------------------------------------------- simulated throw (sensorless)

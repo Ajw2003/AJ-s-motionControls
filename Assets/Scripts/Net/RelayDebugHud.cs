@@ -147,8 +147,12 @@ namespace Net
             {
                 foreach (var t in _throws)
                 {
-                    GUILayout.Label($"  pow {t.power:F2}  tim {t.timingQuality:F2}  aim {t.aimDeg,5:F0}°  " +
-                                    $"atk {t.attackAngleDeg,5:F0}°  spin {t.spinRate,5:F0}  peak {t.peakAccel:F1}");
+                    // sampleHz is the cross-platform tell: the swing analysis assumes a
+                    // 60Hz-class feed, so a phone reporting well under that undersamples
+                    // the peak and reads as a weaker, mistimed throw than it really was.
+                    GUILayout.Label($"  {t.playerId,-8} pow {t.power:F2}  tim {t.timingQuality:F2}  " +
+                                    $"aim {t.aimDeg,5:F0}°  atk {t.attackAngleDeg,5:F0}°  " +
+                                    $"spin {t.spinRate,5:F0}  peak {t.peakAccel:F1}  {t.sampleHz,3}Hz");
                 }
 
                 GUILayout.Space(6);

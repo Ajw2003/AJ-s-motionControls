@@ -58,6 +58,7 @@ namespace Game
         private readonly List<Vector3> _path = new(512);
 
         private int _lastSeq = -1;
+        private string _lastAimPlayer;
         private float _lastAimTime = -999f;
 
         private float _targetAim, _targetAttack, _targetRoll, _targetWindup;
@@ -119,8 +120,21 @@ namespace Game
             var active = TurnManager.HasInstance ? TurnManager.Instance.ActivePlayer : null;
             if (!string.IsNullOrEmpty(active) && aim.playerId != active) return;
 
-            // Cheap ordering guard: TCP preserves order per socket, but a reconnect can
-            // interleave, and a stale frame overwriting a newer one looks like a stutter.
+            // The sequence counter is per-phone and only advances while that phone is
+            // gripping, so counts from different players are not comparable. Comparing
+            // them against one shared value meant whoever had gripped the most locked
+            // everyone else out: their successors' frames all arrived with a lower seq
+            // and were silently dropped, so only one player in a session ever got an
+            // aim preview. Reset the guard whenever the aiming player changes.
+            if (aim.playerId != _lastAimPlayer)
+            {
+                _lastAimPlayer = aim.playerId;
+                _lastSeq = -1;
+            }
+
+            // Within one player, this is still the ordering guard it was meant to be:
+            // TCP preserves order per socket, but a reconnect can interleave, and a
+            // stale frame overwriting a newer one looks like a stutter.
             if (aim.seq <= _lastSeq) return;
             _lastSeq = aim.seq;
 

@@ -13,6 +13,36 @@
 
 import { clamp, normalize01 } from './sensors.js';
 
+/**
+ * Sign that converts device yaw into game yaw. This is the one place the two
+ * coordinate conventions meet, so it is the one place that can get it backwards.
+ *
+ * DeviceOrientation `alpha` counts COUNTER-CLOCKWISE viewed from above the screen,
+ * so yawing the phone left increases it. Unity's `Quaternion.AngleAxis(deg, up)`
+ * rotates CLOCKWISE viewed from above, taking +Z toward +X. Passing the delta
+ * through unchanged therefore steers the rock the wrong way: turn left, aim right.
+ *
+ * GAME-SPACE CONTRACT: positive aimDeg means aim to the player's right.
+ *
+ * Overridable per-device from the URL (?yawSign=1) because the platforms may not
+ * agree on direction — see setYawSign.
+ */
+let yawSign = -1;
+
+/** @param {number} sign -1 (default) or +1 */
+export function setYawSign(sign) {
+  yawSign = sign < 0 ? -1 : 1;
+}
+
+export function getYawSign() {
+  return yawSign;
+}
+
+/** Device yaw delta -> game yaw. Positive is right. */
+export function toGameYaw(dAlpha) {
+  return yawSign * dAlpha;
+}
+
 export const ThrowTuning = {
   // Peak linear acceleration, m/s^2, mapped onto power 0..1. A gentle underarm
   // toss sits near the low end; a hard swing saturates the high end.
@@ -33,6 +63,13 @@ export const ThrowTuning = {
   // Below this peak, treat the gesture as a fumble rather than a throw — stops a
   // pocket bump or a shaky hand registering as a real attempt.
   minValidPeakAccel: 3,
+
+  // How far back from the release a swing can reach. Bounded in TIME, not in
+  // samples: the ring buffer holds a fixed sample count sized for a 60Hz device,
+  // so on a device reporting at ~30Hz it spans twice as long in wall-clock terms.
+  // Without this bound such a device can select a "peak" from seconds before the
+  // swing, which makes releaseDelayMs huge and collapses timingQuality to zero.
+  swingWindowMs: 1500,
 };
 
 /**
@@ -106,22 +143,25 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
   if (!samples || samples.length === 0) return null;
 
   const release = samples[samples.length - 1];
+  const windowStart = release.t - tuning.swingWindowMs;
 
   // Peak, not integral. Peak matches perceived effort and is far more forgiving
-  // of the sample rate wobbling, which it does on real phones.
-  let peak = samples[0];
+  // of the sample rate wobbling, which it does on real phones. Restricted to the
+  // recent window so a low-rate device cannot reach back past the swing itself.
+  let peak = null;
   for (const sample of samples) {
-    if (sample.power > peak.power) peak = sample;
+    if (sample.t < windowStart) continue;
+    if (peak === null || sample.power > peak.power) peak = sample;
   }
 
-  if (peak.power < tuning.minValidPeakAccel) return null;
+  if (peak === null || peak.power < tuning.minValidPeakAccel) return null;
 
   const releaseDelayMs = Math.abs(release.t - peak.t);
 
   return {
     power: normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel),
     timingQuality: 1 - normalize01(releaseDelayMs, 0, tuning.peakWindowMs),
-    aimDeg: clamp(release.dAlpha, -tuning.maxAimDeg, tuning.maxAimDeg),
+    aimDeg: clamp(toGameYaw(release.dAlpha), -tuning.maxAimDeg, tuning.maxAimDeg),
     attackAngleDeg: clamp(release.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
     rollDeg: release.dGamma,
     spinRate: Math.hypot(
@@ -143,7 +183,7 @@ export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
   return {
     type: 'AIM',
     seq,
-    aimDeg: clamp(sample.dAlpha, -tuning.maxAimDeg, tuning.maxAimDeg),
+    aimDeg: clamp(toGameYaw(sample.dAlpha), -tuning.maxAimDeg, tuning.maxAimDeg),
     attackAngleDeg: clamp(sample.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
     rollDeg: sample.dGamma,
     windup: normalize01(sample.power, tuning.minPeakAccel, tuning.maxPeakAccel),
@@ -195,7 +235,13 @@ export class ThrowController {
 
     const descriptor = computeThrowDescriptor(this.motion.buffer.toArray());
     if (descriptor) {
-      this.onThrow({ type: 'THROW', ...descriptor });
+      // sampleHz rides along for diagnostics: it is the number that tells you
+      // whether two platforms are actually feeding the same quality of data.
+      this.onThrow({
+        type: 'THROW',
+        ...descriptor,
+        sampleHz: Math.round(this.motion.sampleHz ?? 0),
+      });
       return descriptor;
     }
 

@@ -94,9 +94,17 @@ namespace Net
         public float releaseDelayMs;
         public int sampleCount;
 
+        /// <summary>
+        /// Measured devicemotion rate on the sending phone. This is the number that
+        /// turns "iOS feels wrong" into a comparison: the swing analysis assumes a
+        /// 60Hz-class feed, and a device reporting at half that undersamples the peak.
+        /// </summary>
+        public int sampleHz;
+
         public override string ToString() =>
             $"{playerId}: pow {power:F2} tim {timingQuality:F2} aim {aimDeg:F0}° " +
-            $"atk {attackAngleDeg:F0}° spin {spinRate:F0} (peak {peakAccel:F1} m/s², {sampleCount} samples)";
+            $"atk {attackAngleDeg:F0}° spin {spinRate:F0} " +
+            $"(peak {peakAccel:F1} m/s², {sampleCount} samples @ {sampleHz}Hz)";
     }
 
     public static class OutboundMessages

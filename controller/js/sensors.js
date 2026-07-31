@@ -60,22 +60,43 @@ export function normalize01(value, min, max) {
  * subtract it. A low K reacts fast but leaks motion into the gravity estimate;
  * a high K is stable but lags when the phone is re-oriented.
  */
+export const REFERENCE_SAMPLE_INTERVAL_MS = 1000 / 60;
+
 export class GravityFilter {
   constructor(k = 0.8) {
     this.k = k;
     this.gravity = null;
+
+    // The configured k is a per-SAMPLE weight, which silently encodes a sample
+    // rate. Convert it once into a time constant so the filter can hold the same
+    // behaviour in wall-clock terms on a device that reports at a different rate.
+    // Android Chrome runs ~60Hz; iOS Safari is commonly slower, which would
+    // otherwise make the gravity estimate adapt at half the intended speed and
+    // leak the swing into the estimate it is supposed to be subtracting.
+    this.tauMs = k > 0 && k < 1
+      ? -REFERENCE_SAMPLE_INTERVAL_MS / Math.log(k)
+      : 0;
   }
 
-  /** @returns {{x:number,y:number,z:number}} linear acceleration, gravity removed */
-  update(accel) {
+  /**
+   * @param accel gravity-inclusive acceleration
+   * @param dtMs time since the previous sample. Defaults to the 60Hz reference, so
+   *             at 60Hz this is bit-for-bit the old behaviour.
+   * @returns {{x:number,y:number,z:number}} linear acceleration, gravity removed
+   */
+  update(accel, dtMs = REFERENCE_SAMPLE_INTERVAL_MS) {
     if (this.gravity === null) {
       // Seed from the first sample. Starting at zero would report a full 9.8 m/s^2
       // of fake "user acceleration" on the first frame and spike the power reading.
       this.gravity = { x: accel.x, y: accel.y, z: accel.z };
     } else {
-      this.gravity.x = this.k * this.gravity.x + (1 - this.k) * accel.x;
-      this.gravity.y = this.k * this.gravity.y + (1 - this.k) * accel.y;
-      this.gravity.z = this.k * this.gravity.z + (1 - this.k) * accel.z;
+      const k = this.tauMs > 0
+        ? Math.exp(-Math.max(dtMs, 0) / this.tauMs)
+        : this.k;
+
+      this.gravity.x = k * this.gravity.x + (1 - k) * accel.x;
+      this.gravity.y = k * this.gravity.y + (1 - k) * accel.y;
+      this.gravity.z = k * this.gravity.z + (1 - k) * accel.z;
     }
 
     return {
@@ -200,6 +221,13 @@ export class MotionSource {
     this.latest = null;
     this.running = false;
 
+    // Measured, not assumed. The whole cross-platform question comes down to
+    // whether the two devices are actually feeding us data at comparable rates,
+    // and this is the number that answers it.
+    this.sampleHz = 0;
+    this._lastSampleT = 0;
+    this._intervalMs = 0;
+
     this._onMotion = this._onMotion.bind(this);
     this._onOrientation = this._onOrientation.bind(this);
   }
@@ -249,7 +277,15 @@ export class MotionSource {
     const accel = readAcceleration(event);
     if (!accel) return;
 
-    const linearRaw = this.gravityFilter.update(accel);
+    const now = performance.now();
+    const dtMs = this._lastSampleT > 0 ? now - this._lastSampleT : REFERENCE_SAMPLE_INTERVAL_MS;
+    this._lastSampleT = now;
+
+    // Smoothed so one hitched frame does not swing the reported rate around.
+    this._intervalMs = this._intervalMs > 0 ? this._intervalMs * 0.9 + dtMs * 0.1 : dtMs;
+    this.sampleHz = this._intervalMs > 0 ? 1000 / this._intervalMs : 0;
+
+    const linearRaw = this.gravityFilter.update(accel, dtMs);
 
     // Keep axes stable if the device rotates. Portrait lock is requested elsewhere
     // but is best-effort — not all browsers honour it — so compensate regardless.
@@ -259,7 +295,7 @@ export class MotionSource {
 
     const ref = this.reference ?? this.latestOrientation;
     const sample = {
-      t: performance.now(),
+      t: now,
       linear,
       power: magnitude(linear),
       dAlpha: shortestAngleDelta(this.latestOrientation.alpha, ref.alpha),

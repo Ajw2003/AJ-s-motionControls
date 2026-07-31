@@ -6,7 +6,7 @@
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
-import { ThrowController, ThrowState } from './throw.js';
+import { ThrowController, ThrowState, setYawSign } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 
 const el = (id) => document.getElementById(id);
@@ -35,6 +35,14 @@ const ui = {
 // flattening peak power; too high and it lags when the phone is re-oriented.
 // The right value depends on the device's real sample rate — tune on hardware.
 const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) || 0.8;
+
+// Which way device yaw maps onto game yaw. Default -1 is derived from the specs
+// (DeviceOrientation alpha counts counter-clockwise, Unity's yaw clockwise), and is
+// what Android needs. Overridable per-device — open the controller with ?yawSign=1
+// on a handset that steers backwards to confirm the platforms disagree, without a
+// redeploy. See the comment on setYawSign in throw.js.
+const YAW_SIGN = Number(new URLSearchParams(location.search).get('yawSign'));
+if (YAW_SIGN === 1 || YAW_SIGN === -1) setYawSign(YAW_SIGN);
 
 const motion = new MotionSource({ gravityK: GRAVITY_K });
 let connection = null;
