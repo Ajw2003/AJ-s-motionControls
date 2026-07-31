@@ -133,6 +133,21 @@ export const ThrowState = {
 };
 
 /**
+ * How the player marks the moment the rock leaves their hand.
+ *
+ * HOLD — press and hold, swing, let go. The release is a finger lift.
+ * TAP  — tap to arm, swing, tap again to throw. The release is a deliberate press.
+ *
+ * TAP exists because lifting a finger mid-swing is an imprecise moment: the thumb
+ * leaves the glass whenever the swing shakes it loose, not necessarily when the
+ * player means to let go. A second tap is a positive action they choose to make.
+ */
+export const ThrowGesture = {
+  HOLD: 'hold',
+  TAP: 'tap',
+};
+
+/**
  * Reduce a whole swing to the handful of numbers Unity needs.
  *
  * Pure: takes samples, returns a descriptor. No device access, no side effects,
@@ -199,17 +214,53 @@ export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
  * the caller decide what to do with them, so this can be tested with plain stubs.
  */
 export class ThrowController {
-  constructor(motion, { onAim, onThrow, onStateChange, aimHz = 20 } = {}) {
+  constructor(motion, {
+    onAim, onThrow, onStateChange, onExpire, aimHz = 20,
+    gesture = ThrowGesture.TAP,
+    minArmMs = 150,
+    maxArmMs = 10_000,
+  } = {}) {
     this.motion = motion;
     this.onAim = onAim ?? (() => {});
     this.onThrow = onThrow ?? (() => {});
     this.onStateChange = onStateChange ?? (() => {});
+    this.onExpire = onExpire ?? (() => {});
     this.aimIntervalMs = 1000 / aimHz;
+
+    this.gesture = gesture;
+
+    // Shortest gap between arming and throwing. Below this a double-tap, or one
+    // bouncy tap, would arm and fire in the same motion and launch a rock with no
+    // swing behind it at all.
+    this.minArmMs = minArmMs;
+
+    // In TAP mode the armed state is invisible — no finger is on the glass — so a
+    // player who gets distracted mid-turn would otherwise stream aim frames forever
+    // and stall the match. In HOLD mode the held finger is unambiguous intent, so
+    // this does not apply there.
+    this.maxArmMs = maxArmMs;
 
     this.state = ThrowState.IDLE;
     this.seq = 0;
     this._timer = null;
     this._grippedAt = 0;
+  }
+
+  /**
+   * One tap, dispatched by state: the first arms the throw, the second releases it.
+   * Only used in TAP mode; HOLD mode drives grip/release directly.
+   *
+   * @returns {object|null} the throw descriptor if this tap threw, else null
+   */
+  tap() {
+    if (this.state === ThrowState.IDLE) {
+      this.grip();
+      return null;
+    }
+
+    if (performance.now() - this._grippedAt < this.minArmMs) return null;
+
+    return this.release();
   }
 
   /** Player pressed and held. Captures the aim reference and starts streaming. */
@@ -221,6 +272,15 @@ export class ThrowController {
     this._setState(ThrowState.GRIPPED);
 
     this._timer = setInterval(() => {
+      // Only TAP mode can be armed-and-forgotten; see maxArmMs.
+      if (this.gesture === ThrowGesture.TAP &&
+          this.maxArmMs > 0 &&
+          performance.now() - this._grippedAt > this.maxArmMs) {
+        this.cancel();
+        this.onExpire();
+        return;
+      }
+
       const payload = buildAimPayload(this.motion.latest, ++this.seq);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);

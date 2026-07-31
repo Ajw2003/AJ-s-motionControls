@@ -70,6 +70,8 @@
       background: var(--bad); color: #fff; font-size: 26px; letter-spacing: 1px;
       box-shadow: 0 10px 0 #b3204a; transition: transform 80ms, box-shadow 80ms;
       touch-action: none;
+      /* The tap-mode labels are two words, so they wrap inside the circle. */
+      padding: 0 24px; line-height: 1.2;
     }
     #gripBtn.held { transform: translateY(8px); box-shadow: 0 2px 0 #b3204a; background: var(--good); }
 
@@ -112,8 +114,9 @@
   <!-- Your turn -->
   <section id="throwScreen" class="screen">
     <h2 id="throwTitle">Your turn!</h2>
-    <p id="throwHint">Point your phone at the lake, hold, swing, and let go.</p>
-    <button id="gripBtn">HOLD</button>
+    <!-- Both of these are overwritten at startup to match the bound gesture. -->
+    <p id="throwHint">Point your phone at the lake, tap, swing, then tap again to let go.</p>
+    <button id="gripBtn">TAP TO AIM</button>
     <p id="throwResult"></p>
   </section>
 

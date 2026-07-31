@@ -83,6 +83,35 @@ Bearings and Unity's yaw are both clockwise-from-above, so the sign passes strai
 through. If a platform turns out to disagree, open the controller with `?yawSign=-1` to
 confirm it on the device before changing any code.
 
+## The throw gesture
+
+**Tap to aim, swing, tap again to throw.** The second tap is what marks the release —
+it is bound to the press rather than the lift, since the press is the instant the player
+chose and waiting for their thumb to come back up would add that delay to the moment the
+physics reads as the release.
+
+This replaced press-and-hold-and-let-go, on the theory that lifting a finger mid-swing is
+an imprecise moment: the thumb leaves the glass whenever the swing shakes it loose, not
+necessarily when the player means to let go.
+
+`?gesture=hold` restores the old gesture, so the two can be compared back to back on the
+same handset.
+
+Two guards, both in `ThrowController`:
+
+- `minArmMs` (150ms) — the shortest gap between arming and throwing, so one bouncy tap
+  or a double-tap cannot arm and fire in the same motion and launch a rock with no swing
+  behind it.
+- `maxArmMs` (10s) — in tap mode nothing is on the glass, so an armed-and-forgotten
+  throw is invisible and would stream aim frames forever and stall the match. Hold mode
+  has a finger physically down, which is unambiguous intent, so the timeout is not
+  applied there.
+
+Worth watching on the next playtest: tapping the screen at the end of a swing is itself
+an impulse the accelerometer sees. A thumb tap should be well below a throwing peak, so
+it should not win the peak search — but if power readings come out inflated in tap mode
+and not in hold mode, that is the first thing to suspect.
+
 ## Match flow
 
 `TurnManager` owns a three-phase lifecycle, and nothing advances on its own:

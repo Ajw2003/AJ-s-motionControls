@@ -6,7 +6,7 @@
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
-import { ThrowController, ThrowState, setYawSign } from './throw.js';
+import { ThrowController, ThrowState, ThrowGesture, setYawSign } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 
 const el = (id) => document.getElementById(id);
@@ -21,6 +21,7 @@ const ui = {
   codeInput: el('codeInput'),
   joinBtn: el('joinBtn'),
   gripBtn: el('gripBtn'),
+  throwHint: el('throwHint'),
   waitTitle: el('waitTitle'),
   waitDetail: el('waitDetail'),
   scores: el('scores'),
@@ -43,6 +44,19 @@ const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) |
 const YAW_SIGN = Number(new URLSearchParams(location.search).get('yawSign'));
 if (YAW_SIGN === 1 || YAW_SIGN === -1) setYawSign(YAW_SIGN);
 
+// Tap-swing-tap by default. ?gesture=hold restores press-and-release, so the two can
+// be compared back to back on the same handset without a redeploy.
+const GESTURE = new URLSearchParams(location.search).get('gesture') === ThrowGesture.HOLD
+  ? ThrowGesture.HOLD
+  : ThrowGesture.TAP;
+
+const GESTURE_LABELS = {
+  [ThrowGesture.TAP]: { idle: 'TAP TO AIM', armed: 'TAP TO THROW',
+                        hint: 'Point your phone at the lake, tap, swing, then tap again to let go.' },
+  [ThrowGesture.HOLD]: { idle: 'HOLD', armed: 'SWING!',
+                         hint: 'Point your phone at the lake, hold, swing, and let go.' },
+};
+
 const motion = new MotionSource({ gravityK: GRAVITY_K });
 let connection = null;
 let lastThrow = null;
@@ -63,6 +77,7 @@ function setStatus(text, kind = '') {
 // ---------------------------------------------------------------- gesture
 
 const thrower = new ThrowController(motion, {
+  gesture: GESTURE,
   onAim: (payload) => connection?.send(payload),
   onThrow: (payload) => {
     connection?.send(payload);
@@ -72,10 +87,20 @@ const thrower = new ThrowController(motion, {
       (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
   onStateChange: (state) => {
-    ui.gripBtn.classList.toggle('held', state === ThrowState.GRIPPED);
-    ui.gripBtn.textContent = state === ThrowState.GRIPPED ? 'SWING!' : 'HOLD';
+    const armed = state === ThrowState.GRIPPED;
+    ui.gripBtn.classList.toggle('held', armed);
+    ui.gripBtn.textContent = GESTURE_LABELS[GESTURE][armed ? 'armed' : 'idle'];
+  },
+  onExpire: () => {
+    ui.throwResult.textContent = 'Took too long — tap to aim again.';
   },
 });
+
+/** Android only — iOS support for navigator.vibrate is unreliable, so this is a bonus. */
+function confirmThrow(descriptor) {
+  if (descriptor && navigator.vibrate) navigator.vibrate(30);
+  return descriptor;
+}
 
 function bindGrip() {
   const start = (event) => {
@@ -84,11 +109,25 @@ function bindGrip() {
   };
   const end = (event) => {
     event.preventDefault();
-    const descriptor = thrower.release();
-    // Android only — iOS support for navigator.vibrate is unreliable, so this is
-    // a bonus rather than something the feel depends on.
-    if (descriptor && navigator.vibrate) navigator.vibrate(30);
+    confirmThrow(thrower.release());
   };
+
+  if (GESTURE === ThrowGesture.TAP) {
+    // Bound to the press, not the lift. The press is the instant the player chose;
+    // waiting for touchend would add however long their thumb takes to come back up
+    // to a value the physics reads as the exact moment of release.
+    const tap = (event) => {
+      event.preventDefault();
+      confirmThrow(thrower.tap());
+    };
+
+    ui.gripBtn.addEventListener('touchstart', tap, { passive: false });
+    ui.gripBtn.addEventListener('mousedown', tap);
+
+    // Deliberately no touchcancel handler: in tap mode the finger is not held, so a
+    // cancelled touch is not the player abandoning the throw.
+    return;
+  }
 
   ui.gripBtn.addEventListener('touchstart', start, { passive: false });
   ui.gripBtn.addEventListener('touchend', end, { passive: false });
@@ -282,6 +321,11 @@ function init() {
   const params = new URLSearchParams(location.search);
   const prefill = params.get('room');
   if (prefill) ui.codeInput.value = prefill.toUpperCase();
+
+  // The markup ships the hold-mode wording; both are owned here so they cannot
+  // drift from whichever gesture is actually bound.
+  ui.throwHint.textContent = GESTURE_LABELS[GESTURE].hint;
+  ui.gripBtn.textContent = GESTURE_LABELS[GESTURE].idle;
 
   ui.joinBtn.addEventListener('click', join);
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));

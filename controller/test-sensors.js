@@ -28,6 +28,8 @@ import {
   computeSimulatedThrowDescriptor,
   buildAimPayload,
   ThrowController,
+  ThrowGesture,
+  ThrowState,
   ThrowTuning,
   SimulatedThrow,
   toGameYaw,
@@ -404,6 +406,93 @@ console.log('\nThrowController.release fallback');
     });
     check('release without grip sends nothing',
       c.release() === null && sent.length === 0);
+  }
+}
+
+// --------------------------------------------------------- tap-swing-tap gesture
+console.log('\nTAP gesture');
+{
+  const makeMotion = (latest, samples) => ({
+    latest,
+    buffer: { toArray: () => samples, clear() {} },
+    calibrate() {},
+  });
+
+  const swing = [];
+  for (let i = 0; i <= 10; i++) swing.push(makeSample(i * 10, i * 3));
+
+  const tapController = (options = {}) => new ThrowController(makeMotion(swing[10], swing), {
+    aimHz: 1000,
+    gesture: ThrowGesture.TAP,
+    minArmMs: 0,
+    ...options,
+  });
+
+  {
+    const sent = [];
+    const c = tapController({ onThrow: (p) => sent.push(p) });
+
+    check('the first tap arms without throwing',
+      c.tap() === null && c.state === ThrowState.GRIPPED && sent.length === 0);
+    check('the second tap throws', c.tap() !== null && sent.length === 1);
+    check('and the gesture returns to idle', c.state === ThrowState.IDLE);
+  }
+
+  {
+    // Without this floor, one bouncy tap arms and fires in the same motion and
+    // launches a rock with no swing behind it.
+    const sent = [];
+    const c = tapController({ onThrow: (p) => sent.push(p), minArmMs: 5000 });
+    c.tap();
+
+    check('a second tap inside the minimum arm time is ignored',
+      c.tap() === null && sent.length === 0 && c.state === ThrowState.GRIPPED);
+    c.cancel();
+  }
+
+  {
+    // HOLD mode must be untouched by any of this — it is the fallback.
+    const sent = [];
+    const c = new ThrowController(makeMotion(swing[10], swing), {
+      onThrow: (p) => sent.push(p), aimHz: 1000, gesture: ThrowGesture.HOLD,
+    });
+    c.grip();
+    check('hold mode still throws on release', c.release() !== null && sent.length === 1);
+  }
+
+  {
+    // In tap mode nothing is on the glass, so an armed-and-forgotten throw is
+    // invisible — it would stream aim frames forever and stall the match.
+    const sent = [];
+    let expired = false;
+    const c = tapController({
+      onThrow: (p) => sent.push(p),
+      onExpire: () => { expired = true; },
+      aimHz: 200,
+      maxArmMs: 20,
+    });
+    c.tap();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    check('an armed throw nobody releases expires', expired && c.state === ThrowState.IDLE);
+    check('and expiring does not throw a rock', sent.length === 0);
+  }
+
+  {
+    // HOLD mode has a finger physically down, which is unambiguous intent, so the
+    // timeout must not apply there.
+    let expired = false;
+    const c = new ThrowController(makeMotion(swing[10], swing), {
+      onExpire: () => { expired = true; },
+      aimHz: 200, gesture: ThrowGesture.HOLD, maxArmMs: 20,
+    });
+    c.grip();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    check('a held gesture never times out', !expired && c.state === ThrowState.GRIPPED);
+    c.cancel();
   }
 }
 
