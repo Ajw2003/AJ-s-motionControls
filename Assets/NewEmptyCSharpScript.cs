@@ -1,0 +1,10 @@
+//UnityConnectWebRequestException: Token Exchange failed due a failure with the web request.
+// UnityEditor.Connect.TokenExchange.VerifyTokenExchangeResponse (UnityEngine.Networking.UnityWebRequest exchangeRequest) (at <49fcb209645d4ccfb3e373da32345d37>:0)
+// UnityEditor.Connect.TokenExchange.TokenExchangeRequestAsync (UnityEditor.Connect.TokenExchangeRequest tokenExchangeRequest, System.Threading.CancellationToken cancellationToken) (at <49fcb209645d4ccfb3e373da32345d37>:0)
+// UnityEditor.Connect.TokenExchange.GetServiceTokenAsync (System.String genesisToken, System.Threading.CancellationToken cancellationToken) (at <49fcb209645d4ccfb3e373da32345d37>:0)
+// UnityEditor.Connect.ServiceToken.GetServiceTokenAsync (System.String genesisToken, System.Threading.CancellationToken cancellationToken) (at <49fcb209645d4ccfb3e373da32345d37>:0)
+// UnityEditor.Connect.UnityConnect.RequestNewServiceToken () (at <49fcb209645d4ccfb3e373da32345d37>:0)
+// System.Runtime.CompilerServices.AsyncMethodBuilderCore+<>c.<ThrowAsync>b__7_0 (System.Object state) (at <41d29b352f6a475ab1bf7c6628b82790>:0)
+// UnityEngine.UnitySynchronizationContext+WorkRequest.Invoke () (at <dc764b59c049482b93bebc78a7e33a04>:0)
+// UnityEngine.UnitySynchronizationContext.Exec () (at <dc764b59c049482b93bebc78a7e33a04>:0)
+// UnityEngine.UnitySynchronizationContext.ExecuteTasks () (at <dc764b59c049482b93bebc78a7e33a04>:0)

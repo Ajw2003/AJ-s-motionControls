@@ -93,7 +93,7 @@ namespace Game
             _curRoll = Mathf.SmoothDampAngle(_curRoll, _targetRoll, ref _velRoll, smoothTime);
             _curWindup = Mathf.SmoothDamp(_curWindup, _targetWindup, ref _velWindup, smoothTime);
 
-            _line.enabled = HasSignal;
+            _line.enabled = true;
             _ghost.gameObject.SetActive(HasSignal);
 
             if (!HasSignal) return;
@@ -169,7 +169,7 @@ namespace Game
         private Transform CreateOrigin()
         {
             var origin = new GameObject("ThrowOrigin").transform;
-            origin.position = new Vector3(0f, 1.2f, 0f);
+            origin.position = new Vector3(0f, 0f, 0f);
             return origin;
         }
 
@@ -208,8 +208,8 @@ namespace Game
             var camera = Camera.main;
             if (camera == null) return;
 
-            camera.transform.position = new Vector3(-5f, 4.5f, -7f);
-            camera.transform.LookAt(new Vector3(0f, 0f, 14f));
+             camera.transform.position = new Vector3(0, 4.5f, 0);
+            // camera.transform.LookAt(new Vector3(0f, 0f, 14f));
             camera.backgroundColor = new Color(0.05f, 0.09f, 0.15f);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 500f;

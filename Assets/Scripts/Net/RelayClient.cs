@@ -204,7 +204,7 @@ namespace Net
                     break;
                 }
             }
-        }
+        }///FIX switch statement and whole function likely taking up ms and adding to lag
 
         /// <summary>Fire-and-forget send. Safe to call every frame from the main thread.</summary>
         public void Send(string json)
