@@ -208,7 +208,7 @@ namespace Game
             var camera = Camera.main;
             if (camera == null) return;
 
-            camera.transform.position = new Vector3(0, 4.5f, 0);
+            camera.transform.position = new Vector3(0, 4.5f, -5);
             camera.transform.LookAt(new Vector3(0f, 0f, 14f));
             camera.backgroundColor = new Color(0.05f, 0.09f, 0.15f);
             camera.clearFlags = CameraClearFlags.SolidColor;

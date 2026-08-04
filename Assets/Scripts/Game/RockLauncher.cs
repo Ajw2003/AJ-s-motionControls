@@ -34,7 +34,10 @@ namespace Game
         private void Update()
         {
             EnsureBound();
-            FollowActiveRock();
+            if (_active != null )
+            {
+                FollowActiveRock();
+            }
             BroadcastLiveState();
         }
 
@@ -114,15 +117,13 @@ namespace Game
                     _camera.transform.rotation,
                     Quaternion.LookRotation(_active.transform.position - _camera.transform.position),
                     Time.deltaTime * 5f);
-                
-                _camera.transform.position = Vector3.SmoothDamp(
-                    _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
-                _camera.transform.rotation = Quaternion.Slerp(
-                    _camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
                 return;
             }
 
-          
+            _camera.transform.position = Vector3.SmoothDamp(
+                _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
+            _camera.transform.rotation = Quaternion.Slerp(
+                _camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
         }
 
         private void BroadcastLiveState()
