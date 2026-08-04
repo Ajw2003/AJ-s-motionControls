@@ -136,7 +136,7 @@ namespace Game
             var launch = SkipPhysics.CreateLaunch(
                 throwOrigin.position, Vector3.forward,
                 previewPower, 1f,
-                _curAim, _curAttack, previewSpin,
+                -_curAim, -_curAttack, previewSpin,
                 RockStats.Default, tuning);
 
             var final = SkipPhysics.Predict(launch, RockStats.Default, tuning, _path);
@@ -158,7 +158,7 @@ namespace Game
         {
             _ghost.position = throwOrigin.position;
             // Pitch by the stone's face angle, yaw by aim, roll by wrist tilt.
-            _ghost.rotation = Quaternion.Euler(-_curAttack, _curAim, _curRoll);
+            _ghost.rotation = Quaternion.Euler(-_curAttack, -_curAim, _curRoll);
 
             var scale = Mathf.Lerp(1f, 1.35f, _curWindup);
             _ghost.localScale = new Vector3(0.45f * scale, 0.08f * scale, 0.45f * scale);

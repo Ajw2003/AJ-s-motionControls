@@ -96,7 +96,7 @@ namespace Game
             var launch = SkipPhysics.CreateLaunch(
                 _preview.ThrowOrigin.position, Vector3.forward,
                 message.power, message.timingQuality,
-                message.aimDeg, message.attackAngleDeg, message.spinRate,
+                -message.aimDeg, -message.attackAngleDeg, message.spinRate,
                 stats, tuning);
 
             _active = CreateRockObject();
