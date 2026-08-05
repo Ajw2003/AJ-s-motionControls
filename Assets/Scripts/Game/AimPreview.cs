@@ -50,7 +50,9 @@ namespace Game
         /// <summary>Shared with RockLauncher so preview and live throw use one rig.</summary>
         public Transform ThrowOrigin => throwOrigin;
         public SkipTuning Tuning => tuning;
-
+        
+        private string _lastAimPlayer;
+        
         private RelayClient _client;
         private LineRenderer _line;
         private Transform _ghost;
@@ -121,6 +123,12 @@ namespace Game
 
             // Cheap ordering guard: TCP preserves order per socket, but a reconnect can
             // interleave, and a stale frame overwriting a newer one looks like a stutter.
+            
+            if (aim.playerId != _lastAimPlayer)
+            {
+                _lastAimPlayer = aim.playerId;
+                _lastSeq = -1;
+            }
             if (aim.seq <= _lastSeq) return;
             _lastSeq = aim.seq;
 
