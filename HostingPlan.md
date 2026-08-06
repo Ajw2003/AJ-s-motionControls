@@ -1,7 +1,7 @@
 # Hosting — one small service, peer-to-peer gameplay
 
-**Status: Phase 1 built and deployed. Phase 2 unblocked — the WebRTC spike passed on real
-hardware (§5).** The relay runs on Fly at
+**Status: Phase 1 deployed. Phase 2 built, needs a `fly deploy` and a real-phone run.** The
+relay runs on Fly at
 `rockskipping-relay.fly.dev`, the game connects out to it, and `cloudflared` is gone from the
 codebase. `play.skiprocking.ca` is still pending registry delegation and is cosmetic — the
 `fly.dev` name works fully. Deployment steps: [deploy/README.md](deploy/README.md).
@@ -72,6 +72,22 @@ on: WebRTC's DTLS uses self-signed keys by design, and every browser accepts the
 *page* comes from our HTTPS origin, and the *data* goes direct with no certificate anywhere
 near it.
 
+### Alternatives considered and rejected
+
+Each was investigated properly and each fails a numbered requirement from §1. Recorded so the
+next person does not spend the same afternoon — these keep getting re-proposed, because every
+one of them looks like it should work.
+
+| Alternative | Third parties | Why rejected |
+|---|---|---|
+| **Private CA** — relay mints its own root and leaves | **Zero.** No registrar, no CA, no DNS, no internet. | Every guest installs a root by hand, and that **cannot be automated by design**. Fails requirement 1 outright. Tempting otherwise: it satisfies 2, 3 and 4 perfectly. |
+| **Let's Encrypt IP-address certificate**, no domain | CA only — fewer than the chosen design, and $0. | Needs a routable public IP, port 443 forwarded, and working NAT hairpin for phones *inside* the house. CGNAT or a router without loopback means it fails **at party time**. |
+| **Self-hosted authoritative DNS** | Registrar only. | Needs port 53 forwarded and the PC permanently online; if the machine is off, the domain stops resolving entirely. More fragility for one less vendor. |
+| **Bundle a reverse proxy** (Caddy) and serve the page from the host machine | Depends entirely on where its certificate comes from | **The proxy was never the blocker.** A locally-run Caddy can use ACME (needs a per-host domain, or a shared credential that is extractable from a shipped binary), its internal CA (a self-signed root every guest installs by hand), or plain HTTP (no secure context). All three are rejected above. Costs a ~45 MB binary and a listening socket on every player's machine, which reintroduces the firewall prompt §8 exists to avoid. |
+| **Certificate broker** — our service issues each host its own cert for `<id>.play.skiprocking.ca` pointing at that host's LAN IP, served by a bundled proxy | Ours, for issuance and DNS | The only version of the above that actually works, and it fails on a number: **Let's Encrypt allows 50 certificates per registered domain per week**, capping new hosts at 50/week permanently — fatal for the Steam-scale ambition in §13. Also reintroduces DNS-rebinding failures on routers that strip private-IP answers. What it buys is a locally-served page, which after Phase 2 is a few hundred cached KB per player per session. It does not enable offline play either: the phone still needs public DNS to resolve the name. |
+| **A different tunnel vendor** — localtunnel, ngrok, bore, etc., bundled and run per host | One, in the path of every packet | This is design #1 from §1 with the vendor swapped, and usually swapped downward: `localtunnel.me` is free, hobby-run and has no SLA, so an outage breaks every host at once with nobody to call. Bundling it also points an entire playerbase at someone else's free infrastructure, which is a rate-limit problem and a free-riding one. Self-hosting the tunnel server needs a VPS with a wildcard domain — the infrastructure we already run, plus a tunnel server *and* the relay instead of just the relay. |
+| **Touch controls only**, plain HTTP on the LAN | **Zero.** | Satisfies every requirement except the game. Kept as the *fallback* (§6), never as the design. |
+
 ## 3. Architecture
 
 ```
@@ -130,9 +146,33 @@ THROW is computed phone-side, so no amount of latency can change a throw's outco
 **The deployment must run exactly one machine** (§12.7). `relay/test-deployed.js` probes for
 this along with the rest of the routing: `cd relay && npm run test:deployed`.
 
-## 5. Phase 2 — WebRTC DataChannel
+## 5. Phase 2 — WebRTC DataChannel (built)
 
 An optimisation layered on Phase 1, not a replacement for it.
+
+**What shipped:** [Assets/Scripts/Net/PeerLink.cs](Assets/Scripts/Net/PeerLink.cs) holds one
+peer connection per phone; [controller/js/peer.js](controller/js/peer.js) is its other half.
+`AIM` and `THROW` go direct; everything else stays on the relay. The relay itself was not
+touched — `npm test` is green at 23/23 without a single change, exactly as predicted below.
+
+Three decisions worth knowing before reading the code:
+
+- **Nothing downstream knows peer connections exist.** `PeerLink` feeds received messages
+  into `RelayClient.IngestFromPeer`, which queues them into the *same* dispatch as relay
+  traffic. `AimPreview`, `RockLauncher` and `RelayDebugHud` still subscribe to `RelayClient`
+  and cannot tell which transport delivered a frame.
+- **Identity still comes from the transport, never the payload.** The relay stamps `playerId`
+  server-side so a phone cannot label its throws with someone else's name. There is no relay
+  in a peer path to do that, so `IngestFromPeer` takes the id from *which channel the message
+  arrived on* and overwrites whatever the payload claimed. Dropping that guarantee silently
+  would have been an easy regression.
+- **Fallback is per-phone and automatic.** `send()` on the controller uses the data channel
+  when open and the relay socket otherwise, so a phone that never negotiates simply plays on
+  Phase 1. Callers do not branch — one code path, or the fallback rots.
+
+Turn it off with **Use Peer Connections** on `Bootstrap`, or per-phone with `?direct=0` on the
+controller URL. The TV's F1 readout shows `N/M direct` and names which phones are on which
+transport, so a silent downgrade is visible rather than merely slower.
 
 ### The relay needs no changes to carry signalling
 
@@ -249,16 +289,19 @@ Delete `Assets/Scripts/Spike/` and `controller/spike.html` once the question is 
   DataChannel sample does not call it. **A DataChannel-only integration costs no per-frame
   coroutine**, which is what §12.2 wanted checked.
 
-### What is left after the spike
+### Verifying Phase 2 on hardware
 
-Nothing structural. The signalling path works today, the fallback is live and proven, the
-package is installed, and the message sizes fit.
-
-1. `PeerLink` on the Unity side, `RTCPeerConnection` on the controller side, `RTC_OFFER` /
-   `RTC_ANSWER` / `RTC_ICE` over the existing relay routing — all of which the spike has now
-   demonstrated in miniature and can be lifted from.
-2. Move `AIM` and `THROW` onto the DataChannel with a few-second establishment timeout that
-   falls back to WSS, and label the fallback on the TV.
+1. `fly deploy` — the phone needs the new `controller/js/peer.js`.
+2. Press Play with **Use Peer Connections** ticked on `Bootstrap` (the default).
+3. Join from an Android phone on the same Wi-Fi. The phone's status line should change from
+   `Connected as AJ` to `Connected as AJ · direct` within a couple of seconds.
+4. **F1 on the TV** shows `Input  1/1 direct`. That is the check that matters — the phone
+   saying `direct` only proves its own channel opened.
+5. Throw. Aim tracking should feel tighter than before, because the frames no longer round-trip
+   to Toronto.
+6. **Prove the fallback**, which is the part most likely to rot unnoticed: rejoin with
+   `?direct=0` on the URL and confirm the game plays identically, with F1 reporting `0/1
+   direct`. A throw must behave the same on both transports.
 
 ## 6. Fallbacks, in order
 

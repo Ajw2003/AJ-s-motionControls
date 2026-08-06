@@ -37,6 +37,11 @@ namespace Managers
         [Tooltip("Live trajectory arc plus placeholder water. Scaffolding until the real lake scene exists.")]
         [SerializeField] private bool showAimPreview = true;
 
+        [Tooltip("Carry aim and throw over a direct WebRTC channel to each phone instead of " +
+                 "through the hosted relay. Falls back to the relay per-phone if it cannot " +
+                 "connect, so turning it off only costs latency. HostingPlan.md §5.")]
+        [SerializeField] private bool usePeerConnections = true;
+
         [Tooltip("Run the WebRTC spike instead of the game — proves whether Phase 2 is viable. " +
                  "See HostingPlan.md §5. Turns off the other screens so its readout is unobstructed.")]
         [SerializeField] private bool runWebRtcSpike;
@@ -67,6 +72,11 @@ namespace Managers
             // is torn down on every transition and every phone bounces back to the
             // join screen. That reads as a networking bug but is a lifecycle one.
             _ = Net.RelayClient.Instance;
+
+            // After RelayClient, whose signalling it rides and whose dispatch it feeds.
+            // Failing to establish is not fatal — a phone without a peer connection keeps
+            // sending over the relay, which is what makes this safe to enable by default.
+            if (usePeerConnections) _ = Net.PeerLink.Instance;
 
             // After RelayClient so it can subscribe before any phone joins, and after
             // ScoreManager for the delivery-order reason above.

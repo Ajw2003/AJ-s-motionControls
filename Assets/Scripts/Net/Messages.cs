@@ -27,6 +27,13 @@ namespace Net
         public const string Spectate = "SPECTATE";
         public const string Error = "ERROR";
         public const string RoomClosed = "ROOM_CLOSED";
+
+        // WebRTC signalling. The relay routes these without understanding them — player
+        // messages go to the host with playerId stamped, host messages go to the player in
+        // targetPlayerId — which is why adding peer connections needed no relay change.
+        public const string RtcOffer = "RTC_OFFER";
+        public const string RtcAnswer = "RTC_ANSWER";
+        public const string RtcIce = "RTC_ICE";
     }
 
     /// <summary>Peeked first to decide which concrete type to parse into.</summary>

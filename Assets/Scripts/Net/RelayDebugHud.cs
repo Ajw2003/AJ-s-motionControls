@@ -116,6 +116,23 @@ namespace Net
             GUILayout.Label($"<b>Turn</b>   {turns?.ActivePlayer ?? "nobody"}   " +
                             $"players {turns?.Players.Count ?? 0}   (press N for next)", rich);
 
+            // Which transport each phone's input is on. Direct means peer-to-peer over the
+            // LAN; relay means it is still round-tripping through the hosted service, which
+            // is a working state and not an error — see HostingPlan §5.
+            if (PeerLink.HasInstance && turns != null && turns.Players.Count > 0)
+            {
+                var link = PeerLink.Instance;
+                var players = new System.Text.StringBuilder();
+
+                foreach (var player in turns.Players)
+                {
+                    var direct = link.IsDirect(player);
+                    players.Append(direct ? "<b>" : "").Append(player).Append(direct ? "</b>:direct  " : ":relay  ");
+                }
+
+                GUILayout.Label($"<b>Input</b>  {link.DirectPeerCount}/{turns.Players.Count} direct   {players}", rich);
+            }
+
             GUILayout.Space(6);
             GUILayout.Label($"<b>Aim</b>   {_aimHz:F0} Hz (target 20)", rich);
 

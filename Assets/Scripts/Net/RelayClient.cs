@@ -80,9 +80,29 @@ namespace Net
         /// </remarks>
         public event Action<string, string> RawMessageReceived;
 
+        /// <summary>
+        /// A message waiting for the main thread, and who it is known to be from.
+        /// </summary>
+        /// <remarks>
+        /// TrustedPlayerId is null for relay traffic, because the relay already stamps
+        /// identity server-side. It is set for peer traffic, where there is no relay in
+        /// the path to do it — see IngestFromPeer.
+        /// </remarks>
+        private readonly struct Inbound
+        {
+            public readonly string Json;
+            public readonly string TrustedPlayerId;
+
+            public Inbound(string json, string trustedPlayerId)
+            {
+                Json = json;
+                TrustedPlayerId = trustedPlayerId;
+            }
+        }
+
         private ClientWebSocket _socket;
         private CancellationTokenSource _cts;
-        private readonly ConcurrentQueue<string> _inbound = new();
+        private readonly ConcurrentQueue<Inbound> _inbound = new();
         private readonly SemaphoreSlim _sendLock = new(1, 1);
 
         private bool _connecting;
@@ -160,9 +180,9 @@ namespace Net
         private void Update()
         {
             // Everything that touches Unity happens here, on the main thread.
-            while (_inbound.TryDequeue(out var json))
+            while (_inbound.TryDequeue(out var message))
             {
-                Dispatch(json);
+                Dispatch(message.Json, message.TrustedPlayerId);
             }
 
             if (!IsConnected && !_connecting && Time.time >= _nextRetryTime)
@@ -223,7 +243,7 @@ namespace Net
                     // A single message can arrive across several frames.
                     if (!result.EndOfMessage) continue;
 
-                    _inbound.Enqueue(builder.ToString());
+                    _inbound.Enqueue(new Inbound(builder.ToString(), null));
                     builder.Clear();
                 }
             }
@@ -236,7 +256,25 @@ namespace Net
             _nextRetryTime = Time.time + _retryDelay;
         }
 
-        private void Dispatch(string json)
+        /// <summary>
+        /// Hand a message that arrived over a peer connection into the same dispatch path
+        /// as relay traffic, so nothing downstream can tell the two apart.
+        /// </summary>
+        /// <param name="trustedPlayerId">
+        /// Which peer it came from. This <b>overrides</b> any playerId in the payload,
+        /// reproducing the server-side stamping in the relay's relayToHost — without it a
+        /// phone could label its own throws with somebody else's name, which is exactly
+        /// the spoof the relay was hardened against. The peer connection is per-player, so
+        /// the caller always knows the real answer.
+        /// </param>
+        /// <remarks>Safe to call from any thread; the queue is drained on the main one.</remarks>
+        public void IngestFromPeer(string json, string trustedPlayerId)
+        {
+            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(trustedPlayerId)) return;
+            _inbound.Enqueue(new Inbound(json, trustedPlayerId));
+        }
+
+        private void Dispatch(string json, string trustedPlayerId)
         {
             MessageEnvelope envelope;
             try
@@ -279,12 +317,20 @@ namespace Net
                 }
 
                 case MessageType.Aim:
-                    AimReceived?.Invoke(JsonUtility.FromJson<AimMessage>(json));
+                {
+                    var aim = JsonUtility.FromJson<AimMessage>(json);
+                    if (trustedPlayerId != null) aim.playerId = trustedPlayerId;
+                    AimReceived?.Invoke(aim);
                     break;
+                }
 
                 case MessageType.Throw:
-                    ThrowReceived?.Invoke(JsonUtility.FromJson<ThrowMessage>(json));
+                {
+                    var thrown = JsonUtility.FromJson<ThrowMessage>(json);
+                    if (trustedPlayerId != null) thrown.playerId = trustedPlayerId;
+                    ThrowReceived?.Invoke(thrown);
                     break;
+                }
 
                 case MessageType.Error:
                 {

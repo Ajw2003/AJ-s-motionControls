@@ -8,6 +8,7 @@
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
 import { ThrowController, ThrowState } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
+import { PeerLink, Transport } from './peer.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -38,8 +39,21 @@ const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) |
 
 const motion = new MotionSource({ gravityK: GRAVITY_K });
 let connection = null;
+let peer = null;
 let lastThrow = null;
 let myPlayerId = '';
+
+// ?direct=0 forces everything through the relay. Worth keeping: it is the only way to
+// compare the two transports on the same phone and network, and to reproduce a
+// relay-only session when a peer connection is suspected of misbehaving.
+const PEER_ENABLED = new URLSearchParams(location.search).get('direct') !== '0';
+
+/** Fastest transport available. Falls back to the relay on its own. */
+function sendInput(payload) {
+  if (peer) return peer.send(payload);
+  connection?.send(payload);
+  return Transport.RELAY;
+}
 
 function showScreen(name) {
   for (const screen of [ui.joinScreen, ui.waitScreen, ui.throwScreen]) {
@@ -56,9 +70,9 @@ function setStatus(text, kind = '') {
 // ---------------------------------------------------------------- gesture
 
 const thrower = new ThrowController(motion, {
-  onAim: (payload) => connection?.send(payload),
+  onAim: (payload) => sendInput(payload),
   onThrow: (payload) => {
-    connection?.send(payload);
+    sendInput(payload);
     lastThrow = payload;
     ui.throwResult.textContent =
       `Power ${(payload.power * 100).toFixed(0)}% · Timing ${(payload.timingQuality * 100).toFixed(0)}%` +
@@ -95,6 +109,9 @@ function bindGrip() {
 // ---------------------------------------------------------------- messages
 
 function handleMessage(message) {
+  // Signalling is consumed here and never reaches the switch — the peer link owns it.
+  if (peer && peer.handleSignal(message)) return;
+
   switch (message.type) {
     case 'JOINED':
       myPlayerId = message.playerId;
@@ -102,6 +119,11 @@ function handleMessage(message) {
       showScreen('wait');
       motion.start();
       requestWakeLock();
+
+      // Only after JOINED: the relay routes by room membership, so an offer sent any
+      // earlier has nowhere to go. Failure here is silent by design — the throw path
+      // already works over the relay, and this is only ever an upgrade.
+      if (PEER_ENABLED && peer) peer.start().catch(() => {});
       break;
 
     case 'ERROR':
@@ -127,6 +149,7 @@ function handleMessage(message) {
     case 'ROOM_CLOSED':
       setStatus('Game ended', 'bad');
       thrower.cancel();
+      peer?.close();
       showScreen('join');
       ui.joinBtn.disabled = false;
       break;
@@ -224,6 +247,20 @@ async function join() {
       },
     });
     connection.connect();
+
+    if (PEER_ENABLED && 'RTCPeerConnection' in window) {
+      peer = new PeerLink({
+        connection,
+        onTransportChange: (transport) => {
+          setStatus(
+            transport === Transport.DIRECT
+              ? `Connected as ${myPlayerId} · direct`
+              : `Connected as ${myPlayerId}`,
+            'ok',
+          );
+        },
+      });
+    }
   }
 
   const waitForOpen = setInterval(() => {
@@ -256,6 +293,7 @@ function updateDebug() {
   ui.debug.textContent = [
     `state    ${thrower.state}   seq ${thrower.seq}`,
     `socket   ${connection?.status ?? 'not connected'}`,
+    `input    ${peer ? peer.transport : 'relay'}${PEER_ENABLED ? '' : '  (?direct=0)'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
     s ? `dA ${s.dAlpha.toFixed(1).padStart(7)}  dB ${s.dBeta.toFixed(1).padStart(7)}  dG ${s.dGamma.toFixed(1).padStart(7)}`
       : 'no samples yet — is this page on HTTPS?',
