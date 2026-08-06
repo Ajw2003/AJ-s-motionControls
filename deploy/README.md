@@ -9,16 +9,16 @@ to administer. The VPS route at the bottom is the migration path if Fly's pricin
 or terms ever stop suiting you; it produces an identical result and nothing in the game code
 knows which one is running.
 
-> **Blocked until DNS resolves.** `skiprocking.ca` was still NXDOMAIN at time of writing —
-> registry delegation had not landed. `.ca` registrations can also pend on CIRA's Canadian
-> Presence Requirements check. Certificate issuance cannot happen for a name that does not
-> resolve, on either route.
+> **DNS is not a blocker.** `skiprocking.ca` was still NXDOMAIN at time of writing — registry
+> delegation had not landed, and `.ca` registrations can pend on CIRA's Canadian Presence
+> Requirements check. It only gates steps 4–5. Every app gets `https://<app>.fly.dev` with a
+> working certificate, so steps 1–3 give a fully testable system today, phone sensors included.
 >
 > ```
 > nslookup -type=NS skiprocking.ca
 > ```
 >
-> Porkbun nameservers in the answer means you are clear to continue.
+> Porkbun nameservers in the answer means steps 4–5 are unblocked.
 
 ---
 
@@ -54,74 +54,136 @@ game only ever sees `play.skiprocking.ca`.
 Confirm the region is `yyz` when prompted. Latency to this machine is added to every aim frame
 in Phase 1.
 
-## 3. Point DNS at it
+## 3. Deploy — before touching DNS
 
-Get the app's addresses:
+Deploy comes first, and the reason matters: **Fly allocates no IP addresses until the first
+deploy** (`fly ips list` on a launched-but-undeployed app returns an empty table), and every
+app gets `https://<app>.fly.dev` with a working certificate for free.
 
-```
-fly ips list
-```
-
-Then in Porkbun → `skiprocking.ca` → DNS, add both records so the name works on IPv6-only
-mobile networks as well as IPv4:
-
-| Type | Host | Answer | TTL |
-|---|---|---|---|
-| A | `play` | the `v4` address from `fly ips list` | 600 |
-| AAAA | `play` | the `v6` address | 600 |
-
-No API key is needed for any of this — that requirement disappeared with the DNS-01 design. If
-you enabled API Access on the domain earlier, turn it back off.
-
-Wait for it to resolve:
-
-```
-nslookup play.skiprocking.ca
-```
-
-## 4. Issue the certificate
-
-```
-fly certs add play.skiprocking.ca
-```
-
-Fly validates ownership against the DNS records from step 3, issues the certificate, and
-renews it from then on. There is no certbot, no cron entry, and no ACME code in the relay.
-
-```
-fly certs show play.skiprocking.ca
-```
-
-Wait for it to report the certificate as issued before deploying.
-
-## 5. Deploy
+So the whole of Phase 1 is testable on `rockskipping-relay.fly.dev` — including phone motion
+sensors, which only care that the origin is secure, not what it is called. **The custom domain
+is a cosmetic finishing step, not a prerequisite.** Do not wait on `.ca` delegation.
 
 ```
 fly deploy
 ```
 
-The build runs from the repo root so the image contains both `relay/` and `controller/` — see
-[Dockerfile](../Dockerfile). `.dockerignore` uses an allowlist, so the Unity project (`Library/`
-alone is gigabytes) never enters the build context.
+Docker is not installed locally, so this uses Fly's remote builder — no local Docker needed.
+Expect a few minutes the first time; later deploys reuse cached layers.
 
-## 6. Verify
+What it does, in order: uploads the build context (allowlisted to `relay/` and `controller/`
+by [.dockerignore](../.dockerignore)), builds [Dockerfile](../Dockerfile) remotely, pushes the
+image, **allocates a shared IPv4 and a dedicated IPv6**, and starts one machine in `yyz`.
+
+Watch for these in the output:
+
+- `--> Building image done` — the image built. A failure here is almost always `npm ci`
+  disagreeing with `relay/package-lock.json`.
+- `Creating a v6 address` / `shared ipv4` — address allocation, which is what step 4 needs.
+- `1 desired, 1 placed, 1 healthy` — the machine is up.
+
+If it fails, `fly logs` shows the container's own output; the relay logs
+`Rock Skipping relay listening on :8080` when it has started cleanly.
+
+### Verify before going further
+
+```
+curl -s https://rockskipping-relay.fly.dev/health
+```
+
+Expect `{"ok":true,"rooms":0}`. This proves the machine is up, `PORT` reached the process, and
+Fly's proxy is routing.
+
+```
+curl -sI https://rockskipping-relay.fly.dev/ | head -1
+```
+
+Expect `HTTP/2 200`. This is the check that matters most, because it is the one that catches
+the build-context mistake: it proves `controller/index.html` is *inside the image*. A `404`
+here means the Dockerfile built without `controller/`, and the symptom in the wild would be
+sockets connecting fine while every phone shows a blank page.
+
+**Then open `https://rockskipping-relay.fly.dev/` on your phone over mobile data.** Padlock,
+join screen, and in the browser console `window.isSecureContext === true`. At that point Phase 1
+works end to end and everything below is naming.
+
+## 4. Point DNS at it
+
+Now the app has addresses. Use a **CNAME**, not A/AAAA:
+
+| Type | Host | Answer | TTL |
+|---|---|---|---|
+| CNAME | `play` | `rockskipping-relay.fly.dev` | 600 |
+
+A CNAME tracks Fly's addresses automatically, covers IPv6 without a second record — which
+matters, because guests arrive on mobile networks that are increasingly IPv6-only — and
+survives Fly reassigning an IP. A/AAAA records would work and would need maintaining. This is
+legal here only because `play` is a subdomain; a CNAME at the apex would not be.
+
+No API key is needed for any of this — that requirement disappeared with the DNS-01 design. If
+you enabled API Access on the domain earlier, turn it back off.
+
+**This step is blocked until `skiprocking.ca` delegates** (still NXDOMAIN at time of writing).
+Nothing else is.
+
+```
+nslookup play.skiprocking.ca
+```
+
+Expect an answer that chains through `rockskipping-relay.fly.dev` to Fly's addresses.
+
+## 5. Issue the certificate
+
+Only once step 4 resolves — Fly validates by looking DNS up, so doing this early just produces
+a certificate stuck in `Awaiting configuration`.
+
+```
+fly certs add play.skiprocking.ca
+```
+
+Read the output rather than assuming: Fly prints exactly which DNS records it wants. With the
+CNAME already in place it can usually validate over HTTP and needs nothing more, but if it asks
+for an `_acme-challenge.play` CNAME, add that too and re-check.
+
+```
+fly certs show play.skiprocking.ca
+```
+
+Wait for the certificate to report as issued and `Ready` before relying on it. Renewal from
+then on is Fly's problem — no certbot, no cron entry, and no ACME code anywhere in the relay.
+
+## 6. Final verification
+
+The same three checks as step 3, now against the real name:
 
 ```
 curl -s https://play.skiprocking.ca/health
 ```
 
-Expect `{"ok":true,"rooms":0}`. If this hangs, `fly logs` will say why.
-
 ```
 curl -sI https://play.skiprocking.ca/ | head -1
 ```
 
-Expect `HTTP/2 200` — that is the controller page, which proves `controller/` made it into the
-image.
+**And the one that counts: open `https://play.skiprocking.ca/` on your phone over mobile data.**
+Mobile data rather than Wi-Fi is deliberate — it proves the path works from outside your
+network, which is the only thing a guest's phone will ever do.
 
-Last check, and the one that matters: **open `https://play.skiprocking.ca/` on your phone over
-mobile data.** The join screen should load with a valid padlock. That single page load exercises
-DNS, the certificate, the proxy, and the static serving together.
+That single page load exercises DNS delegation, the CNAME, certificate validity, Fly's proxy,
+and static serving from inside the image, together. If it loads with a padlock and the join
+screen appears, Phase 1's infrastructure is done and only the Part C code changes remain.
+
+## When something goes wrong
+
+| Symptom | Almost always | Check |
+|---|---|---|
+| Build fails at `npm ci` | `relay/package-lock.json` out of sync with `package.json` | Run `npm install` locally, commit the lock file |
+| Build uploads for ages | `.dockerignore` not being applied — the Unity `Library/` is entering the context | Confirm you ran `fly deploy` from the **repo root** |
+| `/health` times out | Machine not started, or `PORT` mismatch | `fly status`, then `fly logs` for `listening on :8080` |
+| `/health` works, `/` returns 404 | The image has no `controller/` | Rebuild from the repo root; check the `COPY controller` line ran |
+| Certificate stuck `Awaiting configuration` | DNS not resolving yet, or the CNAME is wrong | `nslookup play.skiprocking.ca`, then `fly certs show` for what Fly wants |
+| Phone shows a certificate warning | Certificate not `Ready` yet | `fly certs show play.skiprocking.ca` |
+| Sensors dead, page loads fine | Not a secure context | In the phone's browser console: `window.isSecureContext` |
+| First connection of a session is slow | Machine suspended between parties — expected | `fly status` shows `suspended`; see `min_machines_running` in fly.toml |
 
 ## Day-to-day
 
@@ -134,6 +196,9 @@ DNS, the certificate, the proxy, and the static serving together.
 
 Rooms are ephemeral and clients reconnect on their own, so a redeploy mid-party costs a few
 seconds of reconnection rather than the match.
+
+**flyctl may not be on PATH** in a shell that was already open when it installed. It lives at
+`%USERPROFILE%\.fly\bin\flyctl.exe`; open a new terminal, or call it by full path.
 
 ---
 
