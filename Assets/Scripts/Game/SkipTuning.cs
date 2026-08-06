@@ -42,6 +42,10 @@ namespace Game
         [Range(0f, 1f)] public float BestRestitution = 0.92f;
         [Tooltip("Energy kept on a bounce at the edge of tolerance.")]
         [Range(0f, 1f)] public float WorstRestitution = 0.45f;
+        [Tooltip("Floor on how steeply a well-angled stone leaves the water. A mirror bounce " +
+                 "alone loses height three times faster than it loses speed, so late skips " +
+                 "flatten into a slide; this keeps every hop the same shape as it shrinks.")]
+        [Range(0f, 40f)] public float SkipExitAngleDeg = 18f;
 
         [Header("Spin")]
         [Tooltip("Extra angle tolerance per unit of spin — gyroscopic stability.")]

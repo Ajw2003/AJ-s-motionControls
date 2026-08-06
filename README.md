@@ -14,7 +14,9 @@ what currently exists.
 | `Assets/` | Unity 6 project (6000.3.10f1) — the game screen |
 | `relay/` | Node WebSocket relay, and the HTTP server for the controller page |
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
+| `deploy/` | Deployment runbook, Caddyfile and systemd unit for the relay |
 | `PLAN.md` | Full design and implementation plan |
+| `HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
 
 ## Status
 
@@ -22,9 +24,9 @@ what currently exists.
 app normalizes sensors and sends `AIM`/`THROW`, and the pure skip solver plus the aim
 preview are in. Verified end to end with one Android phone.
 
-Hosting is one click: pressing Play brings up the relay and a public HTTPS tunnel, then
-puts the room code, join URL and a QR on screen. A match runs a fixed number of rounds and
-ends with a standings screen — see Match flow below.
+Hosting is one click and hosts install nothing: pressing Play connects out to the deployed
+relay, then puts the room code, join URL and a QR on screen. A match runs a fixed number of
+rounds and ends with a standings screen — see Match flow below.
 
 Still open in M2: `RockDefinition`/`RockSpawner` and the four specials, `RingGate`
 (nothing publishes `RingPassedEvent` yet, so `ScoreManager.pointsPerRing` is currently
@@ -35,18 +37,50 @@ results screen are written and unit-tested but have not been exercised at a part
 
 ## Running the game
 
-> The tunnel requirement described here is being replaced by an outbound connection to a
-> small service we run — see [HostingPlan.md](HostingPlan.md). That design is not
-> implemented yet, so everything below still describes how the code behaves today.
+Open the **Bootstrap** scene and press Play. Nothing starts on this machine:
 
-Open the **Bootstrap** scene and press Play. `LocalServices` then:
-
-1. reuses a relay already listening on `:3000`, or runs `npm install` (first launch only)
-   and starts one
-2. starts `cloudflared` and waits for its public `https://….trycloudflare.com` address
-3. hands the URL to `JoinScreen`, which shows it with the room code and a scannable QR
+1. `RelayClient` opens an outbound socket to `wss://rockskipping-relay.fly.dev` — the
+   deployed service, which also serves the controller page
+2. it derives the page origin from that socket URL, so the page and the socket cannot drift
+   onto different hosts
+3. `JoinScreen` shows the room code, the join URL and a scannable QR once connected
 
 Players scan the QR — it pre-fills the room code via `?room=CODE` — and type only a name.
+
+The address is overridable without a rebuild — one line in a `relay-url.txt` beside the
+built executable (or next to the project folder in the editor). Why the service exists and
+what it carries: [HostingPlan.md](HostingPlan.md).
+
+**Requires nothing installed.** Hosting is an outbound connection, so there is no tunnel to
+install, no port to open, no router page and no firewall prompt.
+
+Why the page comes from the service rather than from this machine: phone motion sensors need
+a secure context, and an HTTPS page cannot open a plain `ws://` socket to a LAN address. Both
+problems disappear when the page and the socket share one origin, which is why the relay
+serves the controller itself. [HostingPlan.md](HostingPlan.md) §2 has the full derivation.
+
+### Where aim and throw actually travel
+
+`AIM` and `THROW` ride a **direct WebRTC DataChannel** to each phone by default, so gameplay
+does not round-trip through the service. A phone that cannot negotiate one falls back to the
+relay socket by itself, per phone, and plays normally — only with slightly softer aim
+tracking. Roster, turn state, scores and the spectator view always go over the relay.
+
+**F1** on the TV reports `N/M direct` and names which phones are on which transport, so a
+silent downgrade is visible rather than merely slower. Turn it off with **Use Peer
+Connections** on `Bootstrap`, or per-phone with `?direct=0` on the controller URL.
+
+### Pointing at a local relay for development
+
+Two things, and both are needed — either alone does nothing useful:
+
+1. Tick **Start Local Services** on `Bootstrap`. It is **off by default**, because a normal
+   host runs no relay at all.
+2. Put `ws://localhost:3000` in a `relay-url.txt` beside the executable, so `RelayClient`
+   actually points at it. The file is gitignored, so it stays a per-machine choice.
+
+That origin is not secure, so motion sensors will not work on it — this is for desktop
+testing. Real-phone testing goes through the deployed service.
 
 ## Match flow
 
@@ -77,24 +111,6 @@ which is how the TV debug readout (**F1**) tells them apart.
 
 So: open the join URL on a second PC, join with a different name, and press Space on the
 host. Both seats take turns, scores accumulate, and the match ends on the final round.
-
-**Requires** Node 20+ and cloudflared:
-
-```bash
-winget install Cloudflare.cloudflared
-```
-
-A tunnel is not optional *as the code stands*: phone motion sensors need a secure context,
-and an HTTPS page cannot open a plain `ws://` socket to a LAN address. Both problems
-disappear when the page and the socket share one origin, which is why the relay serves the
-controller itself. [HostingPlan.md](HostingPlan.md) keeps that single-origin property and
-moves it to a small always-on service instead of a per-launch tunnel.
-
-The quick tunnel's hostname is random per launch. Nobody types it — that is what the QR is
-for — but it does mean a URL from a previous session is dead. For a stable address, switch
-to a named tunnel; only the `cloudflared` arguments in `LocalServices` change.
-
-To run the pieces by hand instead, untick **Start Local Services** on `Bootstrap`.
 
 ## Running the relay directly
 
@@ -155,8 +171,9 @@ creates the managers that have to outlive scene transitions, then loads `Lobby`.
 `RelayClient` is created in `Bootstrap` alongside the other persistent managers. It must
 stay there: if it lives in a scene instead, the WebSocket is torn down on every transition
 and every phone bounces back to the join screen — which looks like a networking bug but is
-a lifecycle one. The same applies to `LocalServices`, which owns the two child processes,
-and `JoinScreen`, so a latecomer can still scan in during the Game scene.
+a lifecycle one. The same applies to `LocalServices`, which owns the relay child process on
+the machines where it is enabled at all, and `JoinScreen`, so a latecomer can still scan in
+during the Game scene.
 
 ## Notes for whoever picks this up
 

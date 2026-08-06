@@ -134,7 +134,13 @@ namespace Game
             var restitution = stats.Restitution * Mathf.Lerp(tuning.WorstRestitution, tuning.BestRestitution, quality);
 
             var velocity = next.Velocity;
-            velocity.y = -velocity.y * restitution;
+
+            // Water doesn't just mirror the stone — the face planes off the surface and
+            // kicks it out steeper than it came in. Without a floor the vertical decays
+            // three times faster than the horizontal (restitution vs Drag) and the skips
+            // flatten into a slide. Scaled by quality so a badly angled stone still skids.
+            var liftY = horizontal.magnitude * Mathf.Tan(tuning.SkipExitAngleDeg * Mathf.Deg2Rad) * quality;
+            velocity.y = Mathf.Max(-velocity.y * restitution, liftY);
             velocity.x *= stats.Drag;
             velocity.z *= stats.Drag;
 

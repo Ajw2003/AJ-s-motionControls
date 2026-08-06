@@ -1,10 +1,12 @@
 # Hosting — one small service, peer-to-peer gameplay
 
-**Status: Phase 1 deployed. Phase 2 built, needs a `fly deploy` and a real-phone run.** The
-relay runs on Fly at
-`rockskipping-relay.fly.dev`, the game connects out to it, and `cloudflared` is gone from the
-codebase. `play.skiprocking.ca` is still pending registry delegation and is cosmetic — the
-`fly.dev` name works fully. Deployment steps: [deploy/README.md](deploy/README.md).
+**Status: Phase 1 and Phase 2 are both deployed and running on real hardware.** The relay runs
+on Fly at `rockskipping-relay.fly.dev`, the game connects out to it, and `cloudflared` is gone
+from the codebase. Phone-to-PC WebRTC DataChannels carry `AIM` and `THROW` directly over the
+LAN, and both ends now recover from a wifi drop —
+[deploy/RECONNECT-TEST.md](deploy/RECONNECT-TEST.md). `play.skiprocking.ca` is still pending
+registry delegation and is cosmetic; the `fly.dev` name works fully. Deployment steps:
+[deploy/README.md](deploy/README.md).
 
 This document supersedes the "Why a hosted relay rather than direct LAN connection" section of
 [PLAN.md](PLAN.md).
@@ -16,8 +18,9 @@ This document supersedes the "Why a hosted relay rather than direct LAN connecti
 Two earlier attempts at this document are worth summarising, because the path matters more
 than the destination:
 
-1. **Tunnel-per-host** (what the code does now). Every host spawns `cloudflared` and gets a
-   random `trycloudflare.com` address. Rejected: a third party in the path of every packet.
+1. **Tunnel-per-host** (what the code used to do, now deleted). Every host spawned
+   `cloudflared` and got a random `trycloudflare.com` address. Rejected: a third party in the
+   path of every packet.
 2. **Self-hosted, own domain.** The relay obtains its own certificate via ACME DNS-01 and
    phones connect straight to the host machine. Rejected: it only works when there is exactly
    **one** host. A DNS API credential is account-wide, and a credential shipped inside a
@@ -93,7 +96,7 @@ one of them looks like it should work.
 ```
    Phone (browser)                  skiprocking.ca                Unity 6 Desktop
    ──────────────                   ─────────────                 ───────────────
-   loads page ────── HTTPS ────────▶  tiny VPS
+   loads page ────── HTTPS ────────▶  Fly machine
    signalling ◀───── WSS ──────────▶  relay + page  ◀──── WSS ────── outbound only
                                       (kilobytes)
         │                                                                │
@@ -106,10 +109,11 @@ Three properties are worth naming, because each kills a category of problem:
 - **The host connects *outbound*.** No inbound ports, no UPnP, no port forwarding, no address
   discovery, no DHCP reservation, no CGNAT problem, no router page. This is what makes
   requirement 2 achievable rather than aspirational.
-- **The service holds one domain and one certificate**, on a machine we control, renewed by
-  ACME **HTTP-01** — the VPS has a public IP and port 80, so there is no DNS challenge and
-  therefore **no DNS API credential anywhere in the system**. The entire Porkbun module, token
-  handling and secret-distribution problem from the previous design simply ceases to exist.
+- **The service holds one domain and one certificate**, on a machine we control. Fly issues and
+  renews it today; on the VPS route Caddy does, over ACME **HTTP-01**. Either way the machine
+  has a public IP and port 80, so there is no DNS challenge and therefore **no DNS API
+  credential anywhere in the system**. The entire Porkbun module, token handling and
+  secret-distribution problem from the previous design simply ceases to exist.
 - **Gameplay is peer-to-peer.** Bandwidth cost is near zero, latency is LAN-local, and the
   service being slow or distant cannot affect how a throw feels.
 
@@ -193,7 +197,7 @@ DataChannel-only offer generated in a browser against the deployed page:
 
 | Traffic | Transport | Why |
 |---|---|---|
-| Room code, roster, turn state, scores, `SPECTATE` | WSS to the VPS | Low rate, ordering and reliability matter, and it must work before any peer connection exists |
+| Room code, roster, turn state, scores, `SPECTATE` | WSS to the service | Low rate, ordering and reliability matter, and it must work before any peer connection exists |
 | `AIM` at 20Hz, `THROW` | DataChannel, direct | The only traffic where latency is felt |
 
 ### The mDNS question — RESOLVED. Phase 2 is viable.
@@ -310,9 +314,9 @@ silently:
 
 1. **DataChannel** — normal operation.
 2. **WSS relay** — if the peer connection does not establish within a few seconds, AIM and
-   THROW route through the VPS. This is Phase 1, so it is proven code by the time Phase 2
+   THROW route through the service. This is Phase 1, so it is proven code by the time Phase 2
    exists. Players notice nothing except slightly softer aim tracking.
-3. **Touch controls on the LAN** — if the service is unreachable entirely (no internet, VPS
+3. **Touch controls on the LAN** — if the service is unreachable entirely (no internet, service
    down), the bundled relay serves plain HTTP on the local network and the controller switches
    to touch aiming, reusing the `computeSimulatedThrowDescriptor` seam already in
    [controller/js/throw.js](controller/js/throw.js). No certificate is possible here, so no
@@ -336,10 +340,10 @@ the implementation work:
 `.gitignore` entries are deleted. They described a design that no longer exists, and a config
 file nothing reads is worse than no config file at all.
 
-One more, and it is a real simplification: **the relay does not terminate TLS.** A reverse
-proxy on the VPS handles the certificate, so `server.js` keeps serving plain HTTP exactly as
-it does today and the whole `acme-client` dependency, the `setSecureContext` hot-swap and the
-port-fallback ladder never get written (§4).
+One more, and it is a real simplification: **the relay does not terminate TLS.** Fly's proxy
+holds the certificate today, and Caddy would on the VPS route — either way `server.js` keeps
+serving plain HTTP exactly as it does today, and the whole `acme-client` dependency, the
+`setSecureContext` hot-swap and the port-fallback ladder never get written (§4).
 
 ## 8. Host-setup audit
 
@@ -351,7 +355,9 @@ port-fallback ladder never get written (§4).
 domain, no port, no record, no router page, and no firewall prompt — because nothing listens.
 
 The one-time actions that remain belong to *us*, once, for the whole project: register the
-domain (done), point one A record at the VPS, and let certbot run. Not per host, not per party.
+domain (done), point one CNAME at the Fly app, and run `fly certs add`. Not per host, not per
+party. Both remaining steps are blocked on `.ca` delegation and are cosmetic until then — the
+`fly.dev` name already works, certificate included.
 
 **The test that catches regressions:** run a build on a machine that has never seen the
 project, on a network nobody configured — a phone hotspot will do — and host a game. Any human
@@ -376,7 +382,10 @@ no third parties at all.
 
 ## 10. The service
 
-Small enough to describe in a paragraph. A VPS running the existing relay plus certbot.
+Small enough to describe in a paragraph. A single `shared-cpu-1x` Fly machine running the
+existing relay, with TLS terminated by Fly's proxy — see [fly.toml](fly.toml). Route B in
+[deploy/README.md](deploy/README.md) swaps that for a VPS running Caddy, which obtains and
+renews the certificate itself — an identical result that nothing in the game can distinguish.
 Gameplay traffic is peer-to-peer, so the only bandwidth is signalling and lobby state —
 kilobytes per room — and PLAN.md's own figures (AIM at ~1.5 KB/s for the single active player,
 4Hz spectator text) are the ceiling even in the Phase 1 fallback where everything routes
@@ -386,14 +395,25 @@ through it. A $5/month instance carries a great many parties.
 and the reason §6 exists. Keep it boring: one process, one certificate, automatic renewal, and
 no state worth losing — rooms are ephemeral and rebuilt on reconnect.
 
-## 11. Self-hosted mode (opt-in, not built yet)
+## 11. Self-hosted mode
 
-The whole ACME/DNS-01/self-signed design from the previous revision of this document remains
-valid for a single known operator who would rather not depend on our service. It is now an
-opt-in path rather than the default, and it is **not on the critical path** — build it only if
-someone asks. Its full reasoning lives in this file's git history rather than being carried
-here, because carrying it was what made the previous version misleading about what actually
-ships.
+Two different things get called "self-hosted" here, and only one of them is unbuilt.
+
+**Running the service on hardware you control is built.** Route B in
+[deploy/README.md](deploy/README.md) is a complete runbook with a working
+[Caddyfile](deploy/Caddyfile) and [systemd unit](deploy/rockskip-relay.service). The relay is a
+stock `node:22-alpine` image with no Fly-specific code in it, so moving hosts is a deployment
+change and nothing in the game knows the difference. The only coupling is `BIND_HOST`, which
+the systemd unit sets to `127.0.0.1` because Caddy is on the same host and the default of
+`0.0.0.0` exists for Fly's proxy reaching the process from outside its VM.
+
+**Per-host self-hosting is not built** — letting an arbitrary player's machine serve the page
+under its own certificate, depending on no service of ours. The whole ACME/DNS-01/self-signed
+design from the previous revision of this document remains valid for a single known operator
+who would rather not depend on our service, but it is **not on the critical path** — build it
+only if someone asks. Its full reasoning lives in this file's git history rather than being
+carried here, because carrying it was what made the previous version misleading about what
+actually ships.
 
 ## 12. Risks
 
@@ -562,13 +582,14 @@ Found while measuring, and all currently real:
   `wss://play.skiprocking.ca`, `window.isSecureContext === true`, and a real swing produces a
   `THROW`. This is the acceptance test for shipping.
 - **Zero-setup claim** — §8's test: unfamiliar machine, unconfigured network, press Play.
-- **Certificate renewal** — force certbot to renew and confirm the relay picks up the new
-  certificate without dropping open sockets.
+- **Certificate renewal** — not ours to test on Fly, which renews its own; `fly certs show`
+  reports the expiry. On the VPS route, force Caddy to renew and confirm the relay keeps open
+  sockets alive through the reload.
 - **Peer connection establishes on a real LAN** — Android phone to this PC, and confirm from
   ICE state which candidate pair won. A relayed or reflexive pair where a host pair was
   expected means §5's assumption is wrong.
 - **Fallback ladder** — block UDP to force the DataChannel to fail and confirm AIM/THROW move
-  to WSS with the TV labelling it; then take the VPS unreachable and confirm the touch path.
+  to WSS with the TV labelling it; then take the service unreachable and confirm the touch path.
 - **Signalling size** — capture a real SDP offer and check it against `MAX_MESSAGE_BYTES`.
 - **Regression** — `cd relay && npm test` keeps passing. The relay is barely changing, which
   is the point.

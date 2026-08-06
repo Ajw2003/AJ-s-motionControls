@@ -52,9 +52,10 @@ Three separately-deployed components:
 
 > **Superseded — see [HostingPlan.md](HostingPlan.md).** The reasoning below is
 > still correct about *why* HTTPS is mandatory, and the conclusion that a hosted relay is
-> needed still holds — but not a third party's. The current design is a small VPS we operate
-> which serves the controller page and brokers introductions, after which gameplay goes
-> phone-to-PC directly over the LAN by WebRTC DataChannel. Hosts configure nothing.
+> needed still holds — but not a third party's. The current design is a small relay we operate
+> — a Fly machine today — which serves the controller page and brokers introductions, after
+> which gameplay goes phone-to-PC directly over the LAN by WebRTC DataChannel. Hosts configure
+> nothing.
 
 Two hard blockers make LAN-direct a dead end:
 
@@ -587,4 +588,4 @@ Water shader and ripples, splash/skip VFX and SFX, camera framing, controller ha
 - **Scene transitions:** run a full Lobby → Game → Results → Lobby loop twice and confirm no `MissingReferenceException` appears in the console, the socket never reconnects, and scores carry across correctly. Repeated exceptions on transition mean the destroyed-subscriber fix didn't land; a phone bounced to the join screen means `RelayClient` isn't persisting.
 - **Physics tuning:** if players can't tell why a throw failed, add a post-throw readout on the TV ("too steep!", "too soft!") — the original Skip Skimmer leans heavily on this feedback.
 
-**Local development loop:** run the relay locally with `node relay/server.js`, serve the controller over HTTPS locally (`npx serve --ssl-cert`, or a Cloudflare Tunnel for real-phone testing), and point Unity at `ws://localhost:3000`. Real-phone testing requires the tunnel or a deployed relay, because of the secure-context requirement.
+**Local development loop:** tick **Start Local Services** on `Bootstrap` to run the relay on this machine (or start it by hand with `node relay/server.js`), and point Unity at it with a `relay-url.txt` containing `ws://localhost:3000` — both steps are needed. That origin is not secure, so motion sensors will not work on it: **real-phone testing goes through the deployed relay**, which is why there is no longer a tunnel to run.
