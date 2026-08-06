@@ -19,10 +19,13 @@ namespace Game
         [Header("Visual spin")]
         [Tooltip("Yaw rate once the stone's spin is spent. Never zero — a stone that has " +
                  "stopped turning reads as frozen rather than tired.")]
-        [SerializeField] private float minVisualSpinDegPerSec = 90f;
+        [SerializeField] private float minVisualSpinDegPerSec = 180f;
         [Tooltip("Yaw rate at full spin. Kept modest on purpose: the stone is a square plate, " +
                  "so it looks identical every 90 degrees and a fast yaw aliases into a strobe.")]
-        [SerializeField] private float maxVisualSpinDegPerSec = 360f;
+        [SerializeField] private float maxVisualSpinDegPerSec = 900f;
+        [Tooltip("How long a full-speed spin takes to wind down once the stone sinks. " +
+                 "Stopping dead reads as a freeze-frame rather than a stone settling.")]
+        [SerializeField] private float spinCoastDownSeconds = 1.2f;
 
         [SerializeField] private float despawnDelay = 2.5f;
 
@@ -33,6 +36,7 @@ namespace Game
         private Vector3 _origin;
         private float _accumulator;
         private float _visualSpin;
+        private float _spinRate;
         private float _spinCap;
 
         public bool IsFlying { get; private set; }
@@ -60,41 +64,54 @@ namespace Game
 
         private void Update()
         {
-            if (!IsFlying) return;
-
-            // Fixed-step accumulator so the simulation is frame-rate independent —
-            // a bounce must not depend on where a frame boundary happened to land.
-            _accumulator += Time.deltaTime;
-
-            var guard = 0;
-            while (_accumulator >= _tuning.FixedStep && IsFlying && guard++ < 16)
+            // Note the branch rather than an early return: the stone keeps turning after
+            // it sinks, coasting down over the despawn delay. IsFlying is read once here,
+            // so the frame that sinks still takes the flying path and seeds the rate from
+            // the final spin — there is no gap before the coast starts.
+            if (IsFlying)
             {
-                _accumulator -= _tuning.FixedStep;
+                // Fixed-step accumulator so the simulation is frame-rate independent —
+                // a bounce must not depend on where a frame boundary happened to land.
+                _accumulator += Time.deltaTime;
 
-                var step = SkipPhysics.Step(_state, _stats, _tuning, _tuning.FixedStep);
-                _state = step.State;
-
-                if (step.Bounced)
+                var guard = 0;
+                while (_accumulator >= _tuning.FixedStep && IsFlying && guard++ < 16)
                 {
-                    EventManager.Instance?.Publish(new SkipOccurredEvent(_state.SkipCount, step.ImpactSpeed));
+                    _accumulator -= _tuning.FixedStep;
+
+                    var step = SkipPhysics.Step(_state, _stats, _tuning, _tuning.FixedStep);
+                    _state = step.State;
+
+                    if (step.Bounced)
+                    {
+                        EventManager.Instance?.Publish(new SkipOccurredEvent(_state.SkipCount, step.ImpactSpeed));
+                    }
+
+                    if (step.Sank)
+                    {
+                        Finish();
+                        break;
+                    }
                 }
 
-                if (step.Sank)
-                {
-                    Finish();
-                    break;
-                }
+                transform.position = _state.Position;
+
+                // Driven by the stone's actual spin, so a hard flick visibly turns faster
+                // and every bounce visibly bleeds it away as SpinDecay eats it. Only the
+                // rate steps at a bounce, never the angle, so it reads smoothly.
+                var spin01 = Mathf.Clamp01(_state.Spin / _spinCap);
+                _spinRate = Mathf.Lerp(minVisualSpinDegPerSec, maxVisualSpinDegPerSec, spin01);
+            }
+            else
+            {
+                // Sunk. The water drags the turn out of it rather than stopping it dead.
+                // Linear, so the tunable is a wind-down time that can be reasoned about:
+                // a full-speed spin takes all of it, a slower one proportionally less.
+                _spinRate = Mathf.MoveTowards(
+                    _spinRate, 0f, maxVisualSpinDegPerSec * Time.deltaTime / Mathf.Max(spinCoastDownSeconds, 0.0001f));
             }
 
-            transform.position = _state.Position;
-
-            // Driven by the stone's actual spin, so a hard flick visibly turns faster and
-            // every bounce visibly bleeds it away as SpinDecay eats it. Only the rate
-            // steps at a bounce, never the angle, so the wind-down reads smoothly.
-            var spin01 = Mathf.Clamp01(_state.Spin / _spinCap);
-            var spinRate = Mathf.Lerp(minVisualSpinDegPerSec, maxVisualSpinDegPerSec, spin01);
-
-            _visualSpin += spinRate * Time.deltaTime;
+            _visualSpin += _spinRate * Time.deltaTime;
             transform.rotation = Quaternion.Euler(-_state.AttitudeDeg, 0f, 0f) * Quaternion.Euler(0f, _visualSpin, 0f);
         }
 

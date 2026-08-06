@@ -147,8 +147,8 @@ namespace Game
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
             go.transform.localScale = new Vector3(0.45f, 0.08f, 0.45f);
 
-            var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Color") ?? Shader.Find("Standard");
-            go.GetComponent<MeshRenderer>().material = new Material(shader) { color = new Color(0.85f, 0.87f, 0.95f) };
+            go.GetComponent<MeshRenderer>().material =
+                PlaceholderArt.Create(new Color(0.85f, 0.87f, 0.95f), PlaceholderArt.StoneQueue);
 
             return go.AddComponent<RockController>();
         }

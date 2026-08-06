@@ -302,7 +302,7 @@ namespace Game
             _line.widthMultiplier = 0.12f;
             _line.numCapVertices = 4;
             _line.useWorldSpace = true;
-            _line.material = CreateUnlitMaterial(Color.white);
+            _line.material = PlaceholderArt.Create(Color.white, PlaceholderArt.ArcQueue);
             _line.enabled = false;
         }
 
@@ -311,7 +311,8 @@ namespace Game
             var ghost = GameObject.CreatePrimitive(PrimitiveType.Cube);
             ghost.name = "GhostRock";
             Destroy(ghost.GetComponent<Collider>());
-            ghost.GetComponent<MeshRenderer>().material = CreateUnlitMaterial(new Color(0.9f, 0.92f, 1f));
+            ghost.GetComponent<MeshRenderer>().material =
+                PlaceholderArt.Create(new Color(0.9f, 0.92f, 1f), PlaceholderArt.StoneQueue);
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
         }
@@ -323,7 +324,13 @@ namespace Game
             water.transform.position = new Vector3(0f, tuning.WaterY, 60f);
             water.transform.localScale = new Vector3(12f, 1f, 20f);
             Destroy(water.GetComponent<Collider>());
-            water.GetComponent<MeshRenderer>().material = CreateUnlitMaterial(new Color(0.06f, 0.16f, 0.28f));
+            water.GetComponent<MeshRenderer>().material =
+                PlaceholderArt.Create(new Color(0.06f, 0.16f, 0.28f), PlaceholderArt.WaterQueue);
+
+            // Parented like the arc and the ghost so it survives with this component,
+            // which Bootstrap marks DontDestroyOnLoad. Left at the scene root it was
+            // destroyed by the first scene load and never rebuilt — Awake only runs once.
+            water.transform.SetParent(transform, true);
 
             var camera = Camera.main;
             if (camera == null) return;
@@ -333,16 +340,6 @@ namespace Game
             camera.backgroundColor = new Color(0.05f, 0.09f, 0.15f);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 500f;
-        }
-
-        /// <summary>Shader.Find is editor-friendly; these are scaffolding visuals only.</summary>
-        private static Material CreateUnlitMaterial(Color colour)
-        {
-            var shader = Shader.Find("Sprites/Default")
-                      ?? Shader.Find("Unlit/Color")
-                      ?? Shader.Find("Standard");
-
-            return new Material(shader) { color = colour };
         }
     }
 }
