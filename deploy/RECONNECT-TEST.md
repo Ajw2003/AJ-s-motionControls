@@ -140,6 +140,8 @@ Phase 2 adds a peer connection that dies with the host, so it has to renegotiate
 
 | Symptom | Meaning | Where to look |
 |---|---|---|
+| **Host never reconnects after the network returns** | A connect attempt wedged. This was a real bug: `ConnectAsync` had no timeout, so a TCP connect against a half-torn-down network could hang indefinitely with `_connecting` stuck true, and `Update()` will not start a second attempt while it is. | Unity Console for `Connect … failed (timed out after 8s)` — that line means the timeout is working. `Connect attempt wedged past its timeout` means the watchdog caught one that outlived even that. |
+| Host reconnects, but too slowly | Backoff outran the phone's 45s window | Retry delay is capped at 4s on purpose; anything longer than ~15s total suggests repeated connect failures — read the reasons in the Console |
 | Phone drops to the join screen immediately | The rejoin window never opened | `net.js` — `expectHostBack` fires on `HOST_LEFT`, `ROOM_CLOSED`, *and* an unexpected socket close |
 | Host comes back with a **different** code | `preferredCode` was not sent or was refused | Unity Console for `Reclaimed`/`Resumed`; relay log for `room … created` with no note |
 | Relay says `resumed` but the phone still rejoined | Harmless — the phone's socket died independently | Nothing to fix |

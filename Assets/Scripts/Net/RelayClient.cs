@@ -106,9 +106,33 @@ namespace Net
         private readonly SemaphoreSlim _sendLock = new(1, 1);
 
         private bool _connecting;
+        private float _connectStartedAt;
         private float _nextRetryTime;
         private float _retryDelay = 1f;
-        private const float MaxRetryDelay = 10f;
+
+        /// <summary>
+        /// Capped low on purpose. The relay holds a room for 60s after its host drops and
+        /// the phones stop waiting after 45s, so a host that backs off to ten-second
+        /// intervals can burn that whole budget on two failed attempts and lose the room
+        /// it was about to reclaim. Four seconds is still gentle on a relay that is down.
+        /// </summary>
+        private const float MaxRetryDelay = 4f;
+
+        /// <summary>
+        /// How long a single connect attempt may take before it is abandoned.
+        /// </summary>
+        /// <remarks>
+        /// Without this the client can wedge permanently. A TCP connect against a
+        /// half-torn-down network — Wi-Fi toggled off and back on, a laptop waking, a
+        /// relay being restarted — can sit unresolved far longer than any useful
+        /// retry interval, and while it does, `_connecting` stays true and Update
+        /// refuses to start another attempt. The symptom is a host that never comes
+        /// back even though the network is fine again.
+        /// </remarks>
+        private const float ConnectTimeout = 8f;
+
+        /// <summary>Belt and braces: if a connect somehow outlives its own timeout, reset anyway.</summary>
+        private const float ConnectWatchdog = ConnectTimeout + 5f;
 
         protected override void Awake()
         {
@@ -185,6 +209,15 @@ namespace Net
                 Dispatch(message.Json, message.TrustedPlayerId);
             }
 
+            // A connect that has run past its own timeout is not going to finish. Clear
+            // the flag so the retry loop starts again rather than waiting on it forever.
+            if (_connecting && Time.time - _connectStartedAt > ConnectWatchdog)
+            {
+                Debug.LogWarning("[RelayClient] Connect attempt wedged past its timeout — retrying.");
+                _connecting = false;
+                _nextRetryTime = Time.time + 1f;
+            }
+
             if (!IsConnected && !_connecting && Time.time >= _nextRetryTime)
             {
                 _ = ConnectAsync();
@@ -195,6 +228,7 @@ namespace Net
         {
             if (_connecting) return;
             _connecting = true;
+            _connectStartedAt = Time.time;
 
             try
             {
@@ -204,7 +238,15 @@ namespace Net
                 _cts = new CancellationTokenSource();
                 _socket = new ClientWebSocket();
 
-                await _socket.ConnectAsync(new Uri(RelayUrl), _cts.Token);
+                // Bounded separately from _cts: the timeout must abandon this attempt
+                // without cancelling the token the receive loop and sends will use if it
+                // succeeds. Cancelling a linked source never cancels its parent.
+                using (var attempt = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token))
+                {
+                    attempt.CancelAfter(TimeSpan.FromSeconds(ConnectTimeout));
+                    await _socket.ConnectAsync(new Uri(RelayUrl), attempt.Token);
+                }
+
                 Debug.Log($"[RelayClient] Connected to {RelayUrl}");
 
                 _retryDelay = 1f;
@@ -226,7 +268,12 @@ namespace Net
                 // Backoff rather than hammering a relay that is down or still booting.
                 _retryDelay = Mathf.Min(_retryDelay * 2f, MaxRetryDelay);
                 _nextRetryTime = Time.time + _retryDelay;
-                Debug.LogWarning($"[RelayClient] Connect failed ({e.Message}); retrying in {_retryDelay:F0}s");
+
+                var why = e is OperationCanceledException
+                    ? $"timed out after {ConnectTimeout:F0}s"
+                    : e.Message;
+
+                Debug.LogWarning($"[RelayClient] Connect to {RelayUrl} failed ({why}); retrying in {_retryDelay:F0}s");
             }
             finally
             {
