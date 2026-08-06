@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "node test-relay.js",
-    "test:deployed": "node test-deployed.js"
+    "test:deployed": "node test-deployed.js",
+    "loadtest": "node loadtest.js"
   },
   "engines": {
     "node": ">=20"

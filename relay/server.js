@@ -47,6 +47,11 @@ const MAX_QR_DATA_LENGTH = 512;
 /** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number}>} */
 const rooms = new Map();
 
+// Counters for /health. Two integer increments on the hot path, which is cheap
+// enough to leave on permanently — and without them there is no way to answer
+// "how close is this box to its limit?" except by waiting for it to fall over.
+const metrics = { messagesIn: 0, messagesOut: 0, roomsCreated: 0, startedAt: Date.now() };
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -67,6 +72,7 @@ function generateRoomCode() {
 function send(ws, payload) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
+    metrics.messagesOut++;
   }
 }
 
@@ -130,6 +136,7 @@ function handleCreateRoom(ws) {
 
   const room = { code, host: ws, players: new Map(), lastActivity: Date.now() };
   rooms.set(code, room);
+  metrics.roomsCreated++;
 
   ws.meta.role = 'host';
   ws.meta.roomCode = code;
@@ -310,8 +317,24 @@ const httpServer = http.createServer((req, res) => {
   const url = new URL(req.url || '/', 'http://localhost');
 
   if (url.pathname === '/health') {
+    let players = 0;
+    for (const room of rooms.values()) players += room.players.size;
+
+    const memory = process.memoryUsage();
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ ok: true, rooms: rooms.size }));
+      .end(JSON.stringify({
+        ok: true,
+        rooms: rooms.size,
+        players,
+        connections: wss.clients.size,
+        roomsCreated: metrics.roomsCreated,
+        messagesIn: metrics.messagesIn,
+        messagesOut: metrics.messagesOut,
+        rssMb: Math.round(memory.rss / 1048576),
+        heapMb: Math.round(memory.heapUsed / 1048576),
+        uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
+      }));
     return;
   }
 
@@ -340,6 +363,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('message', (raw) => {
+    metrics.messagesIn++;
     if (isRateLimited(ws.meta)) return; // drop silently; a flooding client gets no feedback loop
 
     let data;

@@ -70,6 +70,16 @@ namespace Net
 
         public event Action<string> RoomCodeAssigned;
 
+        /// <summary>
+        /// Every inbound message, as (type, raw json), fired before the typed dispatch below.
+        /// </summary>
+        /// <remarks>
+        /// Exists so signalling this class does not model — WebRTC offer/answer/ICE — can ride
+        /// the relay without teaching RelayClient about it. The relay routes generically for
+        /// the same reason; this is the client-side half of that decision.
+        /// </remarks>
+        public event Action<string, string> RawMessageReceived;
+
         private ClientWebSocket _socket;
         private CancellationTokenSource _cts;
         private readonly ConcurrentQueue<string> _inbound = new();
@@ -241,6 +251,8 @@ namespace Net
 
             if (envelope == null || string.IsNullOrEmpty(envelope.type)) return;
             if (verboseLogging) Debug.Log($"[RelayClient] <- {json}");
+
+            RawMessageReceived?.Invoke(envelope.type, json);
 
             switch (envelope.type)
             {

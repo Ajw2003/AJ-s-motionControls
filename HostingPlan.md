@@ -1,6 +1,7 @@
 # Hosting — one small service, peer-to-peer gameplay
 
-**Status: Phase 1 built and deployed. Phase 2 not started.** The relay runs on Fly at
+**Status: Phase 1 built and deployed. Phase 2 unblocked — the WebRTC spike passed on real
+hardware (§5).** The relay runs on Fly at
 `rockskipping-relay.fly.dev`, the game connects out to it, and `cloudflared` is gone from the
 codebase. `play.skiprocking.ca` is still pending registry delegation and is cosmetic — the
 `fly.dev` name works fully. Deployment steps: [deploy/README.md](deploy/README.md).
@@ -141,12 +142,12 @@ anything the host sends goes to all players or to one when `targetPlayerId` is s
 exactly the shape SDP offer/answer and trickle ICE need. `RTC_OFFER`, `RTC_ANSWER` and
 `RTC_ICE` route correctly through the existing `default:` branch with **zero relay changes**.
 
-Two constants do need a look:
+Two constants needed checking, and both are now **measured rather than assumed**. A real
+DataChannel-only offer generated in a browser against the deployed page:
 
-- `MAX_MESSAGE_BYTES` is 4096. A DataChannel-only SDP with no audio or video is typically well
-  under that, and trickle ICE keeps candidates out of the offer — but verify against a real
-  offer rather than assuming, and raise it if needed.
-- `RATE_MAX_MESSAGES` is 60/second, which comfortably absorbs a trickle-ICE burst.
+- **SDP is 458 bytes.** `MAX_MESSAGE_BYTES` is 4096, so it fits nine times over. Trickle ICE
+  keeps candidates out of the offer, which is what keeps it that small. **No relay change.**
+- `RATE_MAX_MESSAGES` is 60/second, and gathering produced **2 candidates**. Not close.
 
 ### Channel split
 
@@ -155,34 +156,109 @@ Two constants do need a look:
 | Room code, roster, turn state, scores, `SPECTATE` | WSS to the VPS | Low rate, ordering and reliability matter, and it must work before any peer connection exists |
 | `AIM` at 20Hz, `THROW` | DataChannel, direct | The only traffic where latency is felt |
 
-### The mDNS question, which is the main technical risk
+### The mDNS question — RESOLVED. Phase 2 is viable.
 
-Browsers obfuscate their local IP addresses as randomised `.local` mDNS candidates (RFC 8828),
-so a naive reading says the Unity side must run an mDNS resolver to reach them.
+**The spike passed on real hardware**: Unity 6000.3.10f1 on this PC, Android Chrome on a phone,
+same Wi-Fi. A DataChannel opened and the winning pair was `local=host remote=host`.
 
-It probably does not, and the reason is worth writing down. **Unity is native and does not
-obfuscate** — it advertises its real LAN address as a host candidate. The browser therefore
-sends its connectivity checks straight to Unity, and Unity learns the phone's real address
-from the *source address of those incoming checks*, as a **peer-reflexive candidate**. That is
-ordinary ICE behaviour, not a workaround.
+The result was better than the theory required, and it is worth recording why, because the
+theory was built on a claim that turned out to be **browser-dependent rather than universal**.
 
-**Verify this on real hardware early**, before building anything on top of it. If it does not
-hold, the fallback in §6 already covers it and Phase 1 still ships.
+A desktop Chromium, asked for an offer, produced nothing but obfuscated candidates:
+
+```
+candidate:858858120 1 udp 2113937151 2a456251-…-9e659d996c56.local 61474 typ host
+```
+
+From that, this document previously asserted that a browser *will never* hand over a dialable
+address. **The phone did exactly that:**
+
+```
+remote candidate: host 10.0.0.55
+remote candidate: host 2604:3d09:e60:2800:7a3d:6de8:c80f:56a5
+```
+
+Real IPv4 and real IPv6. So mDNS obfuscation (RFC 8828) is applied by some browsers in some
+configurations, and generalising from one sample was wrong.
+
+**What the spike proved:**
+
+- A Unity peer and a phone browser establish a DataChannel over the LAN, `host`↔`host`.
+- **No STUN, no TURN** — only host candidates were gathered, and they were enough.
+- Both peers gathered IPv4 and IPv6; the pair that won was direct.
+- The real offer was **457 bytes**, matching the 458 measured beforehand and sitting far
+  inside `MAX_MESSAGE_BYTES`.
+
+**What it did not prove, and why that no longer blocks anything:** the peer-reflexive path is
+still untested, because this phone never forced it. A browser that *does* obfuscate would
+exercise it. If that theory turns out to be wrong on some device, that device falls back to
+the WSS path in §6 — a slightly softer aim preview, not a broken game. The risk moved from
+"could invalidate Phase 2" to "one class of phone may not get the fast path."
 
 ### No STUN, no TURN
 
-ICE host candidates are gathered locally, so a LAN-only peer connection needs neither. That
-keeps the external dependency count at exactly one — our own VPS — for the default case.
-Remote play would need STUN (cheap, self-hostable) and possibly TURN (expensive), which is
-why it stays out of scope until LAN play works.
+Confirmed by the same measurement: gathering completed with **two candidates, both `typ host`,
+no `srflx`** — because no STUN server was configured and none was needed. A LAN-only peer
+connection gathers everything it needs locally, keeping the external dependency count at
+exactly one, our own service. Remote play would need STUN (cheap, self-hostable) and possibly
+TURN (expensive), which is why it stays out of scope until LAN play works.
 
 ### Unity side
 
-Add `com.unity.webrtc` — the official package, native binaries, DataChannel support.
-`RelayClient` keeps its `ClientWebSocket` (§ the existing DEVIATION note in the file: it ships
-with .NET and needs no package), and a new `PeerLink` handles offer/answer/ICE and the
-DataChannel, publishing received messages through the same path `RelayClient` uses today so
-nothing downstream knows the difference.
+**`com.unity.webrtc` 3.0.0 declares `unity: 6000.0`**, so it supports 6000.3.10f1 — checked
+against Unity's package registry rather than assumed. Official package, native binaries,
+DataChannel support.
+
+`RelayClient` keeps its `ClientWebSocket` (see the DEVIATION note in that file: it ships with
+.NET and needs no package), and a new `PeerLink` handles offer/answer/ICE and the DataChannel,
+publishing received messages through the same path `RelayClient` uses today so nothing
+downstream knows the difference.
+
+### The spike — built, run, passed
+
+`Assets/Scripts/Spike/WebRtcSpike.cs` and [controller/spike.html](controller/spike.html) exist
+and compile. They do nothing but answer the question above: a Unity peer answers an offer from
+a phone browser, opens a DataChannel, and prints **which candidate pair actually won**.
+
+**Step-by-step, including which device and window at each point:
+[deploy/SPIKE-TEST.md](deploy/SPIKE-TEST.md).** In outline: `fly deploy`, tick **Run Web Rtc
+Spike** on `Bootstrap`, press Play, and open `/spike.html` on an Android phone on the same
+Wi-Fi, typing the code from the Unity screen.
+
+**Do the pre-flight in that document first.** Some routers isolate clients from each other on
+the same Wi-Fi, and a phone that cannot reach the PC at all produces a failure indistinguishable
+from the one being tested. A negative result only means anything if the pre-flight passed on
+the same network in the same session.
+
+**How to read it.** Both screens print the winning pair:
+
+| Remote candidate type | Meaning |
+|---|---|
+| `prflx` | **The theory held exactly.** Unity learned the phone's address from the incoming connectivity check. |
+| `host` | Also a pass — Unity resolved the mDNS name itself. Different route, same outcome. |
+| never connects | **The finding that sends Phase 2 back to the drawing board.** Phase 1 keeps working; §6 already covers it. |
+
+Delete `Assets/Scripts/Spike/` and `controller/spike.html` once the question is answered.
+
+### Two things the spike already settled
+
+- **No manual initialisation.** `WebRTC.Initialize()` is gone in 3.0 — it runs from
+  `RuntimeInitializeOnLoadMethod`.
+- **`WebRTC.Update()` is not needed.** Every sample calls it and the documentation is explicit
+  that it exists to copy textures into the video buffer each frame — and the package's own
+  DataChannel sample does not call it. **A DataChannel-only integration costs no per-frame
+  coroutine**, which is what §12.2 wanted checked.
+
+### What is left after the spike
+
+Nothing structural. The signalling path works today, the fallback is live and proven, the
+package is installed, and the message sizes fit.
+
+1. `PeerLink` on the Unity side, `RTCPeerConnection` on the controller side, `RTC_OFFER` /
+   `RTC_ANSWER` / `RTC_ICE` over the existing relay routing — all of which the spike has now
+   demonstrated in miniature and can be lifted from.
+2. Move `AIM` and `THROW` onto the DataChannel with a few-second establishment timeout that
+   falls back to WSS, and label the fallback on the TV.
 
 ## 6. Fallbacks, in order
 
@@ -278,11 +354,14 @@ ships.
 
 ## 12. Risks
 
-1. **The mDNS / peer-reflexive assumption in §5** is the main unknown. Test it on an Android
-   phone and this machine before committing to Phase 2. Phase 1 ships regardless.
-2. **`com.unity.webrtc` is a native-binary dependency.** Confirm Windows standalone support on
-   6000.3.10f1 and check what it costs at startup for a DataChannel-only use case — the
-   package is built primarily for video streaming.
+1. ~~The mDNS / peer-reflexive assumption.~~ **Resolved by the spike (§5)** — Unity and Android
+   Chrome connect `host`↔`host` over the LAN with no STUN. What remains is a much smaller
+   risk: a browser that *does* obfuscate its candidates has not been tested, and would fall
+   back to the WSS path rather than failing.
+2. **`com.unity.webrtc` is a native-binary dependency** — now installed at 3.0.0, which declares
+   `unity: 6000.0`. Startup cost for DataChannel-only turned out to be nil: initialisation is
+   automatic and the per-frame `WebRTC.Update()` coroutine is video-only (§5). What remains
+   unmeasured is the native library's contribution to build size.
 3. **Our service going down takes every host with it.** Mitigated by §6 tier 3, bounded by
    keeping the service trivial.
 4. **Cost scales with popularity**, though from a very low base. Phase 1 fallback traffic is
@@ -356,7 +435,85 @@ The four requirements in §1, the certificate derivation in §2, the four-step j
 the zero-setup host in §8 are all independent of how the game is distributed. A Steam build
 scans the same QR and loads the same page from the same origin.
 
-## 14. Verification
+## 14. Measured capacity, and what it costs to scale
+
+Numbers rather than adjectives. Produced by `relay/loadtest.js`, which drives the real message
+rates — AIM at 20Hz from the single active player, SPECTATE at 4Hz to everyone — against a
+local relay. **Reproduce with `cd relay && npm run loadtest -- 250 8 20`.**
+
+### What one process actually carries
+
+| Rooms | Players | Sockets | RSS | msg in/s | msg out/s |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 0 | 0 | 43 MB | 0 | 0 |
+| 25 | 100 | 125 | 48 MB | 493 | 787 |
+| 100 | 600 | 700 | 56 MB | 1,965 | 3,921 |
+| 250 | 2,000 | 2,250 | 87 MB | 4,954 | 11,855 |
+
+Read off the marginals, which is the part that scales:
+
+- **~176 KB of RSS per room**, about **20 KB per socket**. Baseline is a flat 43 MB.
+- **~20 messages in and ~47 out per room per second** at 8 players. Fan-out is the asymmetry:
+  every SPECTATE is sent once by the host and delivered eight times.
+- **26% of one desktop core at 250 rooms** — 5.1 CPU-seconds over 20 seconds, handling
+  ~16,800 messages/second.
+
+### The ceiling on today's machine
+
+That CPU figure was measured on a full modern desktop core. **`shared-cpu-1x` is a fraction of
+one**, so divide accordingly rather than reading 250 rooms as the answer — the honest estimate
+for the current 256 MB `shared-cpu-1x` is **tens of concurrent parties, CPU-bound before
+memory-bound**. Memory would allow roughly 500–1,000 rooms; CPU will give out long first.
+
+This is Phase 1 traffic. It is the pessimal case, and it is temporary.
+
+### Why Phase 2 changes the shape, not just the size
+
+Phase 2 moves AIM and THROW — and SPECTATE fan-out with them — onto the DataChannel. What
+remains on the server is connection setup, a handful of signalling messages per join, and
+lobby/turn state. Per-room steady-state traffic goes from ~67 messages/second to **roughly
+zero**.
+
+The consequence is worth stating precisely: **the service stops being CPU-bound and becomes
+memory-bound**, at ~176 KB per room for sockets that now sit almost idle. That is a change of
+kind, not degree — capacity per machine goes up by more than an order of magnitude, and the
+cost per additional player stops tracking traffic at all.
+
+**This is the strongest argument for Phase 2, stronger than latency.** It is also §13's
+conclusion arrived at from a different direction.
+
+### Scaling beyond one machine
+
+§12.7 stands: rooms live in a per-process `Map`, so the deployment runs exactly one instance.
+In preference order, when that stops being enough:
+
+1. **Vertical.** 256 MB `shared-cpu-1x` → `shared-cpu-2x`/`performance-1x` with 512 MB–1 GB.
+   One config line, no design change, and it is the correct first move by a wide margin.
+2. **Phase 2**, which multiplies whatever that box can hold.
+3. **Shard by room code.** The relay assigns codes, so it can encode the owning instance in
+   the code and route on it — Fly's `fly-replay` header acts on the WebSocket upgrade request,
+   which is exactly the right moment. Keeps the per-process `Map`, needs no Redis, and scales
+   horizontally without shared state. This is the design to reach for, not a Redis session
+   store.
+
+### Gaps to close before this is "more than a hobby"
+
+Found while measuring, and all currently real:
+
+- **No cap on rooms and no per-IP limit.** `MAX_PLAYERS_PER_ROOM` is 8, but anything may call
+  `CREATE_ROOM` without limit. At ~176 KB a room, a trivial script exhausts the machine. The
+  existing rate limiter is per-socket, which does not help when the attack is *more sockets*.
+  A public service needs a per-IP connection cap and a global room ceiling that sheds load
+  rather than dying.
+- **Room codes are 4 characters from a 24-letter alphabet — 331,776 combinations.** Fine to
+  tens of thousands of concurrent rooms with the existing 100-attempt retry, and it degrades
+  gracefully rather than breaking. Move to 5 characters if that is ever in sight.
+- **`/health` is the only telemetry**, and nothing scrapes it. It now reports rooms, players,
+  connections, message counters, RSS and heap — enough to alert on, but an alert has to exist.
+- **One machine is a single point of failure for every player**, which §13 flags as the
+  Steam-scale problem.
+
+## 15. Verification
 
 - **Phase 1 end to end** — a real Android phone scans the QR, joins through
   `wss://play.skiprocking.ca`, `window.isSecureContext === true`, and a real swing produces a

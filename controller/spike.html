@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<!--
+  WebRTC spike, phone half. Pairs with Assets/Scripts/Spike/WebRtcSpike.cs.
+
+  Answers one question (HostingPlan.md §5): can a Unity peer reach this browser over
+  the LAN when the browser only ever offers `.local` mDNS candidates?
+
+  Deliberately standalone — no imports from js/, no sensors, no game. A spike that
+  drags in the app is a spike that fails for reasons unrelated to the question.
+
+  Open as:  https://<relay>/spike.html?room=CODE
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Rock Skipping — WebRTC spike</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; padding: 18px;
+      font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #0d1117; color: #d8dee9;
+    }
+    h1 { font-size: 17px; margin: 0 0 4px; color: #fff; }
+    .sub { color: #8b98a5; margin-bottom: 16px; }
+    #verdict { padding: 12px; border-radius: 8px; margin: 14px 0; font-size: 15px; white-space: pre-wrap; }
+    .pass { background: #16301f; color: #7ee2a8; }
+    .fail { background: #33191c; color: #ff9d94; }
+    .wait { background: #1a2130; color: #9fb3d1; }
+    #log { list-style: none; margin: 0; padding: 0; font-size: 12.5px; color: #93a1b0; }
+    #log li { padding: 3px 0; border-bottom: 1px solid #1b2430; word-break: break-all; }
+    .mdns { color: #f0c674; }
+  </style>
+</head>
+<body>
+  <h1>WebRTC spike</h1>
+  <div class="sub">phone half — HostingPlan §5</div>
+  <div id="verdict" class="wait">starting…</div>
+  <div id="entry" style="display:none; margin:14px 0;">
+    <input id="code" maxlength="4" autocapitalize="characters" autocomplete="off"
+           placeholder="CODE"
+           style="font:600 30px ui-monospace,monospace; width:150px; padding:10px; text-align:center;
+                  text-transform:uppercase; letter-spacing:6px; border-radius:8px;
+                  border:1px solid #30455e; background:#111b26; color:#fff;">
+    <button id="go" style="font-size:17px; padding:12px 20px; margin-left:8px; border-radius:8px;
+                           border:0; background:#2f6feb; color:#fff;">Connect</button>
+  </div>
+  <ul id="log"></ul>
+
+<script>
+'use strict';
+
+const params   = new URLSearchParams(location.search);
+const playerId = 'SPIKE';
+
+// Typed on the phone rather than carried in the URL, because typing
+// "…/spike.html?room=ABCD" on a phone keyboard is its own small failure mode.
+// ?room=CODE still works and skips the prompt.
+let roomCode = (params.get('room') || '').toUpperCase();
+
+const verdictEl = document.getElementById('verdict');
+const logEl     = document.getElementById('log');
+
+function say(text, kind) {
+  verdictEl.textContent = text;
+  verdictEl.className = kind || 'wait';
+}
+
+function log(line, cls) {
+  const li = document.createElement('li');
+  li.textContent = line;
+  if (cls) li.className = cls;
+  logEl.prepend(li);
+}
+
+/** Pulls the readable part out of a candidate line, and flags mDNS obfuscation. */
+function describe(line) {
+  const parts = line.split(' ');
+  const typeAt = parts.indexOf('typ');
+  const kind = typeAt >= 0 ? parts[typeAt + 1] : '?';
+  const address = parts[4] || '?';
+  return { text: `${kind} ${address}`, mdns: address.endsWith('.local') };
+}
+
+// Same origin as the page, so this works wherever the relay is deployed.
+const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`);
+
+let pc = null;
+let channel = null;
+
+const entryEl = document.getElementById('entry');
+const codeEl  = document.getElementById('code');
+const goEl    = document.getElementById('go');
+
+function join() {
+  entryEl.style.display = 'none';
+  say(`joining ${roomCode}…`, 'wait');
+  socket.send(JSON.stringify({ type: 'JOIN_ROOM', roomCode, playerId }));
+}
+
+goEl.onclick = () => {
+  const typed = codeEl.value.trim().toUpperCase();
+  if (typed.length !== 4) { say('Room codes are 4 letters.', 'fail'); return; }
+  roomCode = typed;
+  join();
+};
+
+codeEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') goEl.click(); });
+
+socket.onopen = () => {
+  log('relay connected');
+  if (roomCode) {
+    join();
+  } else {
+    say('Type the 4-letter code shown on the Unity screen.', 'wait');
+    entryEl.style.display = 'block';
+    codeEl.focus();
+  }
+};
+
+socket.onerror = () => say('Could not reach the relay.', 'fail');
+socket.onclose = () => log('relay closed');
+
+socket.onmessage = async (event) => {
+  const msg = JSON.parse(event.data);
+
+  if (msg.type === 'ERROR') {
+    say(`${msg.message}\n\nCheck the code on the Unity screen and try again.`, 'fail');
+    entryEl.style.display = 'block';   // a mistyped code must be retryable
+    codeEl.value = '';
+    codeEl.focus();
+    return;
+  }
+
+  if (msg.type === 'JOINED') {
+    log(`joined room ${msg.roomCode}`);
+    await startOffer();
+    return;
+  }
+
+  if (msg.type === 'RTC_ANSWER') {
+    log(`answer from Unity (${msg.sdp.length} bytes)`);
+    await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+    return;
+  }
+
+  if (msg.type === 'RTC_ICE' && pc) {
+    const d = describe(msg.candidate);
+    log(`unity candidate: ${d.text}`, d.mdns ? 'mdns' : '');
+    try {
+      await pc.addIceCandidate({
+        candidate: msg.candidate,
+        sdpMid: msg.sdpMid,
+        sdpMLineIndex: msg.sdpMLineIndex,
+      });
+    } catch (e) {
+      log(`addIceCandidate failed: ${e.message}`);
+    }
+  }
+};
+
+async function startOffer() {
+  say('negotiating…', 'wait');
+
+  // No ICE servers: a LAN peer connection needs no STUN, and adding one would put a
+  // third party back into a path this design keeps clear of them.
+  pc = new RTCPeerConnection({ iceServers: [] });
+
+  pc.onicecandidate = (e) => {
+    if (!e.candidate) { log('gathering complete'); return; }
+    const d = describe(e.candidate.candidate);
+    log(`my candidate: ${d.text}${d.mdns ? '  (mDNS — no IP given)' : ''}`, d.mdns ? 'mdns' : '');
+    socket.send(JSON.stringify({
+      type: 'RTC_ICE',
+      candidate: e.candidate.candidate,
+      sdpMid: e.candidate.sdpMid,
+      sdpMLineIndex: e.candidate.sdpMLineIndex,
+    }));
+  };
+
+  pc.oniceconnectionstatechange = () => log(`ice: ${pc.iceConnectionState}`);
+  pc.onconnectionstatechange = () => {
+    log(`pc: ${pc.connectionState}`);
+    if (pc.connectionState === 'failed') {
+      say('FAIL — peer connection failed.\nUnity could not reach this phone.\nThis is the finding that sends Phase 2 back to the drawing board.', 'fail');
+    }
+  };
+
+  // This side creates the channel, so Unity receives it via OnDataChannel.
+  channel = pc.createDataChannel('game');
+  channel.onopen = async () => {
+    log('DATACHANNEL OPEN');
+    channel.send('hello from the phone');
+    await report();
+  };
+  channel.onmessage = (e) => log(`unity says: ${e.data}`);
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  log(`offer created (${new TextEncoder().encode(offer.sdp).length} bytes)`);
+
+  socket.send(JSON.stringify({ type: 'RTC_OFFER', sdp: offer.sdp }));
+}
+
+/** The actual result: which candidate pair carried it, and what the remote end was. */
+async function report() {
+  const stats = await pc.getStats();
+  const candidates = new Map();
+  let winner = null;
+
+  stats.forEach((s) => {
+    if (s.type === 'local-candidate' || s.type === 'remote-candidate') candidates.set(s.id, s);
+    if (s.type === 'candidate-pair' && s.state === 'succeeded' && s.nominated !== false) winner = s;
+  });
+
+  if (!winner) {
+    say('CONNECTED, but no succeeded pair in stats — inconclusive.', 'wait');
+    return;
+  }
+
+  const local  = candidates.get(winner.localCandidateId);
+  const remote = candidates.get(winner.remoteCandidateId);
+
+  say(
+    `PASS — DataChannel open.\n` +
+    `winning pair: local=${local ? local.candidateType : '?'}  ` +
+    `remote=${remote ? remote.candidateType : '?'}\n` +
+    `rtt: ${winner.currentRoundTripTime !== undefined ? (winner.currentRoundTripTime * 1000).toFixed(1) + ' ms' : 'n/a'}\n\n` +
+    `Phase 2 is viable. Read the Unity screen for the side that matters —\n` +
+    `whether it reached this phone peer-reflexively.`,
+    'pass'
+  );
+}
+</script>
+</body>
+</html>
