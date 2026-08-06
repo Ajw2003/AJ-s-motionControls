@@ -1,0 +1,45 @@
+{
+  "//": "Copy to hosting.config.json and fill in. That file is gitignored; this one is not.",
+  "//see": "../LocalHostingPlan.md",
+
+  "//domain": "The domain you registered. Leave empty to force the touch-control fallback.",
+  "domain": "skiprocking.ca",
+
+  "//hosts": "Labels of the A records - the subdomain label only, not the full name. The relay DISCOVERS this machine's LAN address at boot and publishes lanHost itself, so there is no record to create by hand, no DHCP reservation needed, and deliberately no IP address anywhere in this file. wanHost is the same, for remote mode.",
+  "lanHost": "lan",
+  "wanHost": "wan",
+
+  "//ports": "httpsPort is a preference, not a requirement: the relay tries it, then 8443, then an ephemeral port, and publishes whatever it bound. Players never type the URL - the QR carries it - so an odd port costs nothing. loopbackPort is plain HTTP bound to 127.0.0.1 only: the Unity host's own socket, /health and /qr.",
+  "httpsPort": 443,
+  "loopbackPort": 3000,
+
+  "//dns": "Used for the ACME DNS-01 challenge, and by remote mode to publish the WAN address. ROCKSKIP_DNS_TOKEN and ROCKSKIP_DNS_SECRET in the environment take precedence over the values here.",
+  "//dns-porkbun": "token is the API key (pk1_...), secret is the secret key (sk1_...), both from Porkbun > Account > API Access. API Access must ALSO be toggled on per-domain under Domain Management, or every call fails with an unhelpful permission error. The key pair is account-wide, not scoped to one domain.",
+  "dns": {
+    "provider": "porkbun",
+    "token": "",
+    "secret": ""
+  },
+
+  "//acme": "Leave directory on staging until an order completes end to end - production allows only 5 duplicate certificates per week. Certificates last 90 days and renew at renewBeforeDays remaining, checked daily and on every boot.",
+  "acme": {
+    "directory": "staging",
+    "email": "you@example.com",
+    "renewBeforeDays": 30
+  },
+
+  "//remote": "Opt-in. Maps httpsPort with UPnP/NAT-PMP, reads the external address from the gateway, and publishes it as wanHost. Cannot work behind CGNAT - the relay detects that and says so.",
+  "remote": {
+    "enabled": false
+  },
+
+  "//tunnel": "Opt-in third-party escape hatch. When true, LocalServices spawns cloudflared exactly as it did before this design. Requires: winget install Cloudflare.cloudflared",
+  "tunnel": {
+    "enabled": false
+  },
+
+  "//fallback": "When no certificate can be obtained, serve plain HTTP on the LAN with touch aiming instead of motion, rather than refusing to host. The TV labels the session so it does not read as broken motion controls.",
+  "fallback": {
+    "touchControls": true
+  }
+}

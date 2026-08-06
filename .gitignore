@@ -45,3 +45,7 @@ verification-result.txt
 node_modules/
 npm-debug.log*
 yarn-error.log*
+
+# Hosting secrets — DNS API token and TLS material. See LocalHostingPlan.md.
+relay/hosting.config.json
+relay/certs/

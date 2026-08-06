@@ -50,6 +50,12 @@ Three separately-deployed components:
 
 ### Why a hosted relay rather than direct LAN connection
 
+> **Superseded — see [LocalHostingPlan.md](LocalHostingPlan.md).** The reasoning below is
+> still correct about *why* HTTPS is mandatory, and the conclusion that a hosted relay is
+> needed still holds — but not a third party's. The current design is a small VPS we operate
+> which serves the controller page and brokers introductions, after which gameplay goes
+> phone-to-PC directly over the LAN by WebRTC DataChannel. Hosts configure nothing.
+
 Two hard blockers make LAN-direct a dead end:
 
 - **iOS requires a secure context for motion sensors.** You cannot obtain a public TLS certificate for `192.168.x.x`. Self-signed means installing a trust profile on every guest's phone, which defeats the "scan and play" premise.
