@@ -113,16 +113,31 @@ When an iPhone becomes available, the catch-up work is: run the same gesture on 
 
 The controller emits device-agnostic values. Unity never sees a platform difference. This is both the correctness fix and a clean reusable abstraction boundary.
 
-The mechanism that makes it work is **calibration plus deltas**: capture a reference orientation when the player grips, and report everything relative to it. A delta from a calibrated zero is consistent across platforms even when the absolute values are not — which sidesteps the compass problem entirely. It also doubles as a gameplay beat: *"Point your phone at the lake and hold."*
+The mechanism that makes it work is **calibration plus deltas**: capture a reference orientation when the player arms, and report everything relative to it. A delta from a calibrated zero is consistent across platforms even when the absolute values are not — which sidesteps the compass problem entirely. It also doubles as a gameplay beat: *"Point your phone at the lake and tap."*
 
 ### Controller state machine
 
-`IDLE → CALIBRATING → GRIPPED → RELEASED → IDLE`
+`IDLE → ARMED → (phone stops) → IDLE`
 
 - **IDLE** — not this player's turn; showing spectator view
-- **CALIBRATING** — prompt to aim at the lake. On button-down, capture reference `(alpha0, beta0, gamma0)`
-- **GRIPPED** — record samples at ~60Hz into a ring buffer holding the last ~1.5s, **and stream `AIM` at 20Hz**
-- **RELEASED** — on `touchend`, analyse the buffer, compute one `THROW` descriptor, send once
+- **ARMED** — entered by a **tap**. Captures reference `(alpha0, beta0, gamma0)`, records samples at ~60Hz into a ring buffer holding the last ~1.5s, and streams `AIM` at 20Hz. A second tap disarms so the player can re-aim and recalibrate.
+- **The stop is the release.** No `touchend`: acceleration crossing `swingAccel` marks a swing, and three consecutive samples under `stopAccel` mark the stop, at which point the buffer is analysed and one `THROW` is sent.
+
+**This replaced a press-and-hold gesture, and the reason is worth keeping.** Holding a button
+through a throwing motion is awkward, and — more importantly — it meant orientation had to be
+read at the instant a finger lifted, mid-swing, when the phone's attitude is dominated by the
+swing rather than by where the player was pointing. Stones went places nobody had aimed.
+Attempts to reconstruct the "intended" aim from earlier in the swing all failed, because the
+gesture had already thrown that information away.
+
+Firing on the stop dissolves the problem rather than solving it: **a throwing motion ends
+pointing where it was thrown**, so the stop sample already *is* the aim. Nothing is inferred,
+so nothing can disagree with the preview.
+
+Detection runs on a per-sample hook in `MotionSource`, not the 20Hz aim timer — a stop lasts a
+few milliseconds and polling at 50ms reads the phone long after it has settled. Three calm
+samples rather than one, because a swing passes through near-zero acceleration at its own
+turnaround and would otherwise fire mid-arc.
 
 ### Normalization (`controller/js/sensors.js`)
 
@@ -167,7 +182,7 @@ The aim preview is a **required** feature, so input splits into two channels wit
 
 ### `AIM` — continuous, lossy, cosmetic only
 
-Streamed at a flat 20Hz while GRIPPED. Never authoritative — dropping every one of these packets must not change a throw's outcome, only degrade preview smoothness.
+Streamed at a flat 20Hz while ARMED. Never authoritative — dropping every one of these packets must not change a throw's outcome, only degrade preview smoothness.
 
 ```json
 { "type":"AIM", "roomCode":"ABCD", "playerId":"AJ", "seq":142,
@@ -180,14 +195,19 @@ Flat 20Hz is ~1.5 KB/s for the single active player — trivial. Don't bother wi
 
 ### `THROW` — single, authoritative
 
-Computed once on release from the sample buffer:
+Computed once when the phone stops, from the sample buffer:
 
-- **power** — peak magnitude of linear acceleration during the swing, clamped, mapped 0..1. Use peak, not integral: more forgiving and better matched to perceived effort.
-- **timingQuality** — locate the acceleration peak; score from `|t_release − t_peak|`. This reproduces Skip Skimmer's "release at the right moment."
-- **aimDeg** — `dAlpha` at release, clamped to ±45°
-- **attackAngleDeg** — `dBeta` at release. The stone's pitch relative to the water; the single most important variable.
-- **rollDeg** — `dGamma` at release
-- **spinRate** — `rotationRate` magnitude at release, feeding gyroscopic stability
+- **power** — peak magnitude of linear acceleration during the swing, mapped 0..1. Use peak, not integral: more forgiving and better matched to perceived effort.
+- **timingQuality** — how *abruptly* the swing ended, scored from `|t_stop − t_peak|`. With no button to release, snapping to a halt right after the peak is the skill beat that replaces Skip Skimmer's "release at the right moment."
+- **aimDeg** — `dAlpha` at the stop, **raw and unclamped**
+- **attackAngleDeg** — `dBeta` at the stop, raw. The stone's pitch relative to the water; the single most important variable.
+- **rollDeg** — `dGamma` at the stop, raw
+- **spinRate** — `rotationRate` magnitude at the stop, feeding gyroscopic stability
+
+**Nothing is clamped.** Aim used to be limited to ±45° so a player who twisted too far still
+got a usable throw — but that quietly rewrote what they did into something they had not asked
+for. Throwing backwards is a legitimate thing to attempt, and being allowed to miss is part of
+the gesture feeling honest.
 
 ```json
 { "type":"THROW", "roomCode":"ABCD", "playerId":"AJ",

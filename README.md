@@ -69,8 +69,8 @@ cannot fling rocks across the results screen.
 ### Verifying with a second PC
 
 A desktop browser has no motion sensors, so a real swing produces nothing. Rather than
-letting that seat deadlock the match, `release()` synthesizes a throw from how long the
-grip button was held — but **only on a device that has never produced a single motion
+letting that seat deadlock the match, the **second tap** synthesizes a throw from how long
+the controller was armed — but **only on a device that has never produced a single motion
 event**, which a phone does within a frame of joining. A weak gesture on a real phone
 stays a fumble. Simulated throws are labelled on the controller and report zero samples,
 which is how the TV debug readout (**F1**) tells them apart.
