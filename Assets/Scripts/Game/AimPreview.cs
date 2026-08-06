@@ -322,7 +322,7 @@ namespace Game
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "PlaceholderWater";
             water.transform.position = new Vector3(0f, tuning.WaterY, 60f);
-            water.transform.localScale = new Vector3(12f, 1f, 20f);
+            water.transform.localScale = new Vector3(24f, 1f, 40f);
             Destroy(water.GetComponent<Collider>());
             water.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(new Color(0.06f, 0.16f, 0.28f), PlaceholderArt.WaterQueue);
