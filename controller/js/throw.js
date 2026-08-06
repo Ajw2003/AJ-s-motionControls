@@ -11,7 +11,7 @@
  * wrong" moment. Keep it: nothing in AIM may feed the simulation.
  */
 
-import { clamp, normalize01 } from './sensors.js';
+import { normalize01 } from './sensors.js';
 
 export const ThrowTuning = {
   // Peak linear acceleration, m/s^2, mapped onto power 0..1. A gentle underarm
@@ -19,20 +19,33 @@ export const ThrowTuning = {
   minPeakAccel: 6,
   maxPeakAccel: 35,
 
-  // How far from the acceleration peak a release can land before timing quality
-  // decays to zero. This is the Skip Skimmer "release at the right moment" beat.
+  // How sharply the swing has to stop for full timing quality. A flick that snaps
+  // to a halt right after its peak scores 1; one that trails off scores lower.
   peakWindowMs: 250,
-
-  // Aim is clamped so a player who twists too far still gets a usable throw
-  // rather than one aimed off the lake entirely.
-  maxAimDeg: 45,
-
-  minAttackDeg: -60,
-  maxAttackDeg: 60,
 
   // Below this peak, treat the gesture as a fumble rather than a throw — stops a
   // pocket bump or a shaky hand registering as a real attempt.
   minValidPeakAccel: 3,
+
+  // --- release detection ---------------------------------------------------
+  // The gesture is "accelerate hard, then stop dead". There is no button release:
+  // the stop IS the release, which is why orientation is read raw at that instant
+  // rather than inferred from earlier in the swing. A throwing motion ends pointing
+  // where it was aimed, so the stop sample is the aim.
+
+  // Acceleration that counts as a real swing rather than hand tremor.
+  swingAccel: 14,
+
+  // Once swinging, acceleration falling below this counts as stopping.
+  stopAccel: 4,
+
+  // Consecutive calm samples needed to call it a stop. One is not enough: a swing
+  // passes through zero acceleration at its own turnaround and would fire mid-arc.
+  stopSamples: 3,
+
+  // If the phone never settles, throw anyway this long after the peak rather than
+  // leaving the player armed forever.
+  maxSwingMs: 900,
 };
 
 /**
@@ -90,7 +103,7 @@ export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
 
 export const ThrowState = {
   IDLE: 'IDLE',
-  GRIPPED: 'GRIPPED',
+  ARMED: 'ARMED',
 };
 
 /**
@@ -105,7 +118,10 @@ export const ThrowState = {
 export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
   if (!samples || samples.length === 0) return null;
 
-  const release = samples[samples.length - 1];
+  // The last sample is the moment the phone stopped, which is the release. Nothing
+  // is inferred, averaged or reached back for: what the sensors said at that instant
+  // is what the stone does.
+  const stop = samples[samples.length - 1];
 
   // Peak, not integral. Peak matches perceived effort and is far more forgiving
   // of the sample rate wobbling, which it does on real phones.
@@ -116,18 +132,25 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
 
   if (peak.power < tuning.minValidPeakAccel) return null;
 
-  const releaseDelayMs = Math.abs(release.t - peak.t);
+  // How abruptly the swing ended. Snapping to a halt right after the peak is the
+  // skill beat now that there is no button release to time.
+  const releaseDelayMs = Math.abs(stop.t - peak.t);
 
   return {
     power: normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel),
     timingQuality: 1 - normalize01(releaseDelayMs, 0, tuning.peakWindowMs),
-    aimDeg: clamp(release.dAlpha, -tuning.maxAimDeg, tuning.maxAimDeg),
-    attackAngleDeg: clamp(release.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
-    rollDeg: release.dGamma,
+
+    // Unclamped, deliberately. Throwing backwards, sideways or straight up is a
+    // legitimate thing to attempt, and clamping quietly rewrote what the player did
+    // into something they did not ask for.
+    aimDeg: stop.dAlpha,
+    attackAngleDeg: stop.dBeta,
+    rollDeg: stop.dGamma,
+
     spinRate: Math.hypot(
-      release.rotationRate.alpha,
-      release.rotationRate.beta,
-      release.rotationRate.gamma
+      stop.rotationRate.alpha,
+      stop.rotationRate.beta,
+      stop.rotationRate.gamma
     ),
 
     // Diagnostics — useful on the TV debug readout while tuning, ignored by physics.
@@ -137,74 +160,106 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
   };
 }
 
-/** Cosmetic aim frame. Never authoritative — see the module header. */
+/**
+ * Cosmetic aim frame. Never authoritative — see the module header.
+ *
+ * Raw and unclamped, matching the throw descriptor exactly. Clamping here while the
+ * throw went through unclamped would put the preview and the stone back into
+ * disagreement, which is the whole class of bug this pass exists to remove.
+ */
 export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
   if (!sample) return null;
   return {
     type: 'AIM',
     seq,
-    aimDeg: clamp(sample.dAlpha, -tuning.maxAimDeg, tuning.maxAimDeg),
-    attackAngleDeg: clamp(sample.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
+    aimDeg: sample.dAlpha,
+    attackAngleDeg: sample.dBeta,
     rollDeg: sample.dGamma,
     windup: normalize01(sample.power, tuning.minPeakAccel, tuning.maxPeakAccel),
   };
 }
 
 /**
- * Drives the grip/release gesture and owns the AIM stream while gripped.
+ * Owns the arm/swing gesture and the AIM stream while armed.
+ *
+ * The gesture is: <b>tap to arm, then swing</b>. The throw fires when the phone
+ * stops, not when a finger lifts — accelerate hard, stop dead, and the stone goes.
+ * A second tap disarms instead, so a player who armed with the phone pointing the
+ * wrong way can re-aim and tap again to recalibrate.
+ *
+ * Firing on the stop is what lets orientation be read raw. A throwing motion ends
+ * pointing where it was thrown, so the stop sample already is the aim — nothing has
+ * to be inferred from earlier in the swing, and nothing can disagree with it.
  *
  * Deliberately does not know about the network — it calls onAim/onThrow and lets
  * the caller decide what to do with them, so this can be tested with plain stubs.
  */
 export class ThrowController {
-  constructor(motion, { onAim, onThrow, onStateChange, aimHz = 20 } = {}) {
+  constructor(motion, { onAim, onThrow, onStateChange, aimHz = 20, tuning = ThrowTuning } = {}) {
     this.motion = motion;
     this.onAim = onAim ?? (() => {});
     this.onThrow = onThrow ?? (() => {});
     this.onStateChange = onStateChange ?? (() => {});
     this.aimIntervalMs = 1000 / aimHz;
+    this.tuning = tuning;
 
     this.state = ThrowState.IDLE;
     this.seq = 0;
     this._timer = null;
-    this._grippedAt = 0;
+    this._armedAt = 0;
+
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
+
+    // Detection runs per sample rather than on the aim timer: a stop is a handful of
+    // milliseconds and polling at 20Hz reads the phone well after it has settled.
+    if (motion) motion.onSample = (sample) => this._onSample(sample);
   }
 
-  /** Player pressed and held. Captures the aim reference and starts streaming. */
-  grip() {
-    if (this.state !== ThrowState.IDLE) return;
+  /** Tap. Arms if idle, disarms if already armed. */
+  toggle() {
+    if (this.state === ThrowState.IDLE) return this.arm();
+    return this.disarm();
+  }
 
-    this._grippedAt = performance.now();
+  /** Captures the aim reference and starts streaming. */
+  arm() {
+    if (this.state !== ThrowState.IDLE) return null;
+
+    this._armedAt = performance.now();
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
+
     this.motion.calibrate();
-    this._setState(ThrowState.GRIPPED);
+    this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {
-      const payload = buildAimPayload(this.motion.latest, ++this.seq);
+      const payload = buildAimPayload(this.motion.latest, ++this.seq, this.tuning);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
+
+    return null;
   }
 
-  /** Player let go. Analyses the swing and emits exactly one THROW. */
-  release() {
-    if (this.state !== ThrowState.GRIPPED) return null;
+  /**
+   * Second tap. Stands down without throwing so the player can re-aim — arming
+   * again recalibrates, which is the only way to fix a reference captured while
+   * pointing the wrong way.
+   *
+   * On a device with no motion sensors this throws instead, because otherwise a
+   * desktop browser can arm and then never fire, deadlocking the match. A phone
+   * populates `latest` within a frame of start(), long before anyone can tap.
+   */
+  disarm() {
+    if (this.state !== ThrowState.ARMED) return null;
 
-    const holdMs = performance.now() - this._grippedAt;
+    const heldMs = performance.now() - this._armedAt;
+    this.cancel();
 
-    this._stopTimer();
-    this._setState(ThrowState.IDLE);
-
-    const descriptor = computeThrowDescriptor(this.motion.buffer.toArray());
-    if (descriptor) {
-      this.onThrow({ type: 'THROW', ...descriptor });
-      return descriptor;
-    }
-
-    // A real device that produced samples but a weak gesture is a fumble, and must
-    // stay one. Only a device that has never produced a single motion event has no
-    // sensors at all — a phone sets `latest` within a frame of start(), long before
-    // anyone can grip, so this branch is unreachable on real hardware.
     if (this.motion.latest === null) {
-      const simulated = computeSimulatedThrowDescriptor(holdMs);
+      const simulated = computeSimulatedThrowDescriptor(heldMs);
       this.onThrow({ type: 'THROW', ...simulated });
       return simulated;
     }
@@ -212,10 +267,52 @@ export class ThrowController {
     return null;
   }
 
-  /** Turn ended or connection dropped mid-grip — abandon without throwing. */
+  /** Turn ended or connection dropped while armed — stand down without throwing. */
   cancel() {
     this._stopTimer();
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
     this._setState(ThrowState.IDLE);
+  }
+
+  // ---------------------------------------------------------------- detection
+
+  _onSample(sample) {
+    if (this.state !== ThrowState.ARMED) return;
+
+    if (sample.power >= this.tuning.swingAccel) {
+      this._swinging = true;
+      this._calmRun = 0;
+      if (this._peak === null || sample.power > this._peak.power) this._peak = sample;
+      return;
+    }
+
+    if (!this._swinging) return;
+
+    // A swing passes through near-zero acceleration at its own turnaround, so one
+    // calm sample is not a stop. Requiring a short run of them is what stops the
+    // throw firing halfway through the arc.
+    if (sample.power <= this.tuning.stopAccel) {
+      this._calmRun++;
+      if (this._calmRun >= this.tuning.stopSamples) this._fire();
+      return;
+    }
+
+    this._calmRun = 0;
+
+    // Never leave a player armed because their phone did not quite settle.
+    if (this._peak && sample.t - this._peak.t > this.tuning.maxSwingMs) this._fire();
+  }
+
+  _fire() {
+    const descriptor = computeThrowDescriptor(this.motion.buffer.toArray(), this.tuning);
+    this.cancel();
+
+    if (!descriptor) return null; // a twitch, not a throw — stay armed-off and let them retry
+
+    this.onThrow({ type: 'THROW', ...descriptor });
+    return descriptor;
   }
 
   _stopTimer() {

@@ -191,9 +191,19 @@ const BUFFER_SECONDS = 1.5;
  * they count in opposite directions), but a delta from a captured zero agrees.
  */
 export class MotionSource {
-  constructor({ gravityK = 0.8 } = {}) {
+  /**
+   * @param {object}   options
+   * @param {number}   [options.gravityK]  low-pass constant for the gravity estimate
+   * @param {function} [options.onSample]  called with every sample as it arrives
+   */
+  constructor({ gravityK = 0.8, onSample } = {}) {
     this.gravityFilter = new GravityFilter(gravityK);
     this.buffer = new RingBuffer(Math.ceil(SAMPLE_HZ * BUFFER_SECONDS));
+
+    // Sample-rate, not poll-rate. Release detection watches for a sharp stop, and
+    // polling for that at the 20Hz aim cadence would miss it by up to 50ms and read
+    // the orientation well after the phone had already come to rest.
+    this.onSample = onSample ?? (() => {});
 
     this.reference = null;
     this.latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
@@ -270,5 +280,6 @@ export class MotionSource {
 
     this.latest = sample;
     this.buffer.push(sample);
+    this.onSample(sample);
   }
 }

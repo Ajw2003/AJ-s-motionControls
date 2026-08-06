@@ -26,6 +26,7 @@ import {
   computeSimulatedThrowDescriptor,
   buildAimPayload,
   ThrowController,
+  ThrowState,
   ThrowTuning,
   SimulatedThrow,
 } from './js/throw.js';
@@ -177,12 +178,27 @@ console.log('\ncomputeThrowDescriptor');
   check('empty input returns null', computeThrowDescriptor([]) === null);
   check('null input returns null', computeThrowDescriptor(null) === null);
 
-  // Clamping at release.
-  const wild = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 90, dBeta: -120, dGamma: 17 })];
+  // Orientation is raw and read at the stop. Nothing is clamped: a player who wants
+  // to throw backwards is allowed to, and rewriting their input into something
+  // "usable" was worse than letting them miss.
+  const wild = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 190, dBeta: -120, dGamma: 17 })];
   const dWild = computeThrowDescriptor(wild);
-  check('aim clamps to +/-45', dWild.aimDeg === ThrowTuning.maxAimDeg, `${dWild.aimDeg}`);
-  check('attack angle clamps to its floor', dWild.attackAngleDeg === ThrowTuning.minAttackDeg);
-  check('roll is passed through unclamped', dWild.rollDeg === 17);
+  check('aim is not clamped — backwards throws are allowed', dWild.aimDeg === 190, `${dWild.aimDeg}`);
+  check('attack angle is not clamped', dWild.attackAngleDeg === -120);
+  check('roll is passed through raw', dWild.rollDeg === 17);
+
+  // The stop sample is the aim: a throwing motion ends pointing where it was thrown.
+  const swung = [
+    makeSample(0, 1, { dAlpha: 20 }),    // lining the shot up
+    makeSample(120, 25, { dAlpha: 70 }), // swinging
+    makeSample(180, 30, { dAlpha: 95 }), // peak
+    makeSample(200, 2, { dAlpha: 110 }), // stopped, pointing at the target
+  ];
+  const dSwung = computeThrowDescriptor(swung);
+  check('aim comes from the stop, raw', dSwung.aimDeg === 110, `${dSwung.aimDeg}`);
+  check('power still comes from the peak', near(dSwung.peakAccel, 30));
+  check('a sharp stop right after the peak scores well on timing',
+    dSwung.timingQuality > 0.8, dSwung.timingQuality.toFixed(2));
 
   const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: 3, beta: 4, gamma: 0 } })];
   check('spin rate is the rotation magnitude', near(computeThrowDescriptor(spun).spinRate, 5));
@@ -194,7 +210,7 @@ console.log('\nbuildAimPayload');
   const payload = buildAimPayload(makeSample(0, 20, { dAlpha: 60, dBeta: 22, dGamma: 3 }), 42);
   check('carries a sequence number', payload.seq === 42);
   check('is typed AIM', payload.type === 'AIM');
-  check('aim is clamped like a throw', payload.aimDeg === ThrowTuning.maxAimDeg);
+  check('aim is raw, matching the throw descriptor', payload.aimDeg === 60);
   check('attack angle survives', payload.attackAngleDeg === 22);
   check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
@@ -232,68 +248,111 @@ console.log('\ncomputeSimulatedThrowDescriptor');
 }
 
 // ------------------------------------------------- release() fallback selection
-console.log('\nThrowController.release fallback');
+console.log('\nThrowController: arm, swing, stop');
 {
-  // Minimal stand-ins: enough surface for grip()/release(), no browser needed.
+  // Minimal stand-ins: enough surface to arm and feed samples, no browser needed.
   const makeMotion = (latest, samples) => ({
     latest,
     buffer: { toArray: () => samples, clear() {} },
     calibrate() {},
+    onSample: () => {},
   });
 
-  const realSwing = [];
-  for (let i = 0; i <= 10; i++) realSwing.push(makeSample(i * 10, i * 3));
+  /** Arms, then pushes samples through detection as the sensor would. */
+  const swing = (controller, motion, samples) => {
+    controller.arm();
+    for (const sample of samples) {
+      motion.latest = sample;
+      motion.onSample(sample);
+    }
+  };
 
-  // A device with sensors and a genuine swing: the measured throw must win.
+  // Accelerate hard, then stop dead. Exactly three calm samples, because that is
+  // the documented threshold — two must not be enough.
+  const hardSwing = [
+    makeSample(0, 2, { dAlpha: 5 }),
+    makeSample(20, 20, { dAlpha: 30 }),
+    makeSample(40, 32, { dAlpha: 60 }),   // peak
+    makeSample(60, 3, { dAlpha: 75 }),    // calm 1
+    makeSample(80, 2, { dAlpha: 76 }),    // calm 2
+    makeSample(100, 1, { dAlpha: 77 }),   // calm 3 — fires here
+  ];
+
   {
     const sent = [];
-    const c = new ThrowController(makeMotion(realSwing[10], realSwing), {
-      onThrow: (p) => sent.push(p),
-      aimHz: 1000,
-    });
-    c.grip();
-    const d = c.release();
-    check('a real swing produces a measured throw, not a simulated one',
-      sent.length === 1 && !sent[0].simulated && d.sampleCount === realSwing.length);
+    const motion = makeMotion(null, hardSwing);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, hardSwing);
+
+    check('an abrupt stop fires the throw with no button release', sent.length === 1);
+    check('the throw is measured, not simulated', sent.length === 1 && !sent[0].simulated);
+    check('firing returns the controller to idle', c.state === ThrowState.IDLE);
   }
 
-  // A device with sensors but a limp gesture: still a fumble. Falling back here
-  // would turn every pocket bump on a real phone into a throw.
+  // A swing passes through near-zero acceleration at its own turnaround. Firing
+  // there would throw halfway through the arc.
   {
     const sent = [];
-    const fumble = [makeSample(0, 1), makeSample(10, 2)];
-    const c = new ThrowController(makeMotion(fumble[1], fumble), {
-      onThrow: (p) => sent.push(p),
-      aimHz: 1000,
-    });
-    c.grip();
-    check('a fumble on a real device stays a fumble',
-      c.release() === null && sent.length === 0);
+    const dip = [
+      makeSample(0, 2), makeSample(20, 25), makeSample(40, 1), // momentary dip mid-swing
+      makeSample(60, 30), makeSample(80, 28),
+    ];
+    const motion = makeMotion(null, dip);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, dip);
+
+    check('a single calm sample mid-swing does not fire', sent.length === 0);
+    check('the controller stays armed through the dip', c.state === ThrowState.ARMED);
+    c.cancel();
   }
 
-  // A device that never produced a single motion event has no sensors at all.
+  // Hand tremor while aiming must never register as a swing.
   {
     const sent = [];
-    const c = new ThrowController(makeMotion(null, []), {
-      onThrow: (p) => sent.push(p),
-      aimHz: 1000,
-    });
-    c.grip();
-    const d = c.release();
-    check('a sensorless device falls back to a simulated throw',
+    const still = [makeSample(0, 1), makeSample(20, 2), makeSample(40, 1), makeSample(60, 2)];
+    const motion = makeMotion(null, still);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, still);
+
+    check('holding still never fires', sent.length === 0 && c.state === ThrowState.ARMED);
+    c.cancel();
+  }
+
+  // Second tap stands down so the player can re-aim and recalibrate.
+  {
+    const sent = [];
+    const motion = makeMotion(hardSwing[0], hardSwing);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+
+    c.toggle();
+    check('first tap arms', c.state === ThrowState.ARMED);
+    c.toggle();
+    check('second tap disarms without throwing', c.state === ThrowState.IDLE && sent.length === 0);
+  }
+
+  // A device that never produced a single motion event has no sensors at all, so
+  // the second tap has to throw or a desktop seat deadlocks the match.
+  {
+    const sent = [];
+    const motion = makeMotion(null, []);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+
+    c.toggle();
+    const d = c.toggle();
+    check('a sensorless device throws on the second tap',
       sent.length === 1 && sent[0].simulated === true && d.simulated === true);
     check('the simulated throw is typed THROW like any other', sent[0].type === 'THROW');
   }
 
-  // Releasing without gripping must stay a no-op rather than firing a simulated throw.
+  // Tapping to disarm when never armed must stay a no-op.
   {
     const sent = [];
     const c = new ThrowController(makeMotion(null, []), {
       onThrow: (p) => sent.push(p),
       aimHz: 1000,
     });
-    check('release without grip sends nothing',
-      c.release() === null && sent.length === 0);
+    check('disarming without arming sends nothing',
+      c.disarm() === null && sent.length === 0);
   }
 }
 

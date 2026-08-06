@@ -79,31 +79,34 @@ const thrower = new ThrowController(motion, {
       (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
   onStateChange: (state) => {
-    ui.gripBtn.classList.toggle('held', state === ThrowState.GRIPPED);
-    ui.gripBtn.textContent = state === ThrowState.GRIPPED ? 'SWING!' : 'HOLD';
+    const armed = state === ThrowState.ARMED;
+    ui.gripBtn.classList.toggle('held', armed);
+    ui.gripBtn.textContent = armed ? 'SWING!' : 'TAP TO ARM';
   },
 });
 
 function bindGrip() {
-  const start = (event) => {
-    event.preventDefault(); // stop the tap turning into a scroll or a zoom
-    thrower.grip();
-  };
-  const end = (event) => {
-    event.preventDefault();
-    const descriptor = thrower.release();
+  // A tap, not a hold. The finger has to be off the phone during the swing, and
+  // holding a button through a throwing motion is both awkward and a good way to
+  // launch the phone. touchend rather than touchstart so a drag off the button
+  // does not count.
+  const tap = (event) => {
+    event.preventDefault(); // stop the tap turning into a scroll, zoom or click
+    const descriptor = thrower.toggle();
+
     // Android only — iOS support for navigator.vibrate is unreliable, so this is
     // a bonus rather than something the feel depends on.
-    if (descriptor && navigator.vibrate) navigator.vibrate(30);
+    if (navigator.vibrate) navigator.vibrate(descriptor ? 30 : 15);
   };
 
-  ui.gripBtn.addEventListener('touchstart', start, { passive: false });
-  ui.gripBtn.addEventListener('touchend', end, { passive: false });
-  ui.gripBtn.addEventListener('touchcancel', () => thrower.cancel());
+  ui.gripBtn.addEventListener('touchend', tap, { passive: false });
 
-  // Mouse fallback so the gesture can be exercised on a desktop browser.
-  ui.gripBtn.addEventListener('mousedown', start);
-  ui.gripBtn.addEventListener('mouseup', end);
+  // Mouse fallback so the gesture can be exercised on a desktop browser, where the
+  // second tap is what produces a simulated throw.
+  ui.gripBtn.addEventListener('click', (event) => {
+    if (event.detail === 0) return; // keyboard-activated click; ignore
+    tap(event);
+  });
 }
 
 // ---------------------------------------------------------------- messages
@@ -183,7 +186,7 @@ function leader(scores) {
 }
 
 function renderSpectate(message) {
-  if (thrower.state === ThrowState.GRIPPED) return; // don't yank the screen mid-throw
+  if (thrower.state === ThrowState.ARMED) return; // don't yank the screen mid-throw
 
   // Without the phase, every idle moment reads "Waiting for the next turn" — including
   // the lobby before anything has started and the results screen after it has ended.
