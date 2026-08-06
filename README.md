@@ -36,7 +36,7 @@ results screen are written and unit-tested but have not been exercised at a part
 ## Running the game
 
 > The tunnel requirement described here is being replaced by an outbound connection to a
-> small service we run — see [LocalHostingPlan.md](LocalHostingPlan.md). That design is not
+> small service we run — see [HostingPlan.md](HostingPlan.md). That design is not
 > implemented yet, so everything below still describes how the code behaves today.
 
 Open the **Bootstrap** scene and press Play. `LocalServices` then:
@@ -87,9 +87,8 @@ winget install Cloudflare.cloudflared
 A tunnel is not optional *as the code stands*: phone motion sensors need a secure context,
 and an HTTPS page cannot open a plain `ws://` socket to a LAN address. Both problems
 disappear when the page and the socket share one origin, which is why the relay serves the
-controller itself — and it is why the replacement design in
-[LocalHostingPlan.md](LocalHostingPlan.md) keeps that single-origin property and simply moves
-the certificate onto this machine.
+controller itself. [HostingPlan.md](HostingPlan.md) keeps that single-origin property and
+moves it to a small always-on service instead of a per-launch tunnel.
 
 The quick tunnel's hostname is random per launch. Nobody types it — that is what the QR is
 for — but it does mean a URL from a previous session is dead. For a stable address, switch
@@ -104,7 +103,8 @@ cd relay && npm install && npm start
 ```
 
 Listens on `:3000`, or `$PORT` if set, serving the controller page, the WebSocket, `/health`
-and `/qr`. Deploy with `fly deploy` (see `relay/fly.toml`).
+and `/qr`. Deploying it publicly is [deploy/README.md](deploy/README.md) — `fly deploy` from
+the repo root, since the image needs `controller/` alongside `relay/`.
 
 Integration tests — routing, identity stamping, reconnect, the QR endpoint, and each
 hardening fix:

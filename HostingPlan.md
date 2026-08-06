@@ -99,10 +99,16 @@ existing code, and it becomes the fallback that makes Phase 2 safe to attempt.
 
 1. Deploy the current [relay/server.js](relay/server.js) to a small VPS behind
    `play.skiprocking.ca`. One A record, set by hand, once, forever.
-2. TLS via ACME **HTTP-01** (certbot or `acme-client`), auto-renewing on the VPS.
+2. **Caddy in front of it**, not certbot. Caddy obtains and renews the certificate over
+   HTTP-01 with no configuration beyond a three-line file, proxies WebSocket upgrades
+   transparently, and reloads without dropping connections. Choosing it means the relay never
+   learns what TLS is: `server.js` keeps listening on plain HTTP on `127.0.0.1:3000` and every
+   line of ACME code this document previously specified goes unwritten.
 3. Point `RelayClient` at `wss://play.skiprocking.ca` — an outbound connection, replacing
-   `ws://localhost:3000`.
-4. Delete the `cloudflared` spawn and the stderr scraping from `LocalServices` (§7).
+   `ws://localhost:3000`, and read it from a file so a hostname change does not need a rebuild
+   (§12.6).
+4. Delete the `cloudflared` spawn and the stderr scraping from `LocalServices` (§7), and point
+   `JoinScreen`'s QR fetch at the service instead of `127.0.0.1`.
 
 At the end of Phase 1: hosts install and play, guests scan and play, motion controls work,
 and AIM/THROW route through the VPS. Latency is a round trip to the VPS, which is tolerable
@@ -193,9 +199,14 @@ the implementation work:
 - UPnP / NAT-PMP port mapping, CGNAT detection, NAT hairpin handling. All artefacts of
   inbound connections, and there are none.
 
-`relay/hosting.config.json` and `relay/hosting.config.example.json` should be deleted rather
-than left to rot — they describe a design that no longer exists. The `.gitignore` entries can
-stay; they cost nothing and prevent an accident if the self-hosted path in §11 is ever built.
+**Done:** `relay/hosting.config.json`, `relay/hosting.config.example.json` and their
+`.gitignore` entries are deleted. They described a design that no longer exists, and a config
+file nothing reads is worse than no config file at all.
+
+One more, and it is a real simplification: **the relay does not terminate TLS.** A reverse
+proxy on the VPS handles the certificate, so `server.js` keeps serving plain HTTP exactly as
+it does today and the whole `acme-client` dependency, the `setSecureContext` hot-swap and the
+port-fallback ladder never get written (§4).
 
 ## 8. Host-setup audit
 

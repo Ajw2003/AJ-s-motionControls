@@ -50,7 +50,7 @@ Three separately-deployed components:
 
 ### Why a hosted relay rather than direct LAN connection
 
-> **Superseded — see [LocalHostingPlan.md](LocalHostingPlan.md).** The reasoning below is
+> **Superseded — see [HostingPlan.md](HostingPlan.md).** The reasoning below is
 > still correct about *why* HTTPS is mandatory, and the conclusion that a hosted relay is
 > needed still holds — but not a third party's. The current design is a small VPS we operate
 > which serves the controller page and brokers introductions, after which gameplay goes
