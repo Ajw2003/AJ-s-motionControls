@@ -47,6 +47,12 @@ namespace Net
     public class RoomCreatedMessage
     {
         public string roomCode;
+
+        /// <summary>True when the relay still held the room and its players across the drop.</summary>
+        public bool resumed;
+
+        /// <summary>Who was still in the room on resume. Empty on a fresh room.</summary>
+        public string[] players;
     }
 
     [Serializable]

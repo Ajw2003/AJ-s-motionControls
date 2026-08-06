@@ -32,6 +32,14 @@ const MAX_MESSAGE_BYTES = 4096;
 const HEARTBEAT_MS = 30_000;
 const ROOM_IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const ROOM_SWEEP_MS = 5 * 60 * 1000;
+
+// How long a room outlives its host. A host socket drops for dull reasons — a
+// redeploy, a Wi-Fi blip, the machine being restarted underneath it — and closing
+// the room the instant that happens ejects every player and forces them to retype
+// a code that no longer exists. Holding it briefly lets the host reclaim it and
+// everyone carry on. Overridable so the tests do not have to wait a minute.
+const HOST_GRACE_MS = Number(process.env.HOST_GRACE_MS) || 60_000;
+const HOST_GRACE_SWEEP_MS = 2_000;
 const RATE_WINDOW_MS = 1000;
 const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
 
@@ -44,7 +52,7 @@ const MAX_PLAYER_ID_LENGTH = 16;
 // tunnel, so it takes a bound rather than trusting the caller.
 const MAX_QR_DATA_LENGTH = 512;
 
-/** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number}>} */
+/** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number, hostGoneAt: number|null}>} */
 const rooms = new Map();
 
 // Counters for /health. Two integer increments on the hot path, which is cheap
@@ -122,10 +130,31 @@ function closeRoom(room, reason) {
 // message handlers
 // ---------------------------------------------------------------------------
 
-function handleCreateRoom(ws) {
+function handleCreateRoom(ws, data) {
   if (ws.meta.role) {
     sendError(ws, 'ALREADY_REGISTERED', 'This connection already has a role.');
     return;
+  }
+
+  // A host that dropped asks for its previous code back, so every phone still
+  // holding it reconnects instead of the room silently becoming unreachable and
+  // everyone having to retype. Honoured only when the code is genuinely free or
+  // its host is gone — a live room is never handed to a different connection.
+  const requested = normalizeRoomCode(data && data.preferredCode);
+
+  if (requested) {
+    const existing = rooms.get(requested);
+
+    if (existing && (existing.hostGoneAt !== null || existing.host.readyState !== WebSocket.OPEN)) {
+      resumeRoom(existing, ws);
+      return;
+    }
+
+    if (!existing) {
+      createRoom(ws, requested, true);
+      return;
+    }
+    // Otherwise it is in use by a live host; fall through and mint a fresh one.
   }
 
   const code = generateRoomCode();
@@ -134,15 +163,52 @@ function handleCreateRoom(ws) {
     return;
   }
 
-  const room = { code, host: ws, players: new Map(), lastActivity: Date.now() };
+  createRoom(ws, code, false);
+}
+
+function createRoom(ws, code, reclaimed) {
+  const room = { code, host: ws, players: new Map(), lastActivity: Date.now(), hostGoneAt: null };
   rooms.set(code, room);
   metrics.roomsCreated++;
 
   ws.meta.role = 'host';
   ws.meta.roomCode = code;
 
-  send(ws, { type: 'ROOM_CREATED', roomCode: code });
-  log(`room ${code} created`);
+  send(ws, { type: 'ROOM_CREATED', roomCode: code, resumed: false });
+  log(`room ${code} created${reclaimed ? ' (code reclaimed after host restart)' : ''}`);
+}
+
+/**
+ * Hand a room whose host vanished to the reconnecting host, keeping every player
+ * in place. The players never learn the socket flapped beyond one HOST_RESUMED.
+ */
+function resumeRoom(room, ws) {
+  const previous = room.host;
+
+  room.host = ws;
+  room.hostGoneAt = null;
+  room.lastActivity = Date.now();
+
+  ws.meta.role = 'host';
+  ws.meta.roomCode = room.code;
+
+  // Detach the old socket first: its close handler checks `room.host === ws` to
+  // decide whether the host left, and must not now think it did.
+  if (previous && previous.meta) previous.meta.roomCode = null;
+  if (previous && previous.readyState === WebSocket.OPEN) {
+    previous.close(1000, 'Replaced by a reconnecting host');
+  }
+
+  send(ws, {
+    type: 'ROOM_CREATED',
+    roomCode: room.code,
+    resumed: true,
+    players: [...room.players.keys()],
+  });
+
+  for (const [, playerWs] of room.players) send(playerWs, { type: 'HOST_RESUMED' });
+
+  log(`room ${room.code} resumed by a reconnecting host (${room.players.size} players kept)`);
 }
 
 function handleJoinRoom(ws, data) {
@@ -383,7 +449,7 @@ wss.on('connection', (ws) => {
 
     switch (data.type) {
       case 'CREATE_ROOM':
-        handleCreateRoom(ws);
+        handleCreateRoom(ws, data);
         return;
       case 'JOIN_ROOM':
         handleJoinRoom(ws, data);
@@ -406,7 +472,12 @@ wss.on('connection', (ws) => {
     if (!room) return;
 
     if (role === 'host' && room.host === ws) {
-      closeRoom(room, 'Host disconnected');
+      // Held rather than closed. See HOST_GRACE_MS — the host is very often coming
+      // straight back, and ejecting everyone the moment its socket flaps is what
+      // makes a redeploy or a Wi-Fi blip look like the game crashed.
+      room.hostGoneAt = Date.now();
+      for (const [, playerWs] of room.players) send(playerWs, { type: 'HOST_LEFT' });
+      log(`room ${roomCode}: host disconnected, holding for ${HOST_GRACE_MS}ms`);
       return;
     }
 
@@ -445,15 +516,28 @@ const roomSweep = setInterval(() => {
   }
 }, ROOM_SWEEP_MS);
 
+// Separate from the idle sweep because it runs on a much shorter clock: a host that
+// is not coming back should not strand its players for minutes.
+const hostGraceSweep = setInterval(() => {
+  const now = Date.now();
+  for (const room of [...rooms.values()]) {
+    if (room.hostGoneAt !== null && now - room.hostGoneAt > HOST_GRACE_MS) {
+      closeRoom(room, 'Host disconnected');
+    }
+  }
+}, HOST_GRACE_SWEEP_MS);
+
 wss.on('close', () => {
   clearInterval(heartbeat);
   clearInterval(roomSweep);
+  clearInterval(hostGraceSweep);
 });
 
 function shutdown() {
   log('shutting down');
   clearInterval(heartbeat);
   clearInterval(roomSweep);
+  clearInterval(hostGraceSweep);
   for (const room of [...rooms.values()]) closeRoom(room, 'Server shutting down');
   wss.close(() => httpServer.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();

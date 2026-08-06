@@ -208,7 +208,16 @@ namespace Net
                 Debug.Log($"[RelayClient] Connected to {RelayUrl}");
 
                 _retryDelay = 1f;
-                await SendRawAsync($"{{\"type\":\"{MessageType.CreateRoom}\"}}");
+
+                // Ask for the previous code back. Every phone on screen is still holding
+                // it, so reclaiming means they reconnect on their own instead of the room
+                // silently becoming unreachable and everyone retyping. The relay refuses
+                // if a live host already owns it, and simply issues a fresh one.
+                var preferred = string.IsNullOrEmpty(RoomCode)
+                    ? string.Empty
+                    : $",\"preferredCode\":\"{RoomCode}\"";
+
+                await SendRawAsync($"{{\"type\":\"{MessageType.CreateRoom}\"{preferred}}}");
 
                 _ = ReceiveLoopAsync(_socket, _cts.Token);
             }
@@ -296,8 +305,19 @@ namespace Net
             {
                 case MessageType.RoomCreated:
                 {
-                    RoomCode = JsonUtility.FromJson<RoomCreatedMessage>(json).roomCode;
-                    Debug.Log($"[RelayClient] Room code: {RoomCode}");
+                    var created = JsonUtility.FromJson<RoomCreatedMessage>(json);
+                    var sameCode = created.roomCode == RoomCode;
+                    RoomCode = created.roomCode;
+
+                    // `resumed` means the relay still had the room and its players; nothing
+                    // was lost. A reclaimed code without resume means the relay restarted,
+                    // so the phones must rejoin — but at least the code on the TV is right.
+                    Debug.Log(created.resumed
+                        ? $"[RelayClient] Resumed room {RoomCode} with {created.players?.Length ?? 0} players still in it"
+                        : sameCode
+                            ? $"[RelayClient] Reclaimed room code {RoomCode} — phones can reconnect"
+                            : $"[RelayClient] Room code: {RoomCode}");
+
                     RoomCodeAssigned?.Invoke(RoomCode);
                     break;
                 }

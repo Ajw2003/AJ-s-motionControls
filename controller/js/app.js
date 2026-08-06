@@ -146,6 +146,22 @@ function handleMessage(message) {
       renderSpectate(message);
       break;
 
+    // The host dropped. RelayConnection is already trying to get back into the same
+    // room, so hold the screen rather than ejecting the player — a redeploy or a
+    // Wi-Fi blip is seconds, and the relay holds the room open across it.
+    case 'HOST_LEFT':
+      setStatus('Host reconnecting…', 'bad');
+      thrower.cancel();
+      peer?.close();
+      break;
+
+    case 'HOST_RESUMED':
+      setStatus(`Connected as ${myPlayerId}`, 'ok');
+      if (PEER_ENABLED && peer) peer.start().catch(() => {});
+      break;
+
+    // Only reaches here once the rejoin window has expired — RelayConnection
+    // swallows this while it still has a chance of getting back in.
     case 'ROOM_CLOSED':
       setStatus('Game ended', 'bad');
       thrower.cancel();

@@ -148,10 +148,47 @@ async function run() {
   const health = await httpGet('/health');
   check('/health still answers', health.status === 200 && JSON.parse(health.body).ok === true);
 
-  // ---- host disconnect closes the room ------------------------------------
+  // ---- a host that comes back keeps its room and its players ---------------
+  // This is the party-survival case: a redeploy or a Wi-Fi blip must not eject
+  // everyone and force them to retype a code that no longer exists.
+  const heldCode = code;
   host.close();
-  const closed = await next(rejoin, 3000);
-  check('players are told ROOM_CLOSED when the host leaves', closed.type === 'ROOM_CLOSED');
+
+  const hostLeft = await next(rejoin, 3000);
+  check('players are told HOST_LEFT, not ROOM_CLOSED, on a host drop',
+    hostLeft.type === 'HOST_LEFT', hostLeft.type);
+
+  const returning = await connect();
+  returning.send(JSON.stringify({ type: 'CREATE_ROOM', preferredCode: heldCode }));
+
+  const resumed = await next(returning);
+  check('a reconnecting host reclaims the same room code',
+    resumed.type === 'ROOM_CREATED' && resumed.roomCode === heldCode, resumed.roomCode);
+  check('the room is resumed rather than recreated', resumed.resumed === true);
+  check('players were kept across the drop',
+    Array.isArray(resumed.players) && resumed.players.includes('AJ'),
+    JSON.stringify(resumed.players));
+
+  const resumeNotice = await next(rejoin, 3000);
+  check('players are told HOST_RESUMED', resumeNotice.type === 'HOST_RESUMED', resumeNotice.type);
+
+  // Routing must work again without anyone rejoining.
+  rejoin.send(JSON.stringify({ type: 'THROW', power: 0.5 }));
+  const afterResume = await next(returning);
+  check('input routes to the resumed host', afterResume.type === 'THROW' && afterResume.playerId === 'AJ');
+
+  // ---- a host that never comes back does close the room --------------------
+  // The grace period holds the room, it does not keep it forever: players must not
+  // be stranded on a dead room either.
+  returning.close();
+
+  const secondDrop = await next(rejoin, 3000);
+  check('a second host drop is announced the same way',
+    secondDrop.type === 'HOST_LEFT', secondDrop.type);
+
+  const eventuallyClosed = await next(rejoin, 6000);
+  check('the room closes once the grace period expires without the host returning',
+    eventuallyClosed.type === 'ROOM_CLOSED', eventuallyClosed.type);
 
   player.close();
   rejoin.close();
@@ -159,7 +196,8 @@ async function run() {
 }
 
 const server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-  env: { ...process.env, PORT: String(PORT) },
+  // A short grace period so the host-disconnect cases do not take a minute each.
+  env: { ...process.env, PORT: String(PORT), HOST_GRACE_MS: '1500' },
   stdio: ['ignore', 'ignore', 'inherit'],
 });
 
@@ -178,7 +216,12 @@ sleep(600)
     exitCode = 1;
   })
   .then(() => {
-    console.log(failures === 0 ? '\nPASS — all relay checks green' : `\nFAIL — ${failures} check(s) failed`);
+    // A run that threw has not passed, however many individual checks did — the
+    // checks after the throw never ran. Reporting PASS there is worse than useless.
+    console.log(
+      exitCode !== 0 ? '\nFAIL — the run threw before finishing'
+        : failures === 0 ? '\nPASS — all relay checks green'
+          : `\nFAIL — ${failures} check(s) failed`);
     server.kill('SIGKILL');
     process.exit(failures === 0 ? exitCode : 1);
   });
