@@ -21,9 +21,9 @@ namespace Managers
         [Tooltip("Verbose EventManager logging. Turn on while wiring new events.")]
         [SerializeField] private bool eventDebugLogging;
 
-        [Tooltip("Start the relay and the public HTTPS tunnel automatically. Turn off only " +
-                 "if you are running them yourself in a terminal.")]
-        [SerializeField] private bool startLocalServices = true;
+        [Tooltip("Run a relay on this machine. Development only — hosts connect out to the " +
+                 "deployed service. Also needs a relay-url.txt pointing RelayClient at it.")]
+        [SerializeField] private bool startLocalServices;
 
         [Tooltip("TV screen showing the room code, join URL and QR. This is what guests read.")]
         [SerializeField] private bool showJoinScreen = true;
@@ -53,9 +53,10 @@ namespace Managers
             // round, the winning throw would be missing from the results screen.
             _ = ScoreManager.Instance;
 
-            // Before RelayClient on purpose: this is what spawns the relay the client is
-            // about to connect to. The client retries with backoff regardless, so the
-            // order is not load-bearing — it just avoids a guaranteed first failure.
+            // Development only, and off by default — a normal host connects out to the
+            // deployed service and runs nothing locally. Created before RelayClient so a
+            // local relay is listening before the client tries it; the client retries with
+            // backoff regardless, so the ordering only avoids a guaranteed first failure.
             if (startLocalServices) _ = Net.LocalServices.Instance;
 
             // RelayClient must be created here, never per-scene: a scene-local socket

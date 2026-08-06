@@ -6,15 +6,15 @@ using Debug = UnityEngine.Debug;
 namespace Net
 {
     /// <summary>
-    /// Binds spawned child processes to the lifetime of this one, so the relay and the
-    /// tunnel cannot outlive the game.
+    /// Binds spawned child processes to the lifetime of this one, so a development relay
+    /// cannot outlive the game.
     /// </summary>
     /// <remarks>
     /// Killing a process on Windows does NOT kill its children. Without this, every
     /// crashed editor session, every "stop responding and force quit", and every domain
-    /// reload at the wrong moment leaves an orphaned node.exe holding port 3000 and an
-    /// orphaned cloudflared holding a tunnel. The next launch then finds the port taken
-    /// and fails in a way that looks like a bug in the game.
+    /// reload at the wrong moment leaves an orphaned node.exe holding port 3000. The next
+    /// launch then finds the port taken and fails in a way that looks like a bug in the
+    /// game.
     ///
     /// A job object with KILL_ON_JOB_CLOSE is the OS-level fix: when the last handle to
     /// the job closes — including when the process holding it dies for any reason,

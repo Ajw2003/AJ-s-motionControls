@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -34,12 +35,32 @@ namespace Net
     /// </remarks>
     public class RelayClient : SingletonBase<RelayClient>
     {
-        [Tooltip("ws://localhost:3000 for local dev; wss://<your-app>.fly.dev in production.")]
-        [SerializeField] private string relayUrl = "ws://localhost:3000";
+        /// <summary>
+        /// Overrides <see cref="relayUrl"/> when present beside the executable. One line,
+        /// e.g. ws://localhost:3000. Exists so pointing a shipped build at a different
+        /// service never needs a rebuild — see HostingPlan.md §12.6.
+        /// </summary>
+        private const string OverrideFileName = "relay-url.txt";
+
+        [Tooltip("The service every host connects out to. Override per-machine with a " +
+                 "relay-url.txt beside the executable rather than editing this.")]
+        [SerializeField] private string relayUrl = "wss://rockskipping-relay.fly.dev";
+
         [SerializeField] private bool verboseLogging;
 
         public string RoomCode { get; private set; }
         public bool IsConnected => _socket != null && _socket.State == WebSocketState.Open;
+
+        /// <summary>The address actually in use, after any override file.</summary>
+        public string RelayUrl { get; private set; }
+
+        /// <summary>
+        /// Where a phone loads the controller page: the same origin as the socket, over
+        /// http(s) instead of ws(s). Deriving it rather than configuring it separately is
+        /// what guarantees the page and the socket can never drift onto different hosts —
+        /// the single-origin property the whole design depends on.
+        /// </summary>
+        public string PublicOrigin { get; private set; }
 
         /// <summary>Cosmetic aim frames. Safe to drop; never feed these to the simulation.</summary>
         public event Action<AimMessage> AimReceived;
@@ -63,11 +84,67 @@ namespace Net
         {
             persistBetweenScenes = true;
             base.Awake();
+
+            RelayUrl = ResolveRelayUrl(relayUrl);
+            PublicOrigin = DeriveOrigin(RelayUrl);
         }
 
         private void Start()
         {
             _ = ConnectAsync();
+        }
+
+        /// <summary>The address a phone should open, with the room code pre-filled.</summary>
+        public string JoinUrlFor(string roomCode)
+        {
+            if (string.IsNullOrEmpty(PublicOrigin)) return null;
+            return string.IsNullOrEmpty(roomCode) ? PublicOrigin : $"{PublicOrigin}/?room={roomCode}";
+        }
+
+        /// <summary>
+        /// Reads the override file if it exists, otherwise keeps the inspector value.
+        /// Application.dataPath resolves to Assets/ in the editor and &lt;exe&gt;_Data in a
+        /// build, so its parent is the right place to look in both cases.
+        /// </summary>
+        private static string ResolveRelayUrl(string configured)
+        {
+            try
+            {
+                var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", OverrideFileName));
+                if (File.Exists(path))
+                {
+                    var line = File.ReadAllText(path).Trim();
+                    if (line.Length > 0)
+                    {
+                        Debug.Log($"[RelayClient] Using {OverrideFileName}: {line}");
+                        return line;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                // An unreadable override must not stop the game booting against the default.
+                Debug.LogWarning($"[RelayClient] Could not read {OverrideFileName}: {e.Message}");
+            }
+
+            return configured;
+        }
+
+        /// <summary>ws://host -> http://host, wss://host -> https://host.</summary>
+        private static string DeriveOrigin(string socketUrl)
+        {
+            try
+            {
+                var uri = new Uri(socketUrl);
+                var scheme = uri.Scheme == "wss" ? "https" : "http";
+                var authority = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+                return $"{scheme}://{authority}";
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[RelayClient] Relay URL '{socketUrl}' is not a valid URI: {e.Message}");
+                return null;
+            }
         }
 
         private void Update()
@@ -97,8 +174,8 @@ namespace Net
                 _cts = new CancellationTokenSource();
                 _socket = new ClientWebSocket();
 
-                await _socket.ConnectAsync(new Uri(relayUrl), _cts.Token);
-                Debug.Log($"[RelayClient] Connected to {relayUrl}");
+                await _socket.ConnectAsync(new Uri(RelayUrl), _cts.Token);
+                Debug.Log($"[RelayClient] Connected to {RelayUrl}");
 
                 _retryDelay = 1f;
                 await SendRawAsync($"{{\"type\":\"{MessageType.CreateRoom}\"}}");

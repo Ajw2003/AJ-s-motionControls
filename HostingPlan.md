@@ -1,8 +1,12 @@
 # Hosting — one small service, peer-to-peer gameplay
 
-**Status: design, not yet implemented.** [README.md](README.md) describes the code as it
-stands today, which still requires a Cloudflare quick tunnel. This document supersedes the
-"Why a hosted relay rather than direct LAN connection" section of [PLAN.md](PLAN.md).
+**Status: Phase 1 built and deployed. Phase 2 not started.** The relay runs on Fly at
+`rockskipping-relay.fly.dev`, the game connects out to it, and `cloudflared` is gone from the
+codebase. `play.skiprocking.ca` is still pending registry delegation and is cosmetic — the
+`fly.dev` name works fully. Deployment steps: [deploy/README.md](deploy/README.md).
+
+This document supersedes the "Why a hosted relay rather than direct LAN connection" section of
+[PLAN.md](PLAN.md).
 
 ---
 
@@ -92,28 +96,38 @@ Three properties are worth naming, because each kills a category of problem:
 - **Gameplay is peer-to-peer.** Bandwidth cost is near zero, latency is LAN-local, and the
   service being slow or distant cannot affect how a throw feels.
 
-## 4. Phase 1 — ship the relay path first
+## 4. Phase 1 — the relay path (built)
 
-**Build this before any WebRTC.** It is a complete, shippable product on its own, it is mostly
-existing code, and it becomes the fallback that makes Phase 2 safe to attempt.
+**Deliberately built before any WebRTC.** It is a complete, shippable product on its own, it
+was mostly existing code, and it is the fallback that makes Phase 2 safe to attempt: if a peer
+connection fails to establish, traffic falls back to this path rather than to nothing.
 
-1. Deploy the current [relay/server.js](relay/server.js) to a small VPS behind
-   `play.skiprocking.ca`. One A record, set by hand, once, forever.
-2. **Caddy in front of it**, not certbot. Caddy obtains and renews the certificate over
-   HTTP-01 with no configuration beyond a three-line file, proxies WebSocket upgrades
-   transparently, and reloads without dropping connections. Choosing it means the relay never
-   learns what TLS is: `server.js` keeps listening on plain HTTP on `127.0.0.1:3000` and every
-   line of ACME code this document previously specified goes unwritten.
-3. Point `RelayClient` at `wss://play.skiprocking.ca` — an outbound connection, replacing
-   `ws://localhost:3000`, and read it from a file so a hostname change does not need a rebuild
-   (§12.6).
-4. Delete the `cloudflared` spawn and the stderr scraping from `LocalServices` (§7), and point
-   `JoinScreen`'s QR fetch at the service instead of `127.0.0.1`.
+What shipped:
 
-At the end of Phase 1: hosts install and play, guests scan and play, motion controls work,
-and AIM/THROW route through the VPS. Latency is a round trip to the VPS, which is tolerable
-because the two-channel split in PLAN.md was designed for exactly this — AIM is cosmetic and
-lossy, and THROW is computed phone-side, so no amount of latency can change a throw's outcome.
+1. [relay/server.js](relay/server.js) deployed to **Fly.io** from the repo root — the image
+   needs `controller/` alongside `relay/`, since `STATIC_DIR` resolves as `../controller`.
+   **Fly terminates TLS and renews the certificate itself**, so every line of ACME code this
+   document once specified went unwritten. A Caddy-in-front-of-a-VPS route is documented as the
+   migration path if Fly ever stops suiting us.
+2. `server.js` binds `BIND_HOST || '0.0.0.0'`. The default matters: Fly's proxy reaches the
+   process from outside its VM, so loopback would refuse every connection. The VPS route sets
+   `BIND_HOST=127.0.0.1` because there the proxy is on the same host.
+3. `RelayClient` connects out to the service, and **derives `PublicOrigin` and `JoinUrlFor()`
+   from the socket URL** rather than taking them as separate configuration — which is what
+   makes it structurally impossible for the page and the socket to drift onto different hosts.
+   A `relay-url.txt` beside the executable overrides the address without a rebuild (§12.6).
+4. `cloudflared`, the `TunnelUrlPattern` regex and the stderr scraping are deleted from
+   `LocalServices`, which is now a development-only local relay, **off by default**.
+   `JoinScreen` is driven by the relay connection rather than by `LocalServices`, which no
+   longer exists on a normal host.
+
+The result: hosts install and play, guests scan and play, motion controls work, and AIM/THROW
+route through the service. That last part is the only cost, and it is tolerable because the
+two-channel split in PLAN.md was designed for exactly this — AIM is cosmetic and lossy, and
+THROW is computed phone-side, so no amount of latency can change a throw's outcome.
+
+**The deployment must run exactly one machine** (§12.7). `relay/test-deployed.js` probes for
+this along with the rest of the routing: `cd relay && npm run test:deployed`.
 
 ## 5. Phase 2 — WebRTC DataChannel
 
@@ -278,8 +292,71 @@ ships.
 6. **A shipped build hardcodes our hostname.** If the domain ever moves, old builds break.
    Cheap insurance: read the signalling URL from a config file next to the executable, with
    the hostname as the default.
+7. **The relay cannot be horizontally scaled**, and this is a property of the design rather
+   than an oversight. Rooms live in a per-process `Map`, so a second instance is a second
+   universe: a host creates a room on one and a phone joins the other, which answers
+   `ROOM_NOT_FOUND` for a code that is visibly on the TV. It fails intermittently, only under
+   real load, and only with guests spread across networks — the worst possible combination.
+   **The deployment must run exactly one instance** (`fly scale count 1`; `--ha=false` on a
+   fresh app), and `relay/test-deployed.js` probes for it on every run. Nothing is lost: a
+   restart drops every room regardless, so there is no availability that a second instance
+   would preserve. Sharing room state across instances would mean Redis and is not worth it
+   at this scale.
 
-## 13. Verification
+## 13. If this ships on Steam
+
+Recorded because "just use Steam's networking" is the obvious question and the answer is not
+obvious. **Steamworks cannot replace any part of this design**, and the reason is structural
+rather than a limitation to work around.
+
+### Why Steam networking does not apply
+
+`ISteamNetworkingSockets`, Steam Datagram Relay and Steam lobbies all connect **Steam users to
+Steam users**. They authenticate against a Steam ID and require the Steam client and the
+Steamworks SDK at both ends.
+
+Our controllers are **web pages in a phone browser**. A phone browser has no Steam ID, cannot
+load the SDK, and cannot open an SDR connection. The phone-to-PC link is a web problem, and
+Steam has no web product — it does not host arbitrary web content for your game, so there is
+nowhere for the controller page to live either. The service in §10 stays exactly as it is.
+
+Everything Steam offers here applies to a link this game does not currently have.
+
+### What Steam would genuinely change
+
+| Area | Effect |
+|---|---|
+| Distribution, updates, storefront | Solved for you. Does not touch hosting. |
+| **PC-to-PC play**, if ever added | This is the one place Steam fits perfectly. Two households each with their own TV is Steam-user to Steam-user, and SDR handles NAT traversal with free bandwidth for partners. It would not replace the relay; it would sit alongside it. |
+| **Remote Play Together** | A real alternative to the opt-in remote mode in §4 — it streams the TV to a friend and forwards their input, so a distant player needs no port forwarding and no public address at all. **But it forwards gamepad/keyboard input, not phone motion data**, so a remote player would be on a virtual controller rather than swinging their phone. Verify before relying on it. |
+| Offline expectations | The sharpest risk. Steam players expect a game to run on a plane, and this one requires internet for the page and the certificate. The touch fallback (§6 tier 3) stops being a nicety and becomes the answer to a refund reason. |
+| Steam Deck | Fine — it is a Windows build under Proton, and with `LocalServices` off by default there is no Node process to spawn. |
+| Compliance | The relay logs player-chosen names. A shipped product wants a privacy policy and a disclosure that an online service is required. |
+
+### The scaling problem Steam would expose
+
+§12.7 says the relay must run exactly one instance because rooms live in a per-process `Map`.
+That is comfortable for a hobby game and **becomes the binding constraint at Steam scale**,
+where one machine is both a capacity ceiling and a single point of failure for every player.
+
+Two ways out, in preference order:
+
+1. **Finish Phase 2 first.** With gameplay peer-to-peer, the service carries only signalling
+   and lobby state — so a single instance goes a very long way, and bandwidth cost stays flat
+   as the player count grows. **A Steam release makes Phase 2 load-bearing rather than a
+   latency optimisation**, which is the most important thing on this page.
+2. **Shard by room code** rather than sharing state. The relay assigns codes, so it can encode
+   which instance owns a room in the code itself and route on it — Fly's `fly-replay` header
+   does this natively. That keeps the per-process `Map` and avoids introducing Redis for what
+   is, per room, a few hundred bytes.
+
+### What would not change
+
+The four requirements in §1, the certificate derivation in §2, the four-step join in §9, and
+the zero-setup host in §8 are all independent of how the game is distributed. A Steam build
+scans the same QR and loads the same page from the same origin.
+
+## 14. Verification
 
 - **Phase 1 end to end** — a real Android phone scans the QR, joins through
   `wss://play.skiprocking.ca`, `window.isSecureContext === true`, and a real swing produces a

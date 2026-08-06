@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Text.RegularExpressions;
 using Singleton;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -12,56 +11,50 @@ using Debug = UnityEngine.Debug;
 
 namespace Net
 {
-    /// <summary>How far along the one-click launch is. Drives what the TV shows.</summary>
+    /// <summary>How far along the local relay launch is. Drives what the TV shows.</summary>
     public enum ServiceState
     {
         Idle,
         InstallingDependencies,
         StartingRelay,
-        OpeningTunnel,
         Ready,
         Failed,
     }
 
     /// <summary>
-    /// Brings up everything a phone needs in order to join, as a side effect of pressing
-    /// Play: the relay process and a public HTTPS tunnel to it.
+    /// Runs a relay on this machine, for development only.
     /// </summary>
     /// <remarks>
-    /// The point is that hosting a game is one action. Previously it was three terminals
-    /// and a hand-copied URL, which is fine for the person who built it and a non-starter
-    /// for a party.
+    /// OFF BY DEFAULT, and deliberately so. Hosts connect out to the deployed service
+    /// (see RelayClient and HostingPlan.md), which is what makes hosting require no setup
+    /// at all — there is nothing to install, nothing to configure and nothing listening.
     ///
-    /// One tunnel is enough for both jobs because the relay serves the controller page
-    /// from the same origin it accepts WebSockets on (see server.js). The page therefore
-    /// arrives over HTTPS — which the motion sensors require — and upgrades to wss:// on
-    /// the same host, so there is no mixed-content problem to fight.
+    /// This exists for the local edit-test loop, where deploying on every change would be
+    /// absurd. Turning it on is only half the job: RelayClient must also be pointed at the
+    /// local instance, by putting `ws://localhost:3000` in a relay-url.txt beside the
+    /// executable. Enabling this alone starts a relay that nothing connects to.
     ///
-    /// The host itself does NOT go through the tunnel. RelayClient connects to
-    /// ws://localhost:3000 directly, because routing the PC's own traffic through
-    /// Cloudflare and back would add a datacenter round trip to every aim frame for no
-    /// benefit. Only the phones need the public address.
+    /// This class used to also spawn a cloudflared tunnel and scrape the assigned hostname
+    /// out of its stderr, because a quick tunnel offers no machine-readable channel for it.
+    /// A fixed service address removed the need for both.
     /// </remarks>
     public class LocalServices : SingletonBase<LocalServices>
     {
-        [Tooltip("Bring up the relay and tunnel on Play. Turn off if you run them yourself in a terminal.")]
+        [Tooltip("Start a relay on this machine. Development only — you must also point " +
+                 "RelayClient at it with a relay-url.txt containing ws://localhost:3000.")]
         [SerializeField] private bool launchOnStart = true;
 
-        [Tooltip("Must match the port in RelayClient's relayUrl.")]
+        [Tooltip("Must match the port in the relay-url.txt override.")]
         [SerializeField] private int relayPort = 3000;
 
-        [Tooltip("Echo relay and tunnel output into the Unity console.")]
+        [Tooltip("Echo relay output into the Unity console.")]
         [SerializeField] private bool verboseLogging;
 
         [Header("Timeouts (seconds)")]
         [SerializeField] private float dependencyInstallTimeout = 180f;
         [SerializeField] private float relayStartTimeout = 30f;
-        [SerializeField] private float tunnelStartTimeout = 60f;
 
         public ServiceState State { get; private set; } = ServiceState.Idle;
-
-        /// <summary>Public HTTPS origin for the controller page. Null until the tunnel is up.</summary>
-        public string PublicUrl { get; private set; }
 
         /// <summary>One line for the TV describing what is happening right now.</summary>
         public string StatusMessage { get; private set; } = "Starting up…";
@@ -74,16 +67,10 @@ namespace Net
         public event Action<ServiceState> StateChanged;
 
         private Process _relay;
-        private Process _tunnel;
         private bool _ownsRelay;
         private ChildProcessGroup _group;
 
         private readonly ConcurrentQueue<string> _output = new();
-
-        // cloudflared prints the assigned hostname inside a banner box on stderr; there
-        // is no machine-readable channel for it on a quick tunnel, so it gets scraped.
-        private static readonly Regex TunnelUrlPattern =
-            new(@"https://[a-z0-9][a-z0-9\-]*\.trycloudflare\.com", RegexOptions.IgnoreCase);
 
         private string HealthUrl => $"http://127.0.0.1:{relayPort}/health";
 
@@ -97,7 +84,7 @@ namespace Net
         {
             if (!launchOnStart)
             {
-                SetState(ServiceState.Idle, "Auto-launch off — start the relay and tunnel yourself.");
+                SetState(ServiceState.Idle, "Local relay off — using the deployed service.");
                 return;
             }
 
@@ -107,28 +94,12 @@ namespace Net
 
         private void Update()
         {
-            // Process output arrives on threadpool threads; everything that touches Unity
-            // or mutates state happens here instead.
+            // Process output arrives on threadpool threads; logging it from here keeps
+            // everything that touches Unity on the main thread.
             while (_output.TryDequeue(out var line))
             {
                 if (verboseLogging) Debug.Log($"[LocalServices] {line}");
-
-                if (PublicUrl != null) continue;
-
-                var match = TunnelUrlPattern.Match(line);
-                if (match.Success)
-                {
-                    PublicUrl = match.Value;
-                    Debug.Log($"[LocalServices] Tunnel open at {PublicUrl}");
-                }
             }
-        }
-
-        /// <summary>The address a phone should open, with the room code pre-filled.</summary>
-        public string JoinUrlFor(string roomCode)
-        {
-            if (string.IsNullOrEmpty(PublicUrl)) return null;
-            return string.IsNullOrEmpty(roomCode) ? PublicUrl : $"{PublicUrl}/?room={roomCode}";
         }
 
         // ------------------------------------------------------------------ sequence
@@ -147,7 +118,8 @@ namespace Net
             yield return StartRelay(relayDir);
             if (State == ServiceState.Failed) yield break;
 
-            yield return StartTunnel();
+            SetState(ServiceState.Ready,
+                     $"Local relay on :{relayPort}. Point RelayClient at it with relay-url.txt.");
         }
 
         private IEnumerator StartRelay(string relayDir)
@@ -216,66 +188,6 @@ namespace Net
             }
         }
 
-        private IEnumerator StartTunnel()
-        {
-            SetState(ServiceState.OpeningTunnel, "Opening the public tunnel…");
-
-            var cloudflared = ResolveExecutable("cloudflared", new[]
-            {
-                @"C:\Program Files (x86)\cloudflared",
-                @"C:\Program Files\cloudflared",
-                // winget drops a shim here, which is on PATH only after a new sign-in.
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                             "Microsoft", "WinGet", "Links"),
-            });
-
-            if (cloudflared == null)
-            {
-                Fail("cloudflared not found.",
-                     "Install it with:  winget install Cloudflare.cloudflared\n" +
-                     "Then relaunch. Players cannot join without an HTTPS address — phone " +
-                     "motion sensors refuse to work on a plain http:// page.");
-                yield break;
-            }
-
-            // --no-autoupdate: an update mid-party would restart the tunnel and hand out
-            // a different hostname, silently invalidating every QR code on screen.
-            _tunnel = Spawn(cloudflared,
-                            $"tunnel --no-autoupdate --url http://localhost:{relayPort}",
-                            Path.GetDirectoryName(cloudflared));
-
-            if (_tunnel == null)
-            {
-                Fail("Could not start cloudflared.", "See the console for the underlying error.");
-                yield break;
-            }
-
-            var deadline = Time.realtimeSinceStartup + tunnelStartTimeout;
-
-            while (PublicUrl == null && Time.realtimeSinceStartup < deadline)
-            {
-                if (_tunnel.HasExited)
-                {
-                    Fail($"cloudflared exited before giving us a URL (code {_tunnel.ExitCode}).",
-                         "Quick tunnels are rate limited — wait a minute and try again, or " +
-                         "check your internet connection. Turn on Verbose Logging to see its output.");
-                    yield break;
-                }
-
-                yield return null;
-            }
-
-            if (PublicUrl == null)
-            {
-                Fail("The tunnel did not come up in time.",
-                     "cloudflared is running but never printed a trycloudflare.com address. " +
-                     "Turn on Verbose Logging to see what it is saying.");
-                yield break;
-            }
-
-            SetState(ServiceState.Ready, "Ready — phones can join.");
-        }
-
         private IEnumerator InstallDependencies(string relayDir)
         {
             // npm is a .cmd shim on Windows, which CreateProcess cannot launch directly.
@@ -335,8 +247,8 @@ namespace Net
                 var process = new Process { StartInfo = info, EnableRaisingEvents = true };
 
                 // Both streams are drained. A redirected stream that nobody reads fills
-                // its pipe buffer and blocks the child permanently — cloudflared is
-                // chatty enough to hit that within seconds.
+                // its pipe buffer and blocks the child permanently — a chatty child
+                // reaches that within seconds.
                 process.OutputDataReceived += (_, e) => { if (e.Data != null) _output.Enqueue(e.Data); };
                 process.ErrorDataReceived += (_, e) => { if (e.Data != null) _output.Enqueue(e.Data); };
 
@@ -377,9 +289,6 @@ namespace Net
 
         private void Shutdown()
         {
-            TryKill(_tunnel);
-            _tunnel = null;
-
             // A relay we merely borrowed belongs to whoever started it.
             if (_ownsRelay) TryKill(_relay);
             _relay = null;

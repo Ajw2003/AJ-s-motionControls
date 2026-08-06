@@ -20,6 +20,13 @@ const fs = require('fs');
 const nodePath = require('path');
 
 const PORT = Number(process.env.PORT) || 3000;
+
+// Must default to all interfaces. On Fly the proxy reaches this process from
+// outside the VM, so binding loopback there would refuse every connection and
+// fail the health check on deploy. Behind a reverse proxy on the SAME host —
+// the Caddy/VPS route in deploy/README.md — set BIND_HOST=127.0.0.1 so the
+// plain-HTTP relay is not reachable from the LAN alongside the TLS one.
+const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
 const MAX_PLAYERS_PER_ROOM = 8;
 const MAX_MESSAGE_BYTES = 4096;
 const HEARTBEAT_MS = 30_000;
@@ -431,8 +438,8 @@ function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-httpServer.listen(PORT, () => {
-  log(`Rock Skipping relay listening on :${PORT}`);
+httpServer.listen(PORT, BIND_HOST, () => {
+  log(`Rock Skipping relay listening on ${BIND_HOST}:${PORT}`);
   log(`  controller page  http://localhost:${PORT}/`);
   log(`  websocket        ws://localhost:${PORT}/`);
   log(`  serving static from ${STATIC_DIR}`);

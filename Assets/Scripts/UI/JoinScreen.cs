@@ -72,9 +72,11 @@ namespace Ui
         /// </summary>
         private void EnsureQrMatchesJoinUrl()
         {
-            if (_qrRequestInFlight || _services == null || _client == null) return;
+            // LocalServices is optional now — a normal host has none. Only the relay
+            // connection is required, and it is what knows the address.
+            if (_qrRequestInFlight || _client == null) return;
 
-            var joinUrl = _services.JoinUrlFor(_client.RoomCode);
+            var joinUrl = _client.JoinUrlFor(_client.RoomCode);
             if (string.IsNullOrEmpty(joinUrl) || joinUrl == _qrSourceUrl) return;
 
             StartCoroutine(FetchQr(joinUrl));
@@ -84,7 +86,9 @@ namespace Ui
         {
             _qrRequestInFlight = true;
 
-            var endpoint = $"http://127.0.0.1:{_services.RelayPort}/qr?data={UnityWebRequest.EscapeURL(joinUrl)}";
+            // Asked of the same service that serves the page, not of a local process —
+            // a normal host is not running one.
+            var endpoint = $"{_client.PublicOrigin}/qr?data={UnityWebRequest.EscapeURL(joinUrl)}";
             using (var request = UnityWebRequest.Get(endpoint))
             {
                 request.timeout = 5;
@@ -220,7 +224,7 @@ namespace Ui
             // Driven by phase, not by headcount: during the lobby the code and the start
             // prompt are the whole point of the screen, however many people have joined.
             var compact = compactDuringMatch && turns != null && turns.Phase != MatchPhase.Lobby &&
-                          _services != null && _services.State == ServiceState.Ready;
+                          _client != null && _client.IsConnected;
 
             if (compact) DrawCompactCard();
             else DrawFullScreen(joined);
@@ -237,28 +241,20 @@ namespace Ui
             GUILayout.Label("ROCK SKIPPING", _title);
             GUILayout.Space(10);
 
-            if (_services == null)
+            // Driven by the relay connection, not by LocalServices: a normal host runs no
+            // local process, so keying the screen off one would leave it stuck on
+            // "starting up" forever on every machine except a developer's.
+            if (_client == null)
             {
-                GUILayout.Label("No LocalServices in the scene.", _status);
+                GUILayout.Label("No RelayClient in the scene.", _status);
                 GUILayout.Label("Play from the Bootstrap scene — it creates the managers.", _hint);
                 GUILayout.EndArea();
                 return;
             }
 
-            switch (_services.State)
-            {
-                case ServiceState.Failed:
-                    DrawFailure();
-                    break;
-
-                case ServiceState.Ready:
-                    DrawJoinDetails(joined);
-                    break;
-
-                default:
-                    DrawProgress();
-                    break;
-            }
+            if (_services != null && _services.State == ServiceState.Failed) DrawFailure();
+            else if (!string.IsNullOrEmpty(_client.RoomCode)) DrawJoinDetails(joined);
+            else DrawProgress();
 
             GUILayout.EndArea();
         }
@@ -266,16 +262,16 @@ namespace Ui
         private void DrawProgress()
         {
             GUILayout.FlexibleSpace();
-            GUILayout.Label(_services.StatusMessage, _status);
+            GUILayout.Label(_services?.StatusMessage ?? "Connecting to the game service…", _status);
             GUILayout.Space(20);
 
             // Named explicitly so a long wait is legible as progress rather than a hang.
-            DrawStep("Relay", _services.State > ServiceState.StartingRelay);
-            DrawStep("Public tunnel", _services.State > ServiceState.OpeningTunnel);
-            DrawStep("Room code", !string.IsNullOrEmpty(_client?.RoomCode));
+            DrawStep("Connected", _client.IsConnected);
+            DrawStep("Room code", !string.IsNullOrEmpty(_client.RoomCode));
 
             GUILayout.Space(20);
-            GUILayout.Label("The first launch takes longer — dependencies and a fresh tunnel.", _hint);
+            GUILayout.Label(_client.RelayUrl, _hint);
+            GUILayout.Label("Retrying automatically — check this machine's internet connection.", _hint);
             GUILayout.FlexibleSpace();
         }
 
@@ -325,7 +321,7 @@ namespace Ui
             }
 
             GUILayout.Space(8);
-            GUILayout.Label(_services.PublicUrl ?? string.Empty, _url);
+            GUILayout.Label(_client.PublicOrigin ?? string.Empty, _url);
             GUILayout.Label(code, _code);
 
             var turns = TurnManager.HasInstance ? TurnManager.Instance : null;

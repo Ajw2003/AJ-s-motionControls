@@ -17,6 +17,11 @@ Group=rockskip
 WorkingDirectory=/opt/rockskip/relay
 Environment=NODE_ENV=production
 Environment=PORT=3000
+
+# Caddy is on this same host, so the relay must not be reachable from the LAN
+# alongside the TLS listener. The default is 0.0.0.0 because Fly's proxy reaches
+# the process from outside its VM — loopback is correct here and wrong there.
+Environment=BIND_HOST=127.0.0.1
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3

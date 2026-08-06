@@ -85,6 +85,32 @@ Watch for these in the output:
 If it fails, `fly logs` shows the container's own output; the relay logs
 `Rock Skipping relay listening on :8080` when it has started cleanly.
 
+### Scale to exactly one machine — not optional
+
+`fly deploy` creates **two** machines by default for high availability. That is wrong for this
+app and will fail intermittently in a way that is very hard to diagnose at a party.
+
+The relay keeps rooms in a per-process `Map` (`const rooms = new Map()` in
+[server.js](../relay/server.js)). With two backends, a host can create room `WCHY` on machine A
+while a phone's join lands on machine B, which has never heard of it — the phone gets
+`ROOM_NOT_FOUND` for a code that is plainly on the TV. Whether it happens depends on how Fly
+routes each connection, so it is intermittent, and guests arriving from eight different
+networks are far more likely to spread across backends than a single test client is.
+
+```
+fly scale count 1
+```
+
+Two machines are not buying anything here regardless: a restart drops every room either way,
+so there is no availability to lose. On a fresh app, `fly deploy --ha=false` avoids creating
+the second machine in the first place.
+
+```
+fly machines list
+```
+
+Confirm exactly one row before continuing.
+
 ### Verify before going further
 
 ```
@@ -102,6 +128,17 @@ Expect `HTTP/2 200`. This is the check that matters most, because it is the one 
 the build-context mistake: it proves `controller/index.html` is *inside the image*. A `404`
 here means the Dockerfile built without `controller/`, and the symptom in the wild would be
 sockets connecting fine while every phone shows a blank page.
+
+Then the WebSocket, which is the part curl cannot reach — and the part everything depends on:
+
+```
+cd relay && npm run test:deployed
+```
+
+Nine checks against the live deployment: upgrade through the proxy, room creation, join,
+player→host routing with server-side identity stamping, host→player targeting, malformed-input
+survival, and the multi-backend probe described above. Point it at any host with
+`node test-deployed.js wss://play.skiprocking.ca`.
 
 **Then open `https://rockskipping-relay.fly.dev/` on your phone over mobile data.** Padlock,
 join screen, and in the browser console `window.isSecureContext === true`. At that point Phase 1
@@ -182,6 +219,7 @@ screen appears, Phase 1's infrastructure is done and only the Part C code change
 | `/health` works, `/` returns 404 | The image has no `controller/` | Rebuild from the repo root; check the `COPY controller` line ran |
 | Certificate stuck `Awaiting configuration` | DNS not resolving yet, or the CNAME is wrong | `nslookup play.skiprocking.ca`, then `fly certs show` for what Fly wants |
 | Phone shows a certificate warning | Certificate not `Ready` yet | `fly certs show play.skiprocking.ca` |
+| `ROOM_NOT_FOUND` for a code that is on the TV | More than one machine — rooms are per-process | `fly machines list`; fix with `fly scale count 1` |
 | Sensors dead, page loads fine | Not a secure context | In the phone's browser console: `window.isSecureContext` |
 | First connection of a session is slow | Machine suspended between parties — expected | `fly status` shows `suspended`; see `min_machines_running` in fly.toml |
 
@@ -204,20 +242,38 @@ seconds of reconnection rather than the match.
 
 # Part C — the code changes
 
-**Not yet done, and Phase 1 is not finished without them.** Four changes, none large:
+**Done.** Compiles clean on 6000.3.10f1, and `npm test` stays green at 23/23.
 
-1. **`relay/server.js`** — `httpServer.listen(PORT)` → `httpServer.listen(PORT, '127.0.0.1')`.
-   On Fly this is good hygiene; on the VPS route it is what keeps the plain-HTTP relay off the
-   public interface entirely.
-2. **`Assets/Scripts/Net/RelayClient.cs`** — `relayUrl` default becomes
-   `wss://play.skiprocking.ca`, read from a file beside the executable so a hostname change
-   never needs a rebuild (HostingPlan §12.6). Local dev overrides it to `ws://localhost:3000`.
-3. **`Assets/Scripts/Net/LocalServices.cs`** — delete the `cloudflared` spawn, the
-   `TunnelUrlPattern` regex and the stderr-scraping `Update()` loop. Keep the local-relay spawn
-   behind a flag; it is still the right dev loop.
-4. **`Assets/Scripts/UI/JoinScreen.cs`** — the join URL becomes the service address instead of
-   `LocalServices.PublicUrl`, and the QR fetch moves from `http://127.0.0.1:3000/qr` to the
-   service. The progress list loses its "Public tunnel" step.
+1. **`relay/server.js`** — binds `process.env.BIND_HOST || '0.0.0.0'`.
+   **An earlier draft of this file said to hardcode `127.0.0.1`, which was wrong and would
+   have broken the Fly deploy**: Fly's proxy reaches the process from outside the VM, so
+   loopback would refuse every connection and fail the health check. Loopback is right only
+   behind a same-host proxy, which is why the VPS route's systemd unit sets `BIND_HOST`
+   explicitly and Fly does not.
+2. **`RelayClient.cs`** — `relayUrl` defaults to `wss://rockskipping-relay.fly.dev`, overridable
+   by a one-line `relay-url.txt` beside the executable (HostingPlan §12.6). It now also owns
+   `PublicOrigin` and `JoinUrlFor()`, **derived from the socket URL** rather than configured
+   separately — which is what makes it structurally impossible for the page and the socket to
+   drift onto different hosts.
+3. **`LocalServices.cs`** — the `cloudflared` spawn, the `TunnelUrlPattern` regex, the
+   stderr-scraping `Update()` loop, `PublicUrl` and the `OpeningTunnel` state are all gone. What
+   remains is a development-only local relay, **off by default** in `Bootstrap`.
+4. **`JoinScreen.cs`** — driven by the relay connection rather than by `LocalServices`, which is
+   now optional. Keying the screen off a local process would have left every non-developer
+   machine stuck on "starting up" forever. Progress steps are now Connected / Room code.
+
+### Pointing the game at a local relay for development
+
+Two things, and both are needed — either alone does nothing useful:
+
+1. Tick **Start Local Services** on the `Bootstrap` component.
+2. Create `relay-url.txt` next to the project folder (or beside the built executable):
+
+```
+ws://localhost:3000
+```
+
+It is gitignored, so it stays a per-machine choice.
 
 ---
 

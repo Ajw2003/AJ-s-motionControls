@@ -45,3 +45,7 @@ verification-result.txt
 node_modules/
 npm-debug.log*
 yarn-error.log*
+
+# Per-machine relay override read by RelayClient. Pointing your own checkout at a
+# local relay must not repoint everyone else's.
+relay-url.txt
