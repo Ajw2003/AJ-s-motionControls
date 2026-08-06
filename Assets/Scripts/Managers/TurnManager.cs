@@ -37,7 +37,7 @@ namespace Managers
     {
         [Header("Match")]
         [Tooltip("Each round gives every player one throw.")]
-        [SerializeField] private int roundsPerMatch = 3;
+        [SerializeField] private int roundsPerMatch = 5;
 
         [Tooltip("Starts the match from the lobby, and starts the next one from the results screen.")]
         [SerializeField] private KeyCode startMatchKey = KeyCode.Space;

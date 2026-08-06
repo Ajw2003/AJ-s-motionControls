@@ -43,6 +43,25 @@ namespace Verification
             EventManager.Instance?.Publish(new SkipOccurredEvent(1, 10f));
             Check("publish/subscribe delivers", _persistentReceived == 1);
 
+            // 1b. Delivery order. Bootstrap creates ScoreManager before TurnManager so a
+            //     throw's points are banked before the match-end handler reads the
+            //     standings, which only holds if publish runs subscribers in the order
+            //     they subscribed. It ran backwards once: the match ended and broadcast
+            //     before the final throw was scored, so the phones showed a total one
+            //     throw short of the host's. Unsubscribed immediately so the subscription
+            //     count captured below is unaffected.
+            var orderLog = string.Empty;
+            var firstProbe = new object();
+            var secondProbe = new object();
+
+            EventManager.Instance?.Subscribe<SkipOccurredEvent>(firstProbe, _ => orderLog += "A");
+            EventManager.Instance?.Subscribe<SkipOccurredEvent>(secondProbe, _ => orderLog += "B");
+            EventManager.Instance?.Publish(new SkipOccurredEvent(1, 10f));
+            Check($"subscribers run in subscription order (got \"{orderLog}\", want \"AB\")", orderLog == "AB");
+
+            EventManager.Instance?.UnsubscribeFromAllEvents(firstProbe);
+            EventManager.Instance?.UnsubscribeFromAllEvents(secondProbe);
+
             // 2. A scene-local subscriber, which the next load will destroy while it
             //    is still subscribed.
             var localProbe = new GameObject("SceneLocalProbe").AddComponent<EventProbe>();

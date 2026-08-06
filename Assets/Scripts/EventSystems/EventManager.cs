@@ -139,7 +139,21 @@ namespace EventSystems
             if (DebugLoggingEnabled) Debug.Log($"EventManager: Found {subscriptionList.Count} subscriptions for {eventType.Name}");
             _isPublishing = true;
 
-            for (int i = subscriptionList.Count - 1; i >= 0; i--)
+            // Forward, in subscription order. Bootstrap depends on this and says so:
+            // ScoreManager is created before TurnManager precisely so a throw's points
+            // are banked before TurnManager handles the same event, ends the match and
+            // reads the standings. This loop used to run backwards, which inverted that
+            // silently — the match ended and broadcast scores to the phones before the
+            // final throw was counted, so every phone showed a total one throw short of
+            // the host's while agreeing with each other.
+            //
+            // Count is snapshotted so a handler that subscribes mid-dispatch does not
+            // receive the event it is currently handling. Removals during a publish are
+            // deferred (see RemoveMatching), so the list only grows here and every index
+            // below the snapshot stays valid.
+            var count = subscriptionList.Count;
+
+            for (int i = 0; i < count; i++)
             {
                 var subscription = subscriptionList[i];
 
