@@ -141,7 +141,7 @@ namespace Game
             _line.enabled = true;
             _ghost.gameObject.SetActive(HasSignal);
 
-            if (!HasSignal) return;
+            if (!HasSignal)  return;
 
             UpdateGhost();
 
@@ -322,10 +322,15 @@ namespace Game
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "PlaceholderWater";
             water.transform.position = new Vector3(0f, tuning.WaterY, 60f);
-            water.transform.localScale = new Vector3(24f, 1f, 40f);
+            water.transform.localScale = new Vector3(40f, 1f, 40f);
             Destroy(water.GetComponent<Collider>());
-            water.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(new Color(0.06f, 0.16f, 0.28f), PlaceholderArt.WaterQueue);
+
+            var waterMaterial = PlaceholderArt.CreateWater(new Color(0.06f, 0.16f, 0.28f));
+            water.GetComponent<MeshRenderer>().material = waterMaterial;
+
+            // Handed the material directly rather than looking it up — this method is the
+            // only thing that ever holds the water, and it drops the reference on exit.
+            water.AddComponent<WaterRipples>().Bind(waterMaterial);
 
             // Parented like the arc and the ghost so it survives with this component,
             // which Bootstrap marks DontDestroyOnLoad. Left at the scene root it was

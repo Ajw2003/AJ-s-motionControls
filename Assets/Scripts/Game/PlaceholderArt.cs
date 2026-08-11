@@ -49,5 +49,26 @@ namespace Game
 
             return new Material(shader) { color = colour, renderQueue = renderQueue };
         }
+
+        /// <summary>
+        /// Water, with the ripple shader if it is available and flat colour if it is not.
+        /// </summary>
+        /// <remarks>
+        /// Resources.Load rather than Shader.Find, for the reason above: a project shader
+        /// is not in Always Included Shaders, but everything under a Resources folder ships
+        /// with the build. Falling back to flat water keeps a broken or missing shader
+        /// playable instead of leaving the lake invisible.
+        /// </remarks>
+        public static Material CreateWater(Color colour)
+        {
+            var shader = Resources.Load<Shader>("WaterRipple");
+            if (shader == null)
+            {
+                Debug.LogWarning("[PlaceholderArt] WaterRipple shader not found — flat water.");
+                return Create(colour, WaterQueue);
+            }
+
+            return new Material(shader) { color = colour, renderQueue = WaterQueue };
+        }
     }
 }

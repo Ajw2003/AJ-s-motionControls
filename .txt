@@ -1,0 +1,3 @@
+iphone undo typing message fix, any time flick occours message appears on screen
+
+make text/ ui not selectable on ios specifically

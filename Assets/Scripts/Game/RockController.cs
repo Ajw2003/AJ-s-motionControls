@@ -84,7 +84,10 @@ namespace Game
 
                     if (step.Bounced)
                     {
-                        EventManager.Instance?.Publish(new SkipOccurredEvent(_state.SkipCount, step.ImpactSpeed));
+                        // _state is already step.State, and SkipPhysics clamps a bounce to
+                        // the water plane, so this position is exactly the contact point.
+                        EventManager.Instance?.Publish(
+                            new SkipOccurredEvent(_state.SkipCount, step.ImpactSpeed, _state.Position));
                     }
 
                     if (step.Sank)

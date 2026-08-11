@@ -40,7 +40,7 @@ namespace Verification
 
             // 1. Baseline: the hub delivers at all.
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, _ => _persistentReceived++);
-            EventManager.Instance?.Publish(new SkipOccurredEvent(1, 10f));
+            EventManager.Instance?.Publish(new SkipOccurredEvent(1, 10f, Vector3.zero));
             Check("publish/subscribe delivers", _persistentReceived == 1);
 
             // 1b. Delivery order. Bootstrap creates ScoreManager before TurnManager so a
@@ -56,7 +56,7 @@ namespace Verification
 
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(firstProbe, _ => orderLog += "A");
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(secondProbe, _ => orderLog += "B");
-            EventManager.Instance?.Publish(new SkipOccurredEvent(1, 10f));
+            EventManager.Instance?.Publish(new SkipOccurredEvent(1, 10f, Vector3.zero));
             Check($"subscribers run in subscription order (got \"{orderLog}\", want \"AB\")", orderLog == "AB");
 
             EventManager.Instance?.UnsubscribeFromAllEvents(firstProbe);
@@ -66,7 +66,7 @@ namespace Verification
             //    is still subscribed.
             var localProbe = new GameObject("SceneLocalProbe").AddComponent<EventProbe>();
             localProbe.Listen();
-            EventManager.Instance?.Publish(new SkipOccurredEvent(2, 10f));
+            EventManager.Instance?.Publish(new SkipOccurredEvent(2, 10f, Vector3.zero));
             Check("scene-local subscriber receives", localProbe.Received == 1);
 
             // Relative, not absolute: ScoreManager also subscribes to this event, so the
@@ -79,7 +79,7 @@ namespace Verification
             Check("EventManager survived Bootstrap -> Lobby", EventManager.HasInstance);
 
             var before = _persistentReceived;
-            EventManager.Instance?.Publish(new SkipOccurredEvent(3, 10f));
+            EventManager.Instance?.Publish(new SkipOccurredEvent(3, 10f, Vector3.zero));
             Check("persistent subscriber still receives after Lobby load", _persistentReceived == before + 1);
 
             // 4. Lobby -> Game.
@@ -87,7 +87,7 @@ namespace Verification
             Check("EventManager survived Lobby -> Game", EventManager.HasInstance);
 
             before = _persistentReceived;
-            EventManager.Instance?.Publish(new SkipOccurredEvent(4, 10f));
+            EventManager.Instance?.Publish(new SkipOccurredEvent(4, 10f, Vector3.zero));
             Check("persistent subscriber still receives after Game load", _persistentReceived == before + 1);
 
             // 5. The probe from step 2 was destroyed by the Lobby load while still
