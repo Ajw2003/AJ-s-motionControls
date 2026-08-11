@@ -11,7 +11,7 @@
  * wrong" moment. Keep it: nothing in AIM may feed the simulation.
  */
 
-import { normalize01 } from './sensors.js';
+import { normalize01, spinMagnitude } from './sensors.js';
 
 export const ThrowTuning = {
   // Peak linear acceleration, m/s^2, mapped onto power 0..1. A gentle underarm
@@ -46,6 +46,13 @@ export const ThrowTuning = {
   // If the phone never settles, throw anyway this long after the peak rather than
   // leaving the player armed forever.
   maxSwingMs: 900,
+
+  // --- live spin, for the preview only -------------------------------------
+  // How long a spin peak is held before it has decayed away. Spin is peaky: a
+  // wrist flick is over in about 100ms, so a 20Hz aim frame samples it up to 50ms
+  // late and mostly catches the tail. Holding the peak briefly is what turns that
+  // into a ghost that spins up and winds down instead of one that flickers.
+  spinEnvelopeTauMs: 250,
 };
 
 /**
@@ -147,11 +154,7 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
     attackAngleDeg: stop.dBeta,
     rollDeg: stop.dGamma,
 
-    spinRate: Math.hypot(
-      stop.rotationRate.alpha,
-      stop.rotationRate.beta,
-      stop.rotationRate.gamma
-    ),
+    spinRate: spinMagnitude(stop.rotationRate),
 
     // Diagnostics — useful on the TV debug readout while tuning, ignored by physics.
     peakAccel: peak.power,
@@ -161,13 +164,34 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
 }
 
 /**
+ * A peak-hold envelope over the spin signal: jumps straight to any new peak, then
+ * decays exponentially toward zero.
+ *
+ * Pure, and takes the elapsed time rather than counting samples, because the device
+ * sample rate wobbles on real phones — a per-sample decay constant would make the
+ * ghost wind down faster on a phone that happens to be reporting quickly.
+ *
+ * @param {number} previous  the envelope's last value
+ * @param {number} instantaneous  spin magnitude from the newest sample
+ * @param {number} dtMs  time since the last update
+ */
+export function decaySpinEnvelope(previous, instantaneous, dtMs, tauMs = ThrowTuning.spinEnvelopeTauMs) {
+  const decayed = previous * Math.exp(-Math.max(dtMs, 0) / tauMs);
+  return Math.max(decayed, instantaneous);
+}
+
+/**
  * Cosmetic aim frame. Never authoritative — see the module header.
  *
  * Raw and unclamped, matching the throw descriptor exactly. Clamping here while the
  * throw went through unclamped would put the preview and the stone back into
  * disagreement, which is the whole class of bug this pass exists to remove.
+ *
+ * `spinRate` is passed in rather than read off the sample because the useful value is
+ * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
+ * this instant's spin, which keeps the function usable on its own and honest either way.
  */
-export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
+export function buildAimPayload(sample, seq, tuning = ThrowTuning, spinRate) {
   if (!sample) return null;
   return {
     type: 'AIM',
@@ -176,6 +200,7 @@ export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
     attackAngleDeg: sample.dBeta,
     rollDeg: sample.dGamma,
     windup: normalize01(sample.power, tuning.minPeakAccel, tuning.maxPeakAccel),
+    spinRate: spinRate ?? spinMagnitude(sample.rotationRate),
   };
 }
 
@@ -212,6 +237,12 @@ export class ThrowController {
     this._peak = null;
     this._calmRun = 0;
 
+    // Live spin for the preview, and when it was last updated. Null rather than 0,
+    // because a timestamp of 0 is a legitimate reading and must not be mistaken for
+    // "no previous sample" — that would skip the decay for the sample after it.
+    this._spin = 0;
+    this._spinT = null;
+
     // Detection runs per sample rather than on the aim timer: a stop is a handful of
     // milliseconds and polling at 20Hz reads the phone well after it has settled.
     if (motion) motion.onSample = (sample) => this._onSample(sample);
@@ -231,12 +262,14 @@ export class ThrowController {
     this._swinging = false;
     this._peak = null;
     this._calmRun = 0;
+    this._spin = 0;
+    this._spinT = null;
 
     this.motion.calibrate();
     this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {
-      const payload = buildAimPayload(this.motion.latest, ++this.seq, this.tuning);
+      const payload = buildAimPayload(this.motion.latest, ++this.seq, this.tuning, this._spin);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
 
@@ -273,6 +306,8 @@ export class ThrowController {
     this._swinging = false;
     this._peak = null;
     this._calmRun = 0;
+    this._spin = 0;
+    this._spinT = null;
     this._setState(ThrowState.IDLE);
   }
 
@@ -280,6 +315,14 @@ export class ThrowController {
 
   _onSample(sample) {
     if (this.state !== ThrowState.ARMED) return;
+
+    // Tracked here rather than on the aim timer, for the same reason release
+    // detection is: a wrist flick peaks and is gone well inside one 20Hz interval,
+    // so sampling spin there would read mostly tail and miss what the player did.
+    const dtMs = this._spinT === null ? 0 : sample.t - this._spinT;
+    this._spinT = sample.t;
+    this._spin = decaySpinEnvelope(
+      this._spin, spinMagnitude(sample.rotationRate), dtMs, this.tuning.spinEnvelopeTauMs);
 
     if (sample.power >= this.tuning.swingAccel) {
       this._swinging = true;

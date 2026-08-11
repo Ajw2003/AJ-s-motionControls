@@ -35,10 +35,14 @@ namespace Game
         [Range(0f, 1f)] [SerializeField] private float previewPower = 0.7f;
 
         [Tooltip("Nominal spin for the arc, same reasoning as preview power — actual spin " +
-                 "is only known at release. Must be roughly what real throws produce: spin " +
-                 "buys angle tolerance, so predicting with zero spin draws a far harsher " +
-                 "throw than the player will actually get. Measured throws land near 1000.")]
-        [SerializeField] private float previewSpin = 800f;
+                 "is only known at release. Only used until the player's first throw, after " +
+                 "which their own measured spin replaces it. Must be roughly what real " +
+                 "throws produce: spin buys angle tolerance, so predicting with too little " +
+                 "draws a far harsher throw than the player will actually get. Measured " +
+                 "throws land near 1000 and SkipTuning's bonus saturates at 900, so this " +
+                 "sits at the saturation point — anything above it predicts the same arc, " +
+                 "and dropping a digit here (80) costs 16 of the 18 degrees of tolerance.")]
+        [SerializeField] private float previewSpin = 900f;
         [SerializeField] private float smoothTime = 0.08f;
 
         [Tooltip("Skip re-predicting the arc while the aim has moved less than this, in " +
@@ -104,9 +108,16 @@ namespace Game
         private int _lastSeq = -1;
         private float _lastAimTime = -999f;
 
-        private float _targetAim, _targetAttack, _targetRoll, _targetWindup;
-        private float _curAim, _curAttack, _curRoll, _curWindup;
-        private float _velAim, _velAttack, _velRoll, _velWindup;
+        private float _targetAim, _targetAttack, _targetRoll, _targetWindup, _targetSpin;
+        private float _curAim, _curAttack, _curRoll, _curWindup, _curSpin;
+        private float _velAim, _velAttack, _velRoll, _velWindup, _velSpin;
+
+        /// <summary>
+        /// The ghost's accumulated yaw. Kept as an angle that only ever grows, never
+        /// assigned from the spin — the rate may jump when a packet lands, but the angle
+        /// must not, or a stone that was turning steadily appears to flick.
+        /// </summary>
+        private float _ghostSpinAngle;
 
         private void Awake()
         {
@@ -137,6 +148,11 @@ namespace Game
             _curAttack = Mathf.SmoothDampAngle(_curAttack, _targetAttack, ref _velAttack, smoothTime);
             _curRoll = Mathf.SmoothDampAngle(_curRoll, _targetRoll, ref _velRoll, smoothTime);
             _curWindup = Mathf.SmoothDamp(_curWindup, _targetWindup, ref _velWindup, smoothTime);
+
+            // SmoothDamp, not SmoothDampAngle: this is a rate in deg/s, not a heading.
+            // Wrapping 900 deg/s into -180..180 would make a hard flick read as a slow
+            // turn backwards.
+            _curSpin = Mathf.SmoothDamp(_curSpin, _targetSpin, ref _velSpin, smoothTime);
 
             _line.enabled = true;
             _ghost.gameObject.SetActive(HasSignal);
@@ -220,6 +236,12 @@ namespace Game
             {
                 _lastAimPlayer = aim.playerId;
                 _lastSeq = -1;
+
+                // Start the new player's stone from rest rather than wherever the last
+                // player's happened to have turned to.
+                _ghostSpinAngle = 0f;
+                _curSpin = 0f;
+                _velSpin = 0f;
             }
             if (aim.seq <= _lastSeq) return;
             _lastSeq = aim.seq;
@@ -233,6 +255,11 @@ namespace Game
             _targetAttack = aim.attackAngleDeg;
             _targetRoll = aim.rollDeg;
             _targetWindup = aim.windup;
+
+            // Abs to match SkipPhysics.CreateLaunch, which stores Mathf.Abs(spinRate):
+            // which way the wrist turned is not something the simulation distinguishes,
+            // so the preview must not either.
+            _targetSpin = Mathf.Abs(aim.spinRate);
             _lastAimTime = Time.time;
         }
 
@@ -277,8 +304,19 @@ namespace Game
         private void UpdateGhost()
         {
             _ghost.position = throwOrigin.position;
-            // Pitch by the stone's face angle, yaw by aim, roll by wrist tilt.
-            _ghost.rotation = Quaternion.Euler(-_curAttack, -_curAim, _curRoll);
+
+            // Turned by how fast the player is actually rotating the phone right now, on
+            // the same scale the live stone uses, so winding up harder visibly spins the
+            // stone faster and holding steady leaves it still. Passing 0 rather than the
+            // stone's resting rate is deliberate: a stone in flight never stops turning,
+            // but a ghost that idles at 45 deg/s while the phone is motionless is showing
+            // the player motion they did not make.
+            _ghostSpinAngle += tuning.VisualSpinDegPerSec(_curSpin, 0f) * Time.deltaTime;
+
+            // Pitch by the stone's face angle, yaw by aim, roll by wrist tilt — then spin
+            // on the right, so it turns about the stone's own axis rather than the world's.
+            _ghost.rotation = Quaternion.Euler(-_curAttack, -_curAim, _curRoll)
+                            * Quaternion.Euler(0f, _ghostSpinAngle, 0f);
 
             var scale = Mathf.Lerp(1f, 1.35f, _curWindup);
             _ghost.localScale = new Vector3(0.45f * scale, 0.08f * scale, 0.45f * scale);
@@ -308,7 +346,7 @@ namespace Game
 
         private void BuildGhost()
         {
-            var ghost = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var ghost = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             ghost.name = "GhostRock";
             Destroy(ghost.GetComponent<Collider>());
             ghost.GetComponent<MeshRenderer>().material =

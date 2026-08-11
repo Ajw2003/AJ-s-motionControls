@@ -139,7 +139,8 @@ namespace Net
             if (_latestAim != null)
             {
                 GUILayout.Label($"  seq {_latestAim.seq}   aim {_latestAim.aimDeg,6:F1}°   " +
-                                $"attack {_latestAim.attackAngleDeg,6:F1}°   windup {_latestAim.windup:F2}");
+                                $"attack {_latestAim.attackAngleDeg,6:F1}°   windup {_latestAim.windup:F2}   " +
+                                $"spin {_latestAim.spinRate,5:F0}");
             }
             else
             {

@@ -142,10 +142,10 @@ namespace Game
 
         private static RockController CreateRockObject()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "Rock";
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
-            go.transform.localScale = new Vector3(0.45f, 0.08f, 0.45f);
+            go.transform.localScale = new Vector3(0.65f, 0.08f, 0.55f);
 
             go.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(new Color(0.85f, 0.87f, 0.95f), PlaceholderArt.StoneQueue);

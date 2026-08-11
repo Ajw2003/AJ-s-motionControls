@@ -17,14 +17,9 @@ namespace Game
     public class RockController : MonoBehaviour
     {
         [Header("Visual spin")]
-        [Tooltip("Yaw rate once the stone's spin is spent. Never zero — a stone that has " +
-                 "stopped turning reads as frozen rather than tired.")]
-        [SerializeField] private float minVisualSpinDegPerSec = 180f;
-        [Tooltip("Yaw rate at full spin. Kept modest on purpose: the stone is a square plate, " +
-                 "so it looks identical every 90 degrees and a fast yaw aliases into a strobe.")]
-        [SerializeField] private float maxVisualSpinDegPerSec = 900f;
         [Tooltip("How long a full-speed spin takes to wind down once the stone sinks. " +
-                 "Stopping dead reads as a freeze-frame rather than a stone settling.")]
+                 "Stopping dead reads as a freeze-frame rather than a stone settling. " +
+                 "The rates themselves live in SkipTuning, shared with the aim ghost.")]
         [SerializeField] private float spinCoastDownSeconds = 1.2f;
 
         [SerializeField] private float despawnDelay = 2.5f;
@@ -37,7 +32,6 @@ namespace Game
         private float _accumulator;
         private float _visualSpin;
         private float _spinRate;
-        private float _spinCap;
 
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
@@ -50,13 +44,6 @@ namespace Game
             _tuning = tuning;
             _playerId = playerId;
             _origin = state.Position;
-
-            // The spin at which the gyroscopic tolerance bonus saturates. Past it, more
-            // spin buys no more stability, so it should not look faster either. Derived
-            // rather than hardcoded so retuning SkipTuning can't drift the visual off it.
-            _spinCap = tuning.SpinToleranceScale > 0.0001f
-                ? tuning.MaxSpinToleranceBonus / tuning.SpinToleranceScale
-                : 1f;
 
             transform.position = state.Position;
             IsFlying = true;
@@ -102,8 +89,7 @@ namespace Game
                 // Driven by the stone's actual spin, so a hard flick visibly turns faster
                 // and every bounce visibly bleeds it away as SpinDecay eats it. Only the
                 // rate steps at a bounce, never the angle, so it reads smoothly.
-                var spin01 = Mathf.Clamp01(_state.Spin / _spinCap);
-                _spinRate = Mathf.Lerp(minVisualSpinDegPerSec, maxVisualSpinDegPerSec, spin01);
+                _spinRate = _tuning.VisualSpinDegPerSec(_state.Spin, _tuning.MinVisualSpinDegPerSec);
             }
             else
             {
@@ -111,7 +97,8 @@ namespace Game
                 // Linear, so the tunable is a wind-down time that can be reasoned about:
                 // a full-speed spin takes all of it, a slower one proportionally less.
                 _spinRate = Mathf.MoveTowards(
-                    _spinRate, 0f, maxVisualSpinDegPerSec * Time.deltaTime / Mathf.Max(spinCoastDownSeconds, 0.0001f));
+                    _spinRate, 0f,
+                    _tuning.MaxVisualSpinDegPerSec * Time.deltaTime / Mathf.Max(spinCoastDownSeconds, 0.0001f));
             }
 
             _visualSpin += _spinRate * Time.deltaTime;

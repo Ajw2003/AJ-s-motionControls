@@ -19,12 +19,14 @@ import {
   RingBuffer,
   readAcceleration,
   readRotationRate,
+  spinMagnitude,
 } from './js/sensors.js';
 
 import {
   computeThrowDescriptor,
   computeSimulatedThrowDescriptor,
   buildAimPayload,
+  decaySpinEnvelope,
   ThrowController,
   ThrowState,
   ThrowTuning,
@@ -83,6 +85,9 @@ check('clamp high', clamp(50, 0, 10) === 10);
 check('normalize01 midpoint', near(normalize01(5, 0, 10), 0.5));
 check('normalize01 clamps above range', normalize01(99, 0, 10) === 1);
 check('normalize01 handles zero-width range', normalize01(5, 3, 3) === 0);
+check('spinMagnitude 3-4-12-style', near(spinMagnitude({ alpha: 3, beta: 4, gamma: 12 }), 13));
+check('spinMagnitude treats a missing rate as still', spinMagnitude(null) === 0);
+check('spinMagnitude tolerates null axes', near(spinMagnitude({ alpha: 5, beta: null, gamma: null }), 5));
 
 // ---------------------------------------------------------------- gravity
 console.log('\nGravityFilter');
@@ -214,6 +219,32 @@ console.log('\nbuildAimPayload');
   check('attack angle survives', payload.attackAngleDeg === 22);
   check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
+
+  // Spin is what drives the ghost's visual spin on the TV. It has to be the envelope
+  // when one is supplied, because the instantaneous value at a 20Hz tick mostly misses
+  // the flick that produced it.
+  const spinning = makeSample(0, 20, { rotationRate: { alpha: 0, beta: 30, gamma: 40 } });
+  check('falls back to this instant\'s spin when no envelope is given',
+    near(buildAimPayload(spinning, 1).spinRate, 50));
+  check('carries the supplied envelope in preference to the instant',
+    near(buildAimPayload(spinning, 1, ThrowTuning, 320).spinRate, 320));
+  check('a still phone reports no spin', buildAimPayload(makeSample(0, 20), 1).spinRate === 0);
+}
+
+// ------------------------------------------------------------- spin envelope
+console.log('\ndecaySpinEnvelope');
+{
+  check('rises instantly to a new peak', near(decaySpinEnvelope(100, 900, 16), 900));
+  check('holds the peak against a quiet sample', decaySpinEnvelope(900, 0, 16) > 800);
+  check('decays toward zero over time', decaySpinEnvelope(900, 0, 1000) < 20);
+  check('one tau leaves about 1/e', near(decaySpinEnvelope(900, 0, 250, 250), 900 / Math.E, 1e-9));
+
+  // Time-based, not per-sample: two half-steps must land where one full step does, or
+  // the ghost winds down at a rate that depends on how fast the phone reports.
+  const twoSteps = decaySpinEnvelope(decaySpinEnvelope(900, 0, 50), 0, 50);
+  check('is independent of sample rate', near(twoSteps, decaySpinEnvelope(900, 0, 100), 1e-9),
+    `${twoSteps.toFixed(6)} vs ${decaySpinEnvelope(900, 0, 100).toFixed(6)}`);
+  check('a negative dt cannot inflate the envelope', decaySpinEnvelope(900, 0, -500) <= 900);
 }
 
 // ------------------------------------------------- simulated throw (sensorless)
@@ -354,6 +385,52 @@ console.log('\nThrowController: arm, swing, stop');
     check('disarming without arming sends nothing',
       c.disarm() === null && sent.length === 0);
   }
+}
+
+// --------------------------------------------- live spin reaches the aim frame
+// The unit checks above prove the envelope math and the payload separately. This
+// one proves they are actually wired together, which is the part that can break
+// silently: the envelope has to be updated before the swing-detection guards, or
+// a player aiming gently never accumulates any spin at all.
+console.log('\nThrowController: live spin on the aim stream');
+{
+  const motion = {
+    latest: null,
+    buffer: { toArray: () => [], clear() {} },
+    calibrate() {},
+    onSample: () => {},
+  };
+
+  const frames = [];
+  const c = new ThrowController(motion, { onAim: (p) => frames.push(p), aimHz: 200 });
+  c.arm();
+
+  // A wrist turn well below the swing threshold — this is someone aiming, not
+  // throwing, which is exactly when the ghost should be showing spin. The phone is
+  // then already still again by the time the aim frame goes out, which is the normal
+  // case at 20Hz and the reason the envelope exists: read instantaneously here, this
+  // flick would be reported as no spin at all.
+  const flick = makeSample(0, 5, { rotationRate: { alpha: 0, beta: 300, gamma: 400 } });
+  motion.latest = flick;
+  motion.onSample(flick);
+
+  const settledSample = makeSample(40, 5);
+  motion.latest = settledSample;
+  motion.onSample(settledSample);
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const spun = frames[0];
+  check('a turn below the swing threshold still reaches the aim frame', spun !== undefined,
+    frames.length ? `saw ${frames.length} frame(s)` : 'no frames at all');
+  check('the frame reports the held peak, not the still phone it was sampled on',
+    spun !== undefined && near(spun.spinRate, 500 * Math.exp(-40 / 250), 1e-9),
+    spun && spun.spinRate.toFixed(2));
+
+  c.cancel();
+  const settled = frames.length;
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  check('disarming stops the aim stream', frames.length === settled);
 }
 
 console.log(failures === 0

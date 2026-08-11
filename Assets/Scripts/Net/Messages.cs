@@ -88,6 +88,15 @@ namespace Net
         public float attackAngleDeg;
         public float rollDeg;
         public float windup;
+
+        /// <summary>
+        /// How fast the phone is turning right now, deg/s, as a decaying peak envelope —
+        /// see decaySpinEnvelope in the controller. Cosmetic like the rest of this class:
+        /// it drives the ghost stone's visual spin and nothing else. A phone built before
+        /// this field existed simply omits it, and JsonUtility reads the absent value as
+        /// 0, which shows a ghost that does not spin rather than an error.
+        /// </summary>
+        public float spinRate;
     }
 
     /// <summary>The authoritative throw. Exactly one per gesture.</summary>

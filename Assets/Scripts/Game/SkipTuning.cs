@@ -20,7 +20,7 @@ namespace Game
 
         [Header("Launch")]
         [Tooltip("Speed at power = 0.")]
-        public float MinSpeed = 6f;
+        public float MinSpeed = 2f;
         [Tooltip("Speed at power = 1.")]
         public float MaxSpeed = 26f;
         [Tooltip("Upward angle of the toss itself, separate from the stone's face angle.")]
@@ -52,6 +52,40 @@ namespace Game
         public float SpinToleranceScale = 0.02f;
         [Tooltip("Ceiling on that bonus, so a wild flick isn't an auto-win.")]
         public float MaxSpinToleranceBonus = 18f;
+
+        [Tooltip("Yaw rate a stone in flight falls back to once its spin is spent. Never " +
+                 "zero — a stone that has stopped turning reads as frozen rather than tired. " +
+                 "The aim ghost deliberately does not use this floor: a phone held still " +
+                 "must give a ghost held still, or the spin stops being feedback.")]
+        public float MinVisualSpinDegPerSec = 45f;
+
+        [Tooltip("Yaw rate at full spin. Kept modest on purpose: the stone is a flat plate, " +
+                 "so a fast yaw aliases into a strobe rather than reading as speed.")]
+        public float MaxVisualSpinDegPerSec = 900f;
+
+        /// <summary>
+        /// The spin at which the gyroscopic tolerance bonus saturates. Past it, more spin
+        /// buys no more stability, so it must not look any faster either. Derived rather
+        /// than hardcoded so retuning the two values above cannot drift the visual off it.
+        /// </summary>
+        public float SpinCap => SpinToleranceScale > 0.0001f
+            ? MaxSpinToleranceBonus / SpinToleranceScale
+            : 1f;
+
+        /// <summary>
+        /// Spin to the yaw rate that represents it, in deg/s.
+        /// </summary>
+        /// <remarks>
+        /// Shared by the aim ghost and the live stone on purpose. If the two ever mapped
+        /// spin to a visual rate differently, the same throw would turn at one speed in
+        /// the preview and another in flight — the preview/live disagreement this codebase
+        /// keeps closing everywhere else.
+        ///
+        /// <paramref name="atRest"/> is the one thing they are allowed to differ on, because
+        /// they genuinely differ: see MinVisualSpinDegPerSec.
+        /// </remarks>
+        public float VisualSpinDegPerSec(float spin, float atRest) =>
+            Mathf.Lerp(atRest, MaxVisualSpinDegPerSec, Mathf.Clamp01(Mathf.Abs(spin) / SpinCap));
 
         [Header("Simulation")]
         public float FixedStep = 0.02f;

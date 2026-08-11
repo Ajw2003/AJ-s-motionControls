@@ -41,6 +41,18 @@ export function magnitude(v) {
   return Math.hypot(v.x, v.y, v.z);
 }
 
+/**
+ * How fast the phone is turning, in deg/s, regardless of which axis it turns about.
+ *
+ * The single definition of "spin" in the codebase. The release descriptor and the
+ * live aim stream both call it, so the spin the preview shows and the spin the
+ * stone is launched with can never be two different measurements.
+ */
+export function spinMagnitude(rate) {
+  if (!rate) return 0;
+  return Math.hypot(rate.alpha ?? 0, rate.beta ?? 0, rate.gamma ?? 0);
+}
+
 export function clamp(value, min, max) {
   return value < min ? min : value > max ? max : value;
 }

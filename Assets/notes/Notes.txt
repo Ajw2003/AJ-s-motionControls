@@ -1,0 +1,13 @@
+make aim prediction visual disapear slightly after throwing
+
+make rocks render configurable trail behind them instead of keeping the prediction line
+
+make the spin better visually match the amount of skips and height of the skip/ velocity decent
+
+fix inital button press still saying hold rather than tap to aim/calibrate
+
+actual skybox with backgrounds
+
+actual level geometry to avoid/ aim for
+
+rock textures, water textures and enviornment textures
