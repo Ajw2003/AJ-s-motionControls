@@ -378,7 +378,22 @@ function serveQr(req, res, query) {
   }
 }
 
-const httpServer = http.createServer((req, res) => {
+// SPIKE ONLY — see the local-HTTPS spike. Delete this along with the TLS branch
+// below once the question it answers is settled.
+//
+// Normally this process never terminates TLS: Fly's proxy holds the certificate
+// in production and Caddy does on the VPS route, which is why HostingPlan.md §7
+// lists the whole ACME path as deleted. This exists to test whether a page served
+// from the HOST machine over HTTPS gives a phone a secure context, which is the
+// only way motion sensors unlock.
+//
+// Env-gated so the default path is byte-identical to before: with neither
+// variable set, this is the plain http.createServer it has always been.
+const TLS_CERT = process.env.TLS_CERT;
+const TLS_KEY = process.env.TLS_KEY;
+const useTls = Boolean(TLS_CERT && TLS_KEY);
+
+function handleRequest(req, res) {
   // Base is a formality — only the path and query are ever read.
   const url = new URL(req.url || '/', 'http://localhost');
 
@@ -410,7 +425,15 @@ const httpServer = http.createServer((req, res) => {
   }
 
   serveStatic(req, res);
-});
+}
+
+// The WebSocket server attaches to either kind of listener unchanged, so wss://
+// comes free with the TLS branch and needs no separate handling.
+const httpServer = useTls
+  ? require('https').createServer(
+      { cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) },
+      handleRequest)
+  : http.createServer(handleRequest);
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
 
@@ -547,8 +570,10 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 httpServer.listen(PORT, BIND_HOST, () => {
-  log(`Rock Skipping relay listening on ${BIND_HOST}:${PORT}`);
-  log(`  controller page  http://localhost:${PORT}/`);
-  log(`  websocket        ws://localhost:${PORT}/`);
+  const scheme = useTls ? 'https' : 'http';
+  const wsScheme = useTls ? 'wss' : 'ws';
+  log(`Rock Skipping relay listening on ${BIND_HOST}:${PORT}${useTls ? ' (TLS)' : ''}`);
+  log(`  controller page  ${scheme}://localhost:${PORT}/`);
+  log(`  websocket        ${wsScheme}://localhost:${PORT}/`);
   log(`  serving static from ${STATIC_DIR}`);
 });
