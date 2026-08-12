@@ -24,6 +24,7 @@ const ui = {
   gripBtn: el('gripBtn'),
   waitTitle: el('waitTitle'),
   waitDetail: el('waitDetail'),
+  lastThrow: el('lastThrow'),
   scores: el('scores'),
   throwResult: el('throwResult'),
   debug: el('debug'),
@@ -185,6 +186,22 @@ function leader(scores) {
   return entries[0][0];
 }
 
+/**
+ * One line describing the throw that just finished, or '' when there isn't one.
+ *
+ * Blank in the lobby and on the results screen: the first has no throw behind it, and
+ * the second is already showing final standings, where one player's last throw is noise.
+ */
+function renderLastThrow(message, phase) {
+  if (phase !== 'PLAYING') return '';
+  if (!message.lastPlayer || typeof message.lastSkips !== 'number') return '';
+
+  const who = message.lastPlayer === myPlayerId ? 'You' : message.lastPlayer;
+  const parts = [`${who}: ${message.lastSkips} skip${message.lastSkips === 1 ? '' : 's'}`];
+  if (typeof message.lastDistance === 'number') parts.push(`${message.lastDistance.toFixed(1)} m`);
+  return parts.join(' · ');
+}
+
 function renderSpectate(message) {
   if (thrower.state === ThrowState.ARMED) return; // don't yank the screen mid-throw
 
@@ -211,10 +228,13 @@ function renderSpectate(message) {
       parts.push(`Round ${message.round}/${message.totalRounds}`);
     }
     if (message.rockName) parts.push(message.rockName);
-    if (typeof message.liveSkips === 'number') parts.push(`${message.liveSkips} skips`);
-    if (typeof message.liveDistance === 'number') parts.push(`${message.liveDistance.toFixed(1)} m`);
     ui.waitDetail.textContent = parts.join(' · ') || 'Watch the TV.';
   }
+
+  // The throw that just finished, on its own line. Attributed to lastPlayer rather
+  // than activePlayer: the turn has already moved on by the time this arrives, so
+  // reading it off the caption would credit every throw to the next player up.
+  ui.lastThrow.textContent = renderLastThrow(message, phase);
 
   ui.scores.innerHTML = '';
   for (const [player, score] of Object.entries(message.scores ?? {})) {

@@ -4,9 +4,15 @@
  * Capacity measurement: simulates concurrent parties and reports what they cost.
  *
  * Each room is 1 host + PLAYERS_PER_ROOM phones. One phone streams AIM at 20Hz —
- * turn-based, so only the active player aims — and the host broadcasts SPECTATE
- * at 4Hz to everyone. Those are the real rates, from `aimHz` in throw.js and
- * `spectateBroadcastInterval` in RockLauncher.cs, not invented ones.
+ * turn-based, so only the active player aims. That is the real rate, from `aimHz`
+ * in throw.js, not an invented one.
+ *
+ * The host sends SPECTATE only on state changes — a join, a turn, a completed throw,
+ * the match ending — so it is not modelled as steady traffic here. It used to go out
+ * at 4Hz to every player for the whole time a rock was in the air, which dominated
+ * this measurement; a match now sends single-digit SPECTATEs per turn instead of
+ * dozens. If you reintroduce anything periodic on the host side, model it here or
+ * these numbers stop meaning anything.
  *
  *   npm run loadtest                    25 rooms x 4 players, 15s
  *   node loadtest.js 250 8 20           250 rooms x 8 players, 20s
@@ -87,17 +93,9 @@ function firstOfType(ws, type) {
     timers.push(setInterval(() => {
       aimer.send(JSON.stringify({
         type: 'AIM', roomCode: room.roomCode, seq: seq++,
-        aimDeg: -8.5, attackAngleDeg: 22.0, rollDeg: 4.0, windup: 0.35,
+        aimDeg: -8.5, attackAngleDeg: 22.0, rollDeg: 4.0, windup: 0.35, spinRate: 412.6,
       }));
     }, 50));
-
-    timers.push(setInterval(() => {
-      room.host.send(JSON.stringify({
-        type: 'SPECTATE', activePlayer: 'P0', rockName: 'Galaga Ship', phase: 'PLAYING',
-        round: 1, totalRounds: 3, liveSkips: 4, liveDistance: 31.2,
-        scores: { P0: 120, P1: 95, P2: 80, P3: 60 },
-      }));
-    }, 250));
   }
 
   await wait(SECONDS * 1000);

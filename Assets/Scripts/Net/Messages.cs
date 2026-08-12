@@ -132,11 +132,22 @@ namespace Net
         /// Broadcast match state to every phone. Hand-written because the score map
         /// is a dictionary, which JsonUtility cannot serialise.
         /// </summary>
+        /// <remarks>
+        /// Sent on state changes only — a player joining or leaving, a turn starting, a
+        /// throw completing, the match ending. Never on a timer. This used to also go out
+        /// four times a second for the whole time a rock was in the air, to drive a live
+        /// readout on phones nobody watches during a couch game; that was the single most
+        /// expensive thing on the wire, and it is gone.
+        /// </remarks>
         /// <param name="phase">LOBBY, PLAYING or RESULTS. Without it an idle phone cannot
         /// tell "waiting to start" from "final scores" and shows the wrong caption in two
         /// of the three phases.</param>
+        /// <param name="lastPlayer">Who threw the <paramref name="lastSkips"/> result. Named
+        /// separately from activePlayer on purpose: the turn has already advanced by the time
+        /// this goes out, so without it a phone would credit the throw to the wrong player.</param>
         public static string BuildSpectate(
-            string activePlayer, string rockName, int liveSkips, float liveDistance,
+            string activePlayer, string rockName,
+            string lastPlayer, int lastSkips, float lastDistance,
             IReadOnlyDictionary<string, int> scores,
             string phase = "PLAYING", int round = 1, int totalRounds = 1)
         {
@@ -148,8 +159,9 @@ namespace Net
               .Append($"\"phase\":\"{Escape(phase)}\",")
               .Append($"\"round\":{round},")
               .Append($"\"totalRounds\":{totalRounds},")
-              .Append($"\"liveSkips\":{liveSkips},")
-              .Append($"\"liveDistance\":{liveDistance.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},")
+              .Append($"\"lastPlayer\":\"{Escape(lastPlayer)}\",")
+              .Append($"\"lastSkips\":{lastSkips},")
+              .Append($"\"lastDistance\":{lastDistance.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},")
               .Append("\"scores\":{");
 
             if (scores != null)

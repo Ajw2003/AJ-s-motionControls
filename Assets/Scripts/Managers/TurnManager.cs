@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using EventSystems;
 using EventTypes.MatchEvents;
 using EventTypes.SkipEvents;
+using Game;
 using Net;
 using Singleton;
 using UnityEngine;
@@ -51,6 +52,13 @@ namespace Managers
         private int _current = -1;
         private int _round;
 
+        // The throw that just finished, carried on the next broadcast. Kept here rather
+        // than streamed while the rock flies: phones are not a spectator screen in a couch
+        // game, so the only moment the numbers matter is once they are final.
+        private string _lastPlayer = string.Empty;
+        private int _lastSkips;
+        private float _lastDistance;
+
         public MatchPhase Phase { get; private set; } = MatchPhase.Lobby;
 
         /// <summary>Null outside the Playing phase — nobody may throw in a lobby.</summary>
@@ -75,7 +83,7 @@ namespace Managers
 
             EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnPlayerJoined);
             EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnPlayerLeft);
-            EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, _ => NextTurn());
+            EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
         }
 
         private void Update()
@@ -132,12 +140,39 @@ namespace Managers
             }
 
             ScoreManager.Instance?.ResetScores();
+            ClearLastThrow();
 
             _round = 0;
             Phase = MatchPhase.Playing;
 
             Debug.Log($"[TurnManager] Match started — {_players.Count} players, {roundsPerMatch} rounds");
             StartTurn(0);
+        }
+
+        /// <summary>
+        /// A rock has sunk. Keeps the result, then advances the turn — which broadcasts on
+        /// the way through, carrying these numbers with it.
+        /// </summary>
+        /// <remarks>
+        /// ScoreManager subscribes to this event before TurnManager does, and EventManager
+        /// delivers in subscription order, so the points are already banked by the time the
+        /// broadcast below reads them. See Bootstrap, where that ordering is set deliberately.
+        /// </remarks>
+        private void OnThrowCompleted(ThrowCompletedEvent e)
+        {
+            _lastPlayer = e.PlayerId ?? string.Empty;
+            _lastSkips = e.TotalSkips;
+            _lastDistance = e.Distance;
+
+            NextTurn();
+        }
+
+        /// <summary>Forgets the last throw, so a new match does not open showing the old one.</summary>
+        private void ClearLastThrow()
+        {
+            _lastPlayer = string.Empty;
+            _lastSkips = 0;
+            _lastDistance = 0f;
         }
 
         /// <summary>
@@ -190,6 +225,7 @@ namespace Managers
             _round = 0;
 
             ScoreManager.Instance?.ResetScores();
+            ClearLastThrow();
             SendTurnStates();
 
             Debug.Log("[TurnManager] Back in the lobby");
@@ -244,11 +280,21 @@ namespace Managers
             BroadcastSpectate();
         }
 
-        /// <summary>Match state for the idle phones. Cheap enough to call on any change.</summary>
-        public void BroadcastSpectate(int liveSkips = 0, float liveDistance = 0f, string rockName = "")
+        /// <summary>
+        /// Match state for the idle phones, sent on change only.
+        /// </summary>
+        /// <remarks>
+        /// Private, and worth keeping that way. This took live skip/distance parameters so
+        /// RockLauncher could push flight values in four times a second — the most expensive
+        /// traffic in the game, feeding a readout nobody looks at during a couch match. With
+        /// the parameters gone and no caller outside this class, there is no route back to a
+        /// per-frame broadcast from gameplay code.
+        /// </remarks>
+        private void BroadcastSpectate()
         {
             RelayClient.Instance?.Send(OutboundMessages.BuildSpectate(
-                ActivePlayer ?? string.Empty, rockName, liveSkips, liveDistance,
+                ActivePlayer ?? string.Empty, RockStats.Default.DisplayName,
+                _lastPlayer, _lastSkips, _lastDistance,
                 ScoreManager.Instance?.Scores,
                 Phase.ToString().ToUpperInvariant(), _round + 1, roundsPerMatch));
         }

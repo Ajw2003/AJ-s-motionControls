@@ -5,8 +5,7 @@ using UnityEngine;
 namespace Game
 {
     /// <summary>
-    /// Turns an inbound THROW into a real rock, follows it with the camera, and keeps
-    /// idle phones updated with the live skip count.
+    /// Turns an inbound THROW into a real rock and follows it with the camera.
     /// </summary>
     /// <remarks>
     /// Shares the throw origin and tuning with AimPreview on purpose: if the preview
@@ -17,7 +16,6 @@ namespace Game
     public class RockLauncher : MonoBehaviour
     {
         [SerializeField] private float cameraFollowSmoothing = 0.25f;
-        [SerializeField] private float spectateBroadcastInterval = 0.25f;
 
         private RelayClient _client;
         private AimPreview _preview;
@@ -27,7 +25,6 @@ namespace Game
         private Vector3 _cameraHome;
         private Quaternion _cameraHomeRotation;
         private Vector3 _cameraVelocity;
-        private float _nextSpectateTime;
 
         public RockController ActiveRock => _active;
 
@@ -38,7 +35,6 @@ namespace Game
             {
                 FollowActiveRock();
             }
-            BroadcastLiveState();
         }
 
         private void OnDestroy()
@@ -124,20 +120,6 @@ namespace Game
                 _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
             _camera.transform.rotation = Quaternion.Slerp(
                 _camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
-        }
-
-        private void BroadcastLiveState()
-        {
-            if (_active == null || !_active.IsFlying) return;
-            if (Time.time < _nextSpectateTime) return;
-
-            _nextSpectateTime = Time.time + spectateBroadcastInterval;
-
-            if (TurnManager.HasInstance)
-            {
-                TurnManager.Instance.BroadcastSpectate(
-                    _active.SkipCount, _active.Distance, RockStats.Default.DisplayName);
-            }
         }
 
         private static RockController CreateRockObject()
