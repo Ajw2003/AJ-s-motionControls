@@ -15,17 +15,25 @@ MonoBehaviour:
   Gravity: 9.81
   WaterY: 0
   MinSpeed: 2
-  MaxSpeed: 100
+  MaxSpeed: 26
   LaunchPitchDeg: 8
-  AttackAngleOffsetDeg: 20
   WorstTimingSpeedScale: 0.6
+  DisplayName: Pebble
+  OptimalAngleDeg: 20
+  BaseToleranceDeg: 15
+  SinkAngleMultiplier: 2.5
+  Drag: 0.75
+  DragAtFullSpin: 0.86
+  SpinDecay: 0.75
+  MinSkipSpeed: 2.5
   MaxIncidenceDeg: 45
-  BestRestitution: 0.92
-  WorstRestitution: 0.3
-  SkipExitAngleDeg: 26
-  SpinToleranceScale: 0.02
+  BestRestitution: 0.828
+  WorstRestitution: 0.27
+  SkipExitAngleDeg: 33.03
+  ReferenceSpinDegPerSec: 900
   MaxSpinToleranceBonus: 18
-  MinVisualSpinDegPerSec: 45
-  MaxVisualSpinDegPerSec: 9000
+  MinVisualSpinDegPerSec: 1
+  MaxVisualSpinDegPerSec: 1200
+  MinPowerSpinScale: 0.35
   FixedStep: 0.02
-  MaxPredictSteps: 500
+  PredictSeconds: 22

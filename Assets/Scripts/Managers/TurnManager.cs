@@ -281,6 +281,25 @@ namespace Managers
         }
 
         /// <summary>
+        /// What the phones call the current rock. Read from the tuning asset rather than a
+        /// literal so it moves with the stone it names — the same load AimPreview does, and
+        /// cached because this is on the broadcast path.
+        /// </summary>
+        private string RockDisplayName
+        {
+            get
+            {
+                if (_rockDisplayName != null) return _rockDisplayName;
+
+                var tuning = Resources.Load<Game.SkipTuning>("SkipTuning");
+                _rockDisplayName = string.IsNullOrEmpty(tuning?.DisplayName) ? "Pebble" : tuning.DisplayName;
+                return _rockDisplayName;
+            }
+        }
+
+        private string _rockDisplayName;
+
+        /// <summary>
         /// Match state for the idle phones, sent on change only.
         /// </summary>
         /// <remarks>
@@ -293,7 +312,7 @@ namespace Managers
         private void BroadcastSpectate()
         {
             RelayClient.Instance?.Send(OutboundMessages.BuildSpectate(
-                ActivePlayer ?? string.Empty, RockStats.Default.DisplayName,
+                ActivePlayer ?? string.Empty, RockDisplayName,
                 _lastPlayer, _lastSkips, _lastDistance,
                 ScoreManager.Instance?.Scores,
                 Phase.ToString().ToUpperInvariant(), _round + 1, roundsPerMatch));

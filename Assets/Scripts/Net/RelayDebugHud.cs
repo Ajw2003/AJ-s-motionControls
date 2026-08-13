@@ -166,13 +166,15 @@ namespace Net
                 foreach (var t in _throws)
                 {
                     GUILayout.Label($"  pow {t.power:F2}  tim {t.timingQuality:F2}  aim {t.aimDeg,5:F0}°  " +
-                                    $"atk {t.attackAngleDeg,5:F0}°  spin {t.spinRate,5:F0}  peak {t.peakAccel:F1}");
+                                    $"atk {t.attackAngleDeg,5:F0}°  spin {t.spinRate,5:F0}  " +
+                                    $"spd {t.swingSpeed:F2}  peak {t.peakAccel:F1}");
                 }
 
                 GUILayout.Space(6);
                 GUILayout.Label("<b>Repeatability</b> (spread across the above; want under 10%)",
                                 rich);
                 GUILayout.Label($"  power {Spread(_throws.Select(t => t.power))}   " +
+                                $"speed {Spread(_throws.Select(t => t.swingSpeed))}   " +
                                 $"peak {Spread(_throws.Select(t => t.peakAccel))}   " +
                                 $"attack {Spread(_throws.Select(t => t.attackAngleDeg))}");
             }

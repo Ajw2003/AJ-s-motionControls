@@ -15,6 +15,17 @@ namespace Game
         /// <summary>Gyroscopic stability. Widens the angle tolerance while it lasts.</summary>
         public float Spin;
 
+        /// <summary>
+        /// How hard this was thrown, 0..1. Set at launch and never changed — it is a
+        /// property of the throw, not of the stone's current state.
+        /// </summary>
+        /// <remarks>
+        /// Carried so the visuals can scale with effort: a stone flung hard should look
+        /// like it, and spin rate alone does not convey that. Kept on the state rather
+        /// than passed alongside it so the aim ghost and the live stone cannot disagree.
+        /// </remarks>
+        public float Power;
+
         public int SkipCount;
         public bool Sunk;
     }
@@ -49,8 +60,7 @@ namespace Game
         /// <summary>Build the initial state from a throw descriptor.</summary>
         public static SkipState CreateLaunch(
             Vector3 origin, Vector3 forward, float power, float timingQuality,
-            float aimDeg, float attackAngleDeg, float spinRate,
-            in RockStats stats, SkipTuning tuning)
+            float aimDeg, float attackAngleDeg, float spinRate, SkipTuning tuning)
         {
             // Poor timing costs speed rather than blocking the throw — a mistimed
             // release should feel weak, not broken.
@@ -68,17 +78,19 @@ namespace Game
                 Velocity = velocity,
 
                 // Phone space -> physics space. attackAngleDeg is a delta from the
-                // player's grip, so it is 0 when they hold naturally; the offset maps
-                // that onto the angle a real stone wants. See SkipTuning for why.
-                AttitudeDeg = attackAngleDeg + tuning.AttackAngleOffsetDeg,
+                // player's grip, so it is 0 when they hold naturally; OptimalAngleDeg
+                // maps that onto the angle a real stone wants. See SkipTuning for why
+                // this is the same field the bounce measures error against.
+                AttitudeDeg = attackAngleDeg + tuning.OptimalAngleDeg,
                 Spin = Mathf.Abs(spinRate),
+                Power = Mathf.Clamp01(power),
                 SkipCount = 0,
                 Sunk = false,
             };
         }
 
         /// <summary>Advance one fixed step. Pure — see the class remarks.</summary>
-        public static SkipStep Step(in SkipState state, in RockStats stats, SkipTuning tuning, float dt)
+        public static SkipStep Step(in SkipState state, SkipTuning tuning, float dt)
         {
             var next = state;
             var result = new SkipStep();
@@ -111,16 +123,21 @@ namespace Game
                 : 90f;
 
             // Spin holds the stone's attitude steady, so it forgives a worse angle.
-            var tolerance = stats.BaseToleranceDeg
-                          + Mathf.Min(next.Spin * tuning.SpinToleranceScale, tuning.MaxSpinToleranceBonus);
+            var tolerance = tuning.BaseToleranceDeg
+                          + tuning.MaxSpinToleranceBonus * tuning.SpinFraction(next.Spin);
 
-            var angleError = Mathf.Abs(next.AttitudeDeg - stats.OptimalAngleDeg);
+            var angleError = Mathf.Abs(next.AttitudeDeg - tuning.OptimalAngleDeg);
 
-            var tooSlow = speed < stats.MinSkipSpeed;
+            var tooSlow = speed < tuning.MinSkipSpeed;
             var tooSteep = incidenceDeg > tuning.MaxIncidenceDeg;
-            var badAngle = angleError > tolerance;
 
-            if (tooSlow || tooSteep || badAngle)
+            // Past tolerance is a bad bounce, not an instant sink — quality below falls to
+            // zero there, so the stone skids on its worst restitution with no exit lift and
+            // dies out over the next hop or two. Only a hopeless angle ends it outright.
+            // See SkipTuning.SinkAngleMultiplier for why the cliff had to go.
+            var hopeless = angleError > tolerance * tuning.SinkAngleMultiplier;
+
+            if (tooSlow || tooSteep || hopeless)
             {
                 next.Sunk = true;
                 next.Velocity = Vector3.zero;
@@ -131,21 +148,31 @@ namespace Game
 
             // Closer to the stone's optimal angle keeps more energy.
             var quality = 1f - Mathf.Clamp01(angleError / Mathf.Max(tolerance, 0.0001f));
-            var restitution = stats.Restitution * Mathf.Lerp(tuning.WorstRestitution, tuning.BestRestitution, quality);
+            var restitution = Mathf.Lerp(tuning.WorstRestitution, tuning.BestRestitution, quality);
 
             var velocity = next.Velocity;
+
+            // Spin holds the stone's line through the bounce, so it keeps more of its
+            // speed. This is the only route by which a harder flick reaches further —
+            // spin is deliberately absent from the launch speed, which is set by power.
+            var drag = Mathf.Lerp(tuning.Drag, tuning.DragAtFullSpin, tuning.SpinFraction(next.Spin));
+
+            // Drag first, so the lift below is computed against the horizontal the stone
+            // actually leaves with. The other order made SkipExitAngleDeg a lie: the true
+            // exit angle was atan(tan(x) / Drag), and it moved whenever Drag did.
+            velocity.x *= drag;
+            velocity.z *= drag;
 
             // Water doesn't just mirror the stone — the face planes off the surface and
             // kicks it out steeper than it came in. Without a floor the vertical decays
             // three times faster than the horizontal (restitution vs Drag) and the skips
             // flatten into a slide. Scaled by quality so a badly angled stone still skids.
-            var liftY = horizontal.magnitude * Mathf.Tan(tuning.SkipExitAngleDeg * Mathf.Deg2Rad) * quality;
+            var exitHorizontal = new Vector3(velocity.x, 0f, velocity.z).magnitude;
+            var liftY = exitHorizontal * Mathf.Tan(tuning.SkipExitAngleDeg * Mathf.Deg2Rad) * quality;
             velocity.y = Mathf.Max(-velocity.y * restitution, liftY);
-            velocity.x *= stats.Drag;
-            velocity.z *= stats.Drag;
 
             next.Velocity = velocity;
-            next.Spin *= stats.SpinDecay;
+            next.Spin *= tuning.SpinDecay;
             next.SkipCount++;
 
             result.Bounced = true;
@@ -160,8 +187,7 @@ namespace Game
         /// <param name="path">Filled with world positions. Cleared first; reuse the list to avoid per-frame garbage.</param>
         /// <returns>The final state, so callers can read SkipCount and distance.</returns>
         public static SkipState Predict(
-            SkipState start, in RockStats stats, SkipTuning tuning,
-            List<Vector3> path, int maxSteps = 0)
+            SkipState start, SkipTuning tuning, List<Vector3> path, int maxSteps = 0)
         {
             path.Clear();
             path.Add(start.Position);
@@ -171,7 +197,7 @@ namespace Game
 
             for (var i = 0; i < steps; i++)
             {
-                var step = Step(state, stats, tuning, tuning.FixedStep);
+                var step = Step(state, tuning, tuning.FixedStep);
                 state = step.State;
                 path.Add(state.Position);
 

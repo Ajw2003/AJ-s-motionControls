@@ -51,6 +51,27 @@ namespace Game
         }
 
         /// <summary>
+        /// The stone and its aiming ghost, shaded and carrying a rotation-legible marking.
+        /// </summary>
+        /// <remarks>
+        /// Not Create(): Sprites/Default is unlit with no texture bound, so it discards
+        /// the mesh's normals and UVs and renders one flat silhouette. Nothing on it moves
+        /// when the stone yaws, which is why no spin rate ever looked like spin. See
+        /// Stone.shader. Falls back to flat colour so a broken shader is dull, not absent.
+        /// </remarks>
+        public static Material CreateStone(Color colour)
+        {
+            var shader = Resources.Load<Shader>("Stone");
+            if (shader == null)
+            {
+                Debug.LogWarning("[PlaceholderArt] Stone shader not found — flat, unreadable spin.");
+                return Create(colour, StoneQueue);
+            }
+
+            return new Material(shader) { color = colour, renderQueue = StoneQueue };
+        }
+
+        /// <summary>
         /// Water, with the ripple shader if it is available and flat colour if it is not.
         /// </summary>
         /// <remarks>

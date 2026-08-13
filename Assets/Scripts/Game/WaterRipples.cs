@@ -26,10 +26,15 @@ namespace Game
         [SerializeField] private float rippleSpeed = 6f;
 
         [Header("Impact response")]
-        [Tooltip("Impact speed producing the faintest ring.")]
-        [SerializeField] private float minImpactSpeed = 4f;
-        [Tooltip("Impact speed producing the strongest ring. Above this it stops growing.")]
-        [SerializeField] private float maxImpactSpeed = 25f;
+        [Tooltip("Faintest and strongest ring, as fractions of SkipTuning.MaxSpeed. Derived " +
+                 "rather than absolute because these were hardcoded at 4 and 25 against a " +
+                 "MaxSpeed of 26 — raise the launch speed and every impact clamps to full " +
+                 "strength, so the ripple stops responding to anything at all.")]
+        [Range(0f, 1f)] [SerializeField] private float minImpactSpeedFraction = 0.15f;
+        [Range(0f, 1f)] [SerializeField] private float maxImpactSpeedFraction = 0.96f;
+
+        private float _minImpactSpeed = 4f;
+        private float _maxImpactSpeed = 25f;
 
         private static readonly int RipplesId = Shader.PropertyToID("_Ripples");
         private static readonly int RippleCountId = Shader.PropertyToID("_RippleCount");
@@ -57,9 +62,16 @@ namespace Game
         /// builder already has it, and Awake runs once — this reference is good for the
         /// whole session.
         /// </summary>
-        public void Bind(Material waterMaterial)
+        public void Bind(Material waterMaterial, SkipTuning tuning)
         {
             _material = waterMaterial;
+
+            if (tuning != null)
+            {
+                _minImpactSpeed = tuning.MaxSpeed * minImpactSpeedFraction;
+                _maxImpactSpeed = tuning.MaxSpeed * maxImpactSpeedFraction;
+            }
+
             PushTuning();
         }
 
@@ -85,7 +97,7 @@ namespace Game
             {
                 Origin = new Vector2(e.Position.x, e.Position.z),
                 StartTime = Time.time,
-                Strength = Mathf.InverseLerp(minImpactSpeed, maxImpactSpeed, e.Speed),
+                Strength = Mathf.InverseLerp(_minImpactSpeed, _maxImpactSpeed, e.Speed),
             });
         }
 

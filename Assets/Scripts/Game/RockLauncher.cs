@@ -87,16 +87,14 @@ namespace Game
             if (_active != null && _active.IsFlying) return; // one rock at a time
 
             var tuning = _preview.Tuning;
-            var stats = RockStats.Default;
 
             var launch = SkipPhysics.CreateLaunch(
                 _preview.ThrowOrigin.position, Vector3.forward,
                 message.power, message.timingQuality,
-                -message.aimDeg, -message.attackAngleDeg, message.spinRate,
-                stats, tuning);
+                -message.aimDeg, -message.attackAngleDeg, message.spinRate, tuning);
 
             _active = CreateRockObject();
-            _active.Launch(launch, stats, tuning, message.playerId);
+            _active.Launch(launch, tuning, message.playerId);
         }
 
         private void FollowActiveRock()
@@ -130,9 +128,37 @@ namespace Game
             go.transform.localScale = new Vector3(0.65f, 0.08f, 0.55f);
 
             go.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(new Color(0.85f, 0.87f, 0.95f), PlaceholderArt.StoneQueue);
+                PlaceholderArt.CreateStone(new Color(0.85f, 0.87f, 0.95f));
+
+            AddChip(go.transform, 0.55f);
 
             return go.AddComponent<RockController>();
+        }
+
+        /// <summary>
+        /// A chipped corner, offset to one side of the stone.
+        /// </summary>
+        /// <remarks>
+        /// Purely so the rotation can be seen. Scaling a sphere can only ever produce a
+        /// two-fold symmetric silhouette — an ellipse looks the same after half a turn —
+        /// so the outline alone repeats twice per revolution and reads as a strobe rather
+        /// than as spin. One off-centre lump makes the silhouette repeat once per
+        /// revolution instead, which is the difference between "that stone is turning"
+        /// and "something is flickering". Shares the stone's material and shading.
+        /// </remarks>
+        internal static void AddChip(Transform stone, float size)
+        {
+            var chip = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            chip.name = "Chip";
+            Destroy(chip.GetComponent<Collider>());
+
+            chip.transform.SetParent(stone, false);
+            chip.transform.localScale = new Vector3(size, 1.05f, size);
+            chip.transform.localPosition = new Vector3(0.42f, 0f, 0.16f);
+            chip.transform.localRotation = Quaternion.Euler(0f, 28f, 0f);
+
+            chip.GetComponent<MeshRenderer>().sharedMaterial =
+                stone.GetComponent<MeshRenderer>().sharedMaterial;
         }
     }
 }

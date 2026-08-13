@@ -19,7 +19,17 @@ import {
   RingBuffer,
   readAcceleration,
   readRotationRate,
+  readLinearAcceleration,
+  gravityInDeviceFrame,
+  GRAVITY_MS2,
   spinMagnitude,
+  orientationToQuaternion,
+  quaternionMultiply,
+  quaternionConjugate,
+  quaternionNormalize,
+  quaternionFromRotationVector,
+  quaternionToYawPitchRoll,
+  MotionSource,
 } from './js/sensors.js';
 
 import {
@@ -69,6 +79,261 @@ check('wraps backward across 0/360', shortestAngleDelta(359, 1) === -2,
 check('180 stays positive', shortestAngleDelta(180, 0) === 180);
 check('-180 normalises to +180', shortestAngleDelta(-180, 0) === 180);
 check('identical angles give zero', shortestAngleDelta(123, 123) === 0);
+
+// ---------------------------------------------------------------- quaternions
+console.log('\nquaternion math');
+{
+  const q0 = orientationToQuaternion(0, 0, 0);
+  check('flat and level is identity', near(q0.w, 1) && near(q0.x, 0) && near(q0.y, 0) && near(q0.z, 0));
+
+  // Each Euler angle must land on its own axis. Getting the Z-X'-Y'' composition
+  // order wrong still passes these individually but fails the round trip below.
+  const h = Math.SQRT1_2;
+  const qA = orientationToQuaternion(90, 0, 0);
+  check('alpha turns about Z', near(qA.w, h) && near(qA.z, h) && near(qA.x, 0) && near(qA.y, 0));
+  const qB = orientationToQuaternion(0, 90, 0);
+  check('beta turns about X', near(qB.w, h) && near(qB.x, h) && near(qB.y, 0) && near(qB.z, 0));
+  const qG = orientationToQuaternion(0, 0, 90);
+  check('gamma turns about Y', near(qG.w, h) && near(qG.y, h) && near(qG.x, 0) && near(qG.z, 0));
+
+  // Round trip through the decomposition, away from the pole.
+  for (const [a, b, g] of [[0, 0, 0], [30, 20, -15], [-45, 10, 40], [170, -25, 60]]) {
+    const r = quaternionToYawPitchRoll(orientationToQuaternion(a, b, g));
+    check(`round trip ${a}/${b}/${g}`,
+      near(r.yaw, a, 1e-6) && near(r.pitch, b, 1e-6) && near(r.roll, g, 1e-6),
+      `${r.yaw.toFixed(3)}/${r.pitch.toFixed(3)}/${r.roll.toFixed(3)}`);
+  }
+
+  const q = orientationToQuaternion(35, -20, 55);
+  const id = quaternionMultiply(quaternionConjugate(q), q);
+  check('conjugate times self is identity', near(id.w, 1) && near(id.x, 0) && near(id.y, 0) && near(id.z, 0));
+
+  const rot = quaternionFromRotationVector(0, 0, 90 * Math.PI / 180);
+  check('rotation vector about z matches an alpha turn',
+    near(rot.w, h) && near(rot.z, h));
+  const none = quaternionFromRotationVector(0, 0, 0);
+  check('a zero rotation vector is identity', near(none.w, 1) && near(none.z, 0));
+
+  const norm = quaternionNormalize({ w: 2, x: 0, y: 0, z: 0 });
+  check('normalize scales to unit length', near(norm.w, 1));
+  const degenerate = quaternionNormalize({ w: 0, x: 0, y: 0, z: 0 });
+  check('a degenerate quaternion falls back to identity', near(degenerate.w, 1));
+
+  // Pitch saturates at the pole rather than flipping or going NaN. Continuity here
+  // is the whole reason for the quaternion rewrite.
+  const polar = quaternionToYawPitchRoll(orientationToQuaternion(0, 90, 0));
+  check('pitch saturates at the pole instead of wrapping',
+    Number.isFinite(polar.pitch) && near(Math.abs(polar.pitch), 90, 1e-6), `${polar.pitch}`);
+}
+
+// ------------------------------------------------------------ gravity removal
+console.log('\ngravity removal');
+{
+  const G = GRAVITY_MS2;
+
+  // An accelerometer at rest reads the reaction force: +g along whichever device
+  // axis points up. Flat on a table that is +z; upright it is +y.
+  const flat = gravityInDeviceFrame(orientationToQuaternion(0, 0, 0));
+  check('flat on a table reads +g on z', near(flat.z, G, 1e-9) && near(flat.x, 0, 1e-9) && near(flat.y, 0, 1e-9),
+    `(${flat.x.toFixed(3)}, ${flat.y.toFixed(3)}, ${flat.z.toFixed(3)})`);
+
+  const upright = gravityInDeviceFrame(orientationToQuaternion(0, 90, 0));
+  check('upright reads +g on y', near(upright.y, G, 1e-6) && near(upright.z, 0, 1e-6),
+    `(${upright.x.toFixed(3)}, ${upright.y.toFixed(3)}, ${upright.z.toFixed(3)})`);
+
+  // Magnitude is invariant: it is the same gravity whichever way the phone is held.
+  for (const [a, b, g] of [[0, 0, 0], [45, 30, -20], [200, 90, 0], [10, -60, 75]]) {
+    const v = gravityInDeviceFrame(orientationToQuaternion(a, b, g));
+    check(`gravity magnitude holds at ${a}/${b}/${g}`, near(magnitude(v), G, 1e-9));
+  }
+
+  // The bug this replaced. GravityFilter estimates gravity in DEVICE coordinates, so
+  // a fast turn sweeps the gravity vector through that frame faster than the filter
+  // tracks — and the lag reads as user acceleration that has nothing to do with how
+  // hard the phone was thrown. Rotating a stationary phone must measure as ~zero.
+  // A wrist snap at roughly the speed a real throw produces: 180 degrees in ~190ms,
+  // about 900 deg/s. The phone is only turning — it is not accelerating through
+  // space at all — so an honest measurement reads zero.
+  const filter = new GravityFilter(0.8);
+  let filterWorst = 0;
+  let exactWorst = 0;
+  for (let i = 0; i <= 12; i++) {
+    const q = orientationToQuaternion(0, i * 15, 0);
+    const reading = gravityInDeviceFrame(q);  // at rest: gravity and nothing else
+
+    filterWorst = Math.max(filterWorst, magnitude(filter.update(reading, i * 16)));
+
+    const exact = gravityInDeviceFrame(q);
+    exactWorst = Math.max(exactWorst, magnitude({
+      x: reading.x - exact.x, y: reading.y - exact.y, z: reading.z - exact.z,
+    }));
+  }
+  check('exact removal reports no motion while merely turning', exactWorst < 1e-9,
+    `${exactWorst.toExponential(2)} m/s²`);
+
+  // This is the number that was compressing every throw into the top of the power
+  // window: a large offset present in every gesture, proportional to how fast the
+  // wrist turned rather than to how hard the stone was thrown.
+  check('the filter fabricates motion while merely turning', filterWorst > 5,
+    `${filterWorst.toFixed(2)} m/s² of phantom acceleration`);
+}
+
+console.log('\nreadLinearAcceleration');
+{
+  check('reads the hardware value when present',
+    readLinearAcceleration({ acceleration: { x: 1, y: 2, z: 3 } })?.y === 2);
+  check('absent on iOS gives null', readLinearAcceleration({}) === null);
+  check('all-null axes give null',
+    readLinearAcceleration({ acceleration: { x: null, y: null, z: null } }) === null);
+  check('a partial reading is still usable',
+    readLinearAcceleration({ acceleration: { x: 1, y: null, z: null } })?.x === 1);
+}
+
+// ------------------------------------------------- MotionSource orientation
+//
+// This class had zero coverage before the quaternion rewrite — it was not even
+// imported here — which is exactly why the gimbal bug survived so long.
+console.log('\nMotionSource orientation');
+{
+  // Enough of a DeviceMotionEvent for _onMotion. Gravity is left out: the filter
+  // seeds from the first sample, so a constant vector reads as zero motion.
+  const motionEvent = (rate = { alpha: 0, beta: 0, gamma: 0 }) => ({
+    accelerationIncludingGravity: { x: 0, y: 0, z: 9.81 },
+    rotationRate: rate,
+  });
+
+  const drive = (source, alpha, beta, gamma, rate) => {
+    source._onOrientation({ alpha, beta, gamma });
+    source._onMotion(motionEvent(rate));
+    return source.latest;
+  };
+
+  {
+    const m = new MotionSource();
+    const s = drive(m, 12, 34, 56);
+    check('uncalibrated reports no deflection',
+      near(s.dAlpha, 0, 1e-9) && near(s.dBeta, 0, 1e-9) && near(s.dGamma, 0, 1e-9),
+      `${s.dAlpha}/${s.dBeta}/${s.dGamma}`);
+  }
+
+  {
+    // Gripped upright — beta 90 is "phone facing you", the pose this game is played
+    // in and precisely where the Euler version came apart.
+    const m = new MotionSource();
+    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    m.calibrate();
+
+    const flat = drive(m, 0, 90, 0);
+    check('no movement from the grip pose reads as zero',
+      near(flat.dAlpha, 0, 1e-6) && near(flat.dBeta, 0, 1e-6) && near(flat.dGamma, 0, 1e-6),
+      `${flat.dAlpha.toFixed(3)}/${flat.dBeta.toFixed(3)}/${flat.dGamma.toFixed(3)}`);
+
+    const tipped = drive(m, 0, 80, 0);
+    check('pitching 10 degrees forward of the grip reads as -10',
+      near(tipped.dBeta, -10, 1e-6), `${tipped.dBeta.toFixed(3)}`);
+
+    // The headline case. Sweeping through vertical used to flip alpha and fold
+    // gamma, so aim and roll jumped by up to 180 degrees while the phone moved a
+    // couple of degrees. Every step here must stay small and monotonic.
+    let prev = null;
+    let worstJump = 0;
+    let monotonic = true;
+    for (let beta = 100; beta >= 80; beta -= 1) {
+      const s = drive(m, 0, beta, 0);
+      if (prev !== null) {
+        worstJump = Math.max(worstJump,
+          Math.abs(s.dBeta - prev.dBeta), Math.abs(s.dAlpha - prev.dAlpha),
+          Math.abs(s.dGamma - prev.dGamma));
+        if (s.dBeta > prev.dBeta + 1e-9) monotonic = false;
+      }
+      prev = s;
+    }
+    check('sweeping through vertical never jumps', worstJump < 1.5, `worst step ${worstJump.toFixed(3)} deg`);
+    check('pitch stays monotonic across vertical', monotonic);
+  }
+
+  {
+    // Aim away from the grip, at a heading that is nowhere near north — the reference
+    // has to be the grip, not the compass.
+    const m = new MotionSource();
+    m._onOrientation({ alpha: 200, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    m.calibrate();
+
+    const yawed = drive(m, 215, 90, 0);
+    check('aim is measured from the grip, not from north', near(yawed.dAlpha, 15, 1e-6),
+      `${yawed.dAlpha.toFixed(3)}`);
+    check('turning to aim does not leak into attack angle', near(yawed.dBeta, 0, 1e-6),
+      `${yawed.dBeta.toFixed(3)}`);
+
+    // Crossing the 0/360 seam must not produce a ~360 jump.
+    m._onOrientation({ alpha: 355, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    m.calibrate();
+    const wrapped = drive(m, 5, 90, 0);
+    check('aim across the 0/360 seam stays small', near(wrapped.dAlpha, 10, 1e-6),
+      `${wrapped.dAlpha.toFixed(3)}`);
+  }
+
+  {
+    // The reason aim/attack/roll are defined geometrically rather than as Euler
+    // deltas. Held upright, alpha and gamma are the SAME physical rotation — the
+    // browser's split between them is decided by sensor noise. Both must therefore
+    // produce the same aim, or the stone veers depending on which one the device
+    // happened to attribute the turn to.
+    const m = new MotionSource();
+    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    m.calibrate();
+
+    const viaAlpha = drive(m, 20, 90, 0);
+    const aimViaAlpha = viaAlpha.dAlpha;
+    const viaGamma = drive(m, 0, 90, 20);
+    check('at the play pose alpha and gamma give the same aim',
+      near(aimViaAlpha, viaGamma.dAlpha, 1e-6),
+      `${aimViaAlpha.toFixed(3)} vs ${viaGamma.dAlpha.toFixed(3)}`);
+  }
+
+  {
+    // Gyro carry-forward. deviceorientation and devicemotion are separate streams, so
+    // on a device where orientation lags the old code re-stamped a stale triple onto
+    // every sample — a staircase in the aim stream, worst while the phone moves fastest.
+    //
+    // Gripped upright, and turning about the device's Y axis, which at that pose is
+    // world up: this is the player swinging the phone across to aim.
+    let clock = 0;
+    const m = new MotionSource({ now: () => clock });
+    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    m.calibrate();
+
+    const before = m.latest.dAlpha;
+    for (let i = 0; i < 6; i++) {
+      clock += 16; // one frame of motion with no orientation event
+      m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
+    }
+    const after = m.latest.dAlpha;
+
+    // 6 frames x 16ms x 60 deg/s = 5.76 degrees.
+    check('aim keeps moving while orientation is stale', near(after - before, 5.76, 0.05),
+      `${before.toFixed(3)} -> ${after.toFixed(3)}`);
+    check('staleness is reported', m.latest.orientationAgeMs === 96, `${m.latest.orientationAgeMs}`);
+
+    // A real reading must win, or integration drift accumulates forever.
+    clock += 16;
+    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    check('a fresh orientation reading overrides the gyro estimate',
+      near(m.latest.dAlpha, 0, 1e-6), `${m.latest.dAlpha.toFixed(3)}`);
+
+    // A gap long enough to be a backgrounded tab must not be integrated across.
+    clock += 5000;
+    m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
+    check('a long gap is not integrated across', near(m.latest.dAlpha, 0, 1e-6),
+      `${m.latest.dAlpha.toFixed(3)}`);
+  }
+}
 
 // ---------------------------------------------------------------- rotation
 console.log('\nrotateXY');
@@ -165,9 +430,18 @@ console.log('\ncomputeThrowDescriptor');
   const d = computeThrowDescriptor(perfect);
 
   check('peak accel is found', near(d.peakAccel, 30));
-  check('power maps peak onto 0..1',
-    near(d.power, (30 - ThrowTuning.minPeakAccel) / (ThrowTuning.maxPeakAccel - ThrowTuning.minPeakAccel), 1e-9),
+  check('swing speed is reported alongside it', d.swingSpeed > 0, d.swingSpeed.toFixed(3));
+  check('power maps swing speed onto 0..1',
+    near(d.power, (d.swingSpeed - ThrowTuning.minSwingSpeed) /
+                  (ThrowTuning.maxSwingSpeed - ThrowTuning.minSwingSpeed), 1e-9),
     d.power.toFixed(3));
+
+  // The other metric stays available and correct — see ThrowTuning.powerMetric.
+  const byPeak = computeThrowDescriptor(perfect, { ...ThrowTuning, powerMetric: 'peakAccel' });
+  check('peakAccel remains selectable',
+    near(byPeak.power, (30 - ThrowTuning.minPeakAccel) / (ThrowTuning.maxPeakAccel - ThrowTuning.minPeakAccel), 1e-9),
+    byPeak.power.toFixed(3));
+
   check('release at the peak scores perfect timing', near(d.timingQuality, 1), d.timingQuality.toFixed(3));
 
   // Same swing, but held well past the peak.
@@ -175,7 +449,35 @@ console.log('\ncomputeThrowDescriptor');
   for (let i = 1; i <= 25; i++) late.push(makeSample(100 + i * 10, 1));
   const dLate = computeThrowDescriptor(late);
   check('late release scores zero timing', near(dLate.timingQuality, 0), dLate.timingQuality.toFixed(3));
-  check('late release keeps the same power', near(dLate.power, d.power));
+  check('late release keeps the same power', near(dLate.power, d.power),
+    `${dLate.power.toFixed(3)} vs ${d.power.toFixed(3)}`);
+
+  // Ramp to `peakAccel` over `steps` samples, then release.
+  const swing = (peakAccel, steps = 10) => {
+    const out = [];
+    for (let i = 0; i <= steps; i++) out.push(makeSample(i * 10, (peakAccel * i) / steps));
+    out.push(makeSample((steps + 1) * 10, 1)); // released
+    return out;
+  };
+
+  const harder = computeThrowDescriptor(swing(36));
+  const softer = computeThrowDescriptor(swing(14)); // ~2.5x less effort
+  check('a much softer throw measures much softer', softer.power < harder.power * 0.55,
+    `${softer.power.toFixed(3)} vs ${harder.power.toFixed(3)}`);
+
+  // The property that actually motivated the change of metric, and the one peak
+  // acceleration is blind to: a short sharp jerk and a long powerful pull reach the
+  // same peak, but the pull puts far more speed into the stone. Peak reports them as
+  // the same throw. Velocity, being the integral, does not.
+  const jerk = computeThrowDescriptor(swing(30, 10));   // 100ms
+  const pull = computeThrowDescriptor(swing(30, 25));   // 250ms, same peak
+  check('a jerk and a pull peak identically', near(jerk.peakAccel, pull.peakAccel),
+    `${jerk.peakAccel} vs ${pull.peakAccel}`);
+  check('peak accel cannot tell them apart',
+    near(normalize01(jerk.peakAccel, ThrowTuning.minPeakAccel, ThrowTuning.maxPeakAccel),
+         normalize01(pull.peakAccel, ThrowTuning.minPeakAccel, ThrowTuning.maxPeakAccel)));
+  check('swing speed does', pull.power > jerk.power * 1.5,
+    `jerk ${jerk.power.toFixed(3)} vs pull ${pull.power.toFixed(3)}`);
 
   // A limp gesture should not register as a throw at all.
   const fumble = [makeSample(0, 1), makeSample(10, 2), makeSample(20, 1)];

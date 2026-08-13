@@ -6,7 +6,7 @@
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
-import { ThrowController, ThrowState } from './throw.js';
+import { ThrowController, ThrowState, ThrowTuning } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { PeerLink, Transport } from './peer.js';
 
@@ -79,12 +79,21 @@ const thrower = new ThrowController(motion, {
       `Power ${(payload.power * 100).toFixed(0)}% · Timing ${(payload.timingQuality * 100).toFixed(0)}%` +
       (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
-  onStateChange: (state) => {
-    const armed = state === ThrowState.ARMED;
-    ui.gripBtn.classList.toggle('held', armed);
-    ui.gripBtn.textContent = armed ? 'SWING!' : 'TAP TO ARM';
-  },
+  onStateChange: (state) => renderGripButton(state),
 });
+
+/**
+ * Paint the grip button for a given state.
+ *
+ * Split out and called once at startup because onStateChange only fires on a
+ * *transition* — ThrowController seeds this.state directly in its constructor, so
+ * nothing fired until the first arm and the button sat on whatever the markup said.
+ */
+function renderGripButton(state) {
+  const armed = state === ThrowState.ARMED;
+  ui.gripBtn.classList.toggle('held', armed);
+  ui.gripBtn.textContent = armed ? 'SWING!' : 'TAP TO AIM';
+}
 
 function bindGrip() {
   // A tap, not a hold. The finger has to be off the phone during the swing, and
@@ -334,12 +343,23 @@ function updateDebug() {
     `socket   ${connection?.status ?? 'not connected'}`,
     `input    ${peer ? peer.transport : 'relay'}${PEER_ENABLED ? '' : '  (?direct=0)'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
-    s ? `dA ${s.dAlpha.toFixed(1).padStart(7)}  dB ${s.dBeta.toFixed(1).padStart(7)}  dG ${s.dGamma.toFixed(1).padStart(7)}`
+    s ? `aim ${s.dAlpha.toFixed(1).padStart(7)}  atk ${s.dBeta.toFixed(1).padStart(7)}  roll ${s.dGamma.toFixed(1).padStart(7)}`
       : 'no samples yet — is this page on HTTPS?',
-    s ? `power ${s.power.toFixed(2).padStart(6)} m/s²   samples ${motion.buffer.length}   k=${GRAVITY_K}` : '',
+    // How stale the last real orientation reading is. A number that keeps climbing
+    // means the aim is running on gyro integration alone, which is the tell for a
+    // device whose deviceorientation stream is slower than its devicemotion one.
+    s ? `orient   ${s.orientationAgeMs === null ? 'none' : `${s.orientationAgeMs.toFixed(0)}ms old`}` : '',
+    // gravitySource is the one to read before trusting any power tuning: 'hardware'
+    // and 'exact' are clean, 'filter' still has the rotation artefact in it.
+    s ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}` : '',
     lastThrow
       ? `throw  pow ${lastThrow.power.toFixed(2)} tim ${lastThrow.timingQuality.toFixed(2)} aim ${lastThrow.aimDeg.toFixed(0)} atk ${lastThrow.attackAngleDeg.toFixed(0)} spin ${lastThrow.spinRate.toFixed(0)}`
       : 'no throw yet',
+    // Both metrics, so light/medium/hard swings can be compared directly. If these
+    // three do not separate, the metric is wrong — see ThrowTuning.powerMetric.
+    lastThrow
+      ? `metric speed ${(lastThrow.swingSpeed ?? 0).toFixed(2)} m/s   peak ${lastThrow.peakAccel.toFixed(1)} m/s²   using ${ThrowTuning.powerMetric}`
+      : '',
   ].join('\n');
 }
 
@@ -351,6 +371,7 @@ function init() {
   ui.joinBtn.addEventListener('click', join);
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));
   bindGrip();
+  renderGripButton(thrower.state); // see renderGripButton — nothing else paints the initial label
   tryLockPortrait();
 
   if (!isSecureContextOk()) {

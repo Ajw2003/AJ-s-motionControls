@@ -17,15 +17,14 @@ namespace Game
     public class RockController : MonoBehaviour
     {
         [Header("Visual spin")]
-        [Tooltip("How long a full-speed spin takes to wind down once the stone sinks. " +
-                 "Stopping dead reads as a freeze-frame rather than a stone settling. " +
-                 "The rates themselves live in SkipTuning, shared with the aim ghost.")]
+        [Tooltip("How long the spin takes to wind down once the stone sinks. Stopping dead " +
+                 "reads as a freeze-frame rather than a stone settling. The rates themselves " +
+                 "live in SkipTuning, shared with the aim ghost.")]
         [SerializeField] private float spinCoastDownSeconds = 1.2f;
 
         [SerializeField] private float despawnDelay = 2.5f;
 
         private SkipState _state;
-        private RockStats _stats;
         private SkipTuning _tuning;
         private string _playerId;
         private Vector3 _origin;
@@ -33,14 +32,17 @@ namespace Game
         private float _visualSpin;
         private float _spinRate;
 
+        /// <summary>The rate the stone was turning at when it sank, which the coast-down
+        /// decelerates from. Tracked while flying so the frame that sinks already has it.</summary>
+        private float _coastFromRate;
+
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
         public float Distance => Vector3.Distance(_origin, _state.Position);
 
-        public void Launch(SkipState state, in RockStats stats, SkipTuning tuning, string playerId)
+        public void Launch(SkipState state, SkipTuning tuning, string playerId)
         {
             _state = state;
-            _stats = stats;
             _tuning = tuning;
             _playerId = playerId;
             _origin = state.Position;
@@ -66,7 +68,7 @@ namespace Game
                 {
                     _accumulator -= _tuning.FixedStep;
 
-                    var step = SkipPhysics.Step(_state, _stats, _tuning, _tuning.FixedStep);
+                    var step = SkipPhysics.Step(_state, _tuning, _tuning.FixedStep);
                     _state = step.State;
 
                     if (step.Bounced)
@@ -89,16 +91,20 @@ namespace Game
                 // Driven by the stone's actual spin, so a hard flick visibly turns faster
                 // and every bounce visibly bleeds it away as SpinDecay eats it. Only the
                 // rate steps at a bounce, never the angle, so it reads smoothly.
-                _spinRate = _tuning.VisualSpinDegPerSec(_state.Spin, _tuning.MinVisualSpinDegPerSec);
+                _spinRate = _tuning.VisualSpinDegPerSec(
+                    _state.Spin, _tuning.MinVisualSpinDegPerSec, _state.Power);
+                _coastFromRate = _spinRate;
             }
             else
             {
                 // Sunk. The water drags the turn out of it rather than stopping it dead.
-                // Linear, so the tunable is a wind-down time that can be reasoned about:
-                // a full-speed spin takes all of it, a slower one proportionally less.
+                // Linear from whatever rate it sank at, so the tunable is a wind-down time
+                // that means what it says. It used to decelerate at a fraction of
+                // MaxVisualSpinDegPerSec, which made retuning the top visual speed silently
+                // retime the coast — dropping that value 9000 to 360 made this 25x slower.
                 _spinRate = Mathf.MoveTowards(
                     _spinRate, 0f,
-                    _tuning.MaxVisualSpinDegPerSec * Time.deltaTime / Mathf.Max(spinCoastDownSeconds, 0.0001f));
+                    _coastFromRate * Time.deltaTime / Mathf.Max(spinCoastDownSeconds, 0.0001f));
             }
 
             _visualSpin += _spinRate * Time.deltaTime;

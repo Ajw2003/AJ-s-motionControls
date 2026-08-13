@@ -47,6 +47,19 @@ export const ThrowTuning = {
   // leaving the player armed forever.
   maxSwingMs: 900,
 
+  // --- power ---------------------------------------------------------------
+  // Which measurement becomes `power`. 'swingSpeed' integrates acceleration into a
+  // hand speed; 'peakAccel' is the original peak magnitude. Both are always computed
+  // and both cross the wire, so this is a one-word switch and the loser stays
+  // available — see peakSwingSpeed for why the default changed.
+  powerMetric: 'swingSpeed',
+
+  // Hand speed at power 0 and power 1, m/s. Starting estimates only: calibration
+  // replaces them per player, because throwing strength varies far more between
+  // people than any single pair of constants can cover.
+  minSwingSpeed: 0.9,
+  maxSwingSpeed: 6.5,
+
   // --- spin ----------------------------------------------------------------
   // How long a spin peak is held before it has decayed away. Spin is peaky: a
   // wrist flick is over in about 100ms, so a 20Hz aim frame samples it up to 50ms
@@ -107,6 +120,11 @@ export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
     rollDeg: 0,
     spinRate: SimulatedThrow.spinRate,
 
+    // No gesture happened, so neither power metric has a real reading. Zero rather
+    // than a plausible-looking number, so a simulated throw can never be mistaken for
+    // measured data during calibration.
+    swingSpeed: 0,
+
     // Zero samples is the tell. A real gesture always has some, so the TV debug
     // readout distinguishes a simulated throw from a genuine one at a glance.
     peakAccel: 0,
@@ -151,12 +169,17 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
 
   if (peak.power < tuning.minValidPeakAccel) return null;
 
+  const swingSpeed = peakSwingSpeed(samples, tuning);
+  const power = tuning.powerMetric === 'peakAccel'
+    ? normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel)
+    : normalize01(swingSpeed, tuning.minSwingSpeed, tuning.maxSwingSpeed);
+
   // How abruptly the swing ended. Snapping to a halt right after the peak is the
   // skill beat now that there is no button release to time.
   const releaseDelayMs = Math.abs(stop.t - peak.t);
 
   return {
-    power: normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel),
+    power,
     timingQuality: 1 - normalize01(releaseDelayMs, 0, tuning.peakWindowMs),
 
     // Unclamped, deliberately. Throwing backwards, sideways or straight up is a
@@ -175,7 +198,11 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
     spinRate: spinRate ?? peakSpinEnvelope(samples, tuning),
 
     // Diagnostics — useful on the TV debug readout while tuning, ignored by physics.
+    // Both power metrics ride along whichever one is selected, so a calibration swing
+    // measures them side by side and the choice can be made on data rather than
+    // argument. See ThrowTuning.powerMetric.
     peakAccel: peak.power,
+    swingSpeed,
     releaseDelayMs,
     sampleCount: samples.length,
   };
@@ -193,6 +220,63 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
  * @param {number} instantaneous  spin magnitude from the newest sample
  * @param {number} dtMs  time since the last update
  */
+/**
+ * Peak hand speed during the swing, in m/s, by integrating linear acceleration.
+ *
+ * The physically correct measure of how hard a throw was. Peak *acceleration* — what
+ * this used to key off exclusively — is a poor proxy: a short sharp jerk and a long
+ * powerful pull peak identically, and on real hardware the useful range was squashed
+ * into the top of the window, so a throw with two to three times less effort still
+ * read within about 13% of a maximum one. Velocity is the integral of exactly the
+ * thing that differs between them, so it separates what peak cannot.
+ *
+ * Integrated from the start of the swing rather than the whole buffer, because any
+ * residual bias accumulates and a 1.5s window would collect far more of it than a
+ * 300ms one. Tracks the running peak instead of the endpoint: the swing ends with the
+ * phone stopped, so the value at the stop is by definition near zero — it is the
+ * maximum along the way that the stone leaves the hand at.
+ *
+ * Only as good as the gravity removal feeding it; see sensors.js gravityInDeviceFrame.
+ *
+ * Pure.
+ */
+export function peakSwingSpeed(samples, tuning = ThrowTuning) {
+  if (!samples || samples.length < 2) return 0;
+
+  let peakIdx = 0;
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].power > samples[peakIdx].power) peakIdx = i;
+  }
+
+  // Walk back from the peak to the last calm sample before it: that is where this
+  // swing began, and anything earlier belongs to lining the shot up.
+  let start = peakIdx;
+  while (start > 0 && samples[start - 1].power > tuning.stopAccel) start--;
+
+  let vx = 0, vy = 0, vz = 0, best = 0;
+  for (let i = start + 1; i < samples.length; i++) {
+    // Stop at the release. Past the peak, a calm sample means the phone has been let
+    // go of and anything after it is the hand settling — integrating through that
+    // adds speed the throw never had, and adds more of it the longer the player
+    // stands still afterwards.
+    if (i > peakIdx && samples[i].power <= tuning.stopAccel) break;
+
+    const dtMs = samples[i].t - samples[i - 1].t;
+    if (!(dtMs > 0) || dtMs > 250) continue;
+
+    const a = samples[i].linear;
+    if (!a) continue;
+
+    const dt = dtMs / 1000;
+    vx += a.x * dt;
+    vy += a.y * dt;
+    vz += a.z * dt;
+    best = Math.max(best, Math.hypot(vx, vy, vz));
+  }
+
+  return best;
+}
+
 export function decaySpinEnvelope(previous, instantaneous, dtMs, tauMs = ThrowTuning.spinEnvelopeTauMs) {
   const decayed = previous * Math.exp(-Math.max(dtMs, 0) / tauMs);
   return Math.max(decayed, instantaneous);

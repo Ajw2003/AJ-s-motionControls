@@ -34,15 +34,6 @@ namespace Game
         [Tooltip("Power the arc is drawn at. Real power is unknown until release.")]
         [Range(0f, 1f)] [SerializeField] private float previewPower = 0.7f;
 
-        [Tooltip("Nominal spin for the arc, same reasoning as preview power — actual spin " +
-                 "is only known at release. Only used until the player's first throw, after " +
-                 "which their own measured spin replaces it. Must be roughly what real " +
-                 "throws produce: spin buys angle tolerance, so predicting with too little " +
-                 "draws a far harsher throw than the player will actually get. Measured " +
-                 "throws land near 1000 and SkipTuning's bonus saturates at 900, so this " +
-                 "sits at the saturation point — anything above it predicts the same arc, " +
-                 "and dropping a digit here (80) costs 16 of the 18 degrees of tolerance.")]
-        [SerializeField] private float previewSpin = 900f;
         [SerializeField] private float smoothTime = 0.08f;
 
         [Tooltip("Skip re-predicting the arc while the aim has moved less than this, in " +
@@ -64,6 +55,15 @@ namespace Game
         /// <summary>Shared with RockLauncher so preview and live throw use one rig.</summary>
         public Transform ThrowOrigin => throwOrigin;
         public SkipTuning Tuning => tuning;
+
+        /// <summary>
+        /// Spin to draw the arc at before this player has thrown. Actual spin is only known
+        /// at release, same as power. Read from the tuning rather than serialized here: it
+        /// has to sit at the point where the tolerance bonus saturates, and when that was a
+        /// hand-copied literal the two silently drifted apart and the arc started predicting
+        /// a different throw than the one the stone would take.
+        /// </summary>
+        private float PreviewSpin => tuning.ReferenceSpinDegPerSec;
         
         private string _lastAimPlayer;
         
@@ -218,7 +218,7 @@ namespace Game
             {
                 Power = Mathf.Lerp(known ? profile.Power : previewPower, thrown.power, rate),
                 Timing = Mathf.Lerp(known ? profile.Timing : 1f, thrown.timingQuality, rate),
-                Spin = Mathf.Lerp(known ? profile.Spin : previewSpin, thrown.spinRate, rate),
+                Spin = Mathf.Lerp(known ? profile.Spin : PreviewSpin, thrown.spinRate, rate),
             };
         }
 
@@ -232,7 +232,7 @@ namespace Game
                 return profile;
             }
 
-            return new ThrowProfile { Power = previewPower, Timing = 1f, Spin = previewSpin };
+            return new ThrowProfile { Power = previewPower, Timing = 1f, Spin = PreviewSpin };
         }
 
         private void OnAim(AimMessage aim)
@@ -290,10 +290,9 @@ namespace Game
             var launch = SkipPhysics.CreateLaunch(
                 throwOrigin.position, Vector3.forward,
                 profile.Power, profile.Timing,
-                -_curAim, -_curAttack, profile.Spin,
-                RockStats.Default, tuning);
+                -_curAim, -_curAttack, profile.Spin, tuning);
 
-            var final = SkipPhysics.Predict(launch, RockStats.Default, tuning, _path);
+            var final = SkipPhysics.Predict(launch, tuning, _path);
 
             PredictedSkips = final.SkipCount;
             PredictedDistance = Vector3.Distance(throwOrigin.position, final.Position);
@@ -324,15 +323,20 @@ namespace Game
             // stone's resting rate is deliberate: a stone in flight never stops turning,
             // but a ghost that idles at 45 deg/s while the phone is motionless is showing
             // the player motion they did not make.
-            _ghostSpinAngle += tuning.VisualSpinDegPerSec(_curSpin, 0f) * Time.deltaTime;
+            // Windup stands in for power here: real power is not known until release, and
+            // how hard the phone is being swung right now is the honest live proxy for it.
+            _ghostSpinAngle += tuning.VisualSpinDegPerSec(_curSpin, 0f, _curWindup) * Time.deltaTime;
 
             // Pitch by the stone's face angle, yaw by aim, roll by wrist tilt — then spin
             // on the right, so it turns about the stone's own axis rather than the world's.
             _ghost.rotation = Quaternion.Euler(-_curAttack, -_curAim, _curRoll)
                             * Quaternion.Euler(0f, _ghostSpinAngle, 0f);
 
+            // X != Z deliberately. Equal was a perfect circle in the yaw plane, which no
+            // amount of spin can make visible; matching the live stone's proportions also
+            // keeps the preview honest about what is being thrown.
             var scale = Mathf.Lerp(1f, 1.35f, _curWindup);
-            _ghost.localScale = new Vector3(0.45f * scale, 0.08f * scale, 0.45f * scale);
+            _ghost.localScale = new Vector3(0.52f * scale, 0.08f * scale, 0.44f * scale);
         }
 
         // ---------------------------------------------------------------- scaffolding
@@ -363,9 +367,15 @@ namespace Game
             ghost.name = "GhostRock";
             Destroy(ghost.GetComponent<Collider>());
             ghost.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(new Color(0.9f, 0.92f, 1f), PlaceholderArt.StoneQueue);
+                PlaceholderArt.CreateStone(new Color(0.9f, 0.92f, 1f));
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
+
+            // Same chip as the live stone, and for a sharper version of the same reason.
+            // The ghost was scaled with X and Z equal — a perfect disc, a surface of
+            // revolution about the exact axis it yaws around — so it rendered pixel for
+            // pixel identically at every angle. It has never been able to show spin.
+            RockLauncher.AddChip(_ghost, 0.55f);
         }
 
         private void BuildPlaceholderScene()
@@ -381,7 +391,7 @@ namespace Game
 
             // Handed the material directly rather than looking it up — this method is the
             // only thing that ever holds the water, and it drops the reference on exit.
-            water.AddComponent<WaterRipples>().Bind(waterMaterial);
+            water.AddComponent<WaterRipples>().Bind(waterMaterial, tuning);
 
             // Parented like the arc and the ghost so it survives with this component,
             // which Bootstrap marks DontDestroyOnLoad. Left at the scene root it was

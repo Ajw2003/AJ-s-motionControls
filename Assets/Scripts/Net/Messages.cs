@@ -112,13 +112,20 @@ namespace Net
         public float spinRate;
 
         // Diagnostics from the phone — useful on the debug HUD while tuning.
+        //
+        // Both power metrics ride along regardless of which one produced `power`, so a
+        // calibration swing measures them side by side. peakAccel is the raw peak in
+        // m/s^2; swingSpeed is the integrated hand speed in m/s, which is what `power`
+        // is derived from by default. See ThrowTuning.powerMetric on the phone.
         public float peakAccel;
+        public float swingSpeed;
         public float releaseDelayMs;
         public int sampleCount;
 
         public override string ToString() =>
             $"{playerId}: pow {power:F2} tim {timingQuality:F2} aim {aimDeg:F0}° " +
-            $"atk {attackAngleDeg:F0}° spin {spinRate:F0} (peak {peakAccel:F1} m/s², {sampleCount} samples)";
+            $"atk {attackAngleDeg:F0}° spin {spinRate:F0} " +
+            $"(speed {swingSpeed:F2} m/s, peak {peakAccel:F1} m/s², {sampleCount} samples)";
     }
 
     public static class OutboundMessages
