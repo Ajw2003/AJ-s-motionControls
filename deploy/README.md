@@ -275,6 +275,11 @@ ws://localhost:3000
 
 It is gitignored, so it stays a per-machine choice.
 
+That origin is not secure, so phone motion sensors stay dark. To serve the page from this
+machine over HTTPS instead — which does unlock them — run `pwsh ./local-https.ps1`; it handles
+both files and the certificate. [LOCAL-HTTPS-SPIKE.md](LOCAL-HTTPS-SPIKE.md) covers the rig and
+its unsettled costs.
+
 ---
 
 # Route B — VPS (migration path)

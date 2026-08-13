@@ -49,3 +49,13 @@ yarn-error.log*
 # Per-machine relay override read by RelayClient. Pointing your own checkout at a
 # local relay must not repoint everyone else's.
 relay-url.txt
+
+# Per-machine environment for the relay child, written by deploy/local-https.ps1.
+relay-env.txt
+
+# A backstop, not a workflow. local-https.ps1 keeps the borrowed local-ip.sh key in a
+# scratch directory outside the repo precisely so this rule never has to fire — but
+# .dockerignore is an allowlist, so a key that did land in relay/ would be baked into
+# the Fly image, and that key is published.
+*.pem
+*.key

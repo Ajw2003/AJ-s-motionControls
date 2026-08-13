@@ -30,19 +30,87 @@ premise does not apply here** — `AIM`/`THROW` already ride a direct DataChanne
   router.
 - No domain and no certificate of your own. The rig borrows a published one.
 
-## Step 0 — Pre-flight
+## Step 1 — Run it
 
-Same reason as [SPIKE-TEST.md](SPIKE-TEST.md) §0: some routers isolate clients from each other,
-and a phone that cannot reach the PC at all fails identically to a certificate problem.
+```bash
+pwsh ./deploy/local-https.ps1
+```
 
-If the page later fails to load on the phone, open `https://<pc-ip>:8443/health` by **raw IP**.
-A *certificate name mismatch* means the network is fine and only DNS was at fault. A *timeout*
-means isolation, and the run proved nothing.
+That is the whole setup. It detects the LAN IP, borrows the certificate, writes the config,
+starts the relay, proves the chain, and holds. **Ctrl+C puts everything back.**
 
-## Step 1 — Borrow a certificate
+| Flag | For |
+|---|---|
+| `-Ip 10.0.0.213` | The machine has more than one plausible interface, so detection refuses to guess |
+| `-Port 9443` | Something already owns 8443 |
+| `-SetupOnly` | Verify, then exit leaving the config in place so Unity starts the relay itself |
 
-`local-ip.sh` publishes a real Let's Encrypt wildcard for `*.local-ip.sh` and resolves
-IP-encoded names, so `10-144-225-71.local-ip.sh` → `10.144.225.71`.
+It stops before the phone is involved if anything is wrong, and each check maps to a failure
+that would otherwise be indistinguishable at the phone:
+
+| Check | What a failure means |
+|---|---|
+| One interface with a default gateway | Ambiguity is an **error, never a guess** — a wrong IP fails exactly like a bad certificate |
+| Certificate not expired, SAN covers `*.local-ip.sh` | The borrowed cert lapsed; on the phone this reads as a config mistake |
+| `<name>.local-ip.sh` resolves to that IP | **DNS rebinding protection** on the router, stripping private answers from public names |
+| `/health` over `https://` | The chain does not validate from this machine |
+| `test-deployed.js` over `wss://` | The upgrade or routing is broken under strict validation |
+
+**What it never does is touch the firewall** — see Step 3, that measurement is one-shot.
+
+The one thing no script can rule out is AP isolation, for the same reason as
+[SPIKE-TEST.md](SPIKE-TEST.md) §0. If the phone cannot load the page, open
+`https://<pc-ip>:8443/health` by **raw IP**. A *certificate name mismatch* means the network is
+fine and only DNS was at fault. A *timeout* means isolation, and the run proved nothing.
+
+## Step 2 — Play, join, throw
+
+Press Play in `Bootstrap`, scan the QR. Then read, in this order:
+
+| Where | What it tells you |
+|---|---|
+| **F1, the `Aim` line** | The fastest answer, and it needs no throw. `20 Hz` with `aim`/`attack` moving as you tilt means sensors are live. `no aim frames yet — grip on the phone` while you are gripping means they are not. |
+| **F1, per-throw `peak`** | `peak 0.0` is the tell for a sensorless device — `computeSimulatedThrowDescriptor` sends `peakAccel: 0` ([throw.js:104](../controller/js/throw.js:104)). |
+| **Unity Console** | The full line: `[Throw] JOE: … (peak 51.5 m/s², 90 samples)`. Sample count reaches the Console only, never the F1 overlay. |
+
+## Step 3 — The firewall, and why it is one-shot
+
+**Read the prompt before you dismiss it.** Note the wording and which profiles it offers.
+
+A development machine cannot measure this honestly, which is the trap: `node.exe` accumulates
+allow rules from ordinary `npm start` runs. Worse, those rules are usually **Public**-profile
+while a home network is categorised **Private**, so the prompt appears at a party and never in
+testing. Once you allow it, the rule persists and that machine can never produce the
+measurement again.
+
+This is the cost HostingPlan §8's deliberately-empty table exists to protect, so the number
+matters more than it looks. **It is also why the script only ever reports firewall state and
+never changes it** — a convenience rule added on your behalf would spend the measurement
+without anyone noticing. It prints the rules it finds, their profiles, and this network's
+category, so you know in advance whether a prompt is coming.
+
+## Step 4 — Put it back
+
+Ctrl+C. The script stops the relay, deletes the borrowed key, and restores or removes
+`relay-url.txt` and `relay-env.txt`.
+
+Worth knowing anyway, since `-SetupOnly` skips it and a hard kill can too:
+
+- `server.pem` / `server.key` live in `%TEMP%\rockskip-local-https`, **never in the repo**.
+  A published private key must never reach a build, and `.dockerignore` is an allowlist — a key
+  left in `relay/` would be baked into the Fly image.
+- A stale `relay-url.txt` leaves the editor pointing at a relay that is not running.
+- The TLS branch in `server.js` is inert with the env vars unset and can stay.
+
+---
+
+## Doing it by hand
+
+The script automates the four steps below; they are the fallback when it cannot run, and the
+explanation of what it is actually doing.
+
+**Borrow the certificate.** `local-ip.sh` publishes a real Let's Encrypt wildcard for
+`*.local-ip.sh` and resolves IP-encoded names, so `10-144-225-71.local-ip.sh` → `10.144.225.71`.
 
 ```bash
 curl -o server.pem https://local-ip.sh/server.pem && curl -o server.key https://local-ip.sh/server.key
@@ -58,14 +126,11 @@ Two properties to respect:
   `x.y.local-ip.sh` does not.
 - It is a wildcard, so **it covers any IP**. Moving networks needs no new certificate.
 
-## Step 2 — Start the relay with TLS
-
-[relay/server.js](../relay/server.js) grows an env-gated TLS branch: set `TLS_CERT` and
-`TLS_KEY` and it builds an `https` listener instead of `http`. `WebSocketServer` attaches to
-either, so `wss://` comes free.
-
-**With the variables unset, the path is unchanged** — this is inert in production, where Fly
-terminates TLS and the relay never sees a certificate (HostingPlan §3, §7).
+**Start the relay with TLS.** [relay/server.js](../relay/server.js) has an env-gated TLS branch:
+set `TLS_CERT` and `TLS_KEY` and it builds an `https` listener instead of `http`.
+`WebSocketServer` attaches to either, so `wss://` comes free. **With the variables unset the
+path is unchanged** — inert in production, where Fly terminates TLS and the relay never sees a
+certificate (HostingPlan §3, §7).
 
 ```bash
 cd relay && PORT=8443 TLS_CERT=/path/to/server.pem TLS_KEY=/path/to/server.key node server.js
@@ -74,51 +139,31 @@ cd relay && PORT=8443 TLS_CERT=/path/to/server.pem TLS_KEY=/path/to/server.key n
 It binds `0.0.0.0`, so a new interface — plugging in, or joining a hotspot — is picked up live
 without a restart.
 
-## Step 3 — Point Unity at it
-
-Find the PC's LAN IP, convert dots to dashes, and write one line to `relay-url.txt` at the repo
-root (gitignored):
+**Point Unity at it.** Find the PC's LAN IP, convert dots to dashes, and write one line to
+`relay-url.txt` at the repo root (gitignored):
 
 ```
 wss://10-144-225-71.local-ip.sh:8443
 ```
 
-Nothing else changes. `RelayClient` reads that file
-([RelayClient.cs:163](../Assets/Scripts/Net/RelayClient.cs:163)) and derives the page origin
-from it ([DeriveOrigin, RelayClient.cs:188](../Assets/Scripts/Net/RelayClient.cs:188)), so the
-join URL and the QR follow. On the phone side `deriveSocketUrl`
+`RelayClient` reads that file ([RelayClient.cs:163](../Assets/Scripts/Net/RelayClient.cs:163))
+and derives the page origin from it
+([DeriveOrigin, RelayClient.cs:188](../Assets/Scripts/Net/RelayClient.cs:188)), so the join URL
+and the QR follow. On the phone side `deriveSocketUrl`
 ([net.js:27](../controller/js/net.js:27)) uses `location.host`, which carries the `:8443`.
 
-**The spike needs no Unity code at all.**
+**Optionally let Unity start it.** A `relay-env.txt` beside `relay-url.txt`, one `KEY=VALUE` per
+line, is passed to the relay child by `LocalServices` — which is how `-SetupOnly` works:
 
-## Step 4 — Play, join, throw
+```
+PORT=8443
+TLS_CERT=C:\Users\you\AppData\Local\Temp\rockskip-local-https\server.pem
+TLS_KEY=C:\Users\you\AppData\Local\Temp\rockskip-local-https\server.key
+```
 
-Press Play in `Bootstrap`, scan the QR. Then read, in this order:
-
-| Where | What it tells you |
-|---|---|
-| **F1, the `Aim` line** | The fastest answer, and it needs no throw. `20 Hz` with `aim`/`attack` moving as you tilt means sensors are live. `no aim frames yet — grip on the phone` while you are gripping means they are not. |
-| **F1, per-throw `peak`** | `peak 0.0` is the tell for a sensorless device — `computeSimulatedThrowDescriptor` sends `peakAccel: 0` ([throw.js:104](../controller/js/throw.js:104)). |
-| **Unity Console** | The full line: `[Throw] JOE: … (peak 51.5 m/s², 90 samples)`. Sample count reaches the Console only, never the F1 overlay. |
-
-## Step 5 — The firewall, and why it is one-shot
-
-**Read the prompt before you dismiss it.** Note the wording and which profiles it offers.
-
-A development machine cannot measure this honestly, which is the trap: `node.exe` accumulates
-allow rules from ordinary `npm start` runs. Worse, those rules are usually **Public**-profile
-while a home network is categorised **Private**, so the prompt appears at a party and never in
-testing. Once you allow it, the rule persists and that machine can never produce the
-measurement again.
-
-This is the cost HostingPlan §8's deliberately-empty table exists to protect, so the number
-matters more than it looks.
-
-## Step 6 — Put it back
-
-- Delete `server.pem` / `server.key`. **A published private key must never reach a build.**
-- Delete `relay-url.txt`, or the editor keeps pointing at a relay that is not running.
-- The TLS branch in `server.js` is inert with the env vars unset and can stay.
+`LocalServices` reuses a relay that is already answering rather than starting a second one, so
+running the script and pressing Play do not fight: the script owns the relay and Unity borrows
+it.
 
 ---
 

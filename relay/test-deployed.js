@@ -95,12 +95,13 @@ function next(ws, type, ms = 10000) {
   let notFound = 0;
   for (let i = 0; i < JOIN_ATTEMPTS; i++) {
     const p = await open(`probe${i}`);
-    const outcome = await Promise.race([
+    const replied = Promise.race([
       next(p, 'JOINED', 8000).then(() => 'joined'),
       next(p, 'ERROR', 8000).then((e) => e.code),
     ]).catch((e) => e.message);
-    if (outcome === 'ROOM_NOT_FOUND') notFound++;
     p.send(JSON.stringify({ type: 'JOIN_ROOM', roomCode: code, playerId: `PROBE${i}` }));
+    const outcome = await replied;
+    if (outcome === 'ROOM_NOT_FOUND') notFound++;
     p.close();
   }
   check(`all ${JOIN_ATTEMPTS} joins hit the backend holding the room`, notFound === 0,

@@ -82,6 +82,11 @@ Two things, and both are needed — either alone does nothing useful:
 That origin is not secure, so motion sensors will not work on it — this is for desktop
 testing. Real-phone testing goes through the deployed service.
 
+For a local loop that *does* unlock motion sensors, `pwsh ./deploy/local-https.ps1` serves the
+page from this machine over HTTPS on a borrowed certificate, writes both config files for you,
+verifies the chain, and undoes it all on Ctrl+C. See
+[deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) — including what it does not settle.
+
 ## Match flow
 
 `TurnManager` owns a three-phase lifecycle, and nothing advances on its own:

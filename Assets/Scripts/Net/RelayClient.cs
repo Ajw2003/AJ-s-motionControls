@@ -157,10 +157,27 @@ namespace Net
 
         /// <summary>
         /// Reads the override file if it exists, otherwise keeps the inspector value.
-        /// Application.dataPath resolves to Assets/ in the editor and &lt;exe&gt;_Data in a
-        /// build, so its parent is the right place to look in both cases.
         /// </summary>
         private static string ResolveRelayUrl(string configured)
+        {
+            var overridden = ReadOverride();
+            if (overridden == null) return configured;
+
+            Debug.Log($"[RelayClient] Using {OverrideFileName}: {overridden}");
+            return overridden;
+        }
+
+        /// <summary>
+        /// The one line of <see cref="OverrideFileName"/>, or null when there is no usable
+        /// override. Application.dataPath resolves to Assets/ in the editor and
+        /// &lt;exe&gt;_Data in a build, so its parent is the right place to look both times.
+        /// </summary>
+        /// <remarks>
+        /// Internal because LocalServices needs the same answer: a relay started by hand on
+        /// a non-default port is only reachable at the address this file names, so a health
+        /// probe that ignores it checks the wrong thing.
+        /// </remarks>
+        internal static string ReadOverride()
         {
             try
             {
@@ -168,11 +185,7 @@ namespace Net
                 if (File.Exists(path))
                 {
                     var line = File.ReadAllText(path).Trim();
-                    if (line.Length > 0)
-                    {
-                        Debug.Log($"[RelayClient] Using {OverrideFileName}: {line}");
-                        return line;
-                    }
+                    if (line.Length > 0) return line;
                 }
             }
             catch (Exception e)
@@ -181,11 +194,11 @@ namespace Net
                 Debug.LogWarning($"[RelayClient] Could not read {OverrideFileName}: {e.Message}");
             }
 
-            return configured;
+            return null;
         }
 
         /// <summary>ws://host -> http://host, wss://host -> https://host.</summary>
-        private static string DeriveOrigin(string socketUrl)
+        internal static string DeriveOrigin(string socketUrl)
         {
             try
             {
