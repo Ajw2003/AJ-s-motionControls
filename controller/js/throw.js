@@ -47,11 +47,14 @@ export const ThrowTuning = {
   // leaving the player armed forever.
   maxSwingMs: 900,
 
-  // --- live spin, for the preview only -------------------------------------
+  // --- spin ----------------------------------------------------------------
   // How long a spin peak is held before it has decayed away. Spin is peaky: a
   // wrist flick is over in about 100ms, so a 20Hz aim frame samples it up to 50ms
   // late and mostly catches the tail. Holding the peak briefly is what turns that
   // into a ghost that spins up and winds down instead of one that flickers.
+  //
+  // The throw uses the same envelope, so the stone spins at the rate the ghost was
+  // showing. Raise this if a slow release is bleeding away spin the player earned.
   spinEnvelopeTauMs: 250,
 };
 
@@ -75,7 +78,12 @@ export const SimulatedThrow = {
   // sinking, which would make every test score identically zero.
   attackJitterDeg: 6,
   aimJitterDeg: 10,
-  spinRate: 120,
+
+  // Sits at SkipTuning's saturation point (MaxSpinToleranceBonus / SpinToleranceScale),
+  // which is also what AimPreview draws its arc at. Below it a desktop seat throws with
+  // measurably less angle tolerance than the arc it was shown promised — at the old 120
+  // it got 17.4 degrees against a real phone's 33.
+  spinRate: 900,
   timingQuality: 0.85,
 };
 
@@ -120,9 +128,13 @@ export const ThrowState = {
  * so it is fully unit testable without a phone.
  *
  * @param {Array} samples oldest-to-newest, from MotionSource's ring buffer
+ * @param {object} tuning
+ * @param {number} [spinRate] the live spin envelope at release — see the spinRate
+ *   field below. Omitting it replays the envelope over `samples`, which keeps this
+ *   function usable from a buffer alone.
  * @returns {object|null} descriptor, or null if the gesture was too weak to count
  */
-export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
+export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) {
   if (!samples || samples.length === 0) return null;
 
   // The last sample is the moment the phone stopped, which is the release. Nothing
@@ -154,7 +166,13 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
     attackAngleDeg: stop.dBeta,
     rollDeg: stop.dGamma,
 
-    spinRate: spinMagnitude(stop.rotationRate),
+    // The one field deliberately NOT read from the stop sample. Aim, attack and roll
+    // are orientations, and where the phone ended up pointing IS the throw. Spin is a
+    // rate: it peaks mid-swing and is spent by the time the phone halts — and the
+    // throw fires precisely because it halted. Reading it off `stop` sampled the one
+    // instant the wrist had finished turning, so a hard flick and a limp one both
+    // arrived as roughly zero and the stone never visibly span.
+    spinRate: spinRate ?? peakSpinEnvelope(samples, tuning),
 
     // Diagnostics — useful on the TV debug readout while tuning, ignored by physics.
     peakAccel: peak.power,
@@ -178,6 +196,35 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
 export function decaySpinEnvelope(previous, instantaneous, dtMs, tauMs = ThrowTuning.spinEnvelopeTauMs) {
   const decayed = previous * Math.exp(-Math.max(dtMs, 0) / tauMs);
   return Math.max(decayed, instantaneous);
+}
+
+/**
+ * Replay decaySpinEnvelope across a whole buffer and return where it ended up.
+ *
+ * ThrowController already tracks this envelope live, so the real device path passes
+ * its value straight in. This is for callers holding only samples — tests, tooling,
+ * and computeThrowDescriptor's own fallback — and it agrees with the live tracker by
+ * construction, because it is the same function over the same samples.
+ *
+ * The tau does the windowing: spin from before the swing, while the player was
+ * lining the shot up, has decayed away by the time the buffer reaches the release,
+ * so there is no separate window constant to keep in sync.
+ *
+ * Pure.
+ */
+export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
+  if (!samples || samples.length === 0) return 0;
+
+  let spin = 0;
+  let prevT = null;
+
+  for (const sample of samples) {
+    const dtMs = prevT === null ? 0 : sample.t - prevT;
+    prevT = sample.t;
+    spin = decaySpinEnvelope(spin, spinMagnitude(sample.rotationRate), dtMs, tuning.spinEnvelopeTauMs);
+  }
+
+  return spin;
 }
 
 /**
@@ -349,7 +396,12 @@ export class ThrowController {
   }
 
   _fire() {
-    const descriptor = computeThrowDescriptor(this.motion.buffer.toArray(), this.tuning);
+    // Spin is read from the live envelope rather than left to the buffer replay, so
+    // the stone leaves at exactly the rate the ghost was showing a frame earlier —
+    // the preview/live agreement this codebase keeps closing everywhere else. Read
+    // before cancel(), which zeroes it.
+    const descriptor = computeThrowDescriptor(
+      this.motion.buffer.toArray(), this.tuning, this._spin);
     this.cancel();
 
     if (!descriptor) return null; // a twitch, not a throw — stay armed-off and let them retry

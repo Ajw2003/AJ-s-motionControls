@@ -121,7 +121,20 @@ namespace Game
 
         private void Awake()
         {
-            if (tuning == null) tuning = SkipTuning.CreateDefault();
+            // Serialized field, then the authored asset, then a bare runtime instance.
+            // The middle step is the one that does the work: Bootstrap builds this
+            // component with AddComponent, so nothing was ever dropped into the field
+            // above and the whole game ran on C# field initializers — the numbers were
+            // only reachable by recompiling. Resources.Load rather than a scene
+            // reference for the same reason, and it matches PlaceholderArt's shader load.
+            if (tuning == null) tuning = Resources.Load<SkipTuning>("SkipTuning");
+
+            if (tuning == null)
+            {
+                tuning = SkipTuning.CreateDefault();
+                Debug.LogWarning("[AimPreview] No SkipTuning at Resources/SkipTuning — " +
+                                 "running on code defaults, which cannot be tuned without a recompile.");
+            }
             if (createPlaceholderScene) BuildPlaceholderScene();
             if (throwOrigin == null) throwOrigin = CreateOrigin();
 

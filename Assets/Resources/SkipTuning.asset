@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 15b885944806006408cdb932ac9379de, type: 3}
+  m_Name: SkipTuning
+  m_EditorClassIdentifier: Assembly-CSharp::Game.SkipTuning
+  Gravity: 9.81
+  WaterY: 0
+  MinSpeed: 2
+  MaxSpeed: 100
+  LaunchPitchDeg: 8
+  AttackAngleOffsetDeg: 20
+  WorstTimingSpeedScale: 0.6
+  MaxIncidenceDeg: 45
+  BestRestitution: 0.92
+  WorstRestitution: 0.3
+  SkipExitAngleDeg: 26
+  SpinToleranceScale: 0.02
+  MaxSpinToleranceBonus: 18
+  MinVisualSpinDegPerSec: 45
+  MaxVisualSpinDegPerSec: 9000
+  FixedStep: 0.02
+  MaxPredictSteps: 500

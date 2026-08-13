@@ -93,8 +93,10 @@ namespace Game
         public int MaxPredictSteps = 500;
 
         /// <summary>
-        /// Runtime fallback so physics and the preview work before anyone authors an
-        /// asset. Create a real SkipTuning asset once tuning starts in earnest.
+        /// Last-resort fallback so physics and the preview still work if the asset is
+        /// missing. The authored asset at Resources/SkipTuning is what should normally
+        /// load — see AimPreview.Awake. Reaching this means tuning is back to being a
+        /// recompile, so it is worth noticing rather than silently living with.
         /// </summary>
         public static SkipTuning CreateDefault()
         {

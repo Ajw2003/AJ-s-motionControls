@@ -48,11 +48,11 @@ namespace Game
         /// <summary>A plain, forgiving pebble. Used until the spawner exists.</summary>
         public static RockStats Default => new(
             optimalAngleDeg: 20f,
-            baseToleranceDeg: 12f,
+            baseToleranceDeg: 15f,
             restitution: 0.9f,
-            drag: 0.94f,
-            spinDecay: 0.88f,
-            minSkipSpeed: 3.5f,
+            drag: 0.75f,
+            spinDecay: 0.75f,
+            minSkipSpeed: 2.5f,
             displayName: "Pebble");
     }
 }

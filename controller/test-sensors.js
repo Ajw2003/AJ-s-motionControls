@@ -27,6 +27,7 @@ import {
   computeSimulatedThrowDescriptor,
   buildAimPayload,
   decaySpinEnvelope,
+  peakSpinEnvelope,
   ThrowController,
   ThrowState,
   ThrowTuning,
@@ -207,6 +208,28 @@ console.log('\ncomputeThrowDescriptor');
 
   const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: 3, beta: 4, gamma: 0 } })];
   check('spin rate is the rotation magnitude', near(computeThrowDescriptor(spun).spinRate, 5));
+
+  // Spin is the one field not read from the stop sample, and this is why: the wrist
+  // flick peaks mid-swing and is spent by the time the phone halts — and the throw
+  // fires precisely *because* it halted. Reading spin at the stop measured the one
+  // instant the wrist was no longer turning, so hard flicks and limp ones landed
+  // the same near-zero value.
+  const flicked = [
+    makeSample(0, 1),
+    makeSample(120, 25, { rotationRate: { alpha: 600, beta: 800, gamma: 0 } }), // the flick, |1000|
+    makeSample(180, 30, { rotationRate: { alpha: 300, beta: 400, gamma: 0 } }), // peak accel, spin fading
+    makeSample(200, 2),                                                         // stopped, not turning
+  ];
+  const dFlicked = computeThrowDescriptor(flicked);
+  check('spin comes from the swing, not the calm stop sample',
+    dFlicked.spinRate > 500, `${dFlicked.spinRate.toFixed(1)}`);
+
+  // The device path hands in the envelope ThrowController tracked live, so the stone
+  // leaves at the rate the ghost was showing. Anything passed wins over the replay.
+  check('an explicit envelope overrides the buffer',
+    computeThrowDescriptor(flicked, ThrowTuning, 1234).spinRate === 1234);
+  check('a zero envelope is honoured rather than treated as absent',
+    computeThrowDescriptor(flicked, ThrowTuning, 0).spinRate === 0);
 }
 
 // ---------------------------------------------------------------- aim payload
@@ -245,6 +268,35 @@ console.log('\ndecaySpinEnvelope');
   check('is independent of sample rate', near(twoSteps, decaySpinEnvelope(900, 0, 100), 1e-9),
     `${twoSteps.toFixed(6)} vs ${decaySpinEnvelope(900, 0, 100).toFixed(6)}`);
   check('a negative dt cannot inflate the envelope', decaySpinEnvelope(900, 0, -500) <= 900);
+}
+
+console.log('\npeakSpinEnvelope');
+{
+  check('no samples means no spin', peakSpinEnvelope([]) === 0);
+  check('null input means no spin', peakSpinEnvelope(null) === 0);
+
+  // Must agree with the live tracker in ThrowController, which is the whole reason
+  // it reuses decaySpinEnvelope rather than defining a second notion of peak spin.
+  const swing = [
+    makeSample(0, 1, { rotationRate: { alpha: 100, beta: 0, gamma: 0 } }),
+    makeSample(50, 20, { rotationRate: { alpha: 900, beta: 0, gamma: 0 } }),
+    makeSample(100, 5, { rotationRate: { alpha: 0, beta: 0, gamma: 0 } }),
+  ];
+  let live = 0;
+  live = decaySpinEnvelope(live, 100, 0);
+  live = decaySpinEnvelope(live, 900, 50);
+  live = decaySpinEnvelope(live, 0, 50);
+  check('matches the envelope tracked sample by sample',
+    near(peakSpinEnvelope(swing), live, 1e-9), `${peakSpinEnvelope(swing).toFixed(6)}`);
+
+  // The tau is the window: spin from before the swing decays away on its own, so
+  // there is no separate cutoff constant that could drift out of sync with it.
+  const stale = [
+    makeSample(0, 1, { rotationRate: { alpha: 900, beta: 0, gamma: 0 } }), // lining up
+    makeSample(2000, 20, { rotationRate: { alpha: 40, beta: 0, gamma: 0 } }),
+  ];
+  check('spin from before the swing has decayed away', near(peakSpinEnvelope(stale), 40, 1e-3),
+    `${peakSpinEnvelope(stale).toFixed(3)}`);
 }
 
 // ------------------------------------------------- simulated throw (sensorless)
