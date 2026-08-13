@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#requires -Version 5.1
 <#
 .SYNOPSIS
     Serves the controller page from this machine over HTTPS, so a phone gets a secure
@@ -50,6 +51,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Runs on both PowerShell editions, because which one a double-click or an IDE terminal
+# hands you is not something the person running this chose. $IsWindowsPowerShell is the
+# test the few version-dependent spots below share.
+$IsWindowsPowerShell = $PSVersionTable.PSVersion.Major -lt 6
+
+# Windows PowerShell inherits a protocol list that can predate the TLS 1.2 local-ip.sh
+# requires, and the failure reads as "could not reach local-ip.sh". Additive on purpose -
+# never turn off something this machine has already decided it wants. PowerShell 7
+# negotiates on its own and is left alone.
+if ($IsWindowsPowerShell) {
+    [Net.ServicePointManager]::SecurityProtocol =
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
 # ---------------------------------------------------------------------------- paths
 
 $Root      = Split-Path $PSScriptRoot -Parent
@@ -87,6 +102,50 @@ function Fail {
     throw $Text
 }
 
+# -------------------------------------------------------------------------- shells
+
+# Two of the places Windows PowerShell and PowerShell 7 disagree - the third is the TLS
+# line above. All three are silent until they are fatal and none of them reads as a version
+# problem when it goes, so the two worth naming are named here rather than left inline for
+# the phases to explain.
+
+function Write-Utf8NoBom {
+    param([string] $Path, [string[]] $Lines)
+
+    # Set-Content -Encoding utf8NoBOM is PowerShell 6+. Windows PowerShell has no spelling
+    # for it at all - its 'UTF8' means with a BOM - so the only way to say this to both is
+    # to go around the cmdlet. What the BOM would and would not cost is at the call site.
+    #
+    # [System.IO.File] resolves relative paths against the process working directory rather
+    # than PowerShell's location, which are not the same thing; this makes the path absolute
+    # before that can bite.
+    $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    [System.IO.File]::WriteAllLines($full, $Lines, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Stop-ProcessTree {
+    param([System.Diagnostics.Process] $Process)
+
+    if (-not $Process -or $Process.HasExited) { return }
+
+    # Kill($true) - the whole tree - arrived with .NET Core 3.0, so Windows PowerShell,
+    # which is .NET Framework, does not have the overload at all. taskkill /T is the same
+    # idea and ships with Windows. Killing only node would orphan whatever it spawned.
+    if ($IsWindowsPowerShell) {
+        # A native command's stderr becomes an ErrorRecord, and $ErrorActionPreference is
+        # Stop; this scope-local override keeps taskkill's own complaints from throwing
+        # past the exit check below, which is the honest test of whether this worked.
+        $ErrorActionPreference = 'Continue'
+        & taskkill.exe /PID "$($Process.Id)" /T /F 2>&1 | Out-Null
+    } else {
+        $Process.Kill($true)
+    }
+
+    if (-not $Process.WaitForExit(5000)) {
+        throw "Process $($Process.Id) is still running five seconds after being killed."
+    }
+}
+
 # ------------------------------------------------------------------------ cleanup
 
 function Invoke-Teardown {
@@ -94,10 +153,7 @@ function Invoke-Teardown {
 
     if ($script:RelayProcess -and $script:OwnsRelay) {
         try {
-            if (-not $script:RelayProcess.HasExited) {
-                $script:RelayProcess.Kill($true)   # $true: the whole process tree
-                $null = $script:RelayProcess.WaitForExit(5000)
-            }
+            Stop-ProcessTree $script:RelayProcess
             Write-Info 'Relay stopped.'
         } catch {
             Write-Warn "Could not stop the relay: $($_.Exception.Message)"
@@ -221,8 +277,11 @@ function Get-BorrowedCertificate {
     $null = New-Item -ItemType Directory -Force -Path $Scratch
 
     try {
-        Invoke-WebRequest -Uri 'https://local-ip.sh/server.pem' -OutFile $CertPath -TimeoutSec 20 | Out-Null
-        Invoke-WebRequest -Uri 'https://local-ip.sh/server.key' -OutFile $KeyPath  -TimeoutSec 20 | Out-Null
+        # -UseBasicParsing: Windows PowerShell otherwise hands the response to the Internet
+        # Explorer engine, which throws outright on a machine where IE's first-run wizard
+        # never happened. PowerShell 7 accepts the switch and ignores it.
+        Invoke-WebRequest -Uri 'https://local-ip.sh/server.pem' -OutFile $CertPath -TimeoutSec 20 -UseBasicParsing | Out-Null
+        Invoke-WebRequest -Uri 'https://local-ip.sh/server.key' -OutFile $KeyPath  -TimeoutSec 20 -UseBasicParsing | Out-Null
         Write-Ok 'Downloaded from local-ip.sh'
     } catch {
         # A phone hotspot with mobile data off is a real case, and the cached copy is
@@ -310,11 +369,16 @@ function Write-Configuration {
 
     $script:ConfigWritten = $true
 
-    # utf8NoBOM matters: RelayClient does a .Trim(), and .NET Core does not consider a
-    # BOM whitespace, so a BOM would survive it and break the Uri parse.
-    Set-Content -Path $UrlFile -Value $SocketUrl -Encoding utf8NoBOM
+    # Write-Utf8NoBom rather than Set-Content, so both editions emit the same bytes: their
+    # -Encoding UTF8 disagree about the BOM, and utf8NoBOM, which does not, is 7-only.
+    #
+    # This used to be justified by RelayClient's .Trim() not removing a BOM. Half true - U+FEFF
+    # is not whitespace to .NET - but File.ReadAllText strips it while decoding, before the
+    # .Trim() ever sees it, and ReadAllLines does the same for LocalServices. So a BOM would
+    # most likely pass unnoticed; it is just nothing this needs to start writing.
+    Write-Utf8NoBom -Path $UrlFile -Lines $SocketUrl
 
-    Set-Content -Path $EnvFile -Encoding utf8NoBOM -Value @(
+    Write-Utf8NoBom -Path $EnvFile -Lines @(
         "# $ConfigMarker. Gitignored, per-machine, safe to delete."
         "PORT=$Port"
         "TLS_CERT=$CertPath"
@@ -374,7 +438,9 @@ function Test-Health {
     param([string] $HealthUrl)
     try {
         # Full chain validation, deliberately - no -SkipCertificateCheck anywhere here.
-        $response = Invoke-WebRequest -Uri $HealthUrl -TimeoutSec 4
+        # -UseBasicParsing for the reason given in Get-BorrowedCertificate; without it a
+        # missing IE engine fails this check and the run blames the address instead.
+        $response = Invoke-WebRequest -Uri $HealthUrl -TimeoutSec 4 -UseBasicParsing
         return $response.StatusCode -eq 200
     } catch {
         return $false
@@ -497,9 +563,11 @@ try {
     if ($SetupOnly) {
         Write-Host ''
         Write-Host '  -SetupOnly: stopping the relay. Unity will start its own on Play.' -ForegroundColor Yellow
-        if ($script:RelayProcess -and $script:OwnsRelay -and -not $script:RelayProcess.HasExited) {
-            $script:RelayProcess.Kill($true)
-            $null = $script:RelayProcess.WaitForExit(5000)
+        if ($script:RelayProcess -and $script:OwnsRelay) {
+            # A relay that will not die is worth saying out loud, but it does not make a
+            # run that has already passed everything into a failed one.
+            try { Stop-ProcessTree $script:RelayProcess }
+            catch { Write-Warn "Could not stop the relay: $($_.Exception.Message)" }
         }
         Write-Host ''
         Write-Warn 'relay-url.txt, relay-env.txt and the borrowed key are still in place.'
