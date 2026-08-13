@@ -36,6 +36,9 @@ premise does not apply here** — `AIM`/`THROW` already ride a direct DataChanne
 pwsh ./deploy/local-https.ps1
 ```
 
+Windows PowerShell works too — `powershell -File .\deploy\local-https.ps1`, or right-click →
+*Run with PowerShell*. `pwsh` is only the spelling that is also right on macOS and Linux.
+
 That is the whole setup. It detects the LAN IP, borrows the certificate, writes the config,
 starts the relay, proves the chain, and holds. **Ctrl+C puts everything back.**
 
