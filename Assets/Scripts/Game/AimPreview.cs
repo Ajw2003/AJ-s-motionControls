@@ -306,7 +306,12 @@ namespace Game
             water.transform.localScale = new Vector3(200f, 1f, 200f);
             Destroy(water.GetComponent<Collider>());
 
-            var waterMaterial = PlaceholderArt.CreateWater(new Color(0.06f, 0.16f, 0.28f));
+            
+            var waterMaterial = Resources.Load<Material>("RockSkipping_WaterRipple");
+            if (waterMaterial == null)
+            {
+                waterMaterial = PlaceholderArt.CreateWater(new Color(0.06f, 0.16f, 0.28f));
+            }
             water.GetComponent<MeshRenderer>().material = waterMaterial;
 
             // Handed the material directly rather than looked up — this method is the only

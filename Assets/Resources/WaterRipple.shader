@@ -57,10 +57,20 @@ Shader "RockSkipping/WaterRipple"
         Cull Off
 
         CGPROGRAM
-        // fullforwardshadows so the water still receives the stone's shadow, as it did
-        // through Standard. No addshadow: the lake is a 2000-unit plane and has nothing
-        // beneath it to cast onto.
-        #pragma surface surf Standard fullforwardshadows
+        // fullforwardshadows so the water receives the stone's shadow, as it did through
+        // Standard.
+        //
+        // addshadow is what actually makes that work, and it is not about casting. A
+        // directional light in the built-in pipeline resolves its shadows in screen space:
+        // the shadow value at a pixel is looked up by reconstructing world position from
+        // _CameraDepthTexture, and that texture is rendered from each material's
+        // ShadowCaster pass. This shader has no ShadowCaster of its own and the Fallback
+        // below — Sprites/Default — has none either, so the lake was simply absent from
+        // the depth texture. Every water pixel resolved against whatever depth was left
+        // there, which is the far plane, landed outside the cascades and came back fully
+        // lit. Generating the pass puts the water in the depth texture and the lookup
+        // starts landing on the water's own surface.
+        #pragma surface surf Standard fullforwardshadows addshadow
         #pragma target 3.0
 
         #define MAX_RIPPLES 16
@@ -136,5 +146,5 @@ Shader "RockSkipping/WaterRipple"
     // Covers hardware that cannot run the shader above — not syntax errors, which still
     // show magenta and log to the console. Sprites/Default is always-included, so this
     // fallback is safe to reach in a player build.
-    Fallback "Sprites/Default"
+    Fallback "Standard"
 }
