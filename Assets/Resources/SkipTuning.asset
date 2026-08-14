@@ -18,14 +18,14 @@ MonoBehaviour:
   MaxSpeed: 40
   LaunchPitchDeg: 11
   BestFaceAngleDeg: 0
-  ToleranceDeg: 15
-  SpeedKeptSoft: 0.8
+  ToleranceDeg: 7
+  SpeedKeptSoft: 0.608
   SpeedKeptHard: 0.9
   MinSkipSpeed: 4
-  SkipExitAngleDeg: 5
+  SkipExitAngleDeg: 10
   OpeningHopAngleDeg: 11
   OpeningHopSkips: 3
   Restitution: 0.4
   FixedStep: 0.01
-  PredictSeconds: 22
+  PredictSeconds: 60
   DisplayName: Pebble

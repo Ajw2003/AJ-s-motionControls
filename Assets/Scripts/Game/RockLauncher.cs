@@ -110,7 +110,7 @@ namespace Game
             if (_active != null && _active.IsFlying)
             {
                 // Trail behind and above so the skips read clearly from the couch.
-                var target = _active.transform.position + new Vector3(-4f, 3.5f, -7f);
+                var target = _active.transform.position + new Vector3(-2f, 2.5f, -3f);
                 _camera.transform.position = Vector3.SmoothDamp(
                     _camera.transform.position, target, ref _cameraVelocity, cameraFollowSmoothing);
                 _camera.transform.rotation = Quaternion.Slerp(
