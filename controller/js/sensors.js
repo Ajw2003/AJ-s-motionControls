@@ -148,15 +148,20 @@ export function magnitude(v) {
 }
 
 /**
- * How fast the phone is turning, in deg/s, regardless of which axis it turns about.
+ * How fast the phone is spinning about its own screen normal, in deg/s. Signed.
  *
- * The single definition of "spin" in the codebase. The release descriptor and the
- * live aim stream both call it, so the spin the preview shows and the spin the
- * stone is launched with can never be two different measurements.
+ * The single definition of "spin" in the codebase, and the axis a player means by the
+ * word: the frisbee flick, the one that makes a stone skip. `rotationRate.alpha` is
+ * the rate about device Z, which is the axis out through the glass.
+ *
+ * This used to be hypot(alpha, beta, gamma) — unsigned, and across all three axes at
+ * once. Two things were wrong with that. The arm's swing is a far larger rotation than
+ * the wrist's twist, so the number mostly reported how hard the phone was being waved
+ * rather than how it was spun. And with the sign discarded, every stone turned the same
+ * way no matter which way the wrist actually went.
  */
-export function spinMagnitude(rate) {
-  if (!rate) return 0;
-  return Math.hypot(rate.alpha ?? 0, rate.beta ?? 0, rate.gamma ?? 0);
+export function screenSpinRate(rate) {
+  return rate?.alpha ?? 0;
 }
 
 export function clamp(value, min, max) {

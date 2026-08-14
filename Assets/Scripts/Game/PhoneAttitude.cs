@@ -46,7 +46,30 @@ namespace Game
             // Unity's constructor takes (x, y, z, w), not (w, x, y, z).
             new Quaternion(-x, -z, -y, w);
 
-        /// <summary>Compass heading of a rotated stone, in degrees about world up.</summary>
+        /// <summary>
+        /// Which way a rotated stone points, flattened onto the water.
+        /// </summary>
+        /// <remarks>
+        /// This is what the launch actually needs, so it is what the launch takes. It used
+        /// to go through <see cref="HeadingDeg"/> and rebuild a direction from the angle
+        /// with Quaternion.AngleAxis — an atan2 and a trig pair to recover a vector that
+        /// was already in hand. Dropping the round trip also drops the only native call in
+        /// the solver, which is what lets the whole thing run headlessly outside Unity.
+        ///
+        /// Straight up or straight down has no heading; fall back to forward rather than
+        /// to a direction derived from floating-point noise.
+        /// </remarks>
+        public static Vector3 HeadingDirection(Quaternion attitude)
+        {
+            var forward = attitude * Vector3.forward;
+            var flat = new Vector3(forward.x, 0f, forward.z);
+            return flat.sqrMagnitude < 0.0001f ? Vector3.forward : flat.normalized;
+        }
+
+        /// <summary>
+        /// Compass heading of a rotated stone, in degrees about world up. Readouts only —
+        /// the launch uses <see cref="HeadingDirection"/>.
+        /// </summary>
         /// <remarks>
         /// Read off the stone's own forward axis rather than from Euler angles, which
         /// would reintroduce exactly the gimbal problem the quaternion is here to avoid.
@@ -56,8 +79,6 @@ namespace Game
             var forward = attitude * Vector3.forward;
             var flat = new Vector3(forward.x, 0f, forward.z);
 
-            // Pointing straight up or straight down has no heading. Zero rather than a
-            // number derived from floating-point noise.
             return flat.sqrMagnitude < 0.0001f ? 0f : Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg;
         }
 

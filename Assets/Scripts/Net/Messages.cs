@@ -101,11 +101,26 @@ namespace Net
         public float qx, qy, qz;
 
         /// <summary>
-        /// How fast the phone is turning right now, deg/s, as a decaying peak envelope —
-        /// see decaySpinEnvelope in the controller. Cosmetic like the rest of this class:
-        /// it drives the ghost stone's visual spin and nothing else.
+        /// How fast the phone is spinning about its own screen normal right now, deg/s,
+        /// signed, as a decaying peak envelope — see decaySpinEnvelope in the controller.
+        /// Cosmetic like the rest of this class.
         /// </summary>
         public float spinRate;
+
+        /// <summary>
+        /// How hard the phone is being swung right now, 0..1.
+        /// </summary>
+        /// <remarks>
+        /// The same quantity and the same normalisation as ThrowMessage.power, just
+        /// sampled mid-swing instead of at release — see ThrowController.windup. That
+        /// matters: the previous version of this field was derived from peak acceleration
+        /// while the throw's power came from swing speed, so the arc and the stone were
+        /// driven by two different notions of "how hard" and disagreed by construction.
+        ///
+        /// Only ever an estimate, because the swing has not finished yet. AimPreview
+        /// floors it at a nominal so a player holding still to aim still sees an arc.
+        /// </remarks>
+        public float power;
     }
 
     /// <summary>The authoritative throw. Exactly one per gesture.</summary>

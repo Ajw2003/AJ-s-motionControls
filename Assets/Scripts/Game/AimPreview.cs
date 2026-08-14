@@ -38,8 +38,9 @@ namespace Game
         [SerializeField] private bool createPlaceholderScene = true;
 
         [Header("Feel")]
-        [Tooltip("Power the arc is drawn at. Real power is unknown until release.")]
-        [Range(0f, 1f)] [SerializeField] private float previewPower = 0.7f;
+        [Tooltip("Floor on the power the arc is drawn at, for a player holding still to " +
+                 "aim. Winding up raises it above this; it is never drawn below it.")]
+        [Range(0f, 1f)] [SerializeField] private float previewPower = 0.45f;
 
         [Tooltip("How long the ghost takes to catch up to a new aim frame. This is the " +
                  "20Hz-to-smooth conversion; it is not meant to lag perceptibly.")]
@@ -81,14 +82,18 @@ namespace Game
         private Quaternion _targetAttitude = Quaternion.identity;
         private Quaternion _curAttitude = Quaternion.identity;
 
-        private float _targetSpin, _curSpin;
-
         /// <summary>
-        /// The ghost's accumulated turn. Kept as an angle that only ever grows, never
-        /// assigned from the spin — the rate may jump when a packet lands, but the angle
-        /// must not, or a stone that was turning steadily appears to flick.
+        /// How hard the phone is being swung right now, 0..1, and the smoothed value the
+        /// arc is drawn at.
         /// </summary>
-        private float _ghostSpinAngle;
+        /// <remarks>
+        /// The same quantity the throw sends, normalised the same way — see the live
+        /// tracker in ThrowController. An earlier version sent a separate `windup` derived
+        /// from peak acceleration while the throw derived power from swing speed, so the
+        /// arc and the stone were driven by two different notions of "how hard" and
+        /// disagreed by construction.
+        /// </remarks>
+        private float _targetPower, _curPower;
 
         private void Awake()
         {
@@ -133,8 +138,8 @@ namespace Game
             _curAttitude = Quaternion.Slerp(
                 _curAttitude, _targetAttitude, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
 
-            _curSpin = Mathf.Lerp(
-                _curSpin, _targetSpin, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
+            _curPower = Mathf.Lerp(
+                _curPower, _targetPower, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
 
             // Nothing to predict while a stone is already in the air, and leaving the arc
             // up through the throw means the line the player was aiming with is still
@@ -177,10 +182,9 @@ namespace Game
                 _lastAimPlayer = aim.playerId;
                 _lastSeq = -1;
 
-                // Start the new player's stone from rest rather than wherever the last
-                // player's happened to have turned to.
-                _ghostSpinAngle = 0f;
-                _curSpin = 0f;
+                // Snap to the new player's pose rather than sweeping across from wherever
+                // the last one left the ghost.
+                _curPower = 0f;
                 _curAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
             }
 
@@ -196,16 +200,29 @@ namespace Game
             // tracking live orientation is what agrees with the stone.
             _targetAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
 
-            // Through the same clamp the live stone uses, so a flick fast enough to alias
-            // is drawn at the same rate in the preview as it will be in flight.
-            _targetSpin = RockController.VisualSpin(aim.spinRate);
+            _targetPower = Mathf.Clamp01(aim.power);
             _lastAimTime = Time.time;
         }
 
         private void UpdateArc()
         {
+            // Drawn at how hard the phone is being swung right now, floored at the nominal.
+            //
+            // The floor is what makes this usable. Real power is genuinely unknowable
+            // before release, so a player holding still to line a shot up reads as zero
+            // effort — and an arc that collapses to a two-metre dribble every time they
+            // stop moving is not an aiming guide. So the arc shows at least a nominal
+            // throw, and winding up extends it from there.
+            //
+            // It used to be pinned at the nominal outright, which made the HUD's
+            // "predicted N skips over M m" mathematically incapable of responding to how
+            // hard anyone threw. That was the 13-skip ceiling.
+            var drawPower = Mathf.Max(previewPower, _curPower);
+
+            // Zero spin: it is visual only and has no effect whatsoever on the path, so
+            // feeding the arc a spin rate would imply it mattered.
             var launch = SkipPhysics.CreateLaunch(
-                throwOrigin.position, previewPower, _curAttitude, _curSpin, tuning);
+                throwOrigin.position, drawPower, _curAttitude, 0f, tuning);
 
             var final = SkipPhysics.Predict(launch, tuning, _path);
 
@@ -226,16 +243,18 @@ namespace Game
         {
             _ghost.position = throwOrigin.position;
 
-            // Turned by how fast the player is actually rotating the phone right now, so
-            // winding up harder visibly spins the stone faster and holding steady leaves
-            // it still.
-            _ghostSpinAngle += _curSpin * Time.deltaTime;
-
-            // Attitude on the left, spin on the right — the same composition the live
-            // stone uses, so the ghost and the rock cannot turn differently. And the same
-            // unmodified phone rotation: hold the phone flat and this lies flat, even
-            // though the water wants ~20 degrees. That offset belongs in SkipPhysics.
-            _ghost.rotation = _curAttitude * Quaternion.Euler(0f, _ghostSpinAngle, 0f);
+            // The phone IS the rock. Nothing is added on top.
+            //
+            // There used to be an accumulated spin angle here, and it was wrong twice over.
+            // It double-counted: _curAttitude already contains every rotation the phone
+            // made, wrist twist included, so spinning the phone turned the ghost twice. And
+            // it only ever grew, off an unsigned three-axis rotation magnitude, so merely
+            // turning to aim ratcheted the ghost's yaw permanently and it never came back.
+            // The stone appeared to increment rather than to match the phone.
+            //
+            // The thrown stone still spins, because once it leaves the hand there is no
+            // phone left to track — see RockController.
+            _ghost.rotation = _curAttitude;
         }
 
         // ---------------------------------------------------------------- scaffolding
@@ -284,7 +303,7 @@ namespace Game
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "PlaceholderWater";
             water.transform.position = new Vector3(0f, tuning.WaterY, 60f);
-            water.transform.localScale = new Vector3(40f, 1f, 40f);
+            water.transform.localScale = new Vector3(200f, 1f, 200f);
             Destroy(water.GetComponent<Collider>());
 
             water.GetComponent<MeshRenderer>().material =
@@ -302,7 +321,7 @@ namespace Game
             camera.transform.LookAt(new Vector3(0f, 0f, 14f));
             camera.backgroundColor = new Color(0.05f, 0.09f, 0.15f);
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.farClipPlane = 500f;
+            camera.farClipPlane = 1000f;
         }
     }
 }

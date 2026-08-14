@@ -11,7 +11,7 @@
  * wrong" moment. Keep it: nothing in AIM may feed the simulation.
  */
 
-import { normalize01, spinMagnitude, quaternionFromRotationVector } from './sensors.js';
+import { normalize01, screenSpinRate, quaternionFromRotationVector } from './sensors.js';
 
 /** Identity — the phone as it was held at the tap. A flat stone facing forward. */
 const IDENTITY_ATTITUDE = { w: 1, x: 0, y: 0, z: 0 };
@@ -284,9 +284,21 @@ export function peakSwingSpeed(samples, tuning = ThrowTuning) {
   return best;
 }
 
+/**
+ * Peak-hold with an exponential decay: jumps straight to any new peak, then falls back
+ * toward zero. Signed — the peak is chosen by magnitude but keeps its direction.
+ *
+ * Generic, despite the name it grew up with. Spin uses it so a wrist flick that is over
+ * in 100ms still reaches a 20Hz aim frame; the live power estimate uses it for the same
+ * reason with a different time constant.
+ *
+ * Signed because spin is now a signed rate about the phone's screen normal. Taking a
+ * plain max() would have let a decaying positive peak win over a genuine negative one,
+ * so a counter-clockwise flick following a clockwise one would read as clockwise.
+ */
 export function decaySpinEnvelope(previous, instantaneous, dtMs, tauMs = ThrowTuning.spinEnvelopeTauMs) {
   const decayed = previous * Math.exp(-Math.max(dtMs, 0) / tauMs);
-  return Math.max(decayed, instantaneous);
+  return Math.abs(instantaneous) > Math.abs(decayed) ? instantaneous : decayed;
 }
 
 /**
@@ -312,7 +324,7 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
   for (const sample of samples) {
     const dtMs = prevT === null ? 0 : sample.t - prevT;
     prevT = sample.t;
-    spin = decaySpinEnvelope(spin, spinMagnitude(sample.rotationRate), dtMs, tuning.spinEnvelopeTauMs);
+    spin = decaySpinEnvelope(spin, screenSpinRate(sample.rotationRate), dtMs, tuning.spinEnvelopeTauMs);
   }
 
   return spin;
@@ -329,13 +341,18 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
  * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
  * this instant's spin, which keeps the function usable on its own and honest either way.
  */
-export function buildAimPayload(sample, seq, spinRate) {
+export function buildAimPayload(sample, seq, spinRate, power = 0) {
   if (!sample) return null;
   return {
     type: 'AIM',
     seq,
     ...attitudeFields(sample.attitude),
-    spinRate: spinRate ?? spinMagnitude(sample.rotationRate),
+    spinRate: spinRate ?? screenSpinRate(sample.rotationRate),
+
+    // How hard the phone is being swung right now, on exactly the scale the throw's
+    // own `power` uses — see ThrowController.windup. The TV draws the arc at this, so
+    // winding up visibly extends it.
+    power,
   };
 }
 
@@ -378,6 +395,12 @@ export class ThrowController {
     this._spin = 0;
     this._spinT = null;
 
+    // Live swing speed, so the aim arc can be drawn at how hard the phone is being
+    // swung right now. `_windVelocity` is acceleration integrated since the phone was
+    // last calm; `_windSpeed` is the decaying peak of its magnitude.
+    this._windVelocity = { x: 0, y: 0, z: 0 };
+    this._windSpeed = 0;
+
     // Detection runs per sample rather than on the aim timer: a stop is a handful of
     // milliseconds and polling at 20Hz reads the phone well after it has settled.
     if (motion) motion.onSample = (sample) => this._onSample(sample);
@@ -399,12 +422,14 @@ export class ThrowController {
     this._calmRun = 0;
     this._spin = 0;
     this._spinT = null;
+    this._windVelocity = { x: 0, y: 0, z: 0 };
+    this._windSpeed = 0;
 
     this.motion.calibrate();
     this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {
-      const payload = buildAimPayload(this.motion.latest, ++this.seq, this._spin);
+      const payload = buildAimPayload(this.motion.latest, ++this.seq, this._spin, this.windup);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
 
@@ -443,7 +468,50 @@ export class ThrowController {
     this._calmRun = 0;
     this._spin = 0;
     this._spinT = null;
+    this._windVelocity = { x: 0, y: 0, z: 0 };
+    this._windSpeed = 0;
     this._setState(ThrowState.IDLE);
+  }
+
+  /**
+   * How hard the phone is being swung right now, 0..1.
+   *
+   * The live counterpart of peakSwingSpeed, and deliberately the same method: integrate
+   * gravity-free acceleration from the last calm sample, hold the running peak, and
+   * normalise through the SAME minSwingSpeed/maxSwingSpeed the release descriptor uses.
+   * That last part is the whole point. The old aim frame carried a `windup` derived from
+   * peak acceleration while the throw derived power from swing speed, so the arc and the
+   * stone were driven by two different normalisations of "how hard" and could not agree.
+   *
+   * It can only ever be an estimate — the swing has not finished, so its peak has not
+   * happened. The preview floors it at a nominal for that reason; see AimPreview.
+   */
+  get windup() {
+    return normalize01(this._windSpeed, this.tuning.minSwingSpeed, this.tuning.maxSwingSpeed);
+  }
+
+  _trackWindup(sample, dtMs) {
+    // Calm means the swing is over, or has not started. Resetting the integrator here is
+    // what keeps sensor bias from accumulating into phantom speed while someone lines a
+    // shot up — the same reason peakSwingSpeed starts from the last calm sample rather
+    // than from the top of the buffer.
+    if (sample.power <= this.tuning.stopAccel) {
+      this._windVelocity = { x: 0, y: 0, z: 0 };
+    } else if (dtMs > 0 && dtMs <= 250 && sample.linear) {
+      const dt = dtMs / 1000;
+      this._windVelocity = {
+        x: this._windVelocity.x + sample.linear.x * dt,
+        y: this._windVelocity.y + sample.linear.y * dt,
+        z: this._windVelocity.z + sample.linear.z * dt,
+      };
+    }
+
+    const speed = Math.hypot(this._windVelocity.x, this._windVelocity.y, this._windVelocity.z);
+
+    // Held briefly so the arc does not snap back to nothing between swings, and so a
+    // 20Hz aim frame lands on the peak rather than on whatever the phone was doing 50ms
+    // later. Same envelope as spin, same reason.
+    this._windSpeed = decaySpinEnvelope(this._windSpeed, speed, dtMs, this.tuning.spinEnvelopeTauMs);
   }
 
   // ---------------------------------------------------------------- detection
@@ -457,7 +525,9 @@ export class ThrowController {
     const dtMs = this._spinT === null ? 0 : sample.t - this._spinT;
     this._spinT = sample.t;
     this._spin = decaySpinEnvelope(
-      this._spin, spinMagnitude(sample.rotationRate), dtMs, this.tuning.spinEnvelopeTauMs);
+      this._spin, screenSpinRate(sample.rotationRate), dtMs, this.tuning.spinEnvelopeTauMs);
+
+    this._trackWindup(sample, dtMs);
 
     if (sample.power >= this.tuning.swingAccel) {
       this._swinging = true;

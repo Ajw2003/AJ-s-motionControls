@@ -21,7 +21,7 @@ import {
   readLinearAcceleration,
   gravityInDeviceFrame,
   GRAVITY_MS2,
-  spinMagnitude,
+  screenSpinRate,
   orientationToQuaternion,
   quaternionMultiply,
   quaternionConjugate,
@@ -398,9 +398,19 @@ check('clamp high', clamp(50, 0, 10) === 10);
 check('normalize01 midpoint', near(normalize01(5, 0, 10), 0.5));
 check('normalize01 clamps above range', normalize01(99, 0, 10) === 1);
 check('normalize01 handles zero-width range', normalize01(5, 3, 3) === 0);
-check('spinMagnitude 3-4-12-style', near(spinMagnitude({ alpha: 3, beta: 4, gamma: 12 }), 13));
-check('spinMagnitude treats a missing rate as still', spinMagnitude(null) === 0);
-check('spinMagnitude tolerates null axes', near(spinMagnitude({ alpha: 5, beta: null, gamma: null }), 5));
+// Spin is the twist about the phone's own screen normal — the frisbee flick — and
+// nothing else. alpha is the rate about device Z.
+check('screenSpinRate reads the twist about the screen normal',
+  screenSpinRate({ alpha: 300, beta: 0, gamma: 0 }) === 300);
+check('screenSpinRate keeps the direction of the twist',
+  screenSpinRate({ alpha: -300, beta: 0, gamma: 0 }) === -300);
+
+// The bug this replaced. Swinging your arm turns the phone about its other two axes far
+// harder than any wrist twist, so a 3-axis magnitude reported arm motion as spin.
+check('swinging the arm is not spin',
+  screenSpinRate({ alpha: 0, beta: 900, gamma: 700 }) === 0);
+check('screenSpinRate treats a missing rate as still', screenSpinRate(null) === 0);
+check('screenSpinRate tolerates null axes', screenSpinRate({ alpha: null }) === 0);
 
 // ---------------------------------------------------------------- gravity
 console.log('\nGravityFilter');
@@ -557,8 +567,12 @@ console.log('\ncomputeThrowDescriptor');
     sameRotation({ w: dSwung.qw, x: dSwung.qx, y: dSwung.qy, z: dSwung.qz }, aboutY(110)));
   check('power still comes from the peak', near(dSwung.peakAccel, 30));
 
-  const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: 3, beta: 4, gamma: 0 } })];
-  check('spin rate is the rotation magnitude', near(computeThrowDescriptor(spun).spinRate, 5));
+  // Only the twist about the screen normal counts, and it keeps its sign — see
+  // screenSpinRate. The arm-swing components alongside it are not spin.
+  const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: -420, beta: 900, gamma: 700 } })];
+  check('spin is the signed twist about the screen normal, not the arm swing',
+    near(computeThrowDescriptor(spun).spinRate, -420),
+    `${computeThrowDescriptor(spun).spinRate}`);
 
   // Spin is the one field not read from the stop sample, and this is why: the wrist
   // flick peaks mid-swing and is spent by the time the phone halts — and the throw
@@ -567,8 +581,8 @@ console.log('\ncomputeThrowDescriptor');
   // the same near-zero value.
   const flicked = [
     makeSample(0, 1),
-    makeSample(120, 25, { rotationRate: { alpha: 600, beta: 800, gamma: 0 } }), // the flick, |1000|
-    makeSample(180, 30, { rotationRate: { alpha: 300, beta: 400, gamma: 0 } }), // peak accel, spin fading
+    makeSample(120, 25, { rotationRate: { alpha: 1000, beta: 0, gamma: 0 } }), // the flick
+    makeSample(180, 30, { rotationRate: { alpha: 500, beta: 0, gamma: 0 } }),  // peak accel, spin fading
     makeSample(200, 2),                                                         // stopped, not turning
   ];
   const dFlicked = computeThrowDescriptor(flicked);
@@ -603,7 +617,7 @@ console.log('\nbuildAimPayload');
   // Spin is what drives the ghost's visual spin on the TV. It has to be the envelope
   // when one is supplied, because the instantaneous value at a 20Hz tick mostly misses
   // the flick that produced it.
-  const spinning = makeSample(0, 20, { rotationRate: { alpha: 0, beta: 30, gamma: 40 } });
+  const spinning = makeSample(0, 20, { rotationRate: { alpha: 50, beta: 30, gamma: 40 } });
   check('falls back to this instant\'s spin when no envelope is given',
     near(buildAimPayload(spinning, 1).spinRate, 50));
   check('carries the supplied envelope in preference to the instant',
@@ -625,6 +639,20 @@ console.log('\ndecaySpinEnvelope');
   check('is independent of sample rate', near(twoSteps, decaySpinEnvelope(900, 0, 100), 1e-9),
     `${twoSteps.toFixed(6)} vs ${decaySpinEnvelope(900, 0, 100).toFixed(6)}`);
   check('a negative dt cannot inflate the envelope', decaySpinEnvelope(900, 0, -500) <= 900);
+
+  // Signed, because spin is now a signed rate about the screen normal. The peak is
+  // chosen by magnitude and keeps its direction.
+  check('a negative peak is held like a positive one',
+    near(decaySpinEnvelope(-100, -900, 16), -900));
+  check('a decaying positive peak does not beat a real negative one',
+    near(decaySpinEnvelope(900, -950, 16), -950),
+    `${decaySpinEnvelope(900, -950, 16).toFixed(1)}`);
+
+  // A plain max() would have returned the stale +900 here, so a wrist flicked back the
+  // other way would have spun the stone the way the previous throw went.
+  check('a decaying peak still wins while it is the larger magnitude',
+    decaySpinEnvelope(900, -100, 16) > 800,
+    `${decaySpinEnvelope(900, -100, 16).toFixed(1)}`);
 }
 
 console.log('\npeakSpinEnvelope');
@@ -822,7 +850,7 @@ console.log('\nThrowController: live spin on the aim stream');
   // then already still again by the time the aim frame goes out, which is the normal
   // case at 20Hz and the reason the envelope exists: read instantaneously here, this
   // flick would be reported as no spin at all.
-  const flick = makeSample(0, 5, { rotationRate: { alpha: 0, beta: 300, gamma: 400 } });
+  const flick = makeSample(0, 5, { rotationRate: { alpha: 500, beta: 0, gamma: 0 } });
   motion.latest = flick;
   motion.onSample(flick);
 
@@ -843,6 +871,85 @@ console.log('\nThrowController: live spin on the aim stream');
   const settled = frames.length;
   await new Promise((resolve) => setTimeout(resolve, 30));
   check('disarming stops the aim stream', frames.length === settled);
+}
+
+// ------------------------------------------- live windup reaches the aim frame
+// The TV draws the aim arc at this, so it is what makes the predicted skips and
+// distance respond to how hard someone is swinging. It used to be a fixed constant,
+// which made that readout mathematically incapable of changing.
+console.log('\nThrowController: live windup on the aim stream');
+{
+  const makeMotion = () => ({
+    latest: null,
+    buffer: { toArray: () => [], clear() {} },
+    calibrate() {},
+    onSample: () => {},
+  });
+
+  {
+    const motion = makeMotion();
+    const c = new ThrowController(motion, { aimHz: 1000 });
+    c.arm();
+    check('a phone held still reports no windup', c.windup === 0, `${c.windup}`);
+
+    // Accelerate for 200ms at 20 m/s^2, which is about 4 m/s of hand speed — a firm
+    // swing. maxSwingSpeed is 6.5, so this should land high but not saturated.
+    for (let i = 1; i <= 10; i++) motion.onSample(makeSample(i * 20, 20));
+    check('swinging raises the windup', c.windup > 0.4 && c.windup < 1,
+      `${c.windup.toFixed(3)}`);
+    c.cancel();
+  }
+
+  // The property that matters most: the live estimate and the release descriptor are
+  // the same quantity on the same scale. They used to be peak-acceleration and
+  // swing-speed respectively, so the arc and the stone could not agree by construction.
+  {
+    const motion = makeMotion();
+    const c = new ThrowController(motion, { aimHz: 1000 });
+    c.arm();
+
+    const swing = [];
+    for (let i = 1; i <= 10; i++) swing.push(makeSample(i * 20, 20));
+    for (const sample of swing) motion.onSample(sample);
+
+    const live = c.windup;
+    const released = computeThrowDescriptor(swing).power;
+    check('live windup is on the same scale as the throw\'s power',
+      Math.abs(live - released) < 0.12,
+      `live ${live.toFixed(3)} vs released ${released.toFixed(3)}`);
+    c.cancel();
+  }
+
+  // Bias in the accelerometer would otherwise integrate into phantom speed the whole
+  // time a player is lining a shot up, so the integrator resets whenever the phone is
+  // calm — the same reason peakSwingSpeed starts from the last calm sample.
+  {
+    const motion = makeMotion();
+    const c = new ThrowController(motion, { aimHz: 1000 });
+    c.arm();
+    for (let i = 1; i <= 60; i++) motion.onSample(makeSample(i * 20, 1));
+    check('a long calm hold does not accumulate phantom windup', c.windup < 0.05,
+      `${c.windup.toFixed(4)}`);
+    c.cancel();
+  }
+
+  // And the frame actually carries it.
+  {
+    const motion = makeMotion();
+    const frames = [];
+    const c = new ThrowController(motion, { onAim: (p) => frames.push(p), aimHz: 200 });
+    c.arm();
+    for (let i = 1; i <= 10; i++) {
+      const sample = makeSample(i * 20, 20);
+      motion.latest = sample;
+      motion.onSample(sample);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    check('the aim frame carries the windup as power',
+      frames.length > 0 && frames[0].power > 0.4,
+      frames.length ? `${frames[0].power.toFixed(3)}` : 'no frames');
+    c.cancel();
+  }
 }
 
 console.log(failures === 0

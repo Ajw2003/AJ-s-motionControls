@@ -39,9 +39,11 @@ namespace Game
         /// </remarks>
         internal const float MaxVisualSpinDegPerSec = 1200f;
 
-        /// <summary>The rate a measured wrist spin is drawn at. See the constant above.</summary>
+        /// <summary>
+        /// The rate a measured wrist spin is drawn at, signed. See the constant above.
+        /// </summary>
         internal static float VisualSpin(float spinRate) =>
-            Mathf.Clamp(Mathf.Abs(spinRate), 0f, MaxVisualSpinDegPerSec);
+            Mathf.Clamp(spinRate, -MaxVisualSpinDegPerSec, MaxVisualSpinDegPerSec);
 
         private SkipState _state;
         private SkipTuning _tuning;

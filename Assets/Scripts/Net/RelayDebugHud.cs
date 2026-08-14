@@ -161,7 +161,8 @@ namespace Net
                 GUILayout.Label($"  seq {_latestAim.seq}   " +
                                 $"face {Game.PhoneAttitude.FaceAngleDeg(attitude),6:F1}°   " +
                                 $"heading {Game.PhoneAttitude.HeadingDeg(attitude),6:F1}°   " +
-                                $"spin {_latestAim.spinRate,5:F0}");
+                                $"spin {_latestAim.spinRate,5:F0}   " +
+                                $"windup {_latestAim.power:F2}");
             }
             else
             {

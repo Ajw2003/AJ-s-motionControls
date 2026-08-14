@@ -339,7 +339,7 @@ function updateDebug() {
   if (!ui.debug.classList.contains('visible')) return;
   const s = motion.latest;
   ui.debug.textContent = [
-    `state    ${thrower.state}   seq ${thrower.seq}`,
+    `state    ${thrower.state}   seq ${thrower.seq}   windup ${thrower.windup.toFixed(2)}`,
     `socket   ${connection?.status ?? 'not connected'}`,
     `input    ${peer ? peer.transport : 'relay'}${PEER_ENABLED ? '' : '  (?direct=0)'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,

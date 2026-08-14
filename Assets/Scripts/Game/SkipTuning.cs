@@ -41,47 +41,66 @@ namespace Game
 
         [Header("Launch")]
         [Tooltip("Speed at power = 0 — the softest throw that still counts as one.")]
-        public float MinSpeed = 2f;
+        public float MinSpeed = 5f;
         [Tooltip("Speed at power = 1 — a full-effort throw.")]
-        public float MaxSpeed = 26f;
+        public float MaxSpeed = 30f;
         [Tooltip("Upward angle of the toss itself, separate from the stone's face angle.")]
-        public float LaunchPitchDeg = 8f;
+        public float LaunchPitchDeg = 11f;
 
         [Header("Angle")]
-        [Tooltip("Face angle, in degrees from horizontal, that skips best. ~20 in reality.\n\n" +
-                 "This is the forgiveness offset, and it is deliberately invisible: the stone " +
-                 "is drawn at the angle the phone is actually held at, and only the bounce " +
-                 "measures error against this. Hold the phone flat and you see a flat stone " +
-                 "that still skips well.")]
-        public float OptimalAngleDeg = 20f;
+        [Tooltip("The face angle the PHONE reports that skips best, in degrees above " +
+                 "horizontal. 0 means a phone held exactly as it was at the tap is already a " +
+                 "perfect throw.\n\n" +
+                 "This is the forgiveness offset and it is deliberately invisible — the stone " +
+                 "is always drawn at the angle the phone is really held at. Tune it negative " +
+                 "if the wrist consistently pitches over before the stop sample is taken; the " +
+                 "debug HUD prints the face angle of every throw so that bias can be read off " +
+                 "rather than guessed.")]
+        public float BestFaceAngleDeg = 0f;
 
-        [Tooltip("How far from optimal the face can be before the bounce is worthless. At the " +
-                 "edge the stone keeps only Restitution and gets no lift, so it skids and dies " +
-                 "over the next hop or two rather than vanishing on one degree of error.")]
-        public float ToleranceDeg = 15f;
+        [Tooltip("How far from BestFaceAngleDeg the face can be before the bounce is " +
+                 "worthless. At the edge the stone keeps only Restitution and gets no lift, so " +
+                 "it skids and dies over the next hop or two rather than vanishing on one " +
+                 "degree of error.\n\n" +
+                 "Wide on purpose. The throw fires the instant the phone stops, which is " +
+                 "exactly when the wrist has pitched over, so the release angle is " +
+                 "systematically off-neutral and this window has to absorb that.")]
+        public float ToleranceDeg = 30f;
 
         [Header("Run length")]
         [Tooltip("Fraction of horizontal speed kept per bounce on the softest throw. This and " +
                  "SpeedKeptHard are the main control on total distance — there is no per-step " +
                  "air drag, so this is the only thing slowing the stone between skips.")]
-        [Range(0f, 1f)] public float SpeedKeptSoft = 0.70f;
+        [Range(0f, 1f)] public float SpeedKeptSoft = 0.80f;
 
         [Tooltip("Fraction of horizontal speed kept per bounce on a full-power throw. Above " +
                  "SpeedKeptSoft, so a hard throw both starts faster AND runs longer — that " +
                  "compounding is what makes effort read as distance.")]
-        [Range(0f, 1f)] public float SpeedKeptHard = 0.82f;
+        [Range(0f, 1f)] public float SpeedKeptHard = 0.90f;
 
         [Tooltip("Below this speed the stone stops skipping and sinks.")]
-        public float MinSkipSpeed = 2.5f;
+        public float MinSkipSpeed = 4f;
 
         [Header("Bounce shape")]
-        [Tooltip("How steeply a well-angled stone leaves the water. A mirror bounce alone " +
-                 "loses height three times faster than it loses speed, so late skips flatten " +
-                 "into a slide; this keeps every hop the same shape as it shrinks.\n\n" +
+        [Tooltip("How steeply the stone leaves the water once the run has settled.\n\n" +
+                 "Shallow, and that is not a stylistic choice — hop LENGTH is " +
+                 "(2 tan(angle) / g) * speed², so the angle sets the whole shape of a run. " +
+                 "A real skipping stone exits at 2-6 degrees. At 33 degrees a 26 m/s stone's " +
+                 "first hop was 59 m long and 8 m high, which reads as mortar fire rather " +
+                 "than skipping, and it was the other half of 'rocks barely skip'.\n\n" +
                  "Applied after the speed loss, so this is the real exit angle. Applying it " +
-                 "before made the true angle atan(tan(x) / speedKept) — 33 degrees when the " +
-                 "field said 26, and silently different again whenever speedKept moved.")]
-        [Range(0f, 60f)] public float SkipExitAngleDeg = 33f;
+                 "before made the true angle atan(tan(x) / speedKept), and it moved silently " +
+                 "whenever speedKept did.")]
+        [Range(0f, 60f)] public float SkipExitAngleDeg = 5f;
+
+        [Tooltip("Exit angle of the very first bounce — the pop at the start of a throw.\n\n" +
+                 "Above SkipExitAngleDeg so a throw opens with a hop you can see from the " +
+                 "couch and then settles into a long shrinking run. Purely presentational: " +
+                 "it costs nothing, because the speed loss per bounce is unchanged.")]
+        [Range(0f, 60f)] public float OpeningHopAngleDeg = 11f;
+
+        [Tooltip("How many skips the opening pop fades away over.")]
+        [Range(1f, 10f)] public float OpeningHopSkips = 3f;
 
         [Tooltip("Energy kept by a bounce with no lift — a badly angled stone slapping off the " +
                  "surface. Low, but not zero: at zero the stone grinds along the waterline and " +
