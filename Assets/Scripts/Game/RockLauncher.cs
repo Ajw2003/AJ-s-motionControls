@@ -28,10 +28,13 @@ namespace Game
 
         public RockController ActiveRock => _active;
 
+        /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
+        internal static readonly Vector3 StoneScale = new(0.65f, 0.08f, 0.55f);
+
         private void Update()
         {
             EnsureBound();
-            if (_active != null )
+            if (_active != null)
             {
                 FollowActiveRock();
             }
@@ -88,10 +91,13 @@ namespace Game
 
             var tuning = _preview.Tuning;
 
+            // No negations. The phone's rotation becomes a Unity rotation exactly once, in
+            // PhoneAttitude, and everything downstream uses the result as-is — see that
+            // file for why the sign fixes that used to live on this line were a symptom.
+            var attitude = PhoneAttitude.ToUnity(message.qw, message.qx, message.qy, message.qz);
+
             var launch = SkipPhysics.CreateLaunch(
-                _preview.ThrowOrigin.position, Vector3.forward,
-                message.power, message.timingQuality,
-                -message.aimDeg, -message.attackAngleDeg, message.spinRate, tuning);
+                _preview.ThrowOrigin.position, message.power, attitude, message.spinRate, tuning);
 
             _active = CreateRockObject();
             _active.Launch(launch, tuning, message.playerId);
@@ -120,45 +126,29 @@ namespace Game
                 _camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
         }
 
-        private static RockController CreateRockObject()
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.name = "Rock";
-            Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
-            go.transform.localScale = new Vector3(0.65f, 0.08f, 0.55f);
-
-            go.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.CreateStone(new Color(0.85f, 0.87f, 0.95f));
-
-            AddChip(go.transform, 0.55f);
-
-            return go.AddComponent<RockController>();
-        }
-
         /// <summary>
-        /// A chipped corner, offset to one side of the stone.
+        /// A flat box.
         /// </summary>
         /// <remarks>
-        /// Purely so the rotation can be seen. Scaling a sphere can only ever produce a
-        /// two-fold symmetric silhouette — an ellipse looks the same after half a turn —
-        /// so the outline alone repeats twice per revolution and reads as a strobe rather
-        /// than as spin. One off-centre lump makes the silhouette repeat once per
-        /// revolution instead, which is the difference between "that stone is turning"
-        /// and "something is flickering". Shares the stone's material and shading.
+        /// A box, not a scaled sphere, and that is the whole reason the custom Stone
+        /// shader and the welded-on chip cube are gone. A scaled sphere is a surface of
+        /// revolution: it renders identically at every yaw, so no amount of spin was ever
+        /// visible on it, and both the shader and the chip existed to fake an asymmetry
+        /// back in. A box has flat faces and hard edges, so it shows its own rotation
+        /// from every angle for free — which is what the stone has to do now that it
+        /// tracks the phone one-to-one.
         /// </remarks>
-        internal static void AddChip(Transform stone, float size)
+        private static RockController CreateRockObject()
         {
-            var chip = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            chip.name = "Chip";
-            Destroy(chip.GetComponent<Collider>());
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = "Rock";
+            Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
+            go.transform.localScale = StoneScale;
 
-            chip.transform.SetParent(stone, false);
-            chip.transform.localScale = new Vector3(size, 1.05f, size);
-            chip.transform.localPosition = new Vector3(0.42f, 0f, 0.16f);
-            chip.transform.localRotation = Quaternion.Euler(0f, 28f, 0f);
+            go.GetComponent<MeshRenderer>().material =
+                PlaceholderArt.Create(new Color(0.85f, 0.87f, 0.95f), PlaceholderArt.StoneQueue);
 
-            chip.GetComponent<MeshRenderer>().sharedMaterial =
-                stone.GetComponent<MeshRenderer>().sharedMaterial;
+            return go.AddComponent<RockController>();
         }
     }
 }

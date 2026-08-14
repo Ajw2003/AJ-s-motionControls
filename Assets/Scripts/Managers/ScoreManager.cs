@@ -15,13 +15,12 @@ namespace Managers
     {
         [Header("Point values")]
         [SerializeField] private int pointsPerSkip = 10;
-        [SerializeField] private int pointsPerRing = 50;
         [SerializeField] private int pointsPerMetre = 1;
 
         private readonly Dictionary<string, int> _scores = new();
 
-        // Skips and rings arrive mid-flight, before we know the throw completed.
-        // They're banked here and committed to the player on ThrowCompletedEvent.
+        // Skips arrive mid-flight, before we know the throw completed. They're banked
+        // here and committed to the player on ThrowCompletedEvent.
         private int _pendingThrowPoints;
 
         public IReadOnlyDictionary<string, int> Scores => _scores;
@@ -32,18 +31,12 @@ namespace Managers
             base.Awake();
 
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, OnSkipOccurred);
-            EventManager.Instance?.Subscribe<RingPassedEvent>(this, OnRingPassed);
             EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
         }
 
         private void OnSkipOccurred(SkipOccurredEvent e)
         {
             _pendingThrowPoints += pointsPerSkip;
-        }
-
-        private void OnRingPassed(RingPassedEvent e)
-        {
-            _pendingThrowPoints += pointsPerRing;
         }
 
         private void OnThrowCompleted(ThrowCompletedEvent e)

@@ -7,17 +7,27 @@ namespace Game
     /// whose value silently depends on another.
     /// </summary>
     /// <remarks>
-    /// Expect tuning to take longer than implementation. These starting values are
-    /// educated guesses, not measurements — the ~20 degree optimum is the one number
-    /// grounded in real stone-skipping physics.
+    /// This was 25 fields. Most of them existed to compensate for each other, and
+    /// several actively fought the thing the game is supposed to reward: a hard throw
+    /// going further. The rule now is that <b>power is the only driver of distance</b> —
+    /// it sets the launch speed, how much speed survives each bounce, and how high the
+    /// hops are. Nothing else scales any of those.
     ///
-    /// The stone's own properties used to live in a separate RockStats struct that was
-    /// hardcoded and unreachable from the inspector, so tuning half the model meant a
-    /// recompile. They are folded in here. When per-rock variation lands, a RockDefinition
-    /// should roll values that override these — not reintroduce a second editing surface.
+    /// Two things that used to live here are deliberately gone:
+    ///
+    /// <b>Timing.</b> Launch speed was multiplied by up to 0.4 depending on how quickly
+    /// the phone stopped after its acceleration peak. But a hard swing takes longer to
+    /// stop than a gentle one, so the penalty landed hardest on exactly the throws it
+    /// should have rewarded. The gesture already fires on the stop; a second hidden
+    /// multiplier on top of it only made effort and result disagree.
+    ///
+    /// <b>Spin.</b> Wrist spin used to buy angle tolerance and per-bounce speed
+    /// retention, which meant distance had two drivers and neither was legible. Spin is
+    /// now purely visual: the stone turns at the rate the phone measured, and that is
+    /// all it does.
     ///
     /// Nothing in here is derived from anything else in here. That rule is load-bearing:
-    /// the previous version computed the spin normalizer from two gameplay constants, so
+    /// an earlier version computed the spin normalizer from two gameplay constants, so
     /// retuning how forgiving spin was silently rescaled how fast every stone appeared to
     /// turn. If a value needs to be expressed in terms of another, prefer stating both
     /// and documenting the relationship over deriving one and hiding it.
@@ -30,114 +40,53 @@ namespace Game
         public float WaterY = 0f;
 
         [Header("Launch")]
-        [Tooltip("Speed at power = 0.")]
+        [Tooltip("Speed at power = 0 — the softest throw that still counts as one.")]
         public float MinSpeed = 2f;
-        [Tooltip("Speed at power = 1.")]
+        [Tooltip("Speed at power = 1 — a full-effort throw.")]
         public float MaxSpeed = 26f;
         [Tooltip("Upward angle of the toss itself, separate from the stone's face angle.")]
         public float LaunchPitchDeg = 8f;
-        [Tooltip("Speed multiplier at zero timing quality. 1 would make timing irrelevant.")]
-        [Range(0.1f, 1f)] public float WorstTimingSpeedScale = 0.6f;
 
-        [Header("Stone")]
-        public string DisplayName = "Pebble";
-
+        [Header("Angle")]
         [Tooltip("Face angle, in degrees from horizontal, that skips best. ~20 in reality.\n\n" +
-                 "Also bridges phone space and physics space: the phone reports pitch as a " +
-                 "delta from wherever the player gripped, so neutral is 0, and this is what " +
-                 "maps that onto the angle a real stone wants. There used to be a separate " +
-                 "AttackAngleOffsetDeg for the second job, but only the difference between " +
-                 "the two ever reached the maths, so one of them did nothing.")]
+                 "This is the forgiveness offset, and it is deliberately invisible: the stone " +
+                 "is drawn at the angle the phone is actually held at, and only the bounce " +
+                 "measures error against this. Hold the phone flat and you see a flat stone " +
+                 "that still skips well.")]
         public float OptimalAngleDeg = 20f;
 
-        [Tooltip("How far from optimal the stone can be and still skip cleanly.")]
-        public float BaseToleranceDeg = 15f;
+        [Tooltip("How far from optimal the face can be before the bounce is worthless. At the " +
+                 "edge the stone keeps only Restitution and gets no lift, so it skids and dies " +
+                 "over the next hop or two rather than vanishing on one degree of error.")]
+        public float ToleranceDeg = 15f;
 
-        [Tooltip("How far past tolerance the stone will still skid before it sinks, as a " +
-                 "multiple of tolerance.\n\n" +
-                 "Bad angles used to sink the stone outright, which put a cliff in the middle " +
-                 "of the skill curve: one degree separated a nine-skip throw from zero, and a " +
-                 "throw fires on the phone stopping — which is exactly when the wrist has " +
-                 "pitched over. Past tolerance the stone now keeps its worst-case bounce and " +
-                 "no exit lift, so a mediocre release skids somewhere instead of vanishing, " +
-                 "and the player can feel the gradient. 1 restores the old cliff.")]
-        [Range(1f, 5f)] public float SinkAngleMultiplier = 2.5f;
+        [Header("Run length")]
+        [Tooltip("Fraction of horizontal speed kept per bounce on the softest throw. This and " +
+                 "SpeedKeptHard are the main control on total distance — there is no per-step " +
+                 "air drag, so this is the only thing slowing the stone between skips.")]
+        [Range(0f, 1f)] public float SpeedKeptSoft = 0.70f;
 
-        [Tooltip("Horizontal speed retained per bounce with no spin. The main control on total " +
-                 "distance — there is no per-step air drag, so this is the only thing slowing " +
-                 "the stone down between skips.")]
-        public float Drag = 0.75f;
-
-        [Tooltip("Horizontal speed retained per bounce at full spin. Above Drag, so a hard " +
-                 "flick genuinely carries further.\n\n" +
-                 "Spin used to buy angle tolerance and nothing else, which meant flicking " +
-                 "harder could not add a single metre no matter how the rest was tuned. " +
-                 "Drag is the right place for it: it is what actually ends a run, and a " +
-                 "spinning stone really does hold its line better through a bounce.")]
-        public float DragAtFullSpin = 0.86f;
-
-        [Tooltip("Spin retained per bounce. Higher holds the stone stable for longer.")]
-        public float SpinDecay = 0.75f;
+        [Tooltip("Fraction of horizontal speed kept per bounce on a full-power throw. Above " +
+                 "SpeedKeptSoft, so a hard throw both starts faster AND runs longer — that " +
+                 "compounding is what makes effort read as distance.")]
+        [Range(0f, 1f)] public float SpeedKeptHard = 0.82f;
 
         [Tooltip("Below this speed the stone stops skipping and sinks.")]
         public float MinSkipSpeed = 2.5f;
 
-        [Header("Bounce")]
-        [Tooltip("Steeper than this and the stone plows in instead of skipping.")]
-        public float MaxIncidenceDeg = 45f;
-        [Tooltip("Energy kept on a perfectly angled bounce.")]
-        [Range(0f, 1f)] public float BestRestitution = 0.828f;
-        [Tooltip("Energy kept on a bounce at the edge of tolerance.")]
-        [Range(0f, 1f)] public float WorstRestitution = 0.27f;
+        [Header("Bounce shape")]
+        [Tooltip("How steeply a well-angled stone leaves the water. A mirror bounce alone " +
+                 "loses height three times faster than it loses speed, so late skips flatten " +
+                 "into a slide; this keeps every hop the same shape as it shrinks.\n\n" +
+                 "Applied after the speed loss, so this is the real exit angle. Applying it " +
+                 "before made the true angle atan(tan(x) / speedKept) — 33 degrees when the " +
+                 "field said 26, and silently different again whenever speedKept moved.")]
+        [Range(0f, 60f)] public float SkipExitAngleDeg = 33f;
 
-        [Tooltip("Floor on how steeply a well-angled stone leaves the water. A mirror bounce " +
-                 "alone loses height three times faster than it loses speed, so late skips " +
-                 "flatten into a slide; this keeps every hop the same shape as it shrinks.\n\n" +
-                 "This is the real exit angle. It used to be applied before drag, which made " +
-                 "the true angle atan(tan(x) / Drag) — 33 degrees when the field said 26, and " +
-                 "silently different again whenever Drag moved.")]
-        [Range(0f, 60f)] public float SkipExitAngleDeg = 33.03f;
-
-        [Header("Spin")]
-        [Tooltip("The spin a solid throw produces, in deg/s. The single normalizer for spin: " +
-                 "tolerance bonus, visual rate and drag bonus are all expressed as a fraction " +
-                 "of it, so 'what counts as a lot of spin' is stated once and stated here.")]
-        public float ReferenceSpinDegPerSec = 900f;
-
-        [Tooltip("Extra angle tolerance at full spin — gyroscopic stability. Reached at " +
-                 "ReferenceSpinDegPerSec; more spin than that buys no more stability.")]
-        public float MaxSpinToleranceBonus = 18f;
-
-        [Tooltip("Yaw rate a stone in flight falls back to once its spin is spent. Never " +
-                 "zero — a stone that has stopped turning reads as frozen rather than tired. " +
-                 "The aim ghost deliberately does not use this floor: a phone held still " +
-                 "must give a ghost held still, or the spin stops being feedback.")]
-        public float MinVisualSpinDegPerSec = 1f;
-
-        [Tooltip("Yaw rate at full spin and full power.")]
-        public float MaxVisualSpinDegPerSec = 1200f;
-
-        [Tooltip("Fraction of the visual yaw rate a zero-power throw gets. The stone's " +
-                 "apparent spin is scaled by how hard it was thrown, so a hard throw reads " +
-                 "as hard rather than only as fast-moving. 1 disables the effect.\n\n" +
-                 "Power comes from the phone's measured swing speed, so this is the peak " +
-                 "force of the throw reaching the visuals.")]
-        [Range(0f, 1f)] public float MinPowerSpinScale = 0.35f;
-
-        /// <summary>
-        /// Visual yaw rate, in deg/s, for a given spin and throw power.
-        /// </summary>
-        /// <remarks>
-        /// Watch the ceiling here against the frame rate. The stone's silhouette repeats
-        /// every full turn once it carries an asymmetric feature, so at 60fps anything
-        /// past 10800 deg/s aliases into a backwards wagon-wheel; staying under about a
-        /// quarter of that keeps it reading as rotation rather than judder. A previous
-        /// version ran at 9000 against a two-fold symmetric silhouette, whose limit was
-        /// half that again — which is what the strobing was.
-        /// </remarks>
-        public float VisualSpinDegPerSec(float spin, float atRest, float power) =>
-            Mathf.Lerp(atRest, MaxVisualSpinDegPerSec, SpinFraction(spin))
-            * Mathf.Lerp(MinPowerSpinScale, 1f, Mathf.Clamp01(power));
+        [Tooltip("Energy kept by a bounce with no lift — a badly angled stone slapping off the " +
+                 "surface. Low, but not zero: at zero the stone grinds along the waterline and " +
+                 "racks up dozens of meaningless skips before it slows down.")]
+        [Range(0f, 1f)] public float Restitution = 0.4f;
 
         [Header("Simulation")]
         public float FixedStep = 0.02f;
@@ -150,24 +99,9 @@ namespace Game
 
         public int MaxPredictSteps => Mathf.Max(1, Mathf.CeilToInt(PredictSeconds / Mathf.Max(FixedStep, 0.0001f)));
 
-        /// <summary>Spin as a fraction of a solid throw's, clamped to 0..1.</summary>
-        public float SpinFraction(float spin) =>
-            Mathf.Clamp01(Mathf.Abs(spin) / Mathf.Max(ReferenceSpinDegPerSec, 0.0001f));
-
-        /// <summary>
-        /// Spin to the yaw rate that represents it, in deg/s.
-        /// </summary>
-        /// <remarks>
-        /// Shared by the aim ghost and the live stone on purpose. If the two ever mapped
-        /// spin to a visual rate differently, the same throw would turn at one speed in
-        /// the preview and another in flight — the preview/live disagreement this codebase
-        /// keeps closing everywhere else.
-        ///
-        /// <paramref name="atRest"/> is the one thing they are allowed to differ on, because
-        /// they genuinely differ: see MinVisualSpinDegPerSec.
-        /// </remarks>
-        public float VisualSpinDegPerSec(float spin, float atRest) =>
-            Mathf.Lerp(atRest, MaxVisualSpinDegPerSec, SpinFraction(spin));
+        [Header("Presentation")]
+        [Tooltip("Shown on the phones as the rock currently in play. A label, not a knob.")]
+        public string DisplayName = "Pebble";
 
         /// <summary>
         /// Last-resort fallback so physics and the preview still work if the asset is

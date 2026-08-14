@@ -80,6 +80,19 @@ namespace Net
             Debug.Log($"[Throw] {thrown}");
         }
 
+        /// <summary>
+        /// The face angle a throw was released at, in degrees above horizontal.
+        /// </summary>
+        /// <remarks>
+        /// Recovered through PhoneAttitude rather than read off a field, because there is
+        /// no such field any more — the wire carries the rotation itself. Which is the
+        /// point: this readout and SkipPhysics get the number from the same function, so
+        /// the HUD cannot report an angle the water did not use.
+        /// </remarks>
+        private static float FaceAngleOf(ThrowMessage thrown) =>
+            Game.PhoneAttitude.FaceAngleDeg(
+                Game.PhoneAttitude.ToUnity(thrown.qw, thrown.qx, thrown.qy, thrown.qz));
+
         /// <summary>Spread as a percentage of the mean — the repeatability number.</summary>
         private static string Spread(IEnumerable<float> values)
         {
@@ -138,17 +151,27 @@ namespace Net
 
             if (_latestAim != null)
             {
-                GUILayout.Label($"  seq {_latestAim.seq}   aim {_latestAim.aimDeg,6:F1}°   " +
-                                $"attack {_latestAim.attackAngleDeg,6:F1}°   windup {_latestAim.windup:F2}   " +
+                // Face angle and heading rather than the raw quaternion: these are the two
+                // numbers the physics actually reads, and reading them back through
+                // PhoneAttitude is what proves the conversion is doing what it claims.
+                // With the phone flat, both should sit near zero.
+                var attitude = Game.PhoneAttitude.ToUnity(
+                    _latestAim.qw, _latestAim.qx, _latestAim.qy, _latestAim.qz);
+
+                GUILayout.Label($"  seq {_latestAim.seq}   " +
+                                $"face {Game.PhoneAttitude.FaceAngleDeg(attitude),6:F1}°   " +
+                                $"heading {Game.PhoneAttitude.HeadingDeg(attitude),6:F1}°   " +
                                 $"spin {_latestAim.spinRate,5:F0}");
             }
             else
             {
-                GUILayout.Label("  no aim frames yet — grip on the phone");
+                GUILayout.Label("  no aim frames yet — tap to aim on the phone");
             }
 
             if (_preview != null)
             {
+                // The arc is also hidden while a rock is in the air, so a hidden arc with
+                // a live signal is expected mid-throw rather than a fault.
                 GUILayout.Label(_preview.HasSignal
                     ? $"  predicted {_preview.PredictedSkips} skips over {_preview.PredictedDistance:F1} m"
                     : "  arc hidden (no recent aim frames)");
@@ -165,9 +188,8 @@ namespace Net
             {
                 foreach (var t in _throws)
                 {
-                    GUILayout.Label($"  pow {t.power:F2}  tim {t.timingQuality:F2}  aim {t.aimDeg,5:F0}°  " +
-                                    $"atk {t.attackAngleDeg,5:F0}°  spin {t.spinRate,5:F0}  " +
-                                    $"spd {t.swingSpeed:F2}  peak {t.peakAccel:F1}");
+                    GUILayout.Label($"  pow {t.power:F2}  face {FaceAngleOf(t),5:F0}°  " +
+                                    $"spin {t.spinRate,5:F0}  spd {t.swingSpeed:F2}  peak {t.peakAccel:F1}");
                 }
 
                 GUILayout.Space(6);
@@ -176,7 +198,7 @@ namespace Net
                 GUILayout.Label($"  power {Spread(_throws.Select(t => t.power))}   " +
                                 $"speed {Spread(_throws.Select(t => t.swingSpeed))}   " +
                                 $"peak {Spread(_throws.Select(t => t.peakAccel))}   " +
-                                $"attack {Spread(_throws.Select(t => t.attackAngleDeg))}");
+                                $"face {Spread(_throws.Select(FaceAngleOf))}");
             }
 
             GUILayout.Space(6);

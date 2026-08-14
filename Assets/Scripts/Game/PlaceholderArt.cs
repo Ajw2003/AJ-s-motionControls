@@ -21,6 +21,8 @@ namespace Game
     ///
     /// Fixed by pinning an explicit queue per role. Unity honours renderQueue before any
     /// distance sorting, so the order is now deterministic no matter where the camera is.
+    /// That pinning is the only thing in this file worth keeping — it is a bug fix, not
+    /// decoration.
     ///
     /// Still Sprites/Default rather than an opaque shader, deliberately. Opaque would
     /// restore real depth occlusion, but Shader.Find only resolves shaders included in
@@ -28,7 +30,9 @@ namespace Game
     /// ProjectSettings/GraphicsSettings.asset). Unlit/Color would look right in the
     /// editor and come out magenta in a player build — the worst way to find out.
     ///
-    /// Replace the lot when the real lake and its water shader land.
+    /// There were custom Stone and WaterRipple shaders here. They existed to make a
+    /// scaled sphere's rotation legible and to draw impact rings; the stone is a flat
+    /// box now, which shows its own rotation from every angle, so both are gone.
     /// </remarks>
     public static class PlaceholderArt
     {
@@ -48,48 +52,6 @@ namespace Game
                       ?? Shader.Find("Standard");
 
             return new Material(shader) { color = colour, renderQueue = renderQueue };
-        }
-
-        /// <summary>
-        /// The stone and its aiming ghost, shaded and carrying a rotation-legible marking.
-        /// </summary>
-        /// <remarks>
-        /// Not Create(): Sprites/Default is unlit with no texture bound, so it discards
-        /// the mesh's normals and UVs and renders one flat silhouette. Nothing on it moves
-        /// when the stone yaws, which is why no spin rate ever looked like spin. See
-        /// Stone.shader. Falls back to flat colour so a broken shader is dull, not absent.
-        /// </remarks>
-        public static Material CreateStone(Color colour)
-        {
-            var shader = Resources.Load<Shader>("Stone");
-            if (shader == null)
-            {
-                Debug.LogWarning("[PlaceholderArt] Stone shader not found — flat, unreadable spin.");
-                return Create(colour, StoneQueue);
-            }
-
-            return new Material(shader) { color = colour, renderQueue = StoneQueue };
-        }
-
-        /// <summary>
-        /// Water, with the ripple shader if it is available and flat colour if it is not.
-        /// </summary>
-        /// <remarks>
-        /// Resources.Load rather than Shader.Find, for the reason above: a project shader
-        /// is not in Always Included Shaders, but everything under a Resources folder ships
-        /// with the build. Falling back to flat water keeps a broken or missing shader
-        /// playable instead of leaving the lake invisible.
-        /// </remarks>
-        public static Material CreateWater(Color colour)
-        {
-            var shader = Resources.Load<Shader>("WaterRipple");
-            if (shader == null)
-            {
-                Debug.LogWarning("[PlaceholderArt] WaterRipple shader not found — flat water.");
-                return Create(colour, WaterQueue);
-            }
-
-            return new Material(shader) { color = colour, renderQueue = WaterQueue };
         }
     }
 }

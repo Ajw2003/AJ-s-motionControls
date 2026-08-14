@@ -100,8 +100,73 @@ namespace Verification
             Check($"destroyed subscriber pruned ({countWithProbe} -> {countAfter})", countAfter == countWithProbe - 1);
             Check("no publish errors logged", _errorsLogged == 0);
 
+            CheckPhoneAttitude();
+
             Application.logMessageReceived -= OnLog;
             Finish();
+        }
+
+        /// <summary>
+        /// The phone-space to Unity-space basis change, checked on all three axes.
+        /// </summary>
+        /// <remarks>
+        /// Not an event-system test, and it lives here anyway because this is the only
+        /// headless C# harness in the project and the alternative is finding out on a
+        /// phone. A sign error in PhoneAttitude.ToUnity does not throw — it silently
+        /// mirrors one axis, so the stone tilts the wrong way and everything else looks
+        /// fine. That is the bug the whole rotation rework exists to remove, so it is
+        /// worth a test that runs without hardware.
+        ///
+        /// The device frame is right-handed: x right across the screen, y toward the top
+        /// edge, z out through the glass. The reference pose is the phone flat, screen up,
+        /// top edge pointing at the TV.
+        /// </remarks>
+        private void CheckPhoneAttitude()
+        {
+            // A rotation of `deg` about one of the device's own axes, built the way the
+            // phone builds it — see quaternionFromRotationVector in sensors.js.
+            static Quaternion Device(float deg, Vector3 axis)
+            {
+                var half = deg * Mathf.Deg2Rad * 0.5f;
+                var s = Mathf.Sin(half);
+                return Game.PhoneAttitude.ToUnity(
+                    Mathf.Cos(half), axis.x * s, axis.y * s, axis.z * s);
+            }
+
+            var flat = Game.PhoneAttitude.ToUnity(1f, 0f, 0f, 0f);
+            Check("a phone at the tap pose is a flat stone facing forward",
+                Vector3.Angle(flat * Vector3.forward, Vector3.forward) < 0.01f &&
+                Vector3.Angle(flat * Vector3.up, Vector3.up) < 0.01f);
+
+            // Tilting the top edge up is +x in the device frame, and must raise the
+            // stone's nose by the same angle. This is the face angle the bounce reads.
+            var noseUp = Device(10f, Vector3.right);
+            Check("tilting the top edge up 10 degrees raises the face 10 degrees",
+                Mathf.Abs(Game.PhoneAttitude.FaceAngleDeg(noseUp) - 10f) < 0.01f);
+
+            var noseDown = Device(-10f, Vector3.right);
+            Check("tilting the top edge down 10 degrees lowers the face 10 degrees",
+                Mathf.Abs(Game.PhoneAttitude.FaceAngleDeg(noseDown) + 10f) < 0.01f);
+
+            // Turning your body left is +z in the device frame while the phone is flat,
+            // and must aim left — a negative heading about Unity's up.
+            var turnedLeft = Device(25f, Vector3.forward);
+            Check("turning the body left 25 degrees aims 25 degrees left",
+                Mathf.Abs(Game.PhoneAttitude.HeadingDeg(turnedLeft) + 25f) < 0.01f);
+
+            // Aiming must not leak into the face angle, or turning to line a shot up
+            // would quietly change how well it skips.
+            Check("turning to aim does not change the face angle",
+                Mathf.Abs(Game.PhoneAttitude.FaceAngleDeg(turnedLeft)) < 0.01f);
+
+            // Rolling is +y in the device frame: the right edge drops, so the stone's own
+            // up vector leans right. Cosmetic, but it must not leak into the other two.
+            var rolledRight = Device(20f, Vector3.up);
+            Check("rolling the phone does not change the face angle or the heading",
+                Mathf.Abs(Game.PhoneAttitude.FaceAngleDeg(rolledRight)) < 0.01f &&
+                Mathf.Abs(Game.PhoneAttitude.HeadingDeg(rolledRight)) < 0.01f);
+            Check("rolling the phone right rolls the stone right",
+                (rolledRight * Vector3.up).x > 0f);
         }
 
         private static IEnumerator LoadAndSettle(string sceneName)

@@ -11,17 +11,29 @@
  * wrong" moment. Keep it: nothing in AIM may feed the simulation.
  */
 
-import { normalize01, spinMagnitude } from './sensors.js';
+import { normalize01, spinMagnitude, quaternionFromRotationVector } from './sensors.js';
+
+/** Identity — the phone as it was held at the tap. A flat stone facing forward. */
+const IDENTITY_ATTITUDE = { w: 1, x: 0, y: 0, z: 0 };
+
+/**
+ * Flatten an attitude quaternion onto the wire.
+ *
+ * Flat rather than a nested object because Unity parses these with JsonUtility, which
+ * is happiest with flat public fields — and because a flat format gives the two
+ * runtimes one less shape to disagree about. Both AIM and THROW use this, so they
+ * cannot spell it differently.
+ */
+function attitudeFields(q) {
+  const a = q ?? IDENTITY_ATTITUDE;
+  return { qw: a.w, qx: a.x, qy: a.y, qz: a.z };
+}
 
 export const ThrowTuning = {
   // Peak linear acceleration, m/s^2, mapped onto power 0..1. A gentle underarm
   // toss sits near the low end; a hard swing saturates the high end.
   minPeakAccel: 6,
   maxPeakAccel: 35,
-
-  // How sharply the swing has to stop for full timing quality. A flick that snaps
-  // to a halt right after its peak scores 1; one that trails off scores lower.
-  peakWindowMs: 250,
 
   // Below this peak, treat the gesture as a fumble rather than a throw — stops a
   // pocket bump or a shaky hand registering as a real attempt.
@@ -85,19 +97,17 @@ export const SimulatedThrow = {
   minPower: 0.2,
   maxPower: 0.95,
 
-  // attackAngleDeg is a delta from the player's grip, and SkipTuning maps a neutral
-  // grip onto the stone's optimal angle — so 0 is already a good throw. The jitter
-  // stays well inside the tolerance window so simulated throws skip rather than
-  // sinking, which would make every test score identically zero.
-  attackJitterDeg: 6,
-  aimJitterDeg: 10,
+  // Identity attitude is a flat stone facing forward, which SkipTuning treats as a good
+  // throw — the ~20 degrees the water wants is applied inside the bounce, not to the
+  // stone. Jitter is a small rotation about the phone's own axes, in degrees: x pitches
+  // the face, y turns the aim. Both stay well inside the tolerance window so simulated
+  // throws skip rather than sinking, which would make every test score identically zero.
+  pitchJitterDeg: 6,
+  yawJitterDeg: 10,
 
-  // Sits at SkipTuning's saturation point (MaxSpinToleranceBonus / SpinToleranceScale),
-  // which is also what AimPreview draws its arc at. Below it a desktop seat throws with
-  // measurably less angle tolerance than the arc it was shown promised — at the old 120
-  // it got 17.4 degrees against a real phone's 33.
+  // A plausible wrist flick. Visual only now, so unlike the old value this cannot drift
+  // out of sync with anything on the C# side — there is nothing there to match.
   spinRate: 900,
-  timingQuality: 0.85,
 };
 
 /**
@@ -110,14 +120,16 @@ export const SimulatedThrow = {
  */
 export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
   const charge = normalize01(holdMs, SimulatedThrow.minHoldMs, SimulatedThrow.maxHoldMs);
-  const jitter = (range) => (random() * 2 - 1) * range;
+  const jitterRad = (deg) => ((random() * 2 - 1) * deg * Math.PI) / 180;
+
+  const attitude = quaternionFromRotationVector(
+    jitterRad(SimulatedThrow.pitchJitterDeg),
+    jitterRad(SimulatedThrow.yawJitterDeg),
+    0);
 
   return {
     power: SimulatedThrow.minPower + charge * (SimulatedThrow.maxPower - SimulatedThrow.minPower),
-    timingQuality: SimulatedThrow.timingQuality,
-    aimDeg: jitter(SimulatedThrow.aimJitterDeg),
-    attackAngleDeg: jitter(SimulatedThrow.attackJitterDeg),
-    rollDeg: 0,
+    ...attitudeFields(attitude),
     spinRate: SimulatedThrow.spinRate,
 
     // No gesture happened, so neither power metric has a real reading. Zero rather
@@ -128,7 +140,6 @@ export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
     // Zero samples is the tell. A real gesture always has some, so the TV debug
     // readout distinguishes a simulated throw from a genuine one at a glance.
     peakAccel: 0,
-    releaseDelayMs: 0,
     sampleCount: 0,
     simulated: true,
   };
@@ -174,23 +185,20 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
     ? normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel)
     : normalize01(swingSpeed, tuning.minSwingSpeed, tuning.maxSwingSpeed);
 
-  // How abruptly the swing ended. Snapping to a halt right after the peak is the
-  // skill beat now that there is no button release to time.
-  const releaseDelayMs = Math.abs(stop.t - peak.t);
-
   return {
+    // The only thing that decides how far the stone goes. There used to be a
+    // timingQuality alongside this, scaling launch speed by how fast the phone came to
+    // rest after its peak — but a hard swing takes longer to stop, so it landed
+    // hardest on the throws it should have rewarded. Effort and result now agree.
     power,
-    timingQuality: 1 - normalize01(releaseDelayMs, 0, tuning.peakWindowMs),
 
     // Unclamped, deliberately. Throwing backwards, sideways or straight up is a
     // legitimate thing to attempt, and clamping quietly rewrote what the player did
     // into something they did not ask for.
-    aimDeg: stop.dAlpha,
-    attackAngleDeg: stop.dBeta,
-    rollDeg: stop.dGamma,
+    ...attitudeFields(stop.attitude),
 
-    // The one field deliberately NOT read from the stop sample. Aim, attack and roll
-    // are orientations, and where the phone ended up pointing IS the throw. Spin is a
+    // The one field deliberately NOT read from the stop sample. Attitude is an
+    // orientation, and where the phone ended up pointing IS the throw. Spin is a
     // rate: it peaks mid-swing and is spent by the time the phone halts — and the
     // throw fires precisely because it halted. Reading it off `stop` sampled the one
     // instant the wrist had finished turning, so a hard flick and a limp one both
@@ -203,7 +211,6 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
     // argument. See ThrowTuning.powerMetric.
     peakAccel: peak.power,
     swingSpeed,
-    releaseDelayMs,
     sampleCount: samples.length,
   };
 }
@@ -322,15 +329,12 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
  * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
  * this instant's spin, which keeps the function usable on its own and honest either way.
  */
-export function buildAimPayload(sample, seq, tuning = ThrowTuning, spinRate) {
+export function buildAimPayload(sample, seq, spinRate) {
   if (!sample) return null;
   return {
     type: 'AIM',
     seq,
-    aimDeg: sample.dAlpha,
-    attackAngleDeg: sample.dBeta,
-    rollDeg: sample.dGamma,
-    windup: normalize01(sample.power, tuning.minPeakAccel, tuning.maxPeakAccel),
+    ...attitudeFields(sample.attitude),
     spinRate: spinRate ?? spinMagnitude(sample.rotationRate),
   };
 }
@@ -400,7 +404,7 @@ export class ThrowController {
     this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {
-      const payload = buildAimPayload(this.motion.latest, ++this.seq, this.tuning, this._spin);
+      const payload = buildAimPayload(this.motion.latest, ++this.seq, this._spin);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
 

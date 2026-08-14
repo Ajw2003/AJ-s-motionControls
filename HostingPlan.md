@@ -258,21 +258,18 @@ DataChannel support.
 publishing received messages through the same path `RelayClient` uses today so nothing
 downstream knows the difference.
 
-### The spike — built, run, passed
+### The spike — built, run, passed, deleted
 
-`Assets/Scripts/Spike/WebRtcSpike.cs` and [controller/spike.html](controller/spike.html) exist
-and compile. They do nothing but answer the question above: a Unity peer answers an offer from
-a phone browser, opens a DataChannel, and prints **which candidate pair actually won**.
+A throwaway Unity peer and a standalone `spike.html` answered the question above: a Unity peer
+answers an offer from a phone browser, opens a DataChannel, and reports which candidate pair
+won. It did, so the spike was superseded by the real implementation —
+`Assets/Scripts/Net/PeerLink.cs` and [controller/js/peer.js](controller/js/peer.js) — and both
+the spike and its test document have been removed.
 
-**Step-by-step, including which device and window at each point:
-[deploy/SPIKE-TEST.md](deploy/SPIKE-TEST.md).** In outline: `fly deploy`, tick **Run Web Rtc
-Spike** on `Bootstrap`, press Play, and open `/spike.html` on an Android phone on the same
-Wi-Fi, typing the code from the Unity screen.
-
-**Do the pre-flight in that document first.** Some routers isolate clients from each other on
-the same Wi-Fi, and a phone that cannot reach the PC at all produces a failure indistinguishable
-from the one being tested. A negative result only means anything if the pre-flight passed on
-the same network in the same session.
+One caveat worth keeping from that exercise: some routers isolate clients from each other on
+the same Wi-Fi, and a phone that cannot reach the PC at all fails in a way indistinguishable
+from a peer negotiation failure. Confirm the phone can load the join page before diagnosing
+anything about WebRTC.
 
 **How to read it.** Both screens print the winning pair:
 

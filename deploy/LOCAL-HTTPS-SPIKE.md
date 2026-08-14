@@ -61,8 +61,8 @@ that would otherwise be indistinguishable at the phone:
 
 **What it never does is touch the firewall** — see Step 3, that measurement is one-shot.
 
-The one thing no script can rule out is AP isolation, for the same reason as
-[SPIKE-TEST.md](SPIKE-TEST.md) §0. If the phone cannot load the page, open
+The one thing no script can rule out is AP isolation — some routers stop clients on the same
+Wi-Fi from reaching each other at all. If the phone cannot load the page, open
 `https://<pc-ip>:8443/health` by **raw IP**. A *certificate name mismatch* means the network is
 fine and only DNS was at fault. A *timeout* means isolation, and the run proved nothing.
 

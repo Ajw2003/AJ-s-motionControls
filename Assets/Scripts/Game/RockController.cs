@@ -16,25 +16,46 @@ namespace Game
     /// </remarks>
     public class RockController : MonoBehaviour
     {
-        [Header("Visual spin")]
-        [Tooltip("How long the spin takes to wind down once the stone sinks. Stopping dead " +
-                 "reads as a freeze-frame rather than a stone settling. The rates themselves " +
-                 "live in SkipTuning, shared with the aim ghost.")]
-        [SerializeField] private float spinCoastDownSeconds = 1.2f;
+        [Tooltip("How long the stone's turn takes to bleed away in flight. Purely cosmetic " +
+                 "— spin has no effect on where the stone goes.")]
+        [SerializeField] private float spinDecaySeconds = 1.8f;
 
         [SerializeField] private float despawnDelay = 2.5f;
+
+        /// <summary>
+        /// Ceiling on how fast the stone is drawn turning, in deg/s. Shared with the aim
+        /// ghost so the two cannot spin differently.
+        /// </summary>
+        /// <remarks>
+        /// Not a tuning field, because it is not a taste decision — it is the frame rate.
+        /// The silhouette of a flat box repeats every half turn, so at 60fps anything past
+        /// about 2700 deg/s aliases into a wagon-wheel that appears to turn backwards, and
+        /// it looks wrong well before that. A hard wrist flick genuinely measures 1500-2500
+        /// deg/s on a phone, so this is reachable in normal play rather than theoretical.
+        ///
+        /// Clamping rather than rescaling: below the ceiling the stone turns at exactly the
+        /// rate the phone measured, which is the point. Only the flicks that could not be
+        /// drawn honestly anyway are capped.
+        /// </remarks>
+        internal const float MaxVisualSpinDegPerSec = 1200f;
+
+        /// <summary>The rate a measured wrist spin is drawn at. See the constant above.</summary>
+        internal static float VisualSpin(float spinRate) =>
+            Mathf.Clamp(Mathf.Abs(spinRate), 0f, MaxVisualSpinDegPerSec);
 
         private SkipState _state;
         private SkipTuning _tuning;
         private string _playerId;
         private Vector3 _origin;
         private float _accumulator;
-        private float _visualSpin;
-        private float _spinRate;
 
-        /// <summary>The rate the stone was turning at when it sank, which the coast-down
-        /// decelerates from. Tracked while flying so the frame that sinks already has it.</summary>
-        private float _coastFromRate;
+        /// <summary>
+        /// Accumulated turn about the stone's own face normal. Only ever added to, never
+        /// assigned — the rate may change, but the angle must not jump, or a stone that
+        /// was turning steadily appears to flick.
+        /// </summary>
+        private float _spinAngle;
+        private float _spinRate;
 
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
@@ -46,17 +67,15 @@ namespace Game
             _tuning = tuning;
             _playerId = playerId;
             _origin = state.Position;
+            _spinRate = VisualSpin(state.Spin);
 
             transform.position = state.Position;
+            transform.rotation = state.Attitude;
             IsFlying = true;
         }
 
         private void Update()
         {
-            // Note the branch rather than an early return: the stone keeps turning after
-            // it sinks, coasting down over the despawn delay. IsFlying is read once here,
-            // so the frame that sinks still takes the flying path and seeds the rate from
-            // the final spin — there is no gap before the coast starts.
             if (IsFlying)
             {
                 // Fixed-step accumulator so the simulation is frame-rate independent —
@@ -87,28 +106,20 @@ namespace Game
                 }
 
                 transform.position = _state.Position;
-
-                // Driven by the stone's actual spin, so a hard flick visibly turns faster
-                // and every bounce visibly bleeds it away as SpinDecay eats it. Only the
-                // rate steps at a bounce, never the angle, so it reads smoothly.
-                _spinRate = _tuning.VisualSpinDegPerSec(
-                    _state.Spin, _tuning.MinVisualSpinDegPerSec, _state.Power);
-                _coastFromRate = _spinRate;
-            }
-            else
-            {
-                // Sunk. The water drags the turn out of it rather than stopping it dead.
-                // Linear from whatever rate it sank at, so the tunable is a wind-down time
-                // that means what it says. It used to decelerate at a fraction of
-                // MaxVisualSpinDegPerSec, which made retuning the top visual speed silently
-                // retime the coast — dropping that value 9000 to 360 made this 25x slower.
-                _spinRate = Mathf.MoveTowards(
-                    _spinRate, 0f,
-                    _coastFromRate * Time.deltaTime / Mathf.Max(spinCoastDownSeconds, 0.0001f));
             }
 
-            _visualSpin += _spinRate * Time.deltaTime;
-            transform.rotation = Quaternion.Euler(-_state.AttitudeDeg, 0f, 0f) * Quaternion.Euler(0f, _visualSpin, 0f);
+            // One exponential, running whether the stone is flying or settling. A stone
+            // that stops turning the instant it lands reads as a freeze-frame, and a
+            // separate coast-down branch for that was one more thing to keep in sync with
+            // this one.
+            _spinRate *= Mathf.Exp(-Time.deltaTime / Mathf.Max(spinDecaySeconds, 0.0001f));
+            _spinAngle += _spinRate * Time.deltaTime;
+
+            // Attitude on the left, spin on the right: the stone turns about its own face
+            // normal, the way a skipping stone does, rather than about the world's up.
+            // Attitude comes straight from the phone and is never adjusted — the ~20
+            // degrees the water wants lives in SkipPhysics, not here.
+            transform.rotation = _state.Attitude * Quaternion.Euler(0f, _spinAngle, 0f);
         }
 
         private void Finish()

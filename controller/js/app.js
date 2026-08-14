@@ -76,7 +76,7 @@ const thrower = new ThrowController(motion, {
     sendInput(payload);
     lastThrow = payload;
     ui.throwResult.textContent =
-      `Power ${(payload.power * 100).toFixed(0)}% · Timing ${(payload.timingQuality * 100).toFixed(0)}%` +
+      `Power ${(payload.power * 100).toFixed(0)}%` +
       (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
   onStateChange: (state) => renderGripButton(state),
@@ -343,7 +343,12 @@ function updateDebug() {
     `socket   ${connection?.status ?? 'not connected'}`,
     `input    ${peer ? peer.transport : 'relay'}${PEER_ENABLED ? '' : '  (?direct=0)'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
-    s ? `aim ${s.dAlpha.toFixed(1).padStart(7)}  atk ${s.dBeta.toFixed(1).padStart(7)}  roll ${s.dGamma.toFixed(1).padStart(7)}`
+    // The delta quaternion itself. Four numbers rather than three named angles because
+    // that is genuinely what is on the wire now — printing a decomposition here would
+    // be inventing a representation the rest of the system does not use. All-zeros with
+    // qw at 1 means the phone is exactly where it was at the tap.
+    s ? `attitude w ${s.attitude.w.toFixed(3).padStart(6)}  x ${s.attitude.x.toFixed(3).padStart(6)}` +
+        `  y ${s.attitude.y.toFixed(3).padStart(6)}  z ${s.attitude.z.toFixed(3).padStart(6)}`
       : 'no samples yet — is this page on HTTPS?',
     // How stale the last real orientation reading is. A number that keeps climbing
     // means the aim is running on gyro integration alone, which is the tell for a
@@ -353,7 +358,8 @@ function updateDebug() {
     // and 'exact' are clean, 'filter' still has the rotation artefact in it.
     s ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}` : '',
     lastThrow
-      ? `throw  pow ${lastThrow.power.toFixed(2)} tim ${lastThrow.timingQuality.toFixed(2)} aim ${lastThrow.aimDeg.toFixed(0)} atk ${lastThrow.attackAngleDeg.toFixed(0)} spin ${lastThrow.spinRate.toFixed(0)}`
+      ? `throw  pow ${lastThrow.power.toFixed(2)}  spin ${lastThrow.spinRate.toFixed(0)}  ` +
+        `q ${lastThrow.qw.toFixed(2)} ${lastThrow.qx.toFixed(2)} ${lastThrow.qy.toFixed(2)} ${lastThrow.qz.toFixed(2)}`
       : 'no throw yet',
     // Both metrics, so light/medium/hard swings can be compared directly. If these
     // three do not separate, the metric is wrong — see ThrowTuning.powerMetric.

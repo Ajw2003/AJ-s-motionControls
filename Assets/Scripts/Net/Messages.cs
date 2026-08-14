@@ -26,7 +26,6 @@ namespace Net
         public const string Turn = "TURN";
         public const string Spectate = "SPECTATE";
         public const string Error = "ERROR";
-        public const string RoomClosed = "ROOM_CLOSED";
 
         // WebRTC signalling. The relay routes these without understanding them — player
         // messages go to the host with playerId stamped, host messages go to the player in
@@ -84,17 +83,27 @@ namespace Net
     {
         public string playerId;
         public int seq;
-        public float aimDeg;
-        public float attackAngleDeg;
-        public float rollDeg;
-        public float windup;
+
+        /// <summary>
+        /// The phone's rotation relative to where it was when the player tapped to aim.
+        /// </summary>
+        /// <remarks>
+        /// Four floats rather than three angles, and that is the point. The phone used to
+        /// decompose its attitude into aim / attack / roll and Unity re-composed it with
+        /// two hand-found sign flips; a quaternion has no decomposition to get wrong and
+        /// no degenerate pose. Identity means "however the player was holding it at the
+        /// tap", drawn as a flat stone facing away from the camera.
+        ///
+        /// Still in the phone's own right-handed frame here. Game.PhoneAttitude.ToUnity is
+        /// the only thing permitted to convert it — see that file.
+        /// </remarks>
+        public float qw = 1f;
+        public float qx, qy, qz;
 
         /// <summary>
         /// How fast the phone is turning right now, deg/s, as a decaying peak envelope —
         /// see decaySpinEnvelope in the controller. Cosmetic like the rest of this class:
-        /// it drives the ghost stone's visual spin and nothing else. A phone built before
-        /// this field existed simply omits it, and JsonUtility reads the absent value as
-        /// 0, which shows a ghost that does not spin rather than an error.
+        /// it drives the ghost stone's visual spin and nothing else.
         /// </summary>
         public float spinRate;
     }
@@ -104,27 +113,31 @@ namespace Net
     public class ThrowMessage
     {
         public string playerId;
+
+        /// <summary>
+        /// How hard it was thrown, 0..1. The only thing that decides how far the stone
+        /// goes, how many times it skips and how high it hops.
+        /// </summary>
         public float power;
-        public float timingQuality;
-        public float aimDeg;
-        public float attackAngleDeg;
-        public float rollDeg;
+
+        /// <summary>Attitude at release, in the phone's frame. See AimMessage.qw.</summary>
+        public float qw = 1f;
+        public float qx, qy, qz;
+
+        /// <summary>Wrist spin at release, deg/s. Visual only.</summary>
         public float spinRate;
 
-        // Diagnostics from the phone — useful on the debug HUD while tuning.
-        //
-        // Both power metrics ride along regardless of which one produced `power`, so a
-        // calibration swing measures them side by side. peakAccel is the raw peak in
-        // m/s^2; swingSpeed is the integrated hand speed in m/s, which is what `power`
-        // is derived from by default. See ThrowTuning.powerMetric on the phone.
+        // Diagnostics from the phone — useful on the debug HUD while tuning. Both power
+        // metrics ride along regardless of which one produced `power`, so a calibration
+        // swing measures them side by side. peakAccel is the raw peak in m/s^2;
+        // swingSpeed is the integrated hand speed in m/s, which is what `power` is
+        // derived from by default. See ThrowTuning.powerMetric on the phone.
         public float peakAccel;
         public float swingSpeed;
-        public float releaseDelayMs;
         public int sampleCount;
 
         public override string ToString() =>
-            $"{playerId}: pow {power:F2} tim {timingQuality:F2} aim {aimDeg:F0}° " +
-            $"atk {attackAngleDeg:F0}° spin {spinRate:F0} " +
+            $"{playerId}: pow {power:F2} spin {spinRate:F0} " +
             $"(speed {swingSpeed:F2} m/s, peak {peakAccel:F1} m/s², {sampleCount} samples)";
     }
 

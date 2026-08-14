@@ -10,7 +10,6 @@
  */
 
 import {
-  shortestAngleDelta,
   rotateXY,
   magnitude,
   clamp,
@@ -28,7 +27,7 @@ import {
   quaternionConjugate,
   quaternionNormalize,
   quaternionFromRotationVector,
-  quaternionToYawPitchRoll,
+  orientationDelta,
   MotionSource,
 } from './js/sensors.js';
 
@@ -55,30 +54,45 @@ function near(actual, expected, tolerance = 1e-6) {
   return Math.abs(actual - expected) <= tolerance;
 }
 
+const IDENTITY = { w: 1, x: 0, y: 0, z: 0 };
+
 function makeSample(t, power, extra = {}) {
   return {
     t,
     linear: { x: power, y: 0, z: 0 },
     power,
-    dAlpha: extra.dAlpha ?? 0,
-    dBeta: extra.dBeta ?? 0,
-    dGamma: extra.dGamma ?? 0,
+    attitude: extra.attitude ?? IDENTITY,
     rotationRate: extra.rotationRate ?? { alpha: 0, beta: 0, gamma: 0 },
   };
 }
 
-console.log('Controller sensor math\n');
+/**
+ * How far a rotation turns, in degrees, regardless of the axis.
+ *
+ * Frame-agnostic on purpose. Assertions about the delta quaternion are written in
+ * terms of this and of equality-with-a-known-rotation, never by decomposing it into
+ * angles — a decomposition here would be a second implementation of the thing under
+ * test, and it would have the same pole the old code did.
+ */
+function rotationAngleDeg(q) {
+  const { w } = quaternionNormalize(q);
+  return 2 * Math.acos(Math.min(1, Math.abs(w))) * (180 / Math.PI);
+}
 
-// ---------------------------------------------------------------- angle wrap
-console.log('shortestAngleDelta');
-check('no wrap', shortestAngleDelta(10, 4) === 6);
-check('wraps forward across 0/360', shortestAngleDelta(1, 359) === 2,
-  `got ${shortestAngleDelta(1, 359)}`);
-check('wraps backward across 0/360', shortestAngleDelta(359, 1) === -2,
-  `got ${shortestAngleDelta(359, 1)}`);
-check('180 stays positive', shortestAngleDelta(180, 0) === 180);
-check('-180 normalises to +180', shortestAngleDelta(-180, 0) === 180);
-check('identical angles give zero', shortestAngleDelta(123, 123) === 0);
+/** Same rotation? q and -q describe the same one, so compare through the sign. */
+function sameRotation(a, b, tolerance = 1e-6) {
+  const p = quaternionNormalize(a);
+  const q = quaternionNormalize(b);
+  const flip = (p.w * q.w + p.x * q.x + p.y * q.y + p.z * q.z) < 0 ? -1 : 1;
+  return near(p.w, flip * q.w, tolerance) && near(p.x, flip * q.x, tolerance) &&
+         near(p.y, flip * q.y, tolerance) && near(p.z, flip * q.z, tolerance);
+}
+
+/** A rotation of `deg` about one of the device's own axes. */
+const aboutX = (deg) => quaternionFromRotationVector((deg * Math.PI) / 180, 0, 0);
+const aboutY = (deg) => quaternionFromRotationVector(0, (deg * Math.PI) / 180, 0);
+
+console.log('Controller sensor math\n');
 
 // ---------------------------------------------------------------- quaternions
 console.log('\nquaternion math');
@@ -96,13 +110,14 @@ console.log('\nquaternion math');
   const qG = orientationToQuaternion(0, 0, 90);
   check('gamma turns about Y', near(qG.w, h) && near(qG.y, h) && near(qG.x, 0) && near(qG.z, 0));
 
-  // Round trip through the decomposition, away from the pole.
-  for (const [a, b, g] of [[0, 0, 0], [30, 20, -15], [-45, 10, 40], [170, -25, 60]]) {
-    const r = quaternionToYawPitchRoll(orientationToQuaternion(a, b, g));
-    check(`round trip ${a}/${b}/${g}`,
-      near(r.yaw, a, 1e-6) && near(r.pitch, b, 1e-6) && near(r.roll, g, 1e-6),
-      `${r.yaw.toFixed(3)}/${r.pitch.toFixed(3)}/${r.roll.toFixed(3)}`);
-  }
+  // Composition order. Z(alpha) then X'(beta) then Y''(gamma) is what the spec
+  // defines; the wrong order is correct for small angles and subtly wrong for large
+  // ones, which is the kind of bug that survives desk testing and shows up mid-throw.
+  const composed = orientationToQuaternion(30, 20, -15);
+  const byHand = quaternionMultiply(
+    quaternionMultiply(orientationToQuaternion(30, 0, 0), orientationToQuaternion(0, 20, 0)),
+    orientationToQuaternion(0, 0, -15));
+  check('composes Z then X\' then Y\'\'', sameRotation(composed, byHand));
 
   const q = orientationToQuaternion(35, -20, 55);
   const id = quaternionMultiply(quaternionConjugate(q), q);
@@ -118,12 +133,47 @@ console.log('\nquaternion math');
   check('normalize scales to unit length', near(norm.w, 1));
   const degenerate = quaternionNormalize({ w: 0, x: 0, y: 0, z: 0 });
   check('a degenerate quaternion falls back to identity', near(degenerate.w, 1));
+}
 
-  // Pitch saturates at the pole rather than flipping or going NaN. Continuity here
-  // is the whole reason for the quaternion rewrite.
-  const polar = quaternionToYawPitchRoll(orientationToQuaternion(0, 90, 0));
-  check('pitch saturates at the pole instead of wrapping',
-    Number.isFinite(polar.pitch) && near(Math.abs(polar.pitch), 90, 1e-6), `${polar.pitch}`);
+// ------------------------------------------------------------ orientationDelta
+console.log('\norientationDelta');
+{
+  const grip = orientationToQuaternion(200, 90, -30); // an awkward, arbitrary pose
+
+  check('no movement from the reference is identity',
+    sameRotation(orientationDelta(grip, grip), IDENTITY));
+
+  // The property the whole control scheme rests on: the delta is the rotation the
+  // player physically applied, in the phone's own frame, whatever pose they started
+  // from. Ten degrees of wrist is ten degrees of stone.
+  for (const pose of [orientationToQuaternion(0, 0, 0),
+                      orientationToQuaternion(200, 90, -30),
+                      orientationToQuaternion(-45, 12, 80)]) {
+    const turned = quaternionMultiply(pose, aboutX(10));
+    check('a 10 degree pitch from any grip reads as 10 degrees about x',
+      sameRotation(orientationDelta(pose, turned), aboutX(10)));
+  }
+
+  // The singularity, stated as the thing it actually breaks. Held upright (beta 90),
+  // alpha and gamma are the SAME physical rotation and the browser's split between
+  // them is decided by sensor noise. Any three-angle representation has to pick one;
+  // the delta quaternion does not have to pick, so both must come out identical.
+  const upright = orientationToQuaternion(0, 90, 0);
+  const viaAlpha = orientationDelta(upright, orientationToQuaternion(20, 90, 0));
+  const viaGamma = orientationDelta(upright, orientationToQuaternion(0, 90, 20));
+  check('at the play pose alpha and gamma produce the same rotation',
+    sameRotation(viaAlpha, viaGamma),
+    `${rotationAngleDeg(viaAlpha).toFixed(3)} vs ${rotationAngleDeg(viaGamma).toFixed(3)} deg`);
+
+  // Crossing the alpha 0/360 seam must not produce a ~360 degree turn. There is no
+  // wrap handling anywhere any more — quaternions simply have no seam.
+  const wrapped = orientationDelta(
+    orientationToQuaternion(355, 90, 0), orientationToQuaternion(5, 90, 0));
+  check('crossing the 0/360 seam is a 10 degree turn',
+    near(rotationAngleDeg(wrapped), 10, 1e-6), `${rotationAngleDeg(wrapped).toFixed(3)} deg`);
+
+  check('the result is a unit quaternion',
+    near(Math.hypot(wrapped.w, wrapped.x, wrapped.y, wrapped.z), 1, 1e-12));
 }
 
 // ------------------------------------------------------------ gravity removal
@@ -211,88 +261,84 @@ console.log('\nMotionSource orientation');
   {
     const m = new MotionSource();
     const s = drive(m, 12, 34, 56);
-    check('uncalibrated reports no deflection',
-      near(s.dAlpha, 0, 1e-9) && near(s.dBeta, 0, 1e-9) && near(s.dGamma, 0, 1e-9),
-      `${s.dAlpha}/${s.dBeta}/${s.dGamma}`);
+    check('uncalibrated reports no deflection', sameRotation(s.attitude, IDENTITY, 1e-9),
+      `${s.attitude.w}/${s.attitude.x}/${s.attitude.y}/${s.attitude.z}`);
   }
 
   {
-    // Gripped upright — beta 90 is "phone facing you", the pose this game is played
-    // in and precisely where the Euler version came apart.
+    // Flat, screen up — the pose the game is described in. Tapping here must make
+    // this exact pose mean "flat stone, facing forward", i.e. identity.
+    const m = new MotionSource();
+    m._onOrientation({ alpha: 0, beta: 0, gamma: 0 });
+    m._onMotion(motionEvent());
+    m.calibrate();
+
+    check('the tap pose itself is identity',
+      sameRotation(drive(m, 0, 0, 0).attitude, IDENTITY));
+
+    check('pitching the top edge up 10 degrees is 10 degrees about device x',
+      sameRotation(drive(m, 0, 10, 0).attitude, aboutX(10)));
+
+    check('rolling the phone 10 degrees is 10 degrees about device y',
+      sameRotation(drive(m, 0, 0, 10).attitude, aboutY(10)));
+  }
+
+  {
+    // Gripped upright — beta 90 is "phone facing you", and precisely where the Euler
+    // version came apart. Calibrating here has to work exactly as well as calibrating
+    // flat: the reference is whatever pose the tap happened in.
     const m = new MotionSource();
     m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
     m.calibrate();
 
-    const flat = drive(m, 0, 90, 0);
-    check('no movement from the grip pose reads as zero',
-      near(flat.dAlpha, 0, 1e-6) && near(flat.dBeta, 0, 1e-6) && near(flat.dGamma, 0, 1e-6),
-      `${flat.dAlpha.toFixed(3)}/${flat.dBeta.toFixed(3)}/${flat.dGamma.toFixed(3)}`);
+    check('no movement from an upright grip reads as identity',
+      sameRotation(drive(m, 0, 90, 0).attitude, IDENTITY));
 
-    const tipped = drive(m, 0, 80, 0);
-    check('pitching 10 degrees forward of the grip reads as -10',
-      near(tipped.dBeta, -10, 1e-6), `${tipped.dBeta.toFixed(3)}`);
+    check('pitching 10 degrees forward of an upright grip is a 10 degree turn',
+      sameRotation(drive(m, 0, 80, 0).attitude, aboutX(-10)));
 
-    // The headline case. Sweeping through vertical used to flip alpha and fold
-    // gamma, so aim and roll jumped by up to 180 degrees while the phone moved a
-    // couple of degrees. Every step here must stay small and monotonic.
+    // The headline case. Sweeping through vertical used to flip alpha and fold gamma,
+    // so aim and roll jumped by up to 180 degrees while the phone moved one. Every
+    // step must stay small, and the turn from the grip must grow monotonically as the
+    // phone keeps pitching the same way.
     let prev = null;
+    let prevAngle = null;
     let worstJump = 0;
     let monotonic = true;
     for (let beta = 100; beta >= 80; beta -= 1) {
       const s = drive(m, 0, beta, 0);
+      const angle = rotationAngleDeg(s.attitude);
+
       if (prev !== null) {
         worstJump = Math.max(worstJump,
-          Math.abs(s.dBeta - prev.dBeta), Math.abs(s.dAlpha - prev.dAlpha),
-          Math.abs(s.dGamma - prev.dGamma));
-        if (s.dBeta > prev.dBeta + 1e-9) monotonic = false;
+          rotationAngleDeg(orientationDelta(prev.attitude, s.attitude)));
+        // Past the grip pose the turn shrinks to zero and grows again the other way,
+        // so only the leg on each side has to be monotonic.
+        if (beta > 90 && angle > prevAngle + 1e-9) monotonic = false;
+        if (beta < 90 && angle < prevAngle - 1e-9) monotonic = false;
       }
+
       prev = s;
+      prevAngle = angle;
     }
-    check('sweeping through vertical never jumps', worstJump < 1.5, `worst step ${worstJump.toFixed(3)} deg`);
-    check('pitch stays monotonic across vertical', monotonic);
+    check('sweeping through vertical never jumps', worstJump < 1.5,
+      `worst step ${worstJump.toFixed(3)} deg`);
+    check('the turn from the grip changes monotonically across vertical', monotonic);
   }
 
   {
-    // Aim away from the grip, at a heading that is nowhere near north — the reference
-    // has to be the grip, not the compass.
+    // The reference is the tap, not the compass: an arbitrary heading nowhere near
+    // north must behave the same as any other.
     const m = new MotionSource();
     m._onOrientation({ alpha: 200, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
     m.calibrate();
 
     const yawed = drive(m, 215, 90, 0);
-    check('aim is measured from the grip, not from north', near(yawed.dAlpha, 15, 1e-6),
-      `${yawed.dAlpha.toFixed(3)}`);
-    check('turning to aim does not leak into attack angle', near(yawed.dBeta, 0, 1e-6),
-      `${yawed.dBeta.toFixed(3)}`);
-
-    // Crossing the 0/360 seam must not produce a ~360 jump.
-    m._onOrientation({ alpha: 355, beta: 90, gamma: 0 });
-    m._onMotion(motionEvent());
-    m.calibrate();
-    const wrapped = drive(m, 5, 90, 0);
-    check('aim across the 0/360 seam stays small', near(wrapped.dAlpha, 10, 1e-6),
-      `${wrapped.dAlpha.toFixed(3)}`);
-  }
-
-  {
-    // The reason aim/attack/roll are defined geometrically rather than as Euler
-    // deltas. Held upright, alpha and gamma are the SAME physical rotation — the
-    // browser's split between them is decided by sensor noise. Both must therefore
-    // produce the same aim, or the stone veers depending on which one the device
-    // happened to attribute the turn to.
-    const m = new MotionSource();
-    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
-    m._onMotion(motionEvent());
-    m.calibrate();
-
-    const viaAlpha = drive(m, 20, 90, 0);
-    const aimViaAlpha = viaAlpha.dAlpha;
-    const viaGamma = drive(m, 0, 90, 20);
-    check('at the play pose alpha and gamma give the same aim',
-      near(aimViaAlpha, viaGamma.dAlpha, 1e-6),
-      `${aimViaAlpha.toFixed(3)} vs ${viaGamma.dAlpha.toFixed(3)}`);
+    check('aim is measured from the tap, not from north',
+      near(rotationAngleDeg(yawed.attitude), 15, 1e-6),
+      `${rotationAngleDeg(yawed.attitude).toFixed(3)} deg`);
   }
 
   {
@@ -308,16 +354,15 @@ console.log('\nMotionSource orientation');
     m._onMotion(motionEvent());
     m.calibrate();
 
-    const before = m.latest.dAlpha;
     for (let i = 0; i < 6; i++) {
       clock += 16; // one frame of motion with no orientation event
       m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
     }
-    const after = m.latest.dAlpha;
 
-    // 6 frames x 16ms x 60 deg/s = 5.76 degrees.
-    check('aim keeps moving while orientation is stale', near(after - before, 5.76, 0.05),
-      `${before.toFixed(3)} -> ${after.toFixed(3)}`);
+    // 6 frames x 16ms x 60 deg/s = 5.76 degrees, about the device's own y axis.
+    check('the attitude keeps moving while orientation is stale',
+      sameRotation(m.latest.attitude, aboutY(5.76), 1e-3),
+      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`);
     check('staleness is reported', m.latest.orientationAgeMs === 96, `${m.latest.orientationAgeMs}`);
 
     // A real reading must win, or integration drift accumulates forever.
@@ -325,13 +370,15 @@ console.log('\nMotionSource orientation');
     m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
     check('a fresh orientation reading overrides the gyro estimate',
-      near(m.latest.dAlpha, 0, 1e-6), `${m.latest.dAlpha.toFixed(3)}`);
+      sameRotation(m.latest.attitude, IDENTITY),
+      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`);
 
     // A gap long enough to be a backgrounded tab must not be integrated across.
     clock += 5000;
     m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
-    check('a long gap is not integrated across', near(m.latest.dAlpha, 0, 1e-6),
-      `${m.latest.dAlpha.toFixed(3)}`);
+    check('a long gap is not integrated across',
+      sameRotation(m.latest.attitude, IDENTITY),
+      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`);
   }
 }
 
@@ -442,15 +489,17 @@ console.log('\ncomputeThrowDescriptor');
     near(byPeak.power, (30 - ThrowTuning.minPeakAccel) / (ThrowTuning.maxPeakAccel - ThrowTuning.minPeakAccel), 1e-9),
     byPeak.power.toFixed(3));
 
-  check('release at the peak scores perfect timing', near(d.timingQuality, 1), d.timingQuality.toFixed(3));
-
-  // Same swing, but held well past the peak.
+  // Nothing scales power down for a slow stop any more. There used to be a
+  // timingQuality here cutting launch speed by up to 60% based on how long the phone
+  // took to settle after its peak — but a hard swing takes longer to settle, so the
+  // penalty fell hardest on the throws that deserved it least. Effort now decides
+  // distance on its own, and a trailing stop costs nothing.
   const late = [...perfect];
   for (let i = 1; i <= 25; i++) late.push(makeSample(100 + i * 10, 1));
   const dLate = computeThrowDescriptor(late);
-  check('late release scores zero timing', near(dLate.timingQuality, 0), dLate.timingQuality.toFixed(3));
-  check('late release keeps the same power', near(dLate.power, d.power),
+  check('a trailing stop does not weaken the throw', near(dLate.power, d.power),
     `${dLate.power.toFixed(3)} vs ${d.power.toFixed(3)}`);
+  check('timing is not a wire field any more', dLate.timingQuality === undefined);
 
   // Ramp to `peakAccel` over `steps` samples, then release.
   const swing = (peakAccel, steps = 10) => {
@@ -489,24 +538,24 @@ console.log('\ncomputeThrowDescriptor');
   // Orientation is raw and read at the stop. Nothing is clamped: a player who wants
   // to throw backwards is allowed to, and rewriting their input into something
   // "usable" was worse than letting them miss.
-  const wild = [makeSample(0, 5), makeSample(10, 30, { dAlpha: 190, dBeta: -120, dGamma: 17 })];
+  const backwards = aboutX(190);
+  const wild = [makeSample(0, 5), makeSample(10, 30, { attitude: backwards })];
   const dWild = computeThrowDescriptor(wild);
-  check('aim is not clamped — backwards throws are allowed', dWild.aimDeg === 190, `${dWild.aimDeg}`);
-  check('attack angle is not clamped', dWild.attackAngleDeg === -120);
-  check('roll is passed through raw', dWild.rollDeg === 17);
+  check('attitude is not clamped — backwards throws are allowed',
+    sameRotation({ w: dWild.qw, x: dWild.qx, y: dWild.qy, z: dWild.qz }, backwards),
+    `${rotationAngleDeg(backwards).toFixed(1)} deg`);
 
   // The stop sample is the aim: a throwing motion ends pointing where it was thrown.
   const swung = [
-    makeSample(0, 1, { dAlpha: 20 }),    // lining the shot up
-    makeSample(120, 25, { dAlpha: 70 }), // swinging
-    makeSample(180, 30, { dAlpha: 95 }), // peak
-    makeSample(200, 2, { dAlpha: 110 }), // stopped, pointing at the target
+    makeSample(0, 1, { attitude: aboutY(20) }),    // lining the shot up
+    makeSample(120, 25, { attitude: aboutY(70) }), // swinging
+    makeSample(180, 30, { attitude: aboutY(95) }), // peak
+    makeSample(200, 2, { attitude: aboutY(110) }), // stopped, pointing at the target
   ];
   const dSwung = computeThrowDescriptor(swung);
-  check('aim comes from the stop, raw', dSwung.aimDeg === 110, `${dSwung.aimDeg}`);
+  check('attitude comes from the stop, raw',
+    sameRotation({ w: dSwung.qw, x: dSwung.qx, y: dSwung.qy, z: dSwung.qz }, aboutY(110)));
   check('power still comes from the peak', near(dSwung.peakAccel, 30));
-  check('a sharp stop right after the peak scores well on timing',
-    dSwung.timingQuality > 0.8, dSwung.timingQuality.toFixed(2));
 
   const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: 3, beta: 4, gamma: 0 } })];
   check('spin rate is the rotation magnitude', near(computeThrowDescriptor(spun).spinRate, 5));
@@ -537,12 +586,18 @@ console.log('\ncomputeThrowDescriptor');
 // ---------------------------------------------------------------- aim payload
 console.log('\nbuildAimPayload');
 {
-  const payload = buildAimPayload(makeSample(0, 20, { dAlpha: 60, dBeta: 22, dGamma: 3 }), 42);
+  const aimed = aboutY(60);
+  const payload = buildAimPayload(makeSample(0, 20, { attitude: aimed }), 42);
   check('carries a sequence number', payload.seq === 42);
   check('is typed AIM', payload.type === 'AIM');
-  check('aim is raw, matching the throw descriptor', payload.aimDeg === 60);
-  check('attack angle survives', payload.attackAngleDeg === 22);
-  check('windup is normalised 0..1', payload.windup > 0 && payload.windup <= 1, payload.windup.toFixed(3));
+
+  // The preview and the throw must show the same rotation, so both flatten the
+  // attitude through the same helper. If these ever spelled it differently the ghost
+  // would aim somewhere the stone did not go.
+  check('attitude is raw, matching the throw descriptor',
+    sameRotation({ w: payload.qw, x: payload.qx, y: payload.qy, z: payload.qz }, aimed));
+  check('a phone at the tap pose sends identity',
+    buildAimPayload(makeSample(0, 20), 1).qw === 1);
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
 
   // Spin is what drives the ghost's visual spin on the TV. It has to be the envelope
@@ -552,7 +607,7 @@ console.log('\nbuildAimPayload');
   check('falls back to this instant\'s spin when no envelope is given',
     near(buildAimPayload(spinning, 1).spinRate, 50));
   check('carries the supplied envelope in preference to the instant',
-    near(buildAimPayload(spinning, 1, ThrowTuning, 320).spinRate, 320));
+    near(buildAimPayload(spinning, 1, 320).spinRate, 320));
   check('a still phone reports no spin', buildAimPayload(makeSample(0, 20), 1).spinRate === 0);
 }
 
@@ -616,16 +671,19 @@ console.log('\ncomputeSimulatedThrowDescriptor');
     computeSimulatedThrowDescriptor(600, mid).power < long.power);
 
   check('centred randomness gives a dead-straight throw',
-    near(brief.aimDeg, 0) && near(brief.attackAngleDeg, 0));
+    sameRotation({ w: brief.qw, x: brief.qx, y: brief.qy, z: brief.qz }, IDENTITY));
 
-  // The whole point of the jitter bounds: SkipTuning maps a neutral grip onto the
-  // optimal angle with a 12 degree tolerance, so a simulated throw must land inside
-  // that window or every test throw sinks and every score is zero.
+  // The whole point of the jitter bounds: identity is already a good throw, and the
+  // jitter has to stay inside SkipTuning's tolerance window or every simulated throw
+  // sinks and every test score is zero.
   const extremes = [computeSimulatedThrowDescriptor(600, () => 0),
                     computeSimulatedThrowDescriptor(600, () => 1)];
-  check('attack angle stays inside the skip tolerance window',
-    extremes.every((d) => Math.abs(d.attackAngleDeg) <= SimulatedThrow.attackJitterDeg),
-    extremes.map((d) => d.attackAngleDeg.toFixed(1)).join(' / '));
+  const jitterBound = Math.hypot(SimulatedThrow.pitchJitterDeg, SimulatedThrow.yawJitterDeg);
+  check('the jittered attitude stays inside the skip tolerance window',
+    extremes.every((d) =>
+      rotationAngleDeg({ w: d.qw, x: d.qx, y: d.qy, z: d.qz }) <= jitterBound + 1e-6),
+    extremes.map((d) =>
+      rotationAngleDeg({ w: d.qw, x: d.qx, y: d.qy, z: d.qz }).toFixed(1)).join(' / '));
 
   check('is flagged as simulated', brief.simulated === true);
   check('reports zero samples, which is the tell on the TV readout',
@@ -655,12 +713,12 @@ console.log('\nThrowController: arm, swing, stop');
   // Accelerate hard, then stop dead. Exactly three calm samples, because that is
   // the documented threshold — two must not be enough.
   const hardSwing = [
-    makeSample(0, 2, { dAlpha: 5 }),
-    makeSample(20, 20, { dAlpha: 30 }),
-    makeSample(40, 32, { dAlpha: 60 }),   // peak
-    makeSample(60, 3, { dAlpha: 75 }),    // calm 1
-    makeSample(80, 2, { dAlpha: 76 }),    // calm 2
-    makeSample(100, 1, { dAlpha: 77 }),   // calm 3 — fires here
+    makeSample(0, 2),
+    makeSample(20, 20),
+    makeSample(40, 32),   // peak
+    makeSample(60, 3),    // calm 1
+    makeSample(80, 2),    // calm 2
+    makeSample(100, 1),   // calm 3 — fires here
   ];
 
   {

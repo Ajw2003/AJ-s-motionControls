@@ -213,8 +213,6 @@ namespace Managers
             Debug.Log($"[TurnManager] Match over after {_round} rounds — winner: {winner ?? "tied"}");
 
             SendTurnStates();
-            EventManager.Instance?.Publish(
-                new MatchEndedEvent(_standings.ToArray(), winner, _round));
         }
 
         /// <summary>Back to the join screen with scores cleared, ready for another match.</summary>
@@ -243,7 +241,6 @@ namespace Managers
             _current = ((index % _players.Count) + _players.Count) % _players.Count;
 
             SendTurnStates();
-            EventManager.Instance?.Publish(new TurnStartedEvent(ActivePlayer, _round));
             Debug.Log($"[TurnManager] Round {_round + 1}/{roundsPerMatch}: {ActivePlayer}'s turn");
         }
 

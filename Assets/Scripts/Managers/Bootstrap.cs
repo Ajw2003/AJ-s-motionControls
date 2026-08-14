@@ -42,10 +42,6 @@ namespace Managers
                  "connect, so turning it off only costs latency. HostingPlan.md §5.")]
         [SerializeField] private bool usePeerConnections = true;
 
-        [Tooltip("Run the WebRTC spike instead of the game — proves whether Phase 2 is viable. " +
-                 "See HostingPlan.md §5. Turns off the other screens so its readout is unobstructed.")]
-        [SerializeField] private bool runWebRtcSpike;
-
         private void Awake()
         {
             EventManager.DebugLoggingEnabled = eventDebugLogging;
@@ -82,31 +78,10 @@ namespace Managers
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;
 
-            // The spike replaces the game rather than sitting alongside it: its whole output
-            // is one readout, and the join screen would draw a panel straight over it.
-            if (runWebRtcSpike)
-            {
-                CreateWebRtcSpike();
-                return;
-            }
-
             if (showJoinScreen) CreateJoinScreen();
             if (showResultsScreen) CreateResultsScreen();
             if (showDebugHud) CreateDebugHud();
             if (showAimPreview) CreateAimPreview();
-        }
-
-        /// <summary>Scaffolding for HostingPlan.md §5. Delete with Assets/Scripts/Spike once answered.</summary>
-        private static void CreateWebRtcSpike()
-        {
-            if (FindFirstObjectByType<global::Spike.WebRtcSpike>() != null) return;
-
-            var spike = new GameObject("WebRtcSpike");
-            spike.AddComponent<global::Spike.WebRtcSpike>();
-            DontDestroyOnLoad(spike);
-
-            Debug.Log("[Bootstrap] WebRTC spike mode — the game is not running. " +
-                      "Untick Run Web Rtc Spike to play.");
         }
 
         /// <summary>

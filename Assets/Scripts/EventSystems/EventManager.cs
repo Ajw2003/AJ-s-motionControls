@@ -70,14 +70,6 @@ namespace EventSystems
             });
         }
 
-        public void Unsubscribe<T>(object target) where T : IEvent
-        {
-            if (!_subscriptions.TryGetValue(typeof(T), out var subscriptionList))
-                return;
-
-            RemoveMatching(subscriptionList, target);
-        }
-
         /// <summary>
         /// Drops every subscription belonging to <paramref name="target"/>.
         /// Call from OnDestroy — mandatory with multiple scenes, since each transition
@@ -91,14 +83,6 @@ namespace EventSystems
             }
         }
 
-        public void UnsubscribeAllTargets()
-        {
-            foreach (var target in GetAllSubscribedTargets())
-            {
-                UnsubscribeFromAllEvents(target);
-            }
-        }
-
         /// <summary>
         /// Number of subscription records held for an event type, including any not yet
         /// pruned. Diagnostics only — used to assert that dead subscribers get dropped.
@@ -106,23 +90,6 @@ namespace EventSystems
         public int GetSubscriptionCount<T>() where T : IEvent
         {
             return _subscriptions.TryGetValue(typeof(T), out var list) ? list.Count : 0;
-        }
-
-        public IEnumerable<object> GetAllSubscribedTargets()
-        {
-            var targets = new HashSet<object>();
-
-            foreach (var subscriptionList in _subscriptions.Values)
-            {
-                foreach (var subscription in subscriptionList)
-                {
-                    var target = subscription.TargetReference.Target;
-                    if (!IsDead(target))
-                        targets.Add(target);
-                }
-            }
-
-            return targets;
         }
 
         public void Publish<T>(T eventData) where T : IEvent

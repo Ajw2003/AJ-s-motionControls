@@ -378,16 +378,12 @@ function serveQr(req, res, query) {
   }
 }
 
-// SPIKE ONLY — see the local-HTTPS spike. Delete this along with the TLS branch
-// below once the question it answers is settled.
+// LOAD-BEARING. This began as a spike and its comment said to delete it; it is now
+// the only way the game is played. deploy/local-https.ps1 hands this process a
+// LAN certificate and a key, and the phone will not hand out motion sensors to a
+// page that is not on a secure origin — so without this branch there is no input.
 //
-// Normally this process never terminates TLS: Fly's proxy holds the certificate
-// in production and Caddy does on the VPS route, which is why HostingPlan.md §7
-// lists the whole ACME path as deleted. This exists to test whether a page served
-// from the HOST machine over HTTPS gives a phone a secure context, which is the
-// only way motion sensors unlock.
-//
-// Env-gated so the default path is byte-identical to before: with neither
+// Env-gated, so the default path is byte-identical to before: with neither
 // variable set, this is the plain http.createServer it has always been.
 const TLS_CERT = process.env.TLS_CERT;
 const TLS_KEY = process.env.TLS_KEY;

@@ -18,17 +18,6 @@
 // Pure math — no browser APIs below this line until the MotionSource section.
 // ---------------------------------------------------------------------------
 
-/**
- * Signed shortest distance from `reference` to `current`, in degrees, in (-180, 180].
- * Used so a throw that crosses the 0/360 wrap doesn't produce a ~360 degree jump.
- */
-export function shortestAngleDelta(current, reference) {
-  let delta = (current - reference) % 360;
-  if (delta > 180) delta -= 360;
-  if (delta <= -180) delta += 360;
-  return delta;
-}
-
 // --------------------------------------------------------------- quaternions
 //
 // Orientation is handled as quaternions rather than as three independent Euler
@@ -38,21 +27,22 @@ export function shortestAngleDelta(current, reference) {
 // DeviceOrientationEvent reports intrinsic Z-X'-Y'' Tait-Bryan angles with beta in
 // [-180, 180) and gamma confined to [-90, 90). beta = 90 is "phone upright, screen
 // facing you", which is how you hold a phone to aim at a television. So the grip
-// reference sits ON the gimbal singularity, not near it, and four things go wrong at
+// reference sits ON the gimbal singularity, not near it, and three things go wrong at
 // once: alpha and gamma become individually indeterminate (only their sum is real, so
 // sensor noise alone swings aim by tens of degrees); the browser's branch selection
-// flips and injects genuine 180-degree steps; beta's derivative mirrors, so pitching
-// further back starts reporting as pitching forward; and shortestAngleDelta is simply
-// the wrong operator for gamma, which is folded rather than circular — a 2 degree
-// physical roll across the fold reported as -178.
+// flips and injects genuine 180-degree steps; and beta's derivative mirrors, so
+// pitching further back starts reporting as pitching forward.
 //
-// Differencing quaternions has none of that. The delta from grip to now is near
-// identity for ordinary aiming, so decomposing THAT is well-conditioned. The pole
-// moves from "phone upright" to "phone rotated 90 degrees away from however you
-// gripped it", and even there the decomposition saturates rather than flipping.
+// Differencing quaternions has none of that. The delta from grip to now is exact at
+// every pose, and — this is the part that matters — it is never decomposed at all.
+// It goes on the wire as four floats and Unity applies it to the stone directly, so
+// there is no three-angle parameterisation anywhere for the singularity to break.
+// An earlier version differenced quaternions and THEN decomposed the delta into
+// aim/attack/roll, which fixed the conditioning but kept a lossy re-composition (and
+// two hand-found sign flips) on the Unity side. That is what "the rock's rotation
+// doesn't match my phone" was.
 
 const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
 
 /**
  * DeviceOrientationEvent angles (degrees) to a unit quaternion.
@@ -117,26 +107,6 @@ export function quaternionFromRotationVector(rx, ry, rz) {
   return { w: Math.cos(half), x: rx * scale, y: ry * scale, z: rz * scale };
 }
 
-/**
- * Decompose back to Z-X'-Y'' angles in degrees, as {yaw, pitch, roll}.
- *
- * Intended for a DELTA quaternion, where the answer is near zero and therefore far
- * from the pole. Pitch is clamped before asin so that at the pole it saturates at
- * +/-90 instead of returning NaN or flipping sign — degrading smoothly is the entire
- * point of the exercise.
- */
-export function quaternionToYawPitchRoll(q) {
-  const { w, x, y, z } = quaternionNormalize(q);
-
-  const sinPitch = Math.max(-1, Math.min(1, 2 * (y * z + w * x)));
-  const pitch = Math.asin(sinPitch);
-
-  const yaw = Math.atan2(2 * (w * z - x * y), 1 - 2 * (x * x + z * z));
-  const roll = Math.atan2(2 * (w * y - x * z), 1 - 2 * (x * x + y * y));
-
-  return { yaw: yaw * RAD2DEG, pitch: pitch * RAD2DEG, roll: roll * RAD2DEG };
-}
-
 /** Apply a rotation to a vector. */
 export function rotateVectorByQuaternion(q, v) {
   const tx = 2 * (q.y * v.z - q.z * v.y);
@@ -151,73 +121,18 @@ export function rotateVectorByQuaternion(q, v) {
 }
 
 /**
- * Aim, attack and roll of `qNow` relative to `qRef`, in degrees.
+ * The rotation that takes `qRef` to `qNow`, expressed in the device's own frame.
  *
- * Deliberately NOT a Euler decomposition of the delta quaternion, which is the
- * obvious implementation and is wrong here. At the pose this game is played in —
- * phone upright, beta near 90 — alpha and gamma are the same physical rotation, so
- * no three-angle parameterisation can keep them apart. Turning to aim left shows up
- * partly as alpha and partly as gamma depending on nothing but sensor noise.
+ * This is the entire control scheme. Identity means the phone has not moved since the
+ * player tapped, and Unity draws that as a flat stone facing forward; every physical
+ * degree of rotation from there is one degree on the stone.
  *
- * So the axes are defined by what the game actually means instead:
- *
- *   aim     azimuth of where the phone points, about world up. Turning your body
- *           left is aiming left, however the browser chose to split that between
- *           alpha and gamma.
- *   attack  elevation of the same pointing axis. This is the stone's face angle and
- *           the most important number in the game.
- *   roll    twist about the pointing axis — genuinely independent of the other two,
- *           where gamma was not.
- *
- * Three real degrees of freedom with no degeneracy at the play pose. The world frame
- * is the DeviceOrientation spec's: X east, Y north, Z up.
+ * Left as a quaternion on purpose. Anything that turns it into angles — here or on the
+ * far side — reintroduces a parameterisation that has a pole in it, and the pole sits
+ * exactly where this game is played. Unity applies the four floats directly.
  */
 export function orientationDelta(qRef, qNow) {
-  // Out the back of the phone. Horizontal at the natural upright grip, which is what
-  // makes azimuth and elevation well conditioned exactly where they are needed.
-  const BODY_POINT = { x: 0, y: 0, z: -1 };
-  const BODY_UP = { x: 0, y: 1, z: 0 };
-
-  const pRef = rotateVectorByQuaternion(qRef, BODY_POINT);
-  const pNow = rotateVectorByQuaternion(qNow, BODY_POINT);
-
-  const azimuth = (v) => Math.atan2(v.y, v.x) * RAD2DEG;
-  const elevation = (v) => {
-    const len = Math.hypot(v.x, v.y, v.z);
-    return len < 1e-9 ? 0 : Math.asin(Math.max(-1, Math.min(1, v.z / len))) * RAD2DEG;
-  };
-
-  // Still a circular quantity, so the 0/360 seam still has to be handled — this is
-  // the one place shortestAngleDelta was always the right tool.
-  const aim = shortestAngleDelta(azimuth(pNow), azimuth(pRef));
-  const attack = elevation(pNow) - elevation(pRef);
-
-  // Twist about the pointing axis: project both "up" vectors perpendicular to it and
-  // take the signed angle between them. Exact while the pointing axis has barely
-  // moved, which is the case whenever roll is worth reading; it is cosmetic only.
-  const axisLen = Math.hypot(pNow.x, pNow.y, pNow.z);
-  let roll = 0;
-  if (axisLen > 1e-9) {
-    const n = { x: pNow.x / axisLen, y: pNow.y / axisLen, z: pNow.z / axisLen };
-    const perp = (v) => {
-      const d = v.x * n.x + v.y * n.y + v.z * n.z;
-      return { x: v.x - d * n.x, y: v.y - d * n.y, z: v.z - d * n.z };
-    };
-
-    const a = perp(rotateVectorByQuaternion(qRef, BODY_UP));
-    const b = perp(rotateVectorByQuaternion(qNow, BODY_UP));
-
-    const cross = {
-      x: a.y * b.z - a.z * b.y,
-      y: a.z * b.x - a.x * b.z,
-      z: a.x * b.y - a.y * b.x,
-    };
-    const sin = cross.x * n.x + cross.y * n.y + cross.z * n.z;
-    const cos = a.x * b.x + a.y * b.y + a.z * b.z;
-    if (Math.hypot(sin, cos) > 1e-9) roll = Math.atan2(sin, cos) * RAD2DEG;
-  }
-
-  return { aim, attack, roll };
+  return quaternionNormalize(quaternionMultiply(quaternionConjugate(qRef), qNow));
 }
 
 /** Rotate a vector's X/Y about the Z axis by `degrees` (counter-clockwise). */
@@ -515,9 +430,10 @@ export class MotionSource {
   }
 
   /**
-   * Capture the current orientation as the zero reference. Called on grip, which
-   * is what turns "point your phone at the lake and hold" into a calibration step
-   * the player never notices they are performing.
+   * Capture the current orientation as the zero reference. Called on the tap that arms
+   * a throw, which is what makes "however you happen to be holding the phone right now"
+   * mean "flat stone, facing forward" — the player performs a calibration step without
+   * ever being told they are doing one.
    */
   calibrate() {
     this.reference = { ...this.latestOrientation };
@@ -624,18 +540,19 @@ export class MotionSource {
     const rotated = rotateXY(linearRaw.x, linearRaw.y, -screenAngle);
     const linear = { x: rotated.x, y: rotated.y, z: linearRaw.z };
 
-    // Uncalibrated compares against itself and therefore reports zeros, which is the
-    // same safe behaviour as before.
+    // Uncalibrated compares against itself and therefore reports identity, which is the
+    // same safe behaviour as the zeros this used to report.
     const reference = this.referenceQuaternion ?? this._fusedQuaternion;
-    const { aim, attack, roll } = orientationDelta(reference, this._fusedQuaternion);
 
     const sample = {
       t,
       linear,
       power: magnitude(linear),
-      dAlpha: aim,
-      dBeta: attack,
-      dGamma: roll,
+
+      // The phone's rotation since the tap, and the only orientation this module
+      // reports. See orientationDelta.
+      attitude: orientationDelta(reference, this._fusedQuaternion),
+
       rotationRate,
 
       // How stale the last real orientation reading is. Surfaced rather than hidden

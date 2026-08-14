@@ -9,14 +9,21 @@ namespace Game
     /// Live trajectory preview on the TV while a player aims.
     /// </summary>
     /// <remarks>
-    /// Smoothing is not polish here, it is what makes the feature work: AIM frames
-    /// arrive at only ~20Hz over a jittery connection, so applying them raw looks
-    /// choppy. Values are smoothed toward their targets every frame instead.
+    /// Two things on screen: a ghost stone that matches the phone's rotation exactly, and
+    /// an arc showing roughly where a throw from that angle would go.
     ///
-    /// The arc comes from SkipPhysics.Predict — the same solver the live throw uses,
-    /// so what a player sees is what they get. It runs at a nominal power because the
-    /// real power is unknown until release; the arc teaches the ~20 degree angle
-    /// rather than promising an exact landing spot.
+    /// Smoothing is not polish here, it is what makes the feature work: AIM frames arrive
+    /// at only ~20Hz over a jittery connection, so applying them raw looks choppy. One
+    /// Slerp toward the last received attitude every frame is the whole of it — it used
+    /// to be four SmoothDampAngle calls over four separate scalars, which is what a
+    /// three-angle wire format forces you into.
+    ///
+    /// The arc comes from SkipPhysics.Predict — the same solver the live throw uses, so
+    /// what a player sees is what they get. It runs at a nominal power because the real
+    /// power is unknown until release; the arc teaches the angle, not an exact landing
+    /// spot. There used to be a per-player learned-power model here trying to close that
+    /// gap; it made the arc's meaning depend on throw history, which is worse than it
+    /// simply being approximate and obviously so.
     ///
     /// This never publishes gameplay events. Prediction is speculative by definition.
     /// </remarks>
@@ -34,17 +41,10 @@ namespace Game
         [Tooltip("Power the arc is drawn at. Real power is unknown until release.")]
         [Range(0f, 1f)] [SerializeField] private float previewPower = 0.7f;
 
-        [SerializeField] private float smoothTime = 0.08f;
+        [Tooltip("How long the ghost takes to catch up to a new aim frame. This is the " +
+                 "20Hz-to-smooth conversion; it is not meant to lag perceptibly.")]
+        [SerializeField] private float attitudeSmoothing = 18f;
 
-        [Tooltip("Skip re-predicting the arc while the aim has moved less than this, in " +
-                 "degrees. Cheap when the player is holding steady, per-frame when they " +
-                 "are not — which is the only time smoothness is visible.")]
-        [SerializeField] private float arcRedrawThresholdDeg = 0.005f;
-
-        [Tooltip("How fast the arc adapts to how hard this player actually throws. 0 keeps " +
-                 "it at the nominal power for everyone, which is why the line used to " +
-                 "consistently over- or undershoot depending on who was holding the phone.")]
-        [Range(0f, 1f)] [SerializeField] private float learningRate = 0.45f;
         [Tooltip("Hide the preview after this long with no aim frames — surfaces a dropped phone.")]
         [SerializeField] private float staleAfterSeconds = 0.5f;
 
@@ -56,64 +56,35 @@ namespace Game
         public Transform ThrowOrigin => throwOrigin;
         public SkipTuning Tuning => tuning;
 
-        /// <summary>
-        /// Spin to draw the arc at before this player has thrown. Actual spin is only known
-        /// at release, same as power. Read from the tuning rather than serialized here: it
-        /// has to sit at the point where the tolerance bonus saturates, and when that was a
-        /// hand-copied literal the two silently drifted apart and the arc started predicting
-        /// a different throw than the one the stone would take.
-        /// </summary>
-        private float PreviewSpin => tuning.ReferenceSpinDegPerSec;
-        
         private string _lastAimPlayer;
-        
+
         private RelayClient _client;
+        private RockLauncher _launcher;
         private LineRenderer _line;
         private Transform _ghost;
 
-        private readonly List<Vector3> _path = new(512);
+        // Sized from the tuning in Awake rather than left at a literal: PredictSeconds /
+        // FixedStep is about 1100 points, so a hardcoded 512 quietly grew and reallocated
+        // on the first arc of every session.
+        private List<Vector3> _path = new(512);
 
         // LineRenderer.SetPositions wants an array, and List.ToArray() allocates one every
-        // time. At 60fps with a 500-step prediction that was roughly 360 KB/s of garbage,
-        // which shows up as periodic collection pauses — the "choppy sometimes" that no
-        // amount of network smoothing could fix, because it was never the network.
+        // time. At 60fps with a 1100-step prediction that is a lot of garbage, which shows
+        // up as periodic collection pauses — the "choppy sometimes" that no amount of
+        // network smoothing could fix, because it was never the network.
         private Vector3[] _pathBuffer = new Vector3[0];
-
-        private float _drawnAim, _drawnAttack, _drawnPower;
-
-        /// <summary>
-        /// What a given player's throws actually look like, so the arc can be drawn at
-        /// their strength rather than a fixed nominal one.
-        /// </summary>
-        /// <remarks>
-        /// Power genuinely cannot be known before the swing — it comes from peak
-        /// acceleration, which has not happened yet. So the arc can never be exact. But
-        /// drawing it at a constant 0.7 for everybody meant it was reliably wrong in a
-        /// direction that depended on the player: a hard thrower always overshot the
-        /// line, a gentle one always fell short, and neither could learn anything from
-        /// it. Their own recent throws are a far better estimate than a constant, and
-        /// converge within two or three attempts.
-        ///
-        /// Kept per player because a match has several, and they differ a lot.
-        /// </remarks>
-        private struct ThrowProfile
-        {
-            public float Power;
-            public float Timing;
-            public float Spin;
-        }
-
-        private readonly Dictionary<string, ThrowProfile> _profiles = new();
 
         private int _lastSeq = -1;
         private float _lastAimTime = -999f;
 
-        private float _targetAim, _targetAttack, _targetRoll, _targetWindup, _targetSpin;
-        private float _curAim, _curAttack, _curRoll, _curWindup, _curSpin;
-        private float _velAim, _velAttack, _velRoll, _velWindup, _velSpin;
+        /// <summary>Where the phone is now, and where the ghost has smoothed to.</summary>
+        private Quaternion _targetAttitude = Quaternion.identity;
+        private Quaternion _curAttitude = Quaternion.identity;
+
+        private float _targetSpin, _curSpin;
 
         /// <summary>
-        /// The ghost's accumulated yaw. Kept as an angle that only ever grows, never
+        /// The ghost's accumulated turn. Kept as an angle that only ever grows, never
         /// assigned from the spin — the rate may jump when a packet lands, but the angle
         /// must not, or a stone that was turning steadily appears to flick.
         /// </summary>
@@ -125,8 +96,7 @@ namespace Game
             // The middle step is the one that does the work: Bootstrap builds this
             // component with AddComponent, so nothing was ever dropped into the field
             // above and the whole game ran on C# field initializers — the numbers were
-            // only reachable by recompiling. Resources.Load rather than a scene
-            // reference for the same reason, and it matches PlaceholderArt's shader load.
+            // only reachable by recompiling.
             if (tuning == null) tuning = Resources.Load<SkipTuning>("SkipTuning");
 
             if (tuning == null)
@@ -135,6 +105,9 @@ namespace Game
                 Debug.LogWarning("[AimPreview] No SkipTuning at Resources/SkipTuning — " +
                                  "running on code defaults, which cannot be tuned without a recompile.");
             }
+
+            _path = new List<Vector3>(tuning.MaxPredictSteps + 1);
+
             if (createPlaceholderScene) BuildPlaceholderScene();
             if (throwOrigin == null) throwOrigin = CreateOrigin();
 
@@ -146,7 +119,6 @@ namespace Game
         {
             if (_client == null) return;
             _client.AimReceived -= OnAim;
-            _client.ThrowReceived -= OnThrow;
         }
 
         private void Update()
@@ -157,82 +129,40 @@ namespace Game
 
             // Smooth every frame regardless of packet arrival — this is what turns
             // 20Hz of network data into something that reads as continuous motion.
-            _curAim = Mathf.SmoothDampAngle(_curAim, _targetAim, ref _velAim, smoothTime);
-            _curAttack = Mathf.SmoothDampAngle(_curAttack, _targetAttack, ref _velAttack, smoothTime);
-            _curRoll = Mathf.SmoothDampAngle(_curRoll, _targetRoll, ref _velRoll, smoothTime);
-            _curWindup = Mathf.SmoothDamp(_curWindup, _targetWindup, ref _velWindup, smoothTime);
+            // Exponential rather than a fixed step so it is frame-rate independent.
+            _curAttitude = Quaternion.Slerp(
+                _curAttitude, _targetAttitude, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
 
-            // SmoothDamp, not SmoothDampAngle: this is a rate in deg/s, not a heading.
-            // Wrapping 900 deg/s into -180..180 would make a hard flick read as a slow
-            // turn backwards.
-            _curSpin = Mathf.SmoothDamp(_curSpin, _targetSpin, ref _velSpin, smoothTime);
+            _curSpin = Mathf.Lerp(
+                _curSpin, _targetSpin, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
 
-            _line.enabled = true;
-            _ghost.gameObject.SetActive(HasSignal);
+            // Nothing to predict while a stone is already in the air, and leaving the arc
+            // up through the throw means the line the player was aiming with is still
+            // drawn over the result. Both the tooltip above and the debug HUD used to
+            // claim this happened; it did not, because _line.enabled was set true
+            // unconditionally just before the early return below.
+            var flying = _launcher != null && _launcher.ActiveRock != null && _launcher.ActiveRock.IsFlying;
+            var visible = HasSignal && !flying;
 
-            if (!HasSignal)  return;
+            _line.enabled = visible;
+            _ghost.gameObject.SetActive(visible);
+
+            if (!visible) return;
 
             UpdateGhost();
-
-            // Every frame while anything is moving. An earlier version capped this at
-            // 30Hz to save work, which traded the garbage-collection stutter for a
-            // steady one — a line redrawn at half the display rate steps visibly. The
-            // allocation was the real cost, so the fix is to skip only genuinely
-            // redundant work: when the smoothed values have settled, the arc cannot
-            // have changed, so there is nothing to recompute.
-            if (HasAimMoved()) UpdateArc();
-        }
-
-        private bool HasAimMoved()
-        {
-            if (Mathf.Abs(Mathf.DeltaAngle(_curAim, _drawnAim)) > arcRedrawThresholdDeg) return true;
-            if (Mathf.Abs(Mathf.DeltaAngle(_curAttack, _drawnAttack)) > arcRedrawThresholdDeg) return true;
-            // Also redraw when the player changes, or after they throw and the profile moves.
-            return _line.positionCount == 0 ||
-                   !Mathf.Approximately(_drawnPower, ProfileForActivePlayer().Power);
+            UpdateArc();
         }
 
         private void EnsureBound()
         {
+            if (_launcher == null) _launcher = GetComponent<RockLauncher>();
+
             // HasInstance, not Instance — Instance would create a RelayClient, and a
             // preview that conjures its own data source hides a real failure.
             if (_client != null || !RelayClient.HasInstance) return;
 
             _client = RelayClient.Instance;
             _client.AimReceived += OnAim;
-            _client.ThrowReceived += OnThrow;
-        }
-
-        /// <summary>
-        /// Learn what this player's throws are actually like. Read-only as far as the game
-        /// is concerned — this never launches anything, it only informs the next preview.
-        /// </summary>
-        private void OnThrow(ThrowMessage thrown)
-        {
-            if (string.IsNullOrEmpty(thrown.playerId) || learningRate <= 0f) return;
-
-            var known = _profiles.TryGetValue(thrown.playerId, out var profile);
-            var rate = known ? learningRate : 1f; // first throw replaces the guess outright
-
-            _profiles[thrown.playerId] = new ThrowProfile
-            {
-                Power = Mathf.Lerp(known ? profile.Power : previewPower, thrown.power, rate),
-                Timing = Mathf.Lerp(known ? profile.Timing : 1f, thrown.timingQuality, rate),
-                Spin = Mathf.Lerp(known ? profile.Spin : PreviewSpin, thrown.spinRate, rate),
-            };
-        }
-
-        /// <summary>This player's learned throw, or the nominal one until they have thrown.</summary>
-        private ThrowProfile ProfileForActivePlayer()
-        {
-            var active = TurnManager.HasInstance ? TurnManager.Instance.ActivePlayer : null;
-
-            if (!string.IsNullOrEmpty(active) && _profiles.TryGetValue(active, out var profile))
-            {
-                return profile;
-            }
-
-            return new ThrowProfile { Power = previewPower, Timing = 1f, Spin = PreviewSpin };
         }
 
         private void OnAim(AimMessage aim)
@@ -242,9 +172,6 @@ namespace Game
             var active = TurnManager.HasInstance ? TurnManager.Instance.ActivePlayer : null;
             if (!string.IsNullOrEmpty(active) && aim.playerId != active) return;
 
-            // Cheap ordering guard: TCP preserves order per socket, but a reconnect can
-            // interleave, and a stale frame overwriting a newer one looks like a stutter.
-            
             if (aim.playerId != _lastAimPlayer)
             {
                 _lastAimPlayer = aim.playerId;
@@ -254,43 +181,31 @@ namespace Game
                 // player's happened to have turned to.
                 _ghostSpinAngle = 0f;
                 _curSpin = 0f;
-                _velSpin = 0f;
+                _curAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
             }
+
+            // Cheap ordering guard: TCP preserves order per socket, but a reconnect can
+            // interleave, and a stale frame overwriting a newer one looks like a stutter.
             if (aim.seq <= _lastSeq) return;
             _lastSeq = aim.seq;
 
-            // Raw, always. An earlier version froze these once windup passed a threshold,
+            // Raw, always. An earlier version froze these once the phone started moving,
             // on the theory that a swinging phone no longer means "where I am aiming" —
             // but the throw now fires on the phone stopping, and a throwing motion ends
             // pointing where it was thrown. The stop sample IS the aim, so the preview
             // tracking live orientation is what agrees with the stone.
-            _targetAim = aim.aimDeg;
-            _targetAttack = aim.attackAngleDeg;
-            _targetRoll = aim.rollDeg;
-            _targetWindup = aim.windup;
+            _targetAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
 
-            // Abs to match SkipPhysics.CreateLaunch, which stores Mathf.Abs(spinRate):
-            // which way the wrist turned is not something the simulation distinguishes,
-            // so the preview must not either.
-            _targetSpin = Mathf.Abs(aim.spinRate);
+            // Through the same clamp the live stone uses, so a flick fast enough to alias
+            // is drawn at the same rate in the preview as it will be in flight.
+            _targetSpin = RockController.VisualSpin(aim.spinRate);
             _lastAimTime = Time.time;
         }
 
         private void UpdateArc()
         {
-            // Drawn at what this player actually throws like, not a fixed nominal — see
-            // ThrowProfile. Timing matters as much as power here: SkipPhysics scales launch
-            // speed by both, so assuming perfect timing overshoots every real throw.
-            var profile = ProfileForActivePlayer();
-
-            _drawnAim = _curAim;
-            _drawnAttack = _curAttack;
-            _drawnPower = profile.Power;
-
             var launch = SkipPhysics.CreateLaunch(
-                throwOrigin.position, Vector3.forward,
-                profile.Power, profile.Timing,
-                -_curAim, -_curAttack, profile.Spin, tuning);
+                throwOrigin.position, previewPower, _curAttitude, _curSpin, tuning);
 
             var final = SkipPhysics.Predict(launch, tuning, _path);
 
@@ -305,38 +220,22 @@ namespace Game
 
             _line.positionCount = _path.Count;
             _line.SetPositions(_pathBuffer);
-
-            // Green when the angle is working, red when the stone is going to plough in.
-            var health = Mathf.Clamp01(PredictedSkips / 5f);
-            var colour = Color.Lerp(new Color(1f, 0.3f, 0.35f), new Color(0.35f, 1f, 0.6f), health);
-            _line.startColor = colour;
-            _line.endColor = new Color(colour.r, colour.g, colour.b, 0.15f);
         }
 
         private void UpdateGhost()
         {
             _ghost.position = throwOrigin.position;
 
-            // Turned by how fast the player is actually rotating the phone right now, on
-            // the same scale the live stone uses, so winding up harder visibly spins the
-            // stone faster and holding steady leaves it still. Passing 0 rather than the
-            // stone's resting rate is deliberate: a stone in flight never stops turning,
-            // but a ghost that idles at 45 deg/s while the phone is motionless is showing
-            // the player motion they did not make.
-            // Windup stands in for power here: real power is not known until release, and
-            // how hard the phone is being swung right now is the honest live proxy for it.
-            _ghostSpinAngle += tuning.VisualSpinDegPerSec(_curSpin, 0f, _curWindup) * Time.deltaTime;
+            // Turned by how fast the player is actually rotating the phone right now, so
+            // winding up harder visibly spins the stone faster and holding steady leaves
+            // it still.
+            _ghostSpinAngle += _curSpin * Time.deltaTime;
 
-            // Pitch by the stone's face angle, yaw by aim, roll by wrist tilt — then spin
-            // on the right, so it turns about the stone's own axis rather than the world's.
-            _ghost.rotation = Quaternion.Euler(-_curAttack, -_curAim, _curRoll)
-                            * Quaternion.Euler(0f, _ghostSpinAngle, 0f);
-
-            // X != Z deliberately. Equal was a perfect circle in the yaw plane, which no
-            // amount of spin can make visible; matching the live stone's proportions also
-            // keeps the preview honest about what is being thrown.
-            var scale = Mathf.Lerp(1f, 1.35f, _curWindup);
-            _ghost.localScale = new Vector3(0.52f * scale, 0.08f * scale, 0.44f * scale);
+            // Attitude on the left, spin on the right — the same composition the live
+            // stone uses, so the ghost and the rock cannot turn differently. And the same
+            // unmodified phone rotation: hold the phone flat and this lies flat, even
+            // though the water wants ~20 degrees. That offset belongs in SkipPhysics.
+            _ghost.rotation = _curAttitude * Quaternion.Euler(0f, _ghostSpinAngle, 0f);
         }
 
         // ---------------------------------------------------------------- scaffolding
@@ -358,24 +257,26 @@ namespace Game
             _line.numCapVertices = 4;
             _line.useWorldSpace = true;
             _line.material = PlaceholderArt.Create(Color.white, PlaceholderArt.ArcQueue);
+
+            var colour = new Color(0.55f, 0.85f, 1f);
+            _line.startColor = colour;
+            _line.endColor = new Color(colour.r, colour.g, colour.b, 0.15f);
             _line.enabled = false;
         }
 
         private void BuildGhost()
         {
-            var ghost = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            // Same primitive and scale as the live stone — see RockLauncher for why a box
+            // rather than a scaled sphere.
+            var ghost = GameObject.CreatePrimitive(PrimitiveType.Cube);
             ghost.name = "GhostRock";
             Destroy(ghost.GetComponent<Collider>());
+            ghost.transform.localScale = RockLauncher.StoneScale;
             ghost.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.CreateStone(new Color(0.9f, 0.92f, 1f));
+                PlaceholderArt.Create(new Color(0.9f, 0.92f, 1f), PlaceholderArt.StoneQueue);
+
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
-
-            // Same chip as the live stone, and for a sharper version of the same reason.
-            // The ghost was scaled with X and Z equal — a perfect disc, a surface of
-            // revolution about the exact axis it yaws around — so it rendered pixel for
-            // pixel identically at every angle. It has never been able to show spin.
-            RockLauncher.AddChip(_ghost, 0.55f);
         }
 
         private void BuildPlaceholderScene()
@@ -386,12 +287,8 @@ namespace Game
             water.transform.localScale = new Vector3(40f, 1f, 40f);
             Destroy(water.GetComponent<Collider>());
 
-            var waterMaterial = PlaceholderArt.CreateWater(new Color(0.06f, 0.16f, 0.28f));
-            water.GetComponent<MeshRenderer>().material = waterMaterial;
-
-            // Handed the material directly rather than looking it up — this method is the
-            // only thing that ever holds the water, and it drops the reference on exit.
-            water.AddComponent<WaterRipples>().Bind(waterMaterial, tuning);
+            water.GetComponent<MeshRenderer>().material =
+                PlaceholderArt.Create(new Color(0.06f, 0.16f, 0.28f), PlaceholderArt.WaterQueue);
 
             // Parented like the arc and the ghost so it survives with this component,
             // which Bootstrap marks DontDestroyOnLoad. Left at the scene root it was
