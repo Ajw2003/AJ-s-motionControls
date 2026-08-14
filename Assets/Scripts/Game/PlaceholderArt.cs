@@ -47,9 +47,9 @@ namespace Game
 
         public static Material Create(Color colour, int renderQueue)
         {
-            var shader = Shader.Find("Sprites/Default")
+            var shader = Shader.Find("Standard")
                       ?? Shader.Find("Unlit/Color")
-                      ?? Shader.Find("Standard");
+                      ?? Shader.Find("Sprites/Default");
 
             return new Material(shader) { color = colour, renderQueue = renderQueue };
         }

@@ -29,7 +29,7 @@ namespace Game
         public RockController ActiveRock => _active;
 
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
-        internal static readonly Vector3 StoneScale = new(0.65f, 0.1f, 0.45f);
+        internal static readonly Vector3 StoneScale = new(0.65f, 0.08f, 0.45f);
 
         private void Update()
         {
@@ -44,6 +44,7 @@ namespace Game
         {
             if (_client != null) _client.ThrowReceived -= OnThrow;
         }
+        
 
         private void EnsureBound()
         {
@@ -109,21 +110,28 @@ namespace Game
 
             if (_active != null && _active.IsFlying)
             {
-                // Trail behind and above so the skips read clearly from the couch.
-                var target = _active.transform.position + new Vector3(-2f, 2.5f, -3f);
-                _camera.transform.position = Vector3.SmoothDamp(
-                    _camera.transform.position, target, ref _cameraVelocity, cameraFollowSmoothing);
-                _camera.transform.rotation = Quaternion.Slerp(
-                    _camera.transform.rotation,
-                    Quaternion.LookRotation(_active.transform.position - _camera.transform.position),
-                    Time.deltaTime * 5f);
+                // Trail behind the rock on X and Z, but lock Y to the camera's home height
+                var target = new Vector3(
+                    _active.transform.position.x - 2f, 
+                    _cameraHome.y, // Locks vertical tracking to prevent bouncing
+                    _active.transform.position.z - 3f
+                );
+
+                _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, target, ref _cameraVelocity, cameraFollowSmoothing);
+
+                // Smoothly rotate to look at the active rock
+                var lookDirection = _active.transform.position - _camera.transform.position;
+                
+                // Optional: If the camera tilting up/down to watch the rock skip is ALSO 
+                // causing motion sickness, uncomment the line below to lock the look pitch:
+                // lookDirection.y = 0f; 
+
+                _camera.transform.rotation = Quaternion.Slerp(_camera.transform.rotation, Quaternion.LookRotation(lookDirection), Time.deltaTime * 5f);
                 return;
             }
 
-            _camera.transform.position = Vector3.SmoothDamp(
-                _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
-            _camera.transform.rotation = Quaternion.Slerp(
-                _camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
+            _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
+            _camera.transform.rotation = Quaternion.Slerp(_camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
         }
 
         /// <summary>

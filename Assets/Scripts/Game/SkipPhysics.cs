@@ -97,7 +97,7 @@ namespace Game
         /// needs nearly 7 m/s of horizontal, so it silently became the real skip limit and
         /// cut every run short well before MinSkipSpeed. Ending a run is MinSkipSpeed's job.
         /// </remarks>
-        private const float MinExitRiseSpeed = 0.15f;
+        private const float MinExitRiseSpeed = 0.3f;
 
         /// <summary>Build the initial state from a throw descriptor.</summary>
         /// <param name="attitude">The phone's rotation, already in Unity space — see PhoneAttitude.</param>

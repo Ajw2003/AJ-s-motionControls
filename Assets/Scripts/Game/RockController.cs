@@ -18,7 +18,7 @@ namespace Game
     {
         [Tooltip("How long the stone's turn takes to bleed away in flight. Purely cosmetic " +
                  "— spin has no effect on where the stone goes.")]
-        [SerializeField] private float spinDecaySeconds = 1.8f;
+        [SerializeField] private float spinDecaySeconds = 1.8f;// need to find a way to derive this from the approx number of skips/distance we get
 
         [SerializeField] private float despawnDelay = 2.5f;
 
