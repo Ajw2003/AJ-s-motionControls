@@ -43,7 +43,7 @@ namespace Game
         [Tooltip("Speed at power = 0 — the softest throw that still counts as one.")]
         public float MinSpeed = 5f;
         [Tooltip("Speed at power = 1 — a full-effort throw.")]
-        public float MaxSpeed = 30f;
+        public float MaxSpeed = 40f;
         [Tooltip("Upward angle of the toss itself, separate from the stone's face angle.")]
         public float LaunchPitchDeg = 11f;
 
@@ -68,15 +68,14 @@ namespace Game
         public float ToleranceDeg = 30f;
 
         [Header("Run length")]
-        [Tooltip("Fraction of horizontal speed kept per bounce on the softest throw. This and " +
-                 "SpeedKeptHard are the main control on total distance — there is no per-step " +
-                 "air drag, so this is the only thing slowing the stone between skips.")]
-        [Range(0f, 1f)] public float SpeedKeptSoft = 0.80f;
+        [Tooltip("Minimum fraction of horizontal speed kept per bounce.")]
+        [Range(0f, 1f)] public float MinRetention = 0.75f;
 
-        [Tooltip("Fraction of horizontal speed kept per bounce on a full-power throw. Above " +
-                 "SpeedKeptSoft, so a hard throw both starts faster AND runs longer — that " +
-                 "compounding is what makes effort read as distance.")]
-        [Range(0f, 1f)] public float SpeedKeptHard = 0.90f;
+        [Tooltip("Maximum fraction of horizontal speed kept per bounce.")]
+        [Range(0f, 1f)] public float MaxRetention = 0.99f;
+
+        [Tooltip("Optimal angle for skipping.")]
+        public float OptimalAngle = 15f;
 
         [Tooltip("Below this speed the stone stops skipping and sinks.")]
         public float MinSkipSpeed = 4f;

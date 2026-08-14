@@ -55,7 +55,7 @@ namespace Verification
             var report = new StringBuilder();
             report.AppendLine($"Skip curve for {tuning.name}");
             report.AppendLine($"  speed {tuning.MinSpeed}..{tuning.MaxSpeed} m/s   " +
-                              $"kept {tuning.SpeedKeptSoft}..{tuning.SpeedKeptHard}/bounce   " +
+                              $"kept {tuning.MinRetention}..{tuning.MaxRetention}/bounce   " +
                               $"exit {tuning.OpeningHopAngleDeg}deg -> {tuning.SkipExitAngleDeg}deg " +
                               $"over {tuning.OpeningHopSkips} skips");
             report.AppendLine($"  best face {tuning.BestFaceAngleDeg}deg +/- {tuning.ToleranceDeg}deg   " +

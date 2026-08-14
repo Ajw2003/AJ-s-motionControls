@@ -41,6 +41,8 @@ namespace Game
         /// </remarks>
         public float Power;
 
+        public float DynamicSpeedRetention;
+
         public int SkipCount;
         public bool Sunk;
     }
@@ -118,18 +120,24 @@ namespace Game
             var pitch = tuning.LaunchPitchDeg * Mathf.Deg2Rad;
             var velocity = heading * (speed * Mathf.Cos(pitch)) + Vector3.up * (speed * Mathf.Sin(pitch));
 
+            float throwAngle = PhoneAttitude.FaceAngleDeg(attitude);
+            float angleFactor = 1.0f - Mathf.Clamp01(Mathf.Abs(throwAngle - tuning.OptimalAngle) / Mathf.Max(tuning.ToleranceDeg, 0.0001f));
+            float powerFactor = speed / tuning.MaxSpeed;
+            float dynamicSpeedRetention = tuning.MinRetention + (tuning.MaxRetention - tuning.MinRetention) * (angleFactor * 0.6f + powerFactor * 0.4f);
+
             return new SkipState
             {
                 Position = origin,
                 Velocity = velocity,
                 Attitude = attitude,
-                FaceAngleDeg = PhoneAttitude.FaceAngleDeg(attitude),
+                FaceAngleDeg = throwAngle,
                 // Signed. Which way the wrist turned is not something the bounce cares
                 // about — spin has no effect on the path at all — but it is exactly what
                 // the player watches, so throwing it away would make every stone turn the
                 // same way regardless of what they did.
                 Spin = spinRate,
                 Power = power,
+                DynamicSpeedRetention = dynamicSpeedRetention,
                 SkipCount = 0,
                 Sunk = false,
             };
@@ -196,11 +204,8 @@ namespace Game
 
             var velocity = next.Velocity;
 
-            // Power, not spin. This is the second half of "a hard throw goes further":
-            // it starts faster, and it also bleeds speed more slowly, so the two compound
-            // over a run. Spin used to sit here, which meant distance had two drivers and
-            // the player could feel neither.
-            var speedKept = Mathf.Lerp(tuning.SpeedKeptSoft, tuning.SpeedKeptHard, next.Power);
+            // DynamicSpeedRetention calculated at launch replaces SpeedKeptHard/Soft.
+            var speedKept = next.DynamicSpeedRetention;
 
             // Speed loss first, so the lift below is computed against the horizontal the
             // stone actually leaves with. The other order made SkipExitAngleDeg a lie: the
