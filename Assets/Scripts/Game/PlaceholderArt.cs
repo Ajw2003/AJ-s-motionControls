@@ -30,9 +30,9 @@ namespace Game
     /// ProjectSettings/GraphicsSettings.asset). Unlit/Color would look right in the
     /// editor and come out magenta in a player build — the worst way to find out.
     ///
-    /// There were custom Stone and WaterRipple shaders here. They existed to make a
-    /// scaled sphere's rotation legible and to draw impact rings; the stone is a flat
-    /// box now, which shows its own rotation from every angle, so both are gone.
+    /// There was a custom Stone shader here too. It existed to make a scaled sphere's
+    /// rotation legible; the stone is a flat box now, which shows its own rotation from
+    /// every angle, so it is gone. The WaterRipple shader is back — see CreateWater.
     /// </remarks>
     public static class PlaceholderArt
     {
@@ -52,6 +52,27 @@ namespace Game
                       ?? Shader.Find("Sprites/Default");
 
             return new Material(shader) { color = colour, renderQueue = renderQueue };
+        }
+
+        /// <summary>
+        /// Water, with the ripple shader if it is available and flat colour if it is not.
+        /// </summary>
+        /// <remarks>
+        /// Resources.Load rather than Shader.Find, for the reason above: a project shader
+        /// is not in Always Included Shaders, but everything under a Resources folder ships
+        /// with the build. Falling back to flat water keeps a broken or missing shader
+        /// playable instead of leaving the lake invisible.
+        /// </remarks>
+        public static Material CreateWater(Color colour)
+        {
+            var shader = Resources.Load<Shader>("WaterRipple");
+            if (shader == null)
+            {
+                Debug.LogWarning("[PlaceholderArt] WaterRipple shader not found — flat water.");
+                return Create(colour, WaterQueue);
+            }
+
+            return new Material(shader) { color = colour, renderQueue = WaterQueue };
         }
     }
 }
