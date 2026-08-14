@@ -26,6 +26,6 @@ MonoBehaviour:
   OpeningHopAngleDeg: 11
   OpeningHopSkips: 3
   Restitution: 0.4
-  FixedStep: 0.02
+  FixedStep: 0.01
   PredictSeconds: 22
   DisplayName: Pebble
