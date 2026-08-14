@@ -43,7 +43,7 @@ namespace Game
         /// The rate a measured wrist spin is drawn at, signed. See the constant above.
         /// </summary>
         internal static float VisualSpin(float spinRate) =>
-            Mathf.Clamp(spinRate, -MaxVisualSpinDegPerSec, MaxVisualSpinDegPerSec);
+            Mathf.Clamp(spinRate * 10, -MaxVisualSpinDegPerSec, MaxVisualSpinDegPerSec);
 
         private SkipState _state;
         private SkipTuning _tuning;
