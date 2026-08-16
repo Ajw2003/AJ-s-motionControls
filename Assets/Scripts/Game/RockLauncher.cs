@@ -29,7 +29,7 @@ namespace Game
         public RockController ActiveRock => _active;
 
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
-        internal static readonly Vector3 StoneScale = new(0.65f, 0.08f, 0.45f);
+        internal static readonly Vector3 StoneScale = new(0.25f, 0.08f, 0.25f);
 
         private void Update()
         {

@@ -287,10 +287,11 @@ namespace Game
         {
             // Same primitive and scale as the live stone — see RockLauncher for why a box
             // rather than a scaled sphere.
-            var ghost = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var rock = Resources.Load<GameObject>("RockObject");
+            var ghost = Instantiate(rock);
             ghost.name = "GhostRock";
-            Destroy(ghost.GetComponent<Collider>());
             ghost.transform.localScale = RockLauncher.StoneScale;
+            Destroy(ghost.GetComponent<Collider>());
             ghost.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(new Color(0.9f, 0.92f, 1f), PlaceholderArt.StoneQueue);
 

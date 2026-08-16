@@ -16,9 +16,8 @@ namespace Game
     /// </remarks>
     public class RockController : MonoBehaviour
     {
-        [Tooltip("How long the stone's turn takes to bleed away in flight. Purely cosmetic " +
-                 "— spin has no effect on where the stone goes.")]
-        [SerializeField] private float spinDecaySeconds = 1.8f;// need to find a way to derive this from the approx number of skips/distance we get
+        [Tooltip("Fraction of spin remaining by the final skip (0..1)")]
+        [SerializeField] private float targetFinalSpinRetention = 0.001f;
 
         [SerializeField] private float despawnDelay = 2.5f;
 
@@ -58,6 +57,7 @@ namespace Game
         /// </summary>
         private float _spinAngle;
         private float _spinRate;
+        private float _perBounceSpinRetention = 1.0f;
 
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
@@ -69,15 +69,21 @@ namespace Game
             _tuning = tuning;
             _playerId = playerId;
             _origin = state.Position;
-            _spinRate = VisualSpin(state.Spin);
+            _spinRate = (state.Spin);
 
-            // Derive spin decay from the predicted flight duration so it lasts the whole throw
+            // Derive spin decay per bounce based on predicted skips
             var path = new System.Collections.Generic.List<Vector3>();
-            Game.SkipPhysics.Predict(state, tuning, path);
-            float flightTime = path.Count * tuning.FixedStep;
+            var finalState = Game.SkipPhysics.Predict(state, tuning, path);
+            int totalSkips = finalState.SkipCount;
             
-            // Retain ~36% of spin by the time it sinks (e^-1).
-            spinDecaySeconds = Mathf.Max(flightTime, 0.5f);
+            if (totalSkips > 0)
+            {
+                _perBounceSpinRetention = Mathf.Pow(targetFinalSpinRetention, 1.0f / totalSkips);
+            }
+            else
+            {
+                _perBounceSpinRetention = 1.0f;
+            }
 
             transform.position = state.Position;
             transform.rotation = state.Attitude;
@@ -102,6 +108,9 @@ namespace Game
 
                     if (step.Bounced)
                     {
+                        // Lose spin on contact with the water
+                        _spinRate *= _perBounceSpinRetention;
+
                         // _state is already step.State, and SkipPhysics clamps a bounce to
                         // the water plane, so this position is exactly the contact point.
                         EventManager.Instance?.Publish(
@@ -118,11 +127,12 @@ namespace Game
                 transform.position = _state.Position;
             }
 
-            // One exponential, running whether the stone is flying or settling. A stone
-            // that stops turning the instant it lands reads as a freeze-frame, and a
-            // separate coast-down branch for that was one more thing to keep in sync with
-            // this one.
-            _spinRate *= Mathf.Exp(-Time.deltaTime / Mathf.Max(spinDecaySeconds, 0.0001f));
+            if (!IsFlying)
+            {
+                // Coast to a stop smoothly over ~0.8 seconds while underwater
+                _spinRate *= Mathf.Exp(-Time.deltaTime / 0.8f);
+            }
+            
             _spinAngle += _spinRate * Time.deltaTime;
 
             // Attitude on the left, spin on the right: the stone turns about its own face
@@ -135,9 +145,6 @@ namespace Game
         private void Finish()
         {
             IsFlying = false;
-            
-            // Coast to a stop more quickly now that it's in the water
-            spinDecaySeconds = 0.8f;
 
             EventManager.Instance?.Publish(
                 new ThrowCompletedEvent(_playerId, _state.SkipCount, Distance));
