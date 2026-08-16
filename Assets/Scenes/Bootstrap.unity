@@ -157,7 +157,6 @@ MonoBehaviour:
   showDebugHud: 1
   showAimPreview: 1
   usePeerConnections: 1
-  runWebRtcSpike: 0
 --- !u!4 &181819789
 Transform:
   m_ObjectHideFlags: 0

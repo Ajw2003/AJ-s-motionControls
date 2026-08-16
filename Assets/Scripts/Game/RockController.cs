@@ -43,7 +43,7 @@ namespace Game
         /// The rate a measured wrist spin is drawn at, signed. See the constant above.
         /// </summary>
         internal static float VisualSpin(float spinRate) =>
-            Mathf.Clamp(spinRate * 10, -MaxVisualSpinDegPerSec, MaxVisualSpinDegPerSec);
+            Mathf.Clamp(spinRate, -MaxVisualSpinDegPerSec, MaxVisualSpinDegPerSec);
 
         private SkipState _state;
         private SkipTuning _tuning;
@@ -70,6 +70,14 @@ namespace Game
             _playerId = playerId;
             _origin = state.Position;
             _spinRate = VisualSpin(state.Spin);
+
+            // Derive spin decay from the predicted flight duration so it lasts the whole throw
+            var path = new System.Collections.Generic.List<Vector3>();
+            Game.SkipPhysics.Predict(state, tuning, path);
+            float flightTime = path.Count * tuning.FixedStep;
+            
+            // Retain ~36% of spin by the time it sinks (e^-1).
+            spinDecaySeconds = Mathf.Max(flightTime, 0.5f);
 
             transform.position = state.Position;
             transform.rotation = state.Attitude;
@@ -127,6 +135,9 @@ namespace Game
         private void Finish()
         {
             IsFlying = false;
+            
+            // Coast to a stop more quickly now that it's in the water
+            spinDecaySeconds = 0.8f;
 
             EventManager.Instance?.Publish(
                 new ThrowCompletedEvent(_playerId, _state.SkipCount, Distance));

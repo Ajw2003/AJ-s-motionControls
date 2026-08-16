@@ -554,15 +554,23 @@ export class ThrowController {
   }
 
   _fire() {
-    // Spin is read from the live envelope rather than left to the buffer replay, so
-    // the stone leaves at exactly the rate the ghost was showing a frame earlier —
-    // the preview/live agreement this codebase keeps closing everywhere else. Read
-    // before cancel(), which zeroes it.
+    // Spin is read from the absolute peak during the swing, rather than the live decayed envelope.
+    // A fast wrist flick peaks and decays hundreds of milliseconds before the phone finally comes 
+    // to a halt (which is what triggers this release). Using the live envelope meant the rock 
+    // left the hand with barely any spin.
+    let peakSpin = 0;
+    const samples = this.motion.buffer.toArray();
+    for (const sample of samples) {
+      const s = screenSpinRate(sample.rotationRate);
+      if (Math.abs(s) > Math.abs(peakSpin)) peakSpin = s;
+    }
+
     const descriptor = computeThrowDescriptor(
-      this.motion.buffer.toArray(), this.tuning, this._spin);
+      samples, this.tuning, peakSpin);
     this.cancel();
 
     if (!descriptor) return null; // a twitch, not a throw — stay armed-off and let them retry
+
 
     this.onThrow({ type: 'THROW', ...descriptor });
     return descriptor;

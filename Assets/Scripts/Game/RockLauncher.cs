@@ -148,7 +148,8 @@ namespace Game
         /// </remarks>
         private static RockController CreateRockObject()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var rock = Resources.Load<GameObject>("RockObject");
+            var go = Instantiate(rock);
             go.name = "Rock";
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
             go.transform.localScale = StoneScale;
