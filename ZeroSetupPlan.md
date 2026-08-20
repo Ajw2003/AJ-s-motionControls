@@ -251,6 +251,47 @@ mode as the *deterministic* path and DHCP-assigned LAN mode as the variable one.
 listener changes which firewall profile matters — a rule scoped only to the network the
 developer tested on is precisely the failure LOCAL-HTTPS-SPIKE Step 3 warns about.
 
+**3.6 Local DNS responder — the piece that unlocks offline play.** Optional, and the only item
+here that removes a standing limitation rather than automating an existing one.
+
+Caching solves the certificate but **cannot** solve name resolution, and the reason is worth
+being exact about: the cache that matters lives on **each phone**, not on the PC. Every guest's
+device resolves the name itself, phone DNS caches are short-TTL, and a phone joining for the
+first time has nothing cached. No PC-side cache helps.
+
+What does work: **in hotspot mode the PC is the DNS server for its own clients**, so it can
+answer the query authoritatively with no upstream at all — the same mechanism captive portals
+use, pointed at a useful end. Combined with the cached certificate from Phase 2, that removes
+the last reason the host needs to be online at play time.
+
+Two things fall out of it:
+
+- **`local-ip.sh` shrinks from "DNS + certificate" to "certificate only"**, which retires half
+  of risk 1 — the remaining dependency is a file already cached for up to 90 days.
+- **The name no longer has to encode the IP.** The wildcard covers one label, so
+  `play.local-ip.sh` is exactly as valid as `192-168-137-1.local-ip.sh`, and when we are doing
+  the resolving it can point anywhere. That means a constant URL, a constant join QR, and no IP
+  detection — strictly better than 3.5's fixed-address bonus, which still depended on Windows
+  picking the address we expect.
+
+**The spike, and it is the whole risk:** `SharedAccess` (ICS) starts with tethering and claims
+`:53` on the hotspot interface. Verified on the dev machine that it is **Stopped/Manual with
+nothing bound to `:53` while tethering is off**, so the contention exists only while the hotspot
+runs. The responder must either displace ICS there or bind first, and whether that is possible
+**unelevated** is unknown. If it needs admin, it belongs in Phase 4's installer instead.
+
+**Two questions to answer manually, since testing them means cutting the machine's network:**
+
+1. Does `CreateFromConnectionProfile()` succeed from a **connected-but-no-internet** profile?
+2. Does tethering start with **no adapter connected at all**?
+
+Together they decide whether "offline" here means *no internet* or the stricter *no network*.
+Until they are answered, treat offline play as plausible rather than planned.
+
+**Scope limit:** this applies to hotspot mode only. On a normal LAN the phones use the router's
+DNS, which we do not control, so IP-encoded names and upstream resolution remain necessary
+there. Two modes, deliberately.
+
 ## Phase 4 — the installer
 
 Wrap the build (Inno Setup or MSIX) so that install time absorbs:
@@ -291,7 +332,8 @@ later, at a party, with no terminal open.
    certificate, and nobody here operates it. If it disappears, no new certificate can be
    obtained anywhere. *Mitigation:* cached certificates give up to 90 days of grace, and the
    provider should be an interface with `traefik.me` / `local-ip.co` as alternates rather than a
-   hardcoded URL.
+   hardcoded URL. **Phase 3.6 halves this** — a local DNS responder removes the dependency on
+   their *resolution*, leaving only the certificate download, which is already cached.
 2. **The certificate's private key is published on purpose, so it may be revoked.** CA policy
    requires revocation within 24h of a key-compromise disclosure. Mobile browsers largely do not
    hard-fail on revocation today, which is the only reason this works at all. *Mitigation:* the
