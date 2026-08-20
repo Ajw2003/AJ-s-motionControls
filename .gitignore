@@ -53,6 +53,9 @@ relay-url.txt
 # Per-machine environment for the relay child, written by deploy/local-https.ps1.
 relay-env.txt
 
+# Spike output. Records one machine's run, so it is evidence rather than source.
+deploy/spike/*.log
+
 # A backstop, not a workflow. local-https.ps1 keeps the borrowed local-ip.sh key in a
 # scratch directory outside the repo precisely so this rule never has to fire — but
 # .dockerignore is an allowlist, so a key that did land in relay/ would be baked into

@@ -10,7 +10,7 @@ Context: [../../ZeroSetupPlan.md](../../ZeroSetupPlan.md) Phase 3.6.
 
 ---
 
-## Result: the spike succeeded. Offline play is reachable.
+## Result: the spike succeeded, end to end, on a real phone.
 
 | # | Question | Result |
 |---|---|---|
@@ -18,9 +18,11 @@ Context: [../../ZeroSetupPlan.md](../../ZeroSetupPlan.md) Phase 3.6.
 | 2 | Can a hand-rolled responder answer correctly? | **YES** — A, AAAA, and non-matching names all behave. |
 | 3 | Does it work bound to all interfaces, as a phone would reach it? | **YES** — answered on `0.0.0.0:53`, verified via the LAN address. |
 | 4 | Can other names still resolve, so phones keep normal internet? | **YES** — upstream forwarding returns real answers. |
-| 5 | Does the Wi-Fi join QR render and scan? | **Renders.** Needs one phone to confirm the scan. |
+| 5 | Does the Wi-Fi join QR render and scan? | **YES** — a phone joined the hotspot from the QR. |
 | 6 | **Does ICS take `:53` when tethering starts, and can we hold it?** | **NO, AND YES.** The responder bound first, tethering started `Success`, and the responder remained the **sole holder** of `:53`. ICS did not contend for it. |
 | 7 | Is the hotspot address really `192.168.137.1`? | **YES** — confirmed live while tethering was on. |
+| 8 | **Does a real phone actually resolve through the responder?** | **YES** — `http://play.local-ip.sh/` loaded on the phone. That name resolves nowhere on the internet. |
+| 9 | Does the firewall allow it out of the box? | **NO** — this was the one thing that failed, and it is why the game ships as an installer. See below. |
 
 Verified on Node v22.19.0, Windows 11 Pro 26100, 2026-08-20.
 
@@ -72,19 +74,24 @@ machine that is not the developer's would fail exactly this way — a timeout, w
 read. The rules must be added at install time, with `-Profile Any`, and removed on uninstall.
 See [../../ZeroSetupPlan.md](../../ZeroSetupPlan.md) Phase 4.
 
-### The one thing still inferred rather than proven
+### Confirmed with a real phone — 2026-08-20
 
-ICS did not take `:53` — but **whether ICS hands phones `192.168.137.1` as their DNS server is
-not directly confirmed**. ICS conventionally advertises its own host address as both gateway and
-DNS, which would route phone queries straight into the responder. That is the expected
-behaviour, not a measured one.
+The last inferred step is now measured. A phone joined the hotspot and loaded
+**`http://play.local-ip.sh/`**, which returned the confirmation page.
 
-If instead ICS advertises upstream resolvers directly, phones would bypass the responder and
-offline play would not work — the responder would be running and simply never asked. **A single
-phone settles it:** join the hotspot and watch for a `192.168.137.x` address in the responder's
-query log.
+**Why that specific name is the whole proof:** `local-ip.sh` publishes DNS only for IP-encoded
+names like `192-168-137-1.local-ip.sh`. **`play.local-ip.sh` exists in no public DNS at all.**
+There is no resolver on the internet that answers it. The only way the phone could have resolved
+it is that this PC answered the query — which also confirms ICS does advertise `192.168.137.1`
+to its clients as their DNS server.
 
-Note this does not affect the *online* case at all, which works either way.
+That closes the chain: **certificate cached + name resolved locally = the host needs no internet
+at play time.**
+
+One caveat on the same run: the raw-IP URL `192.168.137.1` did *not* load, while the name did.
+Same address, same port, so this is a browser behaviour rather than a network one — a bare IP
+typed into Chrome gets an HTTPS attempt first, and nothing listens on 443. The QR carried an
+explicit `http://` scheme and worked. Worth knowing so it is not mistaken for a real fault.
 
 ### What "correct" meant for question 2
 

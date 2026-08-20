@@ -21,6 +21,31 @@
 'use strict';
 
 const dgram = require('dgram');
+const fs = require('fs');
+const path = require('path');
+
+// Mirror everything to a file as well as the console. The console lives in a window the
+// person running this may not be watching - and during the 2026-08-20 run it was a separate
+// window nobody could read back, which made the single most important output of the spike
+// something that had to be relayed by hand.
+// Appended synchronously on purpose. A buffered stream loses whatever it is holding when the
+// process is killed rather than Ctrl+C'd, which is how a test rig usually dies - and losing
+// the last few lines loses exactly the ones that matter. The volume here is a handful of DNS
+// queries, so the cost of a sync write is irrelevant.
+const LOG_PATH = path.join(__dirname, 'dns-responder.log');
+let logBroken = false;
+
+const consoleLog = console.log.bind(console);
+console.log = (...parts) => {
+  const line = parts.join(' ');
+  consoleLog(line);
+  if (logBroken) return;
+  try {
+    fs.appendFileSync(LOG_PATH, `${new Date().toISOString()}  ${line}\n`);
+  } catch {
+    logBroken = true;  // Do not let logging failure take the responder down with it.
+  }
+};
 
 // ---------------------------------------------------------------- arguments
 

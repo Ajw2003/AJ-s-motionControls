@@ -388,8 +388,14 @@ silently:
    protection has not been observed in practice, and *reachability* failures — AP isolation,
    guest-network segmentation, guests unable to join the venue's network — are answered by
    hosting a hotspot from the PC, which keeps motion controls rather than degrading to touch.
-   That is a bridge, not an escape hatch: **the host still needs connectivity**, so it does not
-   cover this tier's actual case. See
+
+   **And as of 2026-08-20 this tier may be largely obsolete.** A spike
+   ([deploy/spike/](deploy/spike/)) proved the PC can answer DNS for its own hotspot clients:
+   a phone resolved `play.local-ip.sh`, a name no public resolver answers. With the certificate
+   already cached for up to 90 days, **the host needs no internet at play time** — which is
+   precisely the case this tier existed to cover, and it is covered *with* motion controls
+   rather than by degrading to touch. What is still unproven is whether Windows will start
+   tethering with no network attached at all. See
    [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) *Results — 2026-08-20*. Tier 3 is
    now specifically the **certificate** fallback, which is a narrower and more honest job than
    the catch-all it used to be.

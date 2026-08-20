@@ -310,11 +310,20 @@ and evict the responder. It does not:
 | **ICS evicts the responder when tethering starts** | **NO** — tethering started `Success` and the responder stayed the *sole* holder of `:53` |
 | Hotspot address is really `192.168.137.1` | **YES**, confirmed live |
 
-**Still inferred, not measured:** whether ICS advertises `192.168.137.1` to phones as their DNS
-server. It conventionally advertises its own address as both gateway and DNS, which routes phone
-queries into the responder — but if it instead hands out upstream resolvers, phones bypass us and
-offline play fails quietly, with the responder running and simply never asked. One phone on the
-hotspot settles it: look for a `192.168.137.x` address in the query log.
+**Confirmed with a real phone.** A phone joined the hotspot from the Wi-Fi QR and loaded
+`http://play.local-ip.sh/`. That name exists in **no public DNS** — `local-ip.sh` publishes only
+IP-encoded names — so no resolver on the internet can answer it. The only possible source of the
+answer was this PC, which also confirms ICS advertises `192.168.137.1` to its clients as their
+DNS server.
+
+**The chain is closed: certificate cached + name resolved locally = no internet needed at play
+time.** What remains genuinely unknown is narrower than before — see the two questions below,
+which are now only about whether tethering can *start* without a network, not about whether the
+game works once it has.
+
+**One thing did fail, and it is why Phase 4 is no longer optional:** the firewall silently
+dropped everything until scoped rules were added. Details in *The firewall needs an installer*
+above.
 
 **Two questions to answer manually, since testing them means cutting the machine's network:**
 
