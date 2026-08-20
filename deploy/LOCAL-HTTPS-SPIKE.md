@@ -71,7 +71,7 @@ that would otherwise be indistinguishable at the phone:
 | Certificate not expired, SAN covers `*.local-ip.sh` | The borrowed cert lapsed; on the phone this reads as a config mistake |
 | `<name>.local-ip.sh` resolves to that IP | **DNS rebinding protection** on the router, stripping private answers from public names |
 | `/health` over `https://` | The chain does not validate from this machine |
-| `test-deployed.js` over `wss://` | The upgrade or routing is broken under strict validation. **Currently broken** — that file was deleted in `1cd7647` and the script still calls it, so this check fails rather than passing; see [README.md](README.md) |
+| `test-deployed.js` over `wss://` | The upgrade or routing is broken under strict validation. **This check no longer runs** — the file was deleted in `1cd7647` and the script still calls it, so it aborts here instead of passing. An existing setup keeps working without it; see [README.md](README.md) |
 
 **What it never does is touch the firewall** — see Step 3, that measurement is one-shot.
 

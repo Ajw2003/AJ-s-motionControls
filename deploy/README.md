@@ -35,14 +35,29 @@ That is the whole setup. In order, it:
 **Ctrl+C puts everything back** — stops the relay, deletes the borrowed key, restores or
 removes both config files.
 
-> ⚠️ **Step 6 is currently broken, and it is a code bug rather than a documentation one.**
+> ⚠️ **Step 6 is broken — but latent, so read this before concluding the game is broken.**
 > `Test-Chain` shells out to `node test-deployed.js` (`local-https.ps1:465`), but
-> `relay/test-deployed.js` was deleted in `1cd7647` along with the Fly config. Node exits
-> non-zero, so the script calls `Fail` and stops — *after* starting the relay. The same dead
-> reference is still in `relay/package.json` as the `test:deployed` script.
+> `relay/test-deployed.js` was deleted in `1cd7647` along with the Fly config. Node exits 1,
+> so the script calls `Fail` and stops — *after* `Start-Relay` has already run. The same dead
+> reference survives in `relay/package.json` as the `test:deployed` script.
 >
-> Until it is fixed, the relay is usually already up and serving when the script bails, so the
-> practical workaround is to start it yourself with the values `-SetupOnly` writes (see
+> **Why the game still plays today anyway.** Nothing in the play path goes through this
+> script once the setup exists. A run on 2026-08-13 — hours before the deletion — left behind
+> `relay-url.txt`, `relay-env.txt` and the certificate in `%TEMP%`, all gitignored or outside
+> the repo, so no checkout disturbs them. Unity's `LocalServices` reads `relay-env.txt` and
+> starts the relay itself on Play. The script is only needed to *establish* that state.
+>
+> **When it will start mattering**, i.e. when the persisted state stops being valid:
+>
+> | Trigger | Effect |
+> |---|---|
+> | The borrowed certificate expires (**Sep 18 2026** on the current copy) | TLS fails; a re-run is required, and the re-run aborts |
+> | DHCP moves the PC off its current IP | `relay-url.txt` names the wrong host |
+> | `%TEMP%` is cleared — Storage Sense does this unprompted | Certificate and key are gone |
+> | A new machine, or a teammate's first setup | Nothing to inherit |
+>
+> **Workaround until it is fixed:** the relay is already up and serving when the script bails,
+> so a run is still usable — or start it yourself with the values `-SetupOnly` writes (see
 > [RECONNECT-TEST.md](RECONNECT-TEST.md) Test B for the exact command). The fix is either to
 > restore a smoke test under that name or to drop the call.
 

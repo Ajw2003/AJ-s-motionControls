@@ -55,10 +55,12 @@ and `relay-env.txt` for you, starts the relay over TLS, and verifies the chain b
 pick up the phone. **Ctrl+C undoes all of it.** Full runbook:
 [deploy/README.md](deploy/README.md).
 
-⚠️ **Its last verification step is currently broken** — it calls `node test-deployed.js`, a
-file deleted along with the Fly config, so the script fails at the end of an otherwise
-successful setup. The relay is usually already up when it bails. See
-[deploy/README.md](deploy/README.md) for the workaround.
+⚠️ **Its last verification step is broken** — it calls `node test-deployed.js`, a file deleted
+along with the Fly config, so the script aborts at the end of an otherwise successful setup
+(the relay is already up by then). **If the game currently plays for you, you are not running
+this script** — the config and certificate from an earlier run persist outside the repo and
+Unity starts the relay from them. It becomes blocking the moment that state expires or the
+machine's IP changes. Details and workaround: [deploy/README.md](deploy/README.md).
 
 Then open **Bootstrap** and press Play:
 
