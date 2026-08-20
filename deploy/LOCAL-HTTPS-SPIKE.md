@@ -205,7 +205,7 @@ Galaxy S25 hosting a hotspot, PC joined at `10.144.225.71`, Android Chrome.
 | **Motion sensors fire** | **PASS, decisively.** 90 samples per throw, peak 24.9–53.8 m/s². The simulated path sends `sampleCount: 0, peakAccel: 0`, so these are real gestures. |
 | Chain validates over a LAN IP | **PASS** — `curl` full verification, `ssl_verify_result 0`. |
 | `wss://` under strict validation | **PASS** — open in 23ms, no `rejectUnauthorized` override. This is the path Unity's `ClientWebSocket` takes; a browser being happy would not have proven it. |
-| DNS: public name → private IP | **PASS** on two resolvers — a corporate AD resolver and a carrier path via the hotspot. Neither stripped the private answer. **A home router is still untested.** |
+| DNS: public name → private IP | **PASS** on two resolvers at the time — a corporate AD resolver and a carrier path via the hotspot. Neither stripped the private answer. *A home router was untested at this point; it has since passed — see Results 2026-08-20 below.* |
 | Page load | Local **9–11ms**. Fly warm **240–270ms**. Fly **cold 5.47s**, landing on the first guest of a session. The Fly figures are historical — that deployment is gone — and this row is the clearest thing local hosting won. |
 | Firewall cost | **Not measurable on the dev machine.** See Step 3. |
 | Guest on cellular | **Confirmed impossible.** A private IP is unroutable from the internet. Such a guest could play under the old hosted design and cannot now. This is the price that was paid. |
@@ -225,6 +225,68 @@ Cause undiagnosed. Candidates: the mDNS candidate obfuscation HostingPlan §5 fl
 or something about hotspot routing. It ran on hotspot topology, which is not the target.
 **Independent of the certificate question and worth its own look on normal Wi-Fi.**
 
+## Results — 2026-08-20
+
+The network questions the 2026-08-12 run left open, answered by real sessions rather than by
+argument. **These supersede the "untested" caveats above.**
+
+### Home network, two routers, 5 players
+
+An ISP-supplied router plus a second unit in **AP mode with its own SSID and password** — so
+two named networks rather than one flat LAN. A 5-player match across **iOS and Android**.
+
+| Question | Result |
+|---|---|
+| Consumer router strips private DNS answers | **NO.** Resolution worked; no rebinding protection encountered. |
+| Phones on the main network | **PASS** |
+| Phones on the AP-mode network | **PASS** — joining worked from either, so a hop across the AP boundary is not fatal |
+| iOS as well as Android | **PASS** |
+
+**This retires the "a home router is still untested" caveat**, which was the largest open
+network question and had been standing since the original run.
+
+### PC-hosted hotspot — the answer to hostile networks
+
+Distinct from the 2026-08-12 test, which had the **phone** hosting the hotspot and the PC
+joining. This is the reverse: **the PC hosts the hotspot and the phones join it.**
+
+Confirmed on a school network. **Be precise about which device lacked access, because it is the
+opposite of what it sounds like:** the PC was connected to the school network and had working
+access throughout. The **phone** was the device that could not join it — the usual situation on
+enterprise Wi-Fi, where each guest needs their own credentials. The PC hosted a hotspot *while
+remaining on the school network*, the phone joined the hotspot, and the session worked.
+
+So the capability is **bridging a guest device onto a network it cannot join itself**, with the
+host acting as the bridge. That is a good deal more common than a host who cannot get online:
+guests routinely lack the Wi-Fi password at a house party, and lack an account entirely on
+enterprise networks.
+
+It makes the PC the access point for the phones, which structurally removes:
+
+- **AP isolation**, previously called out as the one thing no script could rule out
+- **Guest-network segmentation**, which splits clients on many home setups
+- **Any need for guests to hold network credentials** — they join the PC, not the venue
+
+**This is the recommended fallback whenever guests cannot get onto the venue's network**, and it
+should be surfaced in-game rather than living only in this document.
+
+> **This session says nothing about offline play — the PC was online throughout.** Worth stating
+> plainly, because the scenario invites the opposite assumption. The PC held working school
+> network access the whole time, so DNS resolved by the ordinary route and the phones were
+> served through the PC's own uplink. **No conclusion about offline behaviour can be drawn from
+> it.**
+>
+> The name always has to resolve, which needs a DNS path — see the certificate-broker row in
+> [HostingPlan.md](../HostingPlan.md) §2, which notes this design "does not enable offline play
+> either: the phone still needs public DNS to resolve the name."
+>
+> Separately, and this *is* independent evidence:
+> `NetworkOperatorTetheringManager.CreateFromConnectionProfile()` **requires a connection
+> profile**, so the PC must be attached to some network to tether at all. That points to hotspot
+> mode being a bridge rather than an offline fallback, and therefore **not** a replacement for
+> the unbuilt tier-3 fallback in HostingPlan §6. Still worth one deliberate test with the PC
+> genuinely offline before treating it as settled.
+
 ## What this settles, and what adoption simply accepted
 
 **Settled:** the technical premise. A locally-served HTTPS page unlocks motion sensors, and the
@@ -232,11 +294,17 @@ whole chain works with no per-host domain, no configuration, and no Unity change
 
 **Settled since, by use rather than by argument:**
 
-- **Home-router rebinding.** Originally untested — the 2026-08-12 run only had a corporate AD
-  resolver and a carrier path via a hotspot. The setup has since run on an ordinary home
-  network (`10.0.0.x`) through a multi-player session, so at least one consumer router does not
-  strip the private answer. **This is one router, not a general result** — a router that does
-  strip it will fail at Step 1's resolution check, which is exactly where you want to find out.
+- **Home-router rebinding — resolved.** Originally untested. It has since run on an ordinary
+  home network through a full 5-player session across iOS and Android, on a two-router setup
+  (ISP router plus a second in AP mode with its own SSID and password). **Phones joined
+  successfully from either network**, so the answer survives both the consumer router and a
+  hop across an AP boundary. See *Results — 2026-08-20*.
+- **AP isolation and guests who cannot join the network — a workaround exists.** The PC hosting
+  its own mobile hotspot lets phones connect directly to it, which makes the PC the AP for those
+  phones and removes both AP isolation and any need for *guests* to hold network credentials.
+  Confirmed on a school network: the PC was connected and stayed connected, and the phone — which
+  could not join that network at all — reached the game through the PC's hotspot. See
+  *Results — 2026-08-20*.
 
 **Not settled. These were accepted as costs, not resolved:**
 

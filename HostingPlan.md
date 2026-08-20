@@ -374,9 +374,8 @@ silently:
    readout matters more than it used to.
 3. **Touch controls on the LAN** — still unbuilt, and its trigger has changed. It was for the
    hosted service being unreachable; there is no hosted service now, so the failure it covers is
-   the *certificate* path breaking — `local-ip.sh` down, the borrowed cert expired, or router
-   DNS rebinding protection refusing to return a private answer. The relay would serve plain
-   HTTP on the LAN and the controller would switch to touch aiming, reusing the
+   the *certificate* path breaking — `local-ip.sh` down, or the borrowed cert expired. The relay
+   would serve plain HTTP on the LAN and the controller would switch to touch aiming, reusing the
    `computeSimulatedThrowDescriptor` seam already in
    [controller/js/throw.js](controller/js/throw.js). No certificate is possible here, so no
    motion sensors — but a party still happens.
@@ -384,6 +383,16 @@ silently:
    **This tier is now more load-bearing than it was**, because local hosting depends on a third
    party (`local-ip.sh`) that nobody here operates, in the one path that cannot be worked
    around. It is still unbuilt.
+
+   **Two failures that used to belong here have been promoted out of it.** Router DNS rebinding
+   protection has not been observed in practice, and *reachability* failures — AP isolation,
+   guest-network segmentation, guests unable to join the venue's network — are answered by
+   hosting a hotspot from the PC, which keeps motion controls rather than degrading to touch.
+   That is a bridge, not an escape hatch: **the host still needs connectivity**, so it does not
+   cover this tier's actual case. See
+   [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) *Results — 2026-08-20*. Tier 3 is
+   now specifically the **certificate** fallback, which is a narrower and more honest job than
+   the catch-all it used to be.
 
 ## 7. What this deletes
 
@@ -427,7 +436,7 @@ nothing listened. That was requirement 2 met exactly.
 | 2 | Allow `node` through the firewall | First run on a machine, per network profile |
 | 3 | Pick the right interface with `-Ip` | Only if the machine has several plausible NICs |
 | 4 | Re-run after the LAN IP changes | Whenever DHCP moves the machine |
-| 5 | Get everyone onto the same network | Every party — cellular guests cannot join at all |
+| 5 | Get everyone onto the same network | Every party — cellular guests cannot join at all. A PC-hosted hotspot covers venues whose network is unusable, so this is proximity rather than a specific network |
 
 None of these are per *guest*, which is what §9 protects and what still holds. They are per
 host, and the host is currently one person who wrote the game. **Requirement 2 is not met, and

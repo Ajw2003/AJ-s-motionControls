@@ -176,7 +176,7 @@ established and nobody could tell.
 | Relay says `resumed` but the phone still rejoined | Harmless — the phone's socket died independently | Nothing to fix |
 | Phone stuck on "Host reconnecting…" past 60s | Give-up path broken | Relay should log `closed (Host disconnected)`; check the grace sweep |
 | Everything breaks at once, mid-session | **The PC's LAN IP changed** — DHCP moved it, so the name in `relay-url.txt` now points elsewhere | Re-run `local-https.ps1`; a DHCP reservation for the PC prevents a repeat |
-| Phone cannot reach the relay at all | It is on mobile data, or a guest network isolated from the PC | Both are fatal for local hosting by design — same network, or no game |
+| Phone cannot reach the relay at all | It is on mobile data, or a guest network isolated from the PC | Mobile data is fatal by design. Isolation is not — host a hotspot from the PC and have the phone join that ([README.md](README.md)) |
 
 **One caveat on a passing run.** Tests A and C both start by dropping the host, and they only
 differ in whether it returns. If you run A and are slow turning Wi-Fi back on, you are running

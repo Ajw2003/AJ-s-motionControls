@@ -97,9 +97,25 @@ something now listens on this machine. The script deliberately reports firewall 
 never changes it — see [LOCAL-HTTPS-SPIKE.md](LOCAL-HTTPS-SPIKE.md) Step 3 for why that
 measurement is one-shot per machine and worth not spending by accident.
 
-**Some routers will break it.** DNS rebinding protection strips private-IP answers from public
-names, and AP isolation stops two clients on the same Wi-Fi reaching each other at all. Step 4
-of the script catches the first; nothing can catch the second except trying.
+**Some routers may break it, though none has yet.** DNS rebinding protection strips private-IP
+answers from public names, and AP isolation stops two clients on the same Wi-Fi reaching each
+other at all. Step 4 of the script catches the first; nothing can catch the second except
+trying.
+
+In practice this has held up better than expected. A home setup running an ISP router **plus a
+second unit in AP mode with its own SSID** served a 5-player iOS/Android session with phones
+joining from *either* network — so neither rebinding protection nor the AP hop caused trouble.
+
+**If guests cannot get onto the venue's network, host a mobile hotspot from the PC and have
+phones join that.** It makes the PC the access point for those phones, which removes AP
+isolation, guest-network segmentation, and any need for *guests* to hold network credentials in
+one move.
+
+Confirmed on a school network — and note which device was stuck, because it is the opposite of
+what it sounds like: **the PC was connected and stayed connected**; the *phone* was the device
+that could not join. The PC bridged it. That is the common case at a party too, where guests
+lack the Wi-Fi password and the host does not. Treat it as the standard fallback rather than a
+last resort.
 
 ## When something goes wrong
 
@@ -107,9 +123,10 @@ of the script catches the first; nothing can catch the second except trying.
 |---|---|---|
 | Script stops at interface detection | Several interfaces with a default gateway; guessing wrong fails exactly like a bad certificate | Re-run with `-Ip <the right one>` |
 | `Could not reach local-ip.sh` | TLS 1.2 not enabled in Windows PowerShell, or the service is down | The script sets the protocol itself; a cached copy in `%TEMP%` is used if present |
-| Name does not resolve to the IP | **Router DNS rebinding protection** stripping the private answer | Try a phone hotspot; if that works, it is the router |
+| Name does not resolve to the IP | **Router DNS rebinding protection** stripping the private answer | Host a hotspot from the PC and rerun; if that works, it is the router |
 | `/health` fails over `https://` | Certificate expired, or the wrong IP was chosen | Re-run — the script re-downloads and re-checks the SAN |
-| Phone cannot load the page, PC can | AP isolation, or the firewall | Open `https://<pc-ip>:8443/health` by **raw IP** on the phone: a *certificate name mismatch* means the network is fine and only DNS was at fault; a *timeout* means isolation |
+| Phone cannot load the page, PC can | AP isolation, guest-network segmentation, or the firewall | Open `https://<pc-ip>:8443/health` by **raw IP** on the phone: a *certificate name mismatch* means the network is fine and only DNS was at fault; a *timeout* means isolation. **The fix for isolation is a PC-hosted hotspot** |
+| Guests cannot join the venue's network | Enterprise Wi-Fi needing per-user credentials, a captive portal, or nobody knows the password | Host a hotspot from the PC and have phones join that. The PC stays on the venue network and bridges them — confirmed on enterprise Wi-Fi a phone could not join |
 | Page loads, sensors dead | Not a secure context | In the phone's browser console: `window.isSecureContext` |
 | Unity connects nowhere | `relay-url.txt` stale, or the relay is not running | The file should hold `wss://<dashed-ip>.local-ip.sh:8443`, and the IP must be current |
 | Everything worked yesterday, not today | **The LAN IP changed** — DHCP moved the machine | Re-run the script; it rewrites the name and the config |

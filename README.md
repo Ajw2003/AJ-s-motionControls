@@ -77,6 +77,13 @@ limitation of local hosting and is not a bug; [HostingPlan.md](HostingPlan.md) �
 derivation, and [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) has the rest of
 what it costs.
 
+"The same network" is looser than it sounds, though. A 5-player iOS/Android session ran on a
+home setup with an ISP router *and* a second unit in AP mode on its own SSID, with phones
+joining from either. And if guests cannot get onto the network — no password, or enterprise
+Wi-Fi wanting per-user credentials — **host a mobile hotspot from the PC and have phones join
+that**. The PC stays on the venue network and bridges them, which sidesteps AP isolation and
+sign-in walls entirely. Confirmed on a school network that a phone could not join.
+
 Why HTTPS at all, rather than plain `ws://` to a LAN IP: phone motion sensors need a secure
 context, and an HTTPS page cannot open a plain `ws://` socket. Both problems disappear when
 the page and the socket share one secure origin, which is why the relay serves the controller

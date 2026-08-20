@@ -39,11 +39,22 @@ Stating these first, because a plan that quietly omits them is worse than no pla
 
 The relay is reached at a private address (`10.0.0.213`). Private addresses are unroutable from
 the internet by definition. No certificate, bundling or automation changes that. **Everyone
-plays from the same network, or they do not play.**
+plays in the same room, or they do not play.**
 
 This is the one requirement the deleted Fly.io deployment met and local hosting cannot. If
 remote guests ever matter more than self-containment, the answer is a hosted relay and this
 entire plan is the wrong shape — see *The fork* below.
+
+**But "the same network" is a weaker constraint than it first appears**, and field testing has
+softened it twice. Phones joined from either side of a two-router home setup (ISP router plus a
+second in AP mode with its own SSID), so a flat LAN is not required. And the PC can *create* a
+network for guests who cannot join the venue's — a PC-hosted hotspot carried a phone that could
+not get onto a school network, while the PC stayed on it and bridged.
+
+So the requirement is not "everybody on the same network" but **the host on a network, and the
+guests in the room**. Note what did *not* soften: the host still needs connectivity, because the
+name has to resolve and the certificate has to be fetched. Phase 3.5 makes this a product
+feature instead of a trick the developer happens to know.
 
 ### 2. The Windows firewall prompt needs an installer to absorb it
 
@@ -167,6 +178,79 @@ not as configuration.
 **3.4 Pick a free port** rather than assuming 8443, and derive the URL from what was actually
 bound.
 
+**3.5 Automatic hotspot + Wi-Fi QR — the "guests join the PC, not the venue" flow.** The
+highest-value item in Phase 3, and it came out of field testing rather than design. Hosting a
+mobile hotspot *from the PC* makes the PC the access point for the phones, removing AP
+isolation, guest-network segmentation, and any need for **guests** to hold network credentials.
+
+Confirmed on a school network, and the direction matters: **the PC was connected and stayed
+connected** — it was the *phone* that could not join, as is normal on enterprise Wi-Fi where
+each user needs their own account. The PC bridged it. This is the ordinary party case too, where
+the host is on the network and the guests are not.
+
+The whole flow can be automated. **This is verified against the API on the dev machine, not
+assumed:**
+
+```
+TetheringState : Off          <- startable via StartTetheringAsync()
+MaxClientCount : 8            <- exactly the game's 2-8 player design cap
+Config members : AuthenticationKind, Band, Passphrase, Ssid
+Passphrase     : readable and settable
+```
+
+`NetworkOperatorTetheringManager` (WinRT, `Windows.Networking.NetworkOperators`) exposes
+everything required, and **the query above ran unelevated** — no admin, no UAC.
+
+The flow:
+
+1. **Configure the AP** — `ConfigureAccessPointAsync()` with a generated SSID (e.g. the room
+   code) and a fresh random passphrase per session.
+2. **Force `Band` to 2.4 GHz.** Compatibility, not speed: some phones cannot see 5/6 GHz APs,
+   and 2.4 GHz carries further across a room. The dev machine's current uplink is a 6 GHz
+   network, so an inherited default would be exactly the wrong choice.
+3. **Start tethering**, then read `Ssid` and `Passphrase` back.
+4. **Render a Wi-Fi QR** in the standard payload format both Android and iOS cameras understand:
+   `WIFI:T:WPA;S:<ssid>;P:<passphrase>;;`
+5. **Then show the existing join QR.** Re-derive the relay URL first — see the fixed-address
+   note below.
+
+> **This is two scans, not one, and that is unavoidable.** A `WIFI:` payload joins a network; a
+> URL payload opens a page. They are different payload types and no single QR does both. The
+> sequence — scan to join, scan to play — is still far better than reading a passphrase aloud.
+>
+> *Optional refinement, not the path:* both OSes probe a known URL after joining a network to
+> detect captive portals, and intercepting that probe can pop the controller open automatically.
+> Captive-portal mini-browsers are heavily restricted, though, and motion sensors are exactly
+> the kind of thing they break. Treat auto-open as a bonus that must degrade to "open in
+> browser", never as the mechanism.
+
+**A bonus worth designing around: in hotspot mode the address stops moving.** The PC is the AP,
+so it holds a fixed, predictable address (Windows ICS conventionally `192.168.137.1`). That
+makes `192-168-137-1.local-ip.sh` **stable across sessions and venues** — the same URL, the same
+cached certificate, the same join QR every time, with no IP detection and none of 3.3's
+re-derivation problems. Confirm the actual address once tethering is live, then treat hotspot
+mode as the *deterministic* path and DHCP-assigned LAN mode as the variable one.
+
+**Three constraints found while verifying, all of which shape the design:**
+
+1. **`CreateFromConnectionProfile()` requires a connection profile**, so the PC must be
+   connected to *something* to tether at all. This looks like it settles the open question from
+   the previous section in the disappointing direction: **hotspot mode is a hostile-network fix,
+   not an offline one**, and it is therefore *not* a substitute for HostingPlan §6's unbuilt
+   tier-3 fallback. Worth one deliberate test before accepting that.
+2. **A single Wi-Fi adapter must both uplink and tether.** The dev machine is Wi-Fi-only
+   (Realtek 8852CE, no Ethernet), so the same radio does both jobs. It works — the school
+   session proves it — but it is the fragile configuration, and driver behaviour varies. A
+   machine on Ethernet tethering over Wi-Fi is the clean case.
+3. **Unity cannot call WinRT directly** (Mono / .NET Standard 2.1). This needs a small bundled
+   helper — either a `net8.0-windows10.0.19041` executable the game launches, or the same
+   PowerShell interop used to verify the above. A helper executable is cleaner and fits Phase 1's
+   bundling work; it is also the natural place to put hotspot teardown on exit.
+
+**Sequencing note:** this is worth building *before* Phase 4's installer, because a hotspot
+listener changes which firewall profile matters — a rule scoped only to the network the
+developer tested on is precisely the failure LOCAL-HTTPS-SPIKE Step 3 warns about.
+
 ## Phase 4 — the installer
 
 Wrap the build (Inno Setup or MSIX) so that install time absorbs:
@@ -191,8 +275,12 @@ Not "it works on this machine" — that is what hid four blockers:
 4. Delete the certificate cache, relaunch, confirm it re-downloads silently.
 5. Move the machine to a different network so its IP changes, relaunch, confirm it adapts.
 6. Set the clock past the certificate's expiry, relaunch, confirm renewal rather than a TLS error.
+7. **Hotspot mode:** with the PC on a network the *phones* cannot join, switch to a PC-hosted
+   hotspot from inside the game and confirm phones join and play.
+8. **Hotspot mode with the PC fully offline** — the open question from Phase 3.5. Whatever this
+   returns, record it; it decides whether offline play is possible at all.
 
-Steps 4–6 are the ones that matter: they are the failures that will otherwise surface months
+Steps 4–8 are the ones that matter: they are the failures that will otherwise surface months
 later, at a party, with no terminal open.
 
 ---
@@ -209,13 +297,20 @@ later, at a party, with no terminal open.
    hard-fail on revocation today, which is the only reason this works at all. *Mitigation:* the
    multi-provider interface above; treat it as a dependency that can vanish, not as
    infrastructure.
-3. **Router DNS rebinding protection** strips private answers from public names and will break
-   this on some home networks, with no workaround from inside the game. *Mitigation:* detect it
-   at the resolution check and say so plainly — it is indistinguishable from a broken
-   certificate otherwise.
-4. **AP isolation** stops LAN clients reaching each other and cannot be detected from the PC
-   alone. *Mitigation:* a raw-IP fallback URL on the TV, so a name-mismatch warning (network
-   fine) is distinguishable from a timeout (isolation).
+3. **Router DNS rebinding protection** strips private answers from public names. **Downgraded —
+   this has not been observed in practice.** A home setup with an ISP router plus a second in AP
+   mode carried a 5-player iOS/Android session with phones joining from either network. It
+   remains possible on other hardware. *Mitigation:* detect it at the resolution check and say so
+   plainly — it is indistinguishable from a broken certificate otherwise — then fall back to
+   hotspot mode (risk 4).
+4. **AP isolation and locked-down networks.** ~~Cannot be detected from the PC alone.~~
+   **Largely solved, by a workaround that turned out to be strong:** hosting a mobile hotspot
+   *from the PC* makes the PC the access point, which removes AP isolation, guest-network
+   segmentation and any need for *guests* to hold network credentials at once. Confirmed on a
+   school network the **phone** could not join, with the PC connected throughout and acting as
+   the bridge. *Action:* this should be a **first-class in-game feature**, not
+   folklore in a runbook — see Phase 3.5. *Mitigation meanwhile:* a raw-IP fallback URL on the
+   TV, so a name-mismatch warning (network fine) is distinguishable from a timeout (isolation).
 5. **Bundling `node.exe` adds ~50 MB and an antivirus surface** — an unsigned binary spawning a
    listening child process is a plausible false positive. *Mitigation:* sign the installer; the
    C# port removes this risk class entirely and is the reason to revisit it.
