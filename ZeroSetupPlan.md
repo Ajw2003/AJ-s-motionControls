@@ -238,10 +238,12 @@ mode as the *deterministic* path and DHCP-assigned LAN mode as the variable one.
    the previous section in the disappointing direction: **hotspot mode is a hostile-network fix,
    not an offline one**, and it is therefore *not* a substitute for HostingPlan §6's unbuilt
    tier-3 fallback. Worth one deliberate test before accepting that.
-2. **A single Wi-Fi adapter must both uplink and tether.** The dev machine is Wi-Fi-only
-   (Realtek 8852CE, no Ethernet), so the same radio does both jobs. It works — the school
-   session proves it — but it is the fragile configuration, and driver behaviour varies. A
-   machine on Ethernet tethering over Wi-Fi is the clean case.
+2. **A single Wi-Fi adapter having to both uplink and tether is the fragile case.** The dev
+   machine can do either: it has a Realtek 8852CE Wi-Fi 6E adapter *and* a Realtek 2.5GbE
+   Ethernet controller. When the 2026-08-20 spike ran, Ethernet was the uplink with Wi-Fi free,
+   and starting the hotspot was a non-event. Wi-Fi-only hosts share one radio between both jobs;
+   it works (the school session proves it) but driver behaviour varies. **The game should detect
+   which case it is in and warn before starting a hotspot that may drop the host's own uplink.**
 3. **Unity cannot call WinRT directly** (Mono / .NET Standard 2.1). This needs a small bundled
    helper — either a `net8.0-windows10.0.19041` executable the game launches, or the same
    PowerShell interop used to verify the above. A helper executable is cleaner and fits Phase 1's
@@ -251,8 +253,9 @@ mode as the *deterministic* path and DHCP-assigned LAN mode as the variable one.
 listener changes which firewall profile matters — a rule scoped only to the network the
 developer tested on is precisely the failure LOCAL-HTTPS-SPIKE Step 3 warns about.
 
-**3.6 Local DNS responder — the piece that unlocks offline play.** Optional, and the only item
-here that removes a standing limitation rather than automating an existing one.
+**3.6 Local DNS responder — the piece that unlocks offline play. ✅ SPIKED, PASSED.** The only
+item here that removes a standing limitation rather than automating an existing one — and the
+mechanism is now proven rather than proposed.
 
 Caching solves the certificate but **cannot** solve name resolution, and the reason is worth
 being exact about: the cache that matters lives on **each phone**, not on the PC. Every guest's
@@ -274,11 +277,23 @@ Two things fall out of it:
   detection — strictly better than 3.5's fixed-address bonus, which still depended on Windows
   picking the address we expect.
 
-**The spike, and it is the whole risk:** `SharedAccess` (ICS) starts with tethering and claims
-`:53` on the hotspot interface. Verified on the dev machine that it is **Stopped/Manual with
-nothing bound to `:53` while tethering is off**, so the contention exists only while the hotspot
-runs. The responder must either displace ICS there or bind first, and whether that is possible
-**unelevated** is unknown. If it needs admin, it belongs in Phase 4's installer instead.
+**The spike is built and it passed.** See [deploy/spike/](deploy/spike/) for the code and full
+results. The concern was that `SharedAccess` (ICS) would claim `:53` on the hotspot interface
+and evict the responder. It does not:
+
+| Question | Result |
+|---|---|
+| Bind UDP `:53` **without admin** | **YES** — Windows has no privileged-port rule, so this never touches the installer |
+| Responder answers A / AAAA / non-matching correctly | **YES** |
+| Upstream forwarding, so phones keep normal internet | **YES** |
+| **ICS evicts the responder when tethering starts** | **NO** — tethering started `Success` and the responder stayed the *sole* holder of `:53` |
+| Hotspot address is really `192.168.137.1` | **YES**, confirmed live |
+
+**Still inferred, not measured:** whether ICS advertises `192.168.137.1` to phones as their DNS
+server. It conventionally advertises its own address as both gateway and DNS, which routes phone
+queries into the responder — but if it instead hands out upstream resolvers, phones bypass us and
+offline play fails quietly, with the responder running and simply never asked. One phone on the
+hotspot settles it: look for a `192.168.137.x` address in the query log.
 
 **Two questions to answer manually, since testing them means cutting the machine's network:**
 
