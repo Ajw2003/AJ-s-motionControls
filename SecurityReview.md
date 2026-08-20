@@ -83,23 +83,49 @@ alternative is not "a more private option", it is **no game**. That makes it a v
 trade rather than a hidden one — provided the game actually says so, which is why the on-screen
 notice below is a requirement and not a nicety.
 
-### The strongest available technical mitigation — and it needs a spike
+### ✅ CONFIRMED — the hotspot can carry the game without carrying the internet
 
-**Stop sharing the internet.** The game needs a phone to reach *this PC*; it has never needed to
-give that phone internet access.
+**Spiked and verified on a real phone, 2026-08-20.** This is the mitigation that makes the
+hotspot feature defensible, and it works.
 
-If the hotspot carries no internet, the payoff is large and slightly surprising: **Android keeps
-mobile data as its default route for a Wi-Fi network it has judged to have no internet**, and
-uses the Wi-Fi only for that local subnet. iOS behaves similarly if less predictably. The result
-is that a guest's real browsing never traverses the host at all — not "is not logged", but
-*never arrives*.
+The game needs a phone to reach *this PC*; it never needed to give that phone internet. Measured
+behaviour, contradicting the guess in an earlier draft of this document:
 
-**Unverified, and it should not be planned around until it is.** Windows tethering runs through
-ICS, which performs NAT in `ipnathlp.dll` rather than plain IP forwarding, so
-`Set-NetIPInterface -Forwarding Disabled` is probably not the lever. Whether Windows Firewall
-reliably filters ICS-forwarded traffic is murky and version-dependent. **This deserves its own
-spike**, in the same style as the DNS one: try to block the forwarded path, then verify from a
-phone that the game works and general browsing does not.
+```
+BEFORE tethering:  Ethernet 4                 forwarding Disabled
+DURING tethering:  Ethernet 4                 forwarding Enabled   <- ICS turns this on
+                   Local Area Connection* 12  forwarding Enabled
+Get-NetNat entries: 0
+```
+
+ICS routes with **plain IP forwarding**, not an opaque NAT engine — so
+`Set-NetIPInterface -Forwarding Disabled` *is* the lever after all, and ICS does not revert it.
+With forwarding off, a phone on the hotspot loaded `http://play.local-ip.sh/` normally and
+**could not load any ordinary website.**
+
+**What this buys, and it is more than "we promise not to look":**
+
+- Guests' real browsing **never arrives at the host**, so there is nothing to observe, log, or
+  subpoena. Not a policy — an absence of data.
+- **Android keeps mobile data as its default route** for a Wi-Fi it has judged to have no
+  internet, using the Wi-Fi only for the local subnet. So at a normal party, with mobile data
+  on, guests' traffic *and their DNS* go over cellular and never touch the PC.
+- §3's liability problem disappears with it: nothing exits via the host's IP address, so nothing
+  is attributed to them.
+
+Combined with "answer only the game's own name, NXDOMAIN the rest, never log", the host's view
+of a guest reduces to roughly nothing.
+
+> **Follow-on problem, and it is a real one.** `Set-NetIPInterface -Forwarding` needs
+> administrator rights, and **ICS re-enables forwarding every time tethering starts** — so this
+> is a runtime action, once per session, not a one-off at install. A UAC prompt per party would
+> defeat the zero-setup goal outright.
+>
+> The way out is a **scheduled task registered at install time with highest privileges**, which
+> the game triggers without a prompt. It must take **no parameters** and do exactly one
+> hardcoded thing — disable forwarding on the `192.168.137.x` interface. A task that accepted an
+> interface name from a caller would be a local privilege-escalation vector, which would be an
+> unusually silly way to undo a privacy win.
 
 ### What is not achievable, stated plainly
 
@@ -150,18 +176,23 @@ natural home for this**: start the hotspot, apply the forwarding restrictions, a
 teardown on exit. So the instinct behind the question was right — it is the scope that shrinks,
 from "a network application" to "the process already on the plan, doing one more job."
 
-## 3. Sharing the host's internet connection carries the host's liability
+## 3. ✅ LARGELY RESOLVED — the host's liability for shared traffic
 
-Windows tethering shares the uplink. Everything a guest does exits via **the host's IP address**
-and is attributed to them. On a school or corporate network, sharing a connection this way also
-commonly violates acceptable-use policy — which is worth noting given the hotspot's most
-compelling use case is exactly those networks.
+Windows tethering shares the uplink by default, so everything a guest does would exit via **the
+host's IP address** and be attributed to them. On a school or corporate network that also
+commonly breaches acceptable-use policy — awkward, given the hotspot's best use case is exactly
+those networks.
 
-**Mitigations**
+**§2's forwarding fix removes this.** With no internet crossing the hotspot, nothing exits via
+the host's address and there is nothing to attribute. The acceptable-use problem goes with it:
+the PC is not redistributing the network, it is running a LAN for a game.
 
-- Say so, once, where the host turns the hotspot on. Not a EULA — one line.
-- Keep sessions short-lived; stop tethering when the game closes rather than leaving an open
-  access point running indefinitely.
+**Still worth doing**
+
+- Say so on screen, once, where the host turns the hotspot on. Not a EULA — one line, and it can
+  now honestly say the hotspot does *not* share the connection.
+- Stop tethering when the game closes. An access point left running after the party is a
+  liability whether or not it routes anything.
 
 ---
 
@@ -297,7 +328,7 @@ What is left:
 |---|---|---|
 | 1 | **DNS source guard + rate limit** (§4) | ✅ **Done** — the only issue that could harm people not playing the game |
 | 2 | **`textContent` in the scoreboard** (§5) | ✅ **Done** |
-| 3 | **Spike: hotspot that carries the game but not the internet** (§2) | Open — the only change that reduces what a host can observe about guests |
+| 3 | **Hotspot carries the game, not the internet** (§2) | ✅ **Spiked and confirmed** — implementation still to do, via the scheduled task described in §2 |
 | 4 | **Code-sign the installer** (§7) | Open — gates whether anyone can safely trust the admin prompt |
 | 5 | Per-IP connection cap, `path.relative` guard (§6) | Open — hardening on an already-solid relay |
 | 6 | Hotspot passphrase hygiene, teardown on exit (§7, §3) | Open — cheap, prevents a class of embarrassment |

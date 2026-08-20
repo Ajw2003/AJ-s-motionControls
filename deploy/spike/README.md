@@ -42,6 +42,37 @@ Verified on Node v22.19.0, Windows 11 Pro 26100, 2026-08-20.
 
 Teardown restored tethering to `Off` and the SSID to its original value.
 
+### Isolation spike — the hotspot can carry the game without carrying the internet
+
+Run with `hotspot-isolation-spike.ps1`. The question: when the PC is the access point, can guests
+be prevented from routing *through* it, so the host cannot observe their traffic at all?
+
+**Yes.** Measured, then confirmed from a phone:
+
+```
+BEFORE tethering:  Ethernet 4                 forwarding Disabled
+DURING tethering:  Ethernet 4                 forwarding Enabled   <- ICS turns this on
+                   Local Area Connection* 12  forwarding Enabled
+Get-NetNat entries: 0
+```
+
+ICS routes with **plain IP forwarding**, not a separate NAT engine — so
+`Set-NetIPInterface -Forwarding Disabled` is the lever, and **ICS does not revert it**. With
+forwarding off, a phone on the hotspot loaded `http://play.local-ip.sh/` normally and could not
+load any ordinary website.
+
+That means guests' browsing **never arrives at the host** — an absence of data rather than a
+promise not to look. Android additionally keeps mobile data as its default route for a Wi-Fi it
+judges unvalidated, so at a real party guests' traffic and DNS bypass the PC entirely.
+
+**Catch:** the toggle needs administrator rights and ICS re-enables forwarding on every tethering
+start, making it a per-session runtime action. See [../../SecurityReview.md](../../SecurityReview.md)
+§2 for the scheduled-task approach that avoids a UAC prompt per party.
+
+**Testing note:** turn **off mobile data** on the phone first. Otherwise Android falls back to
+cellular when the Wi-Fi has no internet, a website loads anyway, and a successful isolation reads
+as a failure.
+
 ### The firewall finding — and why the game ships as an installer
 
 With the hotspot up and both helpers confirmed listening on `0.0.0.0`, a phone on the hotspot

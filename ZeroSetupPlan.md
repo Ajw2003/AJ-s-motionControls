@@ -270,20 +270,27 @@ mode as the *deterministic* path and DHCP-assigned LAN mode as the variable one.
    PowerShell interop used to verify the above. A helper executable is cleaner and fits Phase 1's
    bundling work; it is also the natural place to put hotspot teardown on exit.
 
-**3.5a Carry the game, not the internet.** When the PC is the access point it can see guests'
-traffic metadata and DNS — not HTTPS *contents*, but more than it has any need for. The game
-requires phones to reach *this PC*; it has never required giving them internet.
+**3.5a Carry the game, not the internet. ✅ SPIKED, PASSED.** When the PC is the access point it
+can see guests' traffic metadata and DNS — not HTTPS *contents*, but more than it has any need
+for. The game requires phones to reach *this PC*; it has never required giving them internet.
 
-If the hotspot carries no internet, **Android keeps mobile data as its default route** for a
-network it has judged unvalidated, using the Wi-Fi only for the local subnet — so guests' real
-browsing never traverses the host at all. That is a much stronger guarantee than promising not
-to look.
+**Confirmed working on a real phone.** ICS turns on plain IP forwarding when tethering starts
+(`Get-NetNat` is empty, so there is no separate NAT engine to fight). Turning it back off with
+`Set-NetIPInterface -Forwarding Disabled` sticks — ICS does not revert it — and the result is
+exactly what was wanted: the game page loaded, ordinary websites did not.
 
-**Needs its own spike before being planned around.** ICS does NAT in `ipnathlp.dll` rather than
-plain IP forwarding, so `Set-NetIPInterface -Forwarding Disabled` is probably not the lever, and
-whether Windows Firewall filters ICS-forwarded traffic is version-dependent. Try to block the
-forwarded path, then verify from a phone that the game works and general browsing does not.
-Reasoning in [SecurityReview.md](SecurityReview.md) §2.
+Because **Android keeps mobile data as its default route** for a Wi-Fi it judges unvalidated,
+guests' real browsing and DNS go over cellular and never touch the host at all. Reasoning and
+measurements in [SecurityReview.md](SecurityReview.md) §2.
+
+> **This adds a requirement to Phase 4.** The forwarding toggle needs administrator rights, and
+> ICS re-enables forwarding on *every* tethering start — so it is a per-session runtime action,
+> not a one-off at install. A UAC prompt per party would defeat the whole plan.
+>
+> The installer must therefore also register a **scheduled task with highest privileges** that
+> the game can trigger silently. It must take **no parameters** and do one hardcoded thing —
+> disable forwarding on the `192.168.137.x` interface — because a task that accepted an
+> interface name from its caller would be a local privilege-escalation hole.
 
 **Sequencing note:** this is worth building *before* Phase 4's installer, because a hotspot
 listener changes which firewall profile matters — a rule scoped only to the network the
@@ -370,8 +377,12 @@ Wrap the build (Inno Setup or MSIX) so install time absorbs:
   keeps the LAN and the internet out of scope entirely.
 - Placing `relay/`, `controller/` and `node.exe`.
 - A Start Menu entry.
-- **An uninstaller that removes the firewall rules.** Leaving them behind after the game is gone
-  is exactly the kind of residue that makes people distrust hobby software.
+- **A scheduled task with highest privileges** that disables IP forwarding on the hotspot
+  interface, so the game can call it per session without a UAC prompt (Phase 3.5a). No
+  parameters — hardcode the interface match, or it becomes a privilege-escalation vector.
+- **An uninstaller that removes the firewall rules *and* the scheduled task.** Leaving either
+  behind after the game is gone is exactly the kind of residue that makes people distrust hobby
+  software — and a stray privileged task is the worse of the two.
 
 After this, first run performs zero prompts.
 
