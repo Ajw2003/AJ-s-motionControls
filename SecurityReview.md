@@ -113,8 +113,45 @@ With forwarding off, a phone on the hotspot loaded `http://play.local-ip.sh/` no
 - §3's liability problem disappears with it: nothing exits via the host's IP address, so nothing
   is attributed to them.
 
-Combined with "answer only the game's own name, NXDOMAIN the rest, never log", the host's view
-of a guest reduces to roughly nothing.
+### What this does *not* eliminate — read before claiming it is solved
+
+The forwarding fix removes **liability** essentially completely, and removes **observability**
+substantially but not entirely. Those are different claims and the difference matters.
+
+**Gone, and genuinely gone:**
+
+- Guests' traffic contents, destinations, SNI, sizes and timing — none of it reaches the host
+- Attribution: nothing exits via the host's IP address, so nothing is traceable to them
+- The acceptable-use breach on school and corporate networks
+
+**Still visible to the host:**
+
+- **DNS queries.** A phone asks `192.168.137.1:53`, which is **host-bound traffic, not
+  forwarded** — the forwarding flag has no effect on it. The host can see any domain a guest
+  looks up.
+  - *Reduced in practice* by Android moving to cellular for a Wi-Fi with no internet, so most
+    phones stop asking us almost immediately.
+  - **Not reduced at all for the most captive guest**: a tablet with no cellular, a phone with
+    mobile data off, or anyone with no signal keeps using our Wi-Fi and our resolver. Their
+    connections fail, but the *lookups still arrive first*. That guest's browsing intentions are
+    visible even though their traffic is not.
+- **Local-subnet chatter.** Being on the same LAN exposes DHCP hostnames (often a real name —
+  "Sam's iPhone"), mDNS/SSDP announcements, and MAC addresses. Modern phones randomise MACs per
+  network, which helps; the hostname usually still leaks.
+- **The game's own traffic**, which is the consented part.
+
+**And the structural caveat:** all of this holds only while the host runs *unmodified* software.
+A host who re-enables forwarding sees everything again. No in-product control can prevent that —
+it is the same trust model as any Wi-Fi you join, which is why §7's code-signing is the only
+thing that speaks to it at all.
+
+**So the accurate claim is:** *"the hotspot does not carry your internet traffic, and nothing you
+do is attributable to the host"* — **not** *"the host can see nothing."* The first is defensible
+and worth saying on screen. The second would be false.
+
+The remaining mitigation is the one already on the plan: answer only the game's own name,
+`NXDOMAIN` everything else, and never log queries. That is policy rather than architecture, and
+should be described as such.
 
 > **Follow-on problem, and it is a real one.** `Set-NetIPInterface -Forwarding` needs
 > administrator rights, and **ICS re-enables forwarding every time tethering starts** — so this
