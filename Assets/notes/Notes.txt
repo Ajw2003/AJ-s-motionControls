@@ -7,3 +7,6 @@ actual skybox with backgrounds
 actual level geometry to avoid/ aim for
 
 rock textures, water textures and enviornment textures
+
+
+add ability to tune forgiveness for each of the 3 axis roll, pitch, yaw. for instance I want to make roll affect the rock less and to have the first 5 degrees or so ignored

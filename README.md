@@ -14,7 +14,7 @@ what currently exists.
 | `Assets/` | Unity 6 project (6000.3.10f1) — the game screen |
 | `relay/` | Node WebSocket relay, and the HTTP server for the controller page |
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
-| `deploy/` | Deployment runbook, Caddyfile and systemd unit for the relay |
+| `deploy/` | Hosting runbook and `local-https.ps1`, which serves the controller over HTTPS |
 | `PLAN.md` | Full design and implementation plan |
 | `HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
 
@@ -22,42 +22,63 @@ what currently exists.
 
 **M0 and M1 complete, M2 in progress.** The relay is hardened and tested, the controller
 app normalizes sensors and sends `AIM`/`THROW`, and the pure skip solver plus the aim
-preview are in. Verified end to end with one Android phone.
+preview are in. Verified end to end on both Android and iOS.
 
-Hosting is one click and hosts install nothing: pressing Play connects out to the deployed
-relay, then puts the room code, join URL and a QR on screen. A match runs a fixed number of
-rounds and ends with a standings screen — see Match flow below.
+A match runs a fixed number of rounds and ends with a standings screen — see Match flow
+below.
 
 Still open in M2: `RockDefinition`/`RockSpawner` and the four specials, `RingGate`
 (nothing publishes `RingPassedEvent` yet, so `ScoreManager.pointsPerRing` is currently
 dead), and an authored lake scene to replace the runtime placeholder geometry.
 
-Not yet run with more than one real player — turn rotation, the spectator view and the
-results screen are written and unit-tested but have not been exercised at a party.
+**Multiplayer is done and verified.** A real 5-player session across iOS and Android
+exercised scoring, turn rotation, late-join and lobby-rejoin, and all four behaved. That
+was M3, and it landed ahead of the remaining M2 work above.
+
+> **Hosting has changed and this matters before you press Play.** There is no longer a
+> deployed relay. The Fly.io deployment was torn down and its files deleted, but
+> `RelayClient.relayUrl` still *compiles in* `wss://rockskipping-relay.fly.dev` as its
+> default — that address is dead, and pressing Play without overriding it will simply fail
+> to connect. You run the relay on this machine now; see **Running the game** below.
 
 ## Running the game
 
-Open the **Bootstrap** scene and press Play. Nothing starts on this machine:
+Start the relay on this machine first, then press Play. One command does the whole setup:
 
-1. `RelayClient` opens an outbound socket to `wss://rockskipping-relay.fly.dev` — the
-   deployed service, which also serves the controller page
+```bash
+pwsh ./deploy/local-https.ps1
+```
+
+It detects this machine's LAN IP, borrows the published `*.local-ip.sh` certificate for the
+matching IP-encoded name (`10.0.0.213` → `10-0-0-213.local-ip.sh`), writes `relay-url.txt`
+and `relay-env.txt` for you, starts the relay over TLS, and verifies the chain before you
+pick up the phone. **Ctrl+C undoes all of it.** Full runbook:
+[deploy/README.md](deploy/README.md).
+
+⚠️ **Its last verification step is currently broken** — it calls `node test-deployed.js`, a
+file deleted along with the Fly config, so the script fails at the end of an otherwise
+successful setup. The relay is usually already up when it bails. See
+[deploy/README.md](deploy/README.md) for the workaround.
+
+Then open **Bootstrap** and press Play:
+
+1. `RelayClient` reads `relay-url.txt` and opens a socket to the relay on this machine
 2. it derives the page origin from that socket URL, so the page and the socket cannot drift
    onto different hosts
 3. `JoinScreen` shows the room code, the join URL and a scannable QR once connected
 
 Players scan the QR — it pre-fills the room code via `?room=CODE` — and type only a name.
 
-The address is overridable without a rebuild — one line in a `relay-url.txt` beside the
-built executable (or next to the project folder in the editor). Why the service exists and
-what it carries: [HostingPlan.md](HostingPlan.md).
+**The phone must be on the same network as the PC.** The name resolves to a private address,
+so it is unreachable from mobile data — a guest on cellular cannot join. That is the standing
+limitation of local hosting and is not a bug; [HostingPlan.md](HostingPlan.md) §2 has the
+derivation, and [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) has the rest of
+what it costs.
 
-**Requires nothing installed.** Hosting is an outbound connection, so there is no tunnel to
-install, no port to open, no router page and no firewall prompt.
-
-Why the page comes from the service rather than from this machine: phone motion sensors need
-a secure context, and an HTTPS page cannot open a plain `ws://` socket to a LAN address. Both
-problems disappear when the page and the socket share one origin, which is why the relay
-serves the controller itself. [HostingPlan.md](HostingPlan.md) §2 has the full derivation.
+Why HTTPS at all, rather than plain `ws://` to a LAN IP: phone motion sensors need a secure
+context, and an HTTPS page cannot open a plain `ws://` socket. Both problems disappear when
+the page and the socket share one secure origin, which is why the relay serves the controller
+itself and why the certificate is worth the trouble.
 
 ### Where aim and throw actually travel
 
@@ -70,22 +91,17 @@ tracking. Roster, turn state, scores and the spectator view always go over the r
 silent downgrade is visible rather than merely slower. Turn it off with **Use Peer
 Connections** on `Bootstrap`, or per-phone with `?direct=0` on the controller URL.
 
-### Pointing at a local relay for development
+### Plain HTTP, for desktop-only testing
 
-Two things, and both are needed — either alone does nothing useful:
+`local-https.ps1` is the path for anything involving a real phone. If you only need two
+desktop browsers, you can skip the certificate entirely:
 
-1. Tick **Start Local Services** on `Bootstrap`. It is **off by default**, because a normal
-   host runs no relay at all.
+1. Tick **Start Local Services** on `Bootstrap`. It is **off by default**.
 2. Put `ws://localhost:3000` in a `relay-url.txt` beside the executable, so `RelayClient`
    actually points at it. The file is gitignored, so it stays a per-machine choice.
 
-That origin is not secure, so motion sensors will not work on it — this is for desktop
-testing. Real-phone testing goes through the deployed service.
-
-For a local loop that *does* unlock motion sensors, `pwsh ./deploy/local-https.ps1` serves the
-page from this machine over HTTPS on a borrowed certificate, writes both config files for you,
-verifies the chain, and undoes it all on Ctrl+C. See
-[deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) — including what it does not settle.
+That origin is not secure, so motion sensors will not work on it — which is exactly why it is
+desktop-only. Anything involving a phone needs the HTTPS path above.
 
 ## Match flow
 
@@ -124,8 +140,8 @@ cd relay && npm install && npm start
 ```
 
 Listens on `:3000`, or `$PORT` if set, serving the controller page, the WebSocket, `/health`
-and `/qr`. Deploying it publicly is [deploy/README.md](deploy/README.md) — `fly deploy` from
-the repo root, since the image needs `controller/` alongside `relay/`.
+and `/qr`. Set `TLS_CERT` and `TLS_KEY` and it serves HTTPS instead — which is what
+`local-https.ps1` does for you. Running it for real play is [deploy/README.md](deploy/README.md).
 
 Integration tests — routing, identity stamping, reconnect, the QR endpoint, and each
 hardening fix:
@@ -145,7 +161,7 @@ Console and in `verification-result.txt`.
 Headless — note the deliberate absence of `-quit`, since the method enters play mode:
 
 ```bash
-"C:\Users\Ayden's mini\Desktop\UnityVersions\6000.3.10f1\Editor\Unity.exe" -batchmode -nographics -projectPath . -executeMethod RockSkippingEditor.ProjectSetup.RunVerification -logFile verify.log
+"<your-unity-install>/6000.3.10f1/Editor/Unity.exe" -batchmode -nographics -projectPath . -executeMethod RockSkippingEditor.ProjectSetup.RunVerification -logFile verify.log
 ```
 
 Poll for `verification-result.txt`, then kill the process — exiting the editor from the

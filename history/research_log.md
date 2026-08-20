@@ -1,5 +1,12 @@
 # Rock Skipping Limit Research Log
 
+> **Superseded — historical record.** This log investigates the old fixed speed-retention
+> system (`SpeedKeptSoft`/`SpeedKeptHard`) and the 22-skip ceiling that emerged from it. Both
+> are gone: retention is now a single per-throw `DynamicSpeedRetention` value calculated at
+> launch — see [feature_documentation.md](feature_documentation.md) and
+> `Assets/Scripts/Game/SkipPhysics.cs:208`. The analysis below is kept as a record of how the
+> ceiling was found, not as a description of current behaviour.
+
 ## 1. Initial Grep Searches for Hardcoded Limits
 **Action:** Searched the codebase for hard limits, looking for the number `22`, variables like `MaxSkips`, or hardcoded loops.
 - Checked `c:\Users\aj\Desktop\GameDev\RockSkipping\Assets\Scripts` for `22`.

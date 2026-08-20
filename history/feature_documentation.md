@@ -1,5 +1,11 @@
 # Feature Documentation: Dynamic Speed Retention Based on Throw Mechanics
 
+> **Status: Implemented.** This document is written as a forward-looking proposal, but the
+> feature is live — `DynamicSpeedRetention` is calculated at launch and applied per bounce in
+> `Assets/Scripts/Game/SkipPhysics.cs` (field at :44, applied at :208, replacing
+> `SpeedKeptSoft`/`SpeedKeptHard`). Read the future tense below as a description of what was
+> built. It supersedes [research_log.md](research_log.md).
+
 ## 1. Layman Summary
 To resolve the rigid 22-skip limit and make the game more skill-based, the skip physics will now rely on a single, dynamically calculated "Speed Retention" value. Instead of a fixed 90% speed kept on every skip, this value will be determined by how well the player throws the rock. Throwing at the perfect angle and with maximum power will yield a much higher speed retention (allowing the rock to go further and skip more times), whereas poor angles or weak throws will result in lower retention, causing the rock to fall short and sink faster.
 

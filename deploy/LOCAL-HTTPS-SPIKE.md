@@ -1,23 +1,37 @@
-# Local-HTTPS spike — serving the controller page from the host machine
+# Local HTTPS — serving the controller page from the host machine
 
-**Result so far: the core premise holds.** A page served from *this* machine over HTTPS, on a
-publicly-trusted certificate for a name that resolves to a LAN IP, gives an Android phone a
-secure context and **motion sensors fire normally**. Measured 2026-08-12 on a Galaxy S25.
+> **Status: adopted. This is no longer a spike — it is how the game runs.** The Fly.io
+> deployment it was an alternative to has been torn down and its files deleted, so the local
+> path is now the only path. The operational runbook is [README.md](README.md); this document
+> is kept for the reasoning, the measurements, and the costs the decision accepted.
+>
+> **It was adopted with several of the questions below still open, not because they were
+> answered.** That is a deliberate trade for a project that is played on one network by people
+> in one room, and it is not a claim that the objections were wrong. The section at the bottom
+> is still accurate and still worth reading before anyone assumes this scales.
 
-Two costs remain unmeasured, both needing a home network, and one of them can only be measured
-once ever per machine. **Read Step 5 before you run this at home.**
+**The core premise holds.** A page served from *this* machine over HTTPS, on a publicly-trusted
+certificate for a name that resolves to a LAN IP, gives an Android phone a secure context and
+**motion sensors fire normally**. Measured 2026-08-12 on a Galaxy S25, and since exercised in a
+5-player session across iOS and Android.
 
-This tests an alternative to [HostingPlan.md](../HostingPlan.md) §2, which rejected a version
-of it on paper. Nothing here changes that document — the economics it rejects the idea on are
-untouched by this result. See *What this does and does not settle* at the bottom.
+One cost still cannot be measured on a machine that has already been developed on, and it can
+only be measured once ever per machine. **Read Step 3 before you run this at a party.**
+
+Written against [HostingPlan.md](../HostingPlan.md) §2, which had rejected a version of this on
+paper. §2's economics are unchanged by adoption — what changed is that the design they argued
+for no longer exists.
 
 ---
 
 ## Why anyone would want this
 
-The service is a single point of failure for every party (HostingPlan §10, §12 risk 3), and the
-§6 tier-3 fallback that is supposed to cover an outage is unbuilt. If the page came from the
-host machine, a party would survive the service being down with motion controls intact.
+*Written while the hosted service still existed; the argument is what won.*
+
+The service was a single point of failure for every party (HostingPlan §10, §12 risk 3), and
+the §6 tier-3 fallback that was supposed to cover an outage was never built. If the page came
+from the host machine, a party would survive the service being down with motion controls
+intact. It now does — there is no service left to be down.
 
 The proposal that prompted this claimed cloud tunnels add latency that "ruins" the game. **That
 premise does not apply here** — `AIM`/`THROW` already ride a direct DataChannel (HostingPlan
@@ -57,7 +71,7 @@ that would otherwise be indistinguishable at the phone:
 | Certificate not expired, SAN covers `*.local-ip.sh` | The borrowed cert lapsed; on the phone this reads as a config mistake |
 | `<name>.local-ip.sh` resolves to that IP | **DNS rebinding protection** on the router, stripping private answers from public names |
 | `/health` over `https://` | The chain does not validate from this machine |
-| `test-deployed.js` over `wss://` | The upgrade or routing is broken under strict validation |
+| `test-deployed.js` over `wss://` | The upgrade or routing is broken under strict validation. **Currently broken** — that file was deleted in `1cd7647` and the script still calls it, so this check fails rather than passing; see [README.md](README.md) |
 
 **What it never does is touch the firewall** — see Step 3, that measurement is one-shot.
 
@@ -100,8 +114,9 @@ Ctrl+C. The script stops the relay, deletes the borrowed key, and restores or re
 Worth knowing anyway, since `-SetupOnly` skips it and a hard kill can too:
 
 - `server.pem` / `server.key` live in `%TEMP%\rockskip-local-https`, **never in the repo**.
-  A published private key must never reach a build, and `.dockerignore` is an allowlist — a key
-  left in `relay/` would be baked into the Fly image.
+  A published private key must never reach a build or a commit. The container image that used
+  to make this acute is gone, but `.gitignore` has no `*.pem` rule by default, so a key left in
+  `relay/` is still one `git add` away from being published permanently.
 - A stale `relay-url.txt` leaves the editor pointing at a relay that is not running.
 - The TLS branch in `server.js` is inert with the env vars unset and can stay.
 
@@ -132,8 +147,8 @@ Two properties to respect:
 **Start the relay with TLS.** [relay/server.js](../relay/server.js) has an env-gated TLS branch:
 set `TLS_CERT` and `TLS_KEY` and it builds an `https` listener instead of `http`.
 `WebSocketServer` attaches to either, so `wss://` comes free. **With the variables unset the
-path is unchanged** — inert in production, where Fly terminates TLS and the relay never sees a
-certificate (HostingPlan §3, §7).
+path is unchanged** — which is what keeps the plain-HTTP desktop loop working unmodified. This
+branch used to be inert in production, where Fly terminated TLS; it is now the normal path.
 
 ```bash
 cd relay && PORT=8443 TLS_CERT=/path/to/server.pem TLS_KEY=/path/to/server.key node server.js
@@ -191,9 +206,9 @@ Galaxy S25 hosting a hotspot, PC joined at `10.144.225.71`, Android Chrome.
 | Chain validates over a LAN IP | **PASS** — `curl` full verification, `ssl_verify_result 0`. |
 | `wss://` under strict validation | **PASS** — open in 23ms, no `rejectUnauthorized` override. This is the path Unity's `ClientWebSocket` takes; a browser being happy would not have proven it. |
 | DNS: public name → private IP | **PASS** on two resolvers — a corporate AD resolver and a carrier path via the hotspot. Neither stripped the private answer. **A home router is still untested.** |
-| Page load | Local **9–11ms**. Fly warm **240–270ms**. Fly **cold 5.47s** — `auto_stop_machines = 'suspend'` in [fly.toml](../fly.toml), landing on the first guest of a session. |
-| Firewall cost | **Not measurable on the dev machine.** See Step 5. |
-| Guest on cellular | **Confirmed impossible.** A private IP is unroutable from the internet. Such a guest plays fine today and could not under this design. |
+| Page load | Local **9–11ms**. Fly warm **240–270ms**. Fly **cold 5.47s**, landing on the first guest of a session. The Fly figures are historical — that deployment is gone — and this row is the clearest thing local hosting won. |
+| Firewall cost | **Not measurable on the dev machine.** See Step 3. |
+| Guest on cellular | **Confirmed impossible.** A private IP is unroutable from the internet. Such a guest could play under the old hosted design and cannot now. This is the price that was paid. |
 
 ### The finding that was not on screen
 
@@ -210,19 +225,32 @@ Cause undiagnosed. Candidates: the mDNS candidate obfuscation HostingPlan §5 fl
 or something about hotspot routing. It ran on hotspot topology, which is not the target.
 **Independent of the certificate question and worth its own look on normal Wi-Fi.**
 
-## What this does and does not settle
+## What this settles, and what adoption simply accepted
 
 **Settled:** the technical premise. A locally-served HTTPS page unlocks motion sensors, and the
 whole chain works with no per-host domain, no configuration, and no Unity changes.
 
-**Not settled, and these are what HostingPlan §2 actually rejects the idea on:**
+**Settled since, by use rather than by argument:**
 
+- **Home-router rebinding.** Originally untested — the 2026-08-12 run only had a corporate AD
+  resolver and a carrier path via a hotspot. The setup has since run on an ordinary home
+  network (`10.0.0.x`) through a multi-player session, so at least one consumer router does not
+  strip the private answer. **This is one router, not a general result** — a router that does
+  strip it will fail at Step 1's resolution check, which is exactly where you want to find out.
+
+**Not settled. These were accepted as costs, not resolved:**
+
+- **Cellular guests.** Confirmed impossible, and now a live limitation rather than a
+  hypothetical one: everybody plays from the same network. This is the single biggest thing
+  the project gave up by leaving hosted infrastructure.
+- **The firewall prompt**, against HostingPlan §8's setup table — which local hosting can no
+  longer keep empty, because something listens now.
 - **Key distribution.** A shared wildcard means shipping one private key inside every
   distributed binary — extractable, not secret, and CA rules force revocation within 24h of
   disclosure, breaking every install at once. A per-host CSR fixes that and reintroduces Let's
-  Encrypt's 50-certificates-per-registered-domain-per-week cap.
-- **The firewall prompt**, against §8's empty setup table.
-- **Cellular guests**, who can play today and could not under this design.
-- **Home-router rebinding**, still untested.
+  Encrypt's 50-certificates-per-registered-domain-per-week cap. **This is the one that would
+  block distribution**, and it is unaddressed. It does not bite while the game is run by the
+  person who built it, on their own machine, from a checkout — which is the only situation this
+  design currently has to survive.
 
-A passing spike is a licence to weigh those, not to skip them.
+Adoption was a decision to live with that list, and none of it stopped being true.

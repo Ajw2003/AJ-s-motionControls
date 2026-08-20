@@ -30,6 +30,12 @@ The **event manager and base scripts are copied in from FactoryTM** (paths in Sc
 
 ## Architecture
 
+> **Superseded — see [HostingPlan.md](HostingPlan.md).** Neither hosted component exists.
+> Cloudflare Pages was never used (the relay serves the controller page itself, from
+> `STATIC_DIR`), and the Fly.io deployment has been torn down. The relay and the page both run
+> on the host PC now, over HTTPS on a borrowed `*.local-ip.sh` certificate. The connection flow
+> below is still accurate — only the boxes have moved.
+
 Three separately-deployed components:
 
 ```
@@ -50,12 +56,17 @@ Three separately-deployed components:
 
 ### Why a hosted relay rather than direct LAN connection
 
-> **Superseded — see [HostingPlan.md](HostingPlan.md).** The reasoning below is
-> still correct about *why* HTTPS is mandatory, and the conclusion that a hosted relay is
-> needed still holds — but not a third party's. The current design is a small relay we operate
-> — a Fly machine today — which serves the controller page and brokers introductions, after
-> which gameplay goes phone-to-PC directly over the LAN by WebRTC DataChannel. Hosts configure
-> nothing.
+> **Superseded twice — see [HostingPlan.md](HostingPlan.md).** The reasoning below is still
+> correct about *why* HTTPS is mandatory. Its conclusion is not: the relay was hosted (on Fly),
+> and is now **run on the host PC**, serving the controller page over HTTPS on a borrowed
+> `*.local-ip.sh` certificate. Gameplay still goes phone-to-PC directly over the LAN by WebRTC
+> DataChannel.
+>
+> Note what that means for the section title, because it is the one thing this plan got
+> backwards: the answer is now *direct LAN connection after all* — reached not by defeating the
+> HTTPS requirement below, but by borrowing a public certificate that happens to cover private
+> addresses. "Hosts configure nothing" no longer holds either; hosting is a script and a
+> firewall prompt.
 
 Two hard blockers make LAN-direct a dead end:
 
@@ -487,6 +498,11 @@ Render as: whose turn it is, the rock they drew, a live-incrementing skip counte
 
 **Unity — `RockSkipping/`** (create with Unity 6000.3.10f1, URP, 3D)
 
+> **Superseded — the project is on the built-in render pipeline, not URP.** No URP package is
+> in `Packages/manifest.json` and `GraphicsSettings.asset` has no custom pipeline asset
+> assigned. Anything below that assumes URP — shader authoring in particular — should be read
+> against the built-in pipeline instead.
+
 *Scenes:*
 - `Assets/Scenes/Bootstrap.unity` — creates persistent managers, loads Lobby
 - `Assets/Scenes/Lobby.unity`, `Game.unity`, `Results.unity`
@@ -498,7 +514,8 @@ Render as: whose turn it is, the rock they drew, a live-incrementing skip counte
 
 *New event types, following the `PlayerHealthChangedEvent` pattern:*
 - `Assets/Scripts/EventTypes/SkipEvents/SkipOccurredEvent.cs`
-- `Assets/Scripts/EventTypes/SkipEvents/RingPassedEvent.cs`
+- `Assets/Scripts/EventTypes/SkipEvents/RingPassedEvent.cs` — **NOT BUILT**; nothing publishes
+  it, which is why `ScoreManager.pointsPerRing` is currently dead code
 - `Assets/Scripts/EventTypes/SkipEvents/ThrowCompletedEvent.cs`
 - `Assets/Scripts/EventTypes/MatchEvents/TurnStartedEvent.cs`, `PlayerJoinedEvent.cs`
 
@@ -512,9 +529,9 @@ Render as: whose turn it is, the rock they drew, a live-incrementing skip counte
 - `Assets/Scripts/Game/AimPreview.cs` — `AIM` smoothing + predicted arc rendering
 - `Assets/Scripts/Game/SkipPhysics.cs` — pure custom bounce solver
 - `Assets/Scripts/Game/RockController.cs` — per-rock flight state; publishes skip events **only when live, never when predicting**
-- `Assets/Scripts/Game/RockSpawner.cs` — picks a definition, rolls `RockStats`
-- `Assets/Scripts/Game/RockDefinition.cs` — ScriptableObject
-- `Assets/Scripts/Game/RingGate.cs` — trigger, publishes `RingPassedEvent`
+- `Assets/Scripts/Game/RockSpawner.cs` — picks a definition, rolls `RockStats` — **NOT BUILT**
+- `Assets/Scripts/Game/RockDefinition.cs` — ScriptableObject — **NOT BUILT**
+- `Assets/Scripts/Game/RingGate.cs` — trigger, publishes `RingPassedEvent` — **NOT BUILT**
 - `Assets/Scripts/Game/TurnManager.cs` — turn order, rounds, UI state; publishes match events, computes no score
 - `Assets/Scripts/Game/SkipTuning.cs` — ScriptableObject of global tuning constants
 - `Assets/Scripts/UI/LobbyUI.cs`, `HudUI.cs`, `QrCodeGen.cs`
@@ -527,9 +544,17 @@ Render as: whose turn it is, the rock they drew, a live-incrementing skip counte
 - `js/ui.js` — join screen, turn prompts, throw feedback, spectator view
 
 **Relay — `relay/`** (evolve from `PartyGameNonC# Code\server.js`)
-- `server.js`, `package.json`, `fly.toml`
+- `server.js`, `package.json`, ~~`fly.toml`~~ *(deleted with the Fly deployment; the relay is
+  started by `deploy/local-https.ps1` now)*
 
 **Unity WebSocket library:** use **NativeWebSocket** (MIT, free). Unity has no built-in WebSocket client for native builds. `System.Net.WebSockets.ClientWebSocket` would also work on desktop and is dependency-free, but NativeWebSocket is simpler and keeps a WebGL build path open if that's ever wanted.
+
+> **Superseded — the code went the other way.** `RelayClient` uses
+> `System.Net.WebSockets.ClientWebSocket`, and the deviation is documented at
+> [RelayClient.cs:25](Assets/Scripts/Net/RelayClient.cs:25): it ships with .NET, so it adds no
+> dependency. The cost is that `ClientWebSocket` is thread-affine for sends, which is why all
+> sends funnel through a single queue. Swapping to NativeWebSocket remains the move if a WebGL
+> build is ever wanted.
 
 ---
 
@@ -549,6 +574,8 @@ Harden `server.js`. The existing prototype has real defects to fix:
 - Route `AIM`/`THROW` host-ward and `SPECTATE` player-ward
 
 Deploy relay to Fly.io, controller to Cloudflare Pages.
+*(Superseded: neither happened. The relay serves the controller itself and now runs on the host
+PC — [HostingPlan.md](HostingPlan.md).)*
 
 **Done when:** a real Android phone loads the HTTPS page and logs live sensor values to a Unity console via the relay. (iOS deferred — no device.)
 
@@ -557,18 +584,40 @@ Sensor normalization, calibration, state machine, both message channels. `AimPre
 
 **Done when:** an on-screen debug readout in Unity shows sane, repeatable values from an **Android** phone — the same gesture twice produces descriptors within ~10% of each other — and the TV arc tracks phone movement smoothly with no visible stutter. iOS branches are written and commented `// UNVERIFIED (iOS):`, but are not part of the done criteria.
 
-### M2 — Skip physics + rocks
+### M2 — Skip physics + rocks 🟡 IN PROGRESS
 Pure solver, `SkipTuning`, `RockDefinition` assets for basic + all four specials, spawner with stat rolling, one lake scene, three ring gates, follow camera.
 
 **Done when:** a good throw yields 5+ skips, a bad throw sinks, all four specials feel distinguishable, and the difference is legible from the couch.
 
-### M3 — Turn-based multiplayer + scoring
+**Built:** the solver, `SkipTuning`, a single rock, the follow camera, and a placeholder lake.
+**Still missing:** `RockDefinition`/`RockSpawner` and the four specials, `RingGate` and ring
+scoring, and an authored lake scene to replace the runtime placeholder geometry. **This is the
+only milestone with outstanding work.**
+
+**The retention model changed during this milestone.** The fixed `SpeedKeptSoft`/`SpeedKeptHard`
+pair described elsewhere in this document is gone. A single `DynamicSpeedRetention` is now
+calculated once per throw from power and entry angle and applied on every bounce
+([SkipPhysics.cs:208](Assets/Scripts/Game/SkipPhysics.cs:208)). This removed the emergent
+22-skip ceiling and made the number of skips a function of throw quality rather than of the
+tuning constants. Background: [history/feature_documentation.md](history/feature_documentation.md),
+with the investigation that prompted it in [history/research_log.md](history/research_log.md).
+
+### M3 — Turn-based multiplayer + scoring ✅ DONE, VERIFIED
 Lobby with QR code, 2–8 players, turn order, rounds, spectator view, `ScoreManager` subscribing to the skip events.
 
 **Done when:** four phones complete a full match, scores accumulate correctly from rings/distance/skips, and idle phones show live spectator state.
 
-### M4 — Polish
+**Met, and exceeded on player count — verified with a real 5-player session across iOS and
+Android**, covering scoring, turn rotation, late-join and lobby-rejoin. Note the one caveat the
+criterion cannot cover: scoring from *rings* was not exercised, because `RingGate` is still
+unbuilt (M2). Distance and skips were. **This milestone was completed ahead of M2.**
+
+### M4 — Polish 🟡 PARTIALLY STARTED, EARLY
 Water shader and ripples, splash/skip VFX and SFX, camera framing, controller haptics **on Android only** (iOS vibration is unreliable — do not design around it), reconnect handling, results screen.
+
+**Already built, ahead of the milestone sequence:** the water and ripple shader, camera framing,
+and reconnect handling ([deploy/RECONNECT-TEST.md](deploy/RECONNECT-TEST.md)). VFX/SFX and
+haptics are not started.
 
 ---
 
@@ -588,4 +637,4 @@ Water shader and ripples, splash/skip VFX and SFX, camera framing, controller ha
 - **Scene transitions:** run a full Lobby → Game → Results → Lobby loop twice and confirm no `MissingReferenceException` appears in the console, the socket never reconnects, and scores carry across correctly. Repeated exceptions on transition mean the destroyed-subscriber fix didn't land; a phone bounced to the join screen means `RelayClient` isn't persisting.
 - **Physics tuning:** if players can't tell why a throw failed, add a post-throw readout on the TV ("too steep!", "too soft!") — the original Skip Skimmer leans heavily on this feedback.
 
-**Local development loop:** tick **Start Local Services** on `Bootstrap` to run the relay on this machine (or start it by hand with `node relay/server.js`), and point Unity at it with a `relay-url.txt` containing `ws://localhost:3000` — both steps are needed. That origin is not secure, so motion sensors will not work on it: **real-phone testing goes through the deployed relay**, which is why there is no longer a tunnel to run.
+**Local development loop:** tick **Start Local Services** on `Bootstrap` to run the relay on this machine (or start it by hand with `node relay/server.js`), and point Unity at it with a `relay-url.txt` containing `ws://localhost:3000` — both steps are needed. That origin is not secure, so motion sensors will not work on it, which makes this a desktop-only loop. **Real-phone testing goes through `pwsh ./deploy/local-https.ps1`**, which serves the same relay from this machine over HTTPS on a borrowed certificate — there is no deployed relay any more, and no tunnel to run either ([deploy/README.md](deploy/README.md)).

@@ -1,12 +1,33 @@
 # Hosting — one small service, peer-to-peer gameplay
 
-**Status: Phase 1 and Phase 2 are both deployed and running on real hardware.** The relay runs
-on Fly at `rockskipping-relay.fly.dev`, the game connects out to it, and `cloudflared` is gone
-from the codebase. Phone-to-PC WebRTC DataChannels carry `AIM` and `THROW` directly over the
-LAN, and both ends now recover from a wifi drop —
-[deploy/RECONNECT-TEST.md](deploy/RECONNECT-TEST.md). `play.skiprocking.ca` is still pending
-registry delegation and is cosmetic; the `fly.dev` name works fully. Deployment steps:
-[deploy/README.md](deploy/README.md).
+> ## Status: the hosted service is gone. The relay runs locally.
+>
+> **This document's central conclusion — that somebody must operate a service — was correct
+> for the requirements it was written against, and the project has since changed those
+> requirements.** Read §1 and §2 as the reasoning they are; read this box for what actually
+> runs.
+>
+> The Fly.io deployment has been torn down. `fly.toml`, `Dockerfile`, `.dockerignore`,
+> `deploy/Caddyfile`, `deploy/rockskip-relay.service` and `relay/test-deployed.js` were deleted
+> in `1cd7647` and never restored. The VPS migration path (Route B) is abandoned with it.
+>
+> **What runs now:** the relay and the controller page are served from the host PC over HTTPS,
+> on a borrowed `*.local-ip.sh` wildcard certificate for a name that encodes the machine's LAN
+> IP (`10.0.0.213` → `10-0-0-213.local-ip.sh`). `deploy/local-https.ps1` sets the whole thing
+> up. Phone-to-PC WebRTC DataChannels still carry `AIM` and `THROW`, and both ends still
+> recover from a wifi drop — [deploy/RECONNECT-TEST.md](deploy/RECONNECT-TEST.md).
+>
+> **What that cost:** requirement 2 below ("hosting is: install and play") is no longer met —
+> hosting now means running a script, and something listens on the host machine. Requirement 1
+> is met only *on the local network*: a guest on mobile data can no longer join at all. Both
+> were knowingly traded for removing the single point of failure and the hosting bill. The
+> objections §2 raises against this design were never refuted — see
+> [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md).
+>
+> **`skiprocking.ca` is not part of this.** It is registered and resolves to registrar parking;
+> nothing in the codebase references it. It was a cosmetic vanity name for the Fly app.
+>
+> Runbook: [deploy/README.md](deploy/README.md).
 
 This document supersedes the "Why a hosted relay rather than direct LAN connection" section of
 [PLAN.md](PLAN.md).
@@ -93,6 +114,22 @@ one of them looks like it should work.
 
 ## 3. Architecture
 
+**As built today** — everything is on one network, and there is no third party in any path
+except DNS and the CA that signed the borrowed certificate:
+
+```
+   Phone (browser)                                        Unity 6 Desktop + relay
+   ──────────────                                         ───────────────────────
+   loads page ────── HTTPS ──────────────────────────────▶ 10-0-0-213.local-ip.sh:8443
+   signalling ◀───── WSS ───────────────────────────────▶  relay + page (same process)
+        │                                                                │
+        └──────────── WebRTC DataChannel, direct over LAN ───────────────┘
+                      AIM @20Hz · THROW · no certificate, no server
+```
+
+<details>
+<summary>The hosted design this replaced, kept because §§4–14 are still written against it</summary>
+
 ```
    Phone (browser)                  skiprocking.ca                Unity 6 Desktop
    ──────────────                   ─────────────                 ───────────────
@@ -104,18 +141,24 @@ one of them looks like it should work.
                       AIM @20Hz · THROW · no certificate, no server
 ```
 
-Three properties are worth naming, because each kills a category of problem:
+</details>
 
-- **The host connects *outbound*.** No inbound ports, no UPnP, no port forwarding, no address
-  discovery, no DHCP reservation, no CGNAT problem, no router page. This is what makes
-  requirement 2 achievable rather than aspirational.
-- **The service holds one domain and one certificate**, on a machine we control. Fly issues and
-  renews it today; on the VPS route Caddy does, over ACME **HTTP-01**. Either way the machine
-  has a public IP and port 80, so there is no DNS challenge and therefore **no DNS API
-  credential anywhere in the system**. The entire Porkbun module, token handling and
-  secret-distribution problem from the previous design simply ceases to exist.
-- **Gameplay is peer-to-peer.** Bandwidth cost is near zero, latency is LAN-local, and the
-  service being slow or distant cannot affect how a throw feels.
+What survived the change, and what did not:
+
+- **The host no longer connects outbound — it listens.** This was the property that made
+  requirement 2 achievable, and giving it up is what brings back the firewall prompt (§8). What
+  it does *not* bring back is UPnP, port forwarding, CGNAT and the router page: the phone is on
+  the same LAN, so nothing has to traverse NAT.
+- **The certificate is borrowed, not held.** `local-ip.sh` publishes a real Let's Encrypt
+  wildcard for `*.local-ip.sh` and resolves IP-encoded names back to the address they encode.
+  There is still **no DNS API credential anywhere in the system** — the entire Porkbun module
+  and secret-distribution problem stays dead — but the private key is *published*, so this is
+  sound for a machine on your own network and unsound for anything distributed. §2's certificate
+  broker row is the version of this that would scale, and it is still capped at 50/week.
+- **Gameplay is peer-to-peer.** Unchanged, and now belt-and-braces: the relay fallback is also
+  local, so a failed DataChannel costs nothing measurable. That is a hazard as much as a
+  benefit — it means a silent WebRTC failure is invisible. §5's `N/M direct` readout is the only
+  thing that catches it.
 
 ## 4. Phase 1 — the relay path (built)
 
@@ -125,14 +168,18 @@ connection fails to establish, traffic falls back to this path rather than to no
 
 What shipped:
 
-1. [relay/server.js](relay/server.js) deployed to **Fly.io** from the repo root — the image
-   needs `controller/` alongside `relay/`, since `STATIC_DIR` resolves as `../controller`.
-   **Fly terminates TLS and renews the certificate itself**, so every line of ACME code this
-   document once specified went unwritten. A Caddy-in-front-of-a-VPS route is documented as the
-   migration path if Fly ever stops suiting us.
-2. `server.js` binds `BIND_HOST || '0.0.0.0'`. The default matters: Fly's proxy reaches the
-   process from outside its VM, so loopback would refuse every connection. The VPS route sets
-   `BIND_HOST=127.0.0.1` because there the proxy is on the same host.
+1. [relay/server.js](relay/server.js) serves both the WebSocket and the controller page —
+   `STATIC_DIR` resolves as `../controller`, so the two directories have to sit side by side.
+   It was deployed to **Fly.io**, which terminated TLS and renewed the certificate itself, so
+   every line of ACME code this document once specified went unwritten.
+   **Now:** it runs on the host PC and terminates TLS itself, via the env-gated branch that
+   builds an `https` listener when `TLS_CERT` and `TLS_KEY` are set. Still no ACME code — the
+   certificate is downloaded ready-made from `local-ip.sh` rather than requested.
+2. `server.js` binds `BIND_HOST || '0.0.0.0'`. The default mattered because Fly's proxy reached
+   the process from outside its VM, so loopback would have refused every connection. **It still
+   matters, for a different reason:** the phone reaches the relay across the LAN, so binding
+   loopback would now break the phone rather than the proxy. It also means a new interface —
+   plugging in, or joining a hotspot — is picked up live without a restart.
 3. `RelayClient` connects out to the service, and **derives `PublicOrigin` and `JoinUrlFor()`
    from the socket URL** rather than taking them as separate configuration — which is what
    makes it structurally impossible for the page and the socket to drift onto different hosts.
@@ -142,13 +189,20 @@ What shipped:
    `JoinScreen` is driven by the relay connection rather than by `LocalServices`, which no
    longer exists on a normal host.
 
-The result: hosts install and play, guests scan and play, motion controls work, and AIM/THROW
-route through the service. That last part is the only cost, and it is tolerable because the
-two-channel split in PLAN.md was designed for exactly this — AIM is cosmetic and lossy, and
-THROW is computed phone-side, so no amount of latency can change a throw's outcome.
+The result, as designed: hosts install and play, guests scan and play, motion controls work,
+and AIM/THROW route through the service. That last part was the only cost, and it was tolerable
+because the two-channel split in PLAN.md was designed for exactly this — AIM is cosmetic and
+lossy, and THROW is computed phone-side, so no amount of latency can change a throw's outcome.
 
-**The deployment must run exactly one machine** (§12.7). `relay/test-deployed.js` probes for
-this along with the rest of the routing: `cd relay && npm run test:deployed`.
+**As it actually runs now:** the host runs `deploy/local-https.ps1` first, and only guests on
+the same network can join. The relay-path latency this section worries about is gone, because
+the relay is on the same machine.
+
+**One process, one room map** (§12.7) — the reason the deployment had to be pinned to a single
+machine. Locally that constraint is satisfied by construction: there is only ever one relay, and
+`LocalServices` reuses one that is already answering rather than starting a second. The probe
+that used to check this, `relay/test-deployed.js`, was deleted with the Fly config;
+`cd relay && npm test` is what remains.
 
 ## 5. Phase 2 — WebRTC DataChannel (built)
 
@@ -292,14 +346,17 @@ Delete `Assets/Scripts/Spike/` and `controller/spike.html` once the question is 
 
 ### Verifying Phase 2 on hardware
 
-1. `fly deploy` — the phone needs the new `controller/js/peer.js`.
+1. Start the relay — `pwsh ./deploy/local-https.ps1`. The page is served from `controller/` on
+   disk, so a hard-reload on the phone is all it takes to pick up a changed `peer.js`.
 2. Press Play with **Use Peer Connections** ticked on `Bootstrap` (the default).
 3. Join from an Android phone on the same Wi-Fi. The phone's status line should change from
    `Connected as AJ` to `Connected as AJ · direct` within a couple of seconds.
 4. **F1 on the TV** shows `Input  1/1 direct`. That is the check that matters — the phone
    saying `direct` only proves its own channel opened.
-5. Throw. Aim tracking should feel tighter than before, because the frames no longer round-trip
-   to Toronto.
+5. Throw. **This step no longer proves anything and should not be trusted.** It was written
+   when the fallback was a round-trip to Toronto, so "tighter" was a real signal. The fallback
+   is now a relay on the same machine, so both transports feel identical — step 4's `N/M direct`
+   is the only evidence that survives.
 6. **Prove the fallback**, which is the part most likely to rot unnoticed: rejoin with
    `?direct=0` on the URL and confirm the game plays identically, with F1 reporting `0/1
    direct`. A throw must behave the same on both transports.
@@ -311,13 +368,22 @@ silently:
 
 1. **DataChannel** — normal operation.
 2. **WSS relay** — if the peer connection does not establish within a few seconds, AIM and
-   THROW route through the service. This is Phase 1, so it is proven code by the time Phase 2
-   exists. Players notice nothing except slightly softer aim tracking.
-3. **Touch controls on the LAN** — if the service is unreachable entirely (no internet, service
-   down), the bundled relay serves plain HTTP on the local network and the controller switches
-   to touch aiming, reusing the `computeSimulatedThrowDescriptor` seam already in
+   THROW route through the relay socket. This is Phase 1, so it is proven code by the time
+   Phase 2 exists. Players notice nothing except slightly softer aim tracking — and now, with
+   the relay on the same machine, they may notice nothing at all, which is why §5's `N/M direct`
+   readout matters more than it used to.
+3. **Touch controls on the LAN** — still unbuilt, and its trigger has changed. It was for the
+   hosted service being unreachable; there is no hosted service now, so the failure it covers is
+   the *certificate* path breaking — `local-ip.sh` down, the borrowed cert expired, or router
+   DNS rebinding protection refusing to return a private answer. The relay would serve plain
+   HTTP on the LAN and the controller would switch to touch aiming, reusing the
+   `computeSimulatedThrowDescriptor` seam already in
    [controller/js/throw.js](controller/js/throw.js). No certificate is possible here, so no
    motion sensors — but a party still happens.
+
+   **This tier is now more load-bearing than it was**, because local hosting depends on a third
+   party (`local-ip.sh`) that nobody here operates, in the one path that cannot be worked
+   around. It is still unbuilt.
 
 ## 7. What this deletes
 
@@ -337,28 +403,44 @@ the implementation work:
 `.gitignore` entries are deleted. They described a design that no longer exists, and a config
 file nothing reads is worse than no config file at all.
 
-One more, and it is a real simplification: **the relay does not terminate TLS.** Fly's proxy
-holds the certificate today, and Caddy would on the VPS route — either way `server.js` keeps
-serving plain HTTP exactly as it does today, and the whole `acme-client` dependency, the
-`setSecureContext` hot-swap and the port-fallback ladder never get written (§4).
+One more, and it was a real simplification while it lasted: **the relay did not terminate
+TLS** — Fly's proxy held the certificate, so `server.js` served plain HTTP.
+
+**That one has reversed.** The relay terminates TLS itself now, through the env-gated `https`
+branch. What did *not* come back is the machinery this section is really about: there is still
+no `acme-client` dependency, no `setSecureContext` hot-swap and no port-fallback ladder,
+because the certificate arrives ready-made from `local-ip.sh` instead of being requested.
+Terminating TLS turned out to be the cheap half; obtaining the certificate was always the
+expensive half, and that is still avoided.
 
 ## 8. Host-setup audit
 
+**This table used to be empty, deliberately.** A host installed the game and pressed Play:
+no credential, no domain, no port, no record, no router page, and no firewall prompt, because
+nothing listened. That was requirement 2 met exactly.
+
+**It is no longer empty, and that is the clearest single measure of what the pivot cost:**
+
 | # | Step | When |
 |---|---|---|
-| — | — | — |
+| 1 | Run `pwsh ./deploy/local-https.ps1` | Every session — it holds until Ctrl+C |
+| 2 | Allow `node` through the firewall | First run on a machine, per network profile |
+| 3 | Pick the right interface with `-Ip` | Only if the machine has several plausible NICs |
+| 4 | Re-run after the LAN IP changes | Whenever DHCP moves the machine |
+| 5 | Get everyone onto the same network | Every party — cellular guests cannot join at all |
 
-**Empty, deliberately.** A host installs the game and presses Play. There is no credential, no
-domain, no port, no record, no router page, and no firewall prompt — because nothing listens.
+None of these are per *guest*, which is what §9 protects and what still holds. They are per
+host, and the host is currently one person who wrote the game. **Requirement 2 is not met, and
+this table is where that shows up** — a stranger could not install this and host a party.
 
-The one-time actions that remain belong to *us*, once, for the whole project: register the
-domain (done), point one CNAME at the Fly app, and run `fly certs add`. Not per host, not per
-party. Both remaining steps are blocked on `.ca` delegation and are cosmetic until then — the
-`fly.dev` name already works, certificate included.
+The one-time domain actions that used to be listed here (point a CNAME at the Fly app, run
+`fly certs add`) are moot: the app is gone, and `skiprocking.ca` is parked.
 
-**The test that catches regressions:** run a build on a machine that has never seen the
-project, on a network nobody configured — a phone hotspot will do — and host a game. Any human
-input beyond pressing Play is a regression against requirement 2.
+**The test that catches regressions** has changed shape with everything else. It used to be:
+run a build on a machine that has never seen the project and host a game, where any human input
+beyond pressing Play is a regression. That test now fails by design. What is worth keeping is
+the weaker version — run it on a network nobody configured for it, a phone hotspot will do, and
+count the steps against the table above. Any *new* row is a regression.
 
 ## 9. Join-flow audit
 
@@ -379,38 +461,47 @@ no third parties at all.
 
 ## 10. The service
 
-Small enough to describe in a paragraph. A single `shared-cpu-1x` Fly machine running the
-existing relay, with TLS terminated by Fly's proxy — see [fly.toml](fly.toml). Route B in
-[deploy/README.md](deploy/README.md) swaps that for a VPS running Caddy, which obtains and
-renews the certificate itself — an identical result that nothing in the game can distinguish.
-Gameplay traffic is peer-to-peer, so the only bandwidth is signalling and lobby state —
-kilobytes per room — and PLAN.md's own figures (AIM at ~1.5 KB/s for the single active player,
-4Hz spectator text) are the ceiling even in the Phase 1 fallback where everything routes
-through it. A $5/month instance carries a great many parties.
+**There is no service.** This section described a single `shared-cpu-1x` Fly machine running
+the relay behind Fly's TLS proxy, with a VPS-and-Caddy variant as the migration path. Both are
+gone: the Fly app was torn down, and Route B was abandoned rather than taken.
 
-**It is a single point of failure for every host**, which is the honest cost of requirement 2
-and the reason §6 exists. Keep it boring: one process, one certificate, automatic renewal, and
-no state worth losing — rooms are ephemeral and rebuilt on reconnect.
+The reasoning it recorded is worth keeping, because it is what the pivot traded away and what
+would have to be rebuilt if the project ever wants remote guests again:
+
+- Gameplay traffic is peer-to-peer, so the only bandwidth was signalling and lobby state —
+  kilobytes per room. PLAN.md's figures (AIM at ~1.5 KB/s for the single active player, 4Hz
+  spectator text) were the ceiling even in the Phase 1 fallback where everything routed through
+  it. A $5/month instance carried a great many parties. **Cost was never the problem**, which is
+  worth remembering before assuming the pivot saved anything material.
+- **It was a single point of failure for every host** — the honest cost of requirement 2, and
+  the reason §6 exists.
+
+That last point is the one that actually reversed. There is no shared failure point now; there
+is a per-host one instead, and it depends on `local-ip.sh` staying up (§6, tier 3). The failure
+did not go away, it got distributed and re-vendored.
 
 ## 11. Self-hosted mode
 
-Two different things get called "self-hosted" here, and only one of them is unbuilt.
+Two different things get called "self-hosted" here, and the pivot inverted which one exists.
 
-**Running the service on hardware you control is built.** Route B in
-[deploy/README.md](deploy/README.md) is a complete runbook with a working
-[Caddyfile](deploy/Caddyfile) and [systemd unit](deploy/rockskip-relay.service). The relay is a
-stock `node:22-alpine` image with no Fly-specific code in it, so moving hosts is a deployment
-change and nothing in the game knows the difference. The only coupling is `BIND_HOST`, which
-the systemd unit sets to `127.0.0.1` because Caddy is on the same host and the default of
-`0.0.0.0` exists for Fly's proxy reaching the process from outside its VM.
+**Running the relay on a server you control is abandoned, not built.** Route B — a VPS with
+Caddy in front of the relay — was a complete runbook with a working `Caddyfile` and systemd
+unit. Both files were deleted in `1cd7647` and the route is not a migration path any more. If
+remote guests ever become a requirement again, this is the design to go back and read in git
+history; it needed no game-side changes, because the relay is a stock Node process with no
+host-specific code in it.
 
-**Per-host self-hosting is not built** — letting an arbitrary player's machine serve the page
-under its own certificate, depending on no service of ours. The whole ACME/DNS-01/self-signed
-design from the previous revision of this document remains valid for a single known operator
-who would rather not depend on our service, but it is **not on the critical path** — build it
-only if someone asks. Its full reasoning lives in this file's git history rather than being
-carried here, because carrying it was what made the previous version misleading about what
-actually ships.
+**Per-host self-hosting is now what ships — for exactly one host.** The host machine serves
+the page under a certificate that is not ours, borrowed from `local-ip.sh`, depending on no
+service we operate. That is what §2 rejected on paper, and it works: see
+[deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md).
+
+**What is still not built is per-host self-hosting for an *arbitrary* host**, which is the
+thing §2's objections were actually about. The blocker is unchanged and unaddressed: a shared
+wildcard means shipping a published private key inside every distributed binary, and the
+per-host CSR that fixes it runs into Let's Encrypt's 50-certificates-per-registered-domain-per-week
+cap. Nothing about adopting the local path solved that — it just stopped mattering, because
+there is currently one host and they build from a checkout.
 
 ## 12. Risks
 
@@ -436,11 +527,14 @@ actually ships.
    universe: a host creates a room on one and a phone joins the other, which answers
    `ROOM_NOT_FOUND` for a code that is visibly on the TV. It fails intermittently, only under
    real load, and only with guests spread across networks — the worst possible combination.
-   **The deployment must run exactly one instance** (`fly scale count 1`; `--ha=false` on a
-   fresh app), and `relay/test-deployed.js` probes for it on every run. Nothing is lost: a
-   restart drops every room regardless, so there is no availability that a second instance
-   would preserve. Sharing room state across instances would mean Redis and is not worth it
-   at this scale.
+   The hosted deployment had to be pinned to exactly one instance (`fly scale count 1`), and
+   `relay/test-deployed.js` probed for it on every run. **Local hosting satisfies this by
+   construction** — one machine, one relay, and `LocalServices` reuses one that is already
+   answering rather than starting a second. The risk has not been fixed, it has been made
+   unreachable; it returns in full the moment anything is deployed behind a load balancer
+   again. Nothing is lost either way: a restart drops every room regardless, so there is no
+   availability that a second instance would preserve. Sharing room state across instances
+   would mean Redis and is not worth it at this scale.
 
 ## 13. If this ships on Steam
 
@@ -576,17 +670,21 @@ Found while measuring, and all currently real:
 ## 15. Verification
 
 - **Phase 1 end to end** — a real Android phone scans the QR, joins through
-  `wss://play.skiprocking.ca`, `window.isSecureContext === true`, and a real swing produces a
-  `THROW`. This is the acceptance test for shipping.
-- **Zero-setup claim** — §8's test: unfamiliar machine, unconfigured network, press Play.
-- **Certificate renewal** — not ours to test on Fly, which renews its own; `fly certs show`
-  reports the expiry. On the VPS route, force Caddy to renew and confirm the relay keeps open
-  sockets alive through the reload.
+  `wss://<dashed-ip>.local-ip.sh:8443`, `window.isSecureContext === true`, and a real swing
+  produces a `THROW`. This is the acceptance test. **Done** — exercised in a 5-player session
+  across iOS and Android.
+- ~~**Zero-setup claim**~~ — §8's test no longer applies: setup is not zero any more, and the
+  table there is what replaced it.
+- **Certificate expiry** — this was Fly's problem and is now ours. The borrowed `local-ip.sh`
+  certificate is downloaded fresh on every run and its expiry and SAN are checked before the
+  relay starts, so the failure mode is a refusal at setup rather than a lapse mid-party. What
+  is *not* covered: a certificate that expires while a session is already running.
 - **Peer connection establishes on a real LAN** — Android phone to this PC, and confirm from
   ICE state which candidate pair won. A relayed or reflexive pair where a host pair was
   expected means §5's assumption is wrong.
 - **Fallback ladder** — block UDP to force the DataChannel to fail and confirm AIM/THROW move
-  to WSS with the TV labelling it; then take the service unreachable and confirm the touch path.
+  to WSS with the TV labelling it. The tier-3 half of this test cannot be run: touch controls
+  are still unbuilt (§6).
 - **Signalling size** — capture a real SDP offer and check it against `MAX_MESSAGE_BYTES`.
 - **Regression** — `cd relay && npm test` keeps passing. The relay is barely changing, which
   is the point.
