@@ -34,6 +34,7 @@
 param(
     [string] $Ssid = 'RockSkip Spike',
     [string] $Passphrase = 'skipspike',
+    [string] $Upstream = '1.1.1.1',
     [switch] $KeepRunning
 )
 
@@ -130,8 +131,23 @@ try {
     Write-Ok ':53 is free'
 
     # 192.168.137.1 is the conventional Windows ICS host address; confirmed below.
+    #
+    # Upstream forwarding matters more than it looks. Without it every other name returns
+    # NXDOMAIN, the phone decides the network has no internet, and Android in particular
+    # may quietly fall back to mobile data - which fails the test for a reason that has
+    # nothing to do with what is being tested. Forwarding keeps the phone connected and
+    # still discriminates, because play.local-ip.sh resolves nowhere but here.
+    $responderArgs = @('dns-responder.js', '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
+                       '--port', '53', '--bind', '0.0.0.0')
+    if ($Upstream) {
+        $responderArgs += @('--upstream', $Upstream)
+        Write-Info "forwarding other names to $Upstream (keeps the phone from bailing to mobile data)"
+    } else {
+        Write-Info 'no upstream: every other name will NXDOMAIN, simulating a fully offline host'
+    }
+
     $responder = Start-Process -FilePath $node.Source `
-        -ArgumentList @('dns-responder.js', '--ip', '192.168.137.1', '--suffix', '.local-ip.sh', '--port', '53', '--bind', '0.0.0.0') `
+        -ArgumentList $responderArgs `
         -WorkingDirectory $SpikeDir -PassThru -WindowStyle Normal
     Start-Sleep -Milliseconds 800
 
@@ -207,12 +223,38 @@ try {
     # ------------------------------------------------------------- phone test
     if ($KeepRunning) {
         Write-Step 'Phone test'
-        & $node.Source (Join-Path $SpikeDir 'wifi-qr.js') --ssid $Ssid --pass $Passphrase
-        Write-Info 'Scan the QR to join, then on the phone open a browser and load:'
-        Write-Info '    http://192.168.137.1/  (or whatever address is reported above)'
-        Write-Info 'Watch the responder window: a query from a 192.168.137.x address is the proof.'
+
+        # Serves a plain-language success page. Do NOT tell anyone to browse to
+        # 192.168.137.1 directly: an IP URL performs no DNS lookup, so it would prove
+        # nothing about the very thing being tested.
+        $confirm = Start-Process -FilePath $node.Source `
+            -ArgumentList @('confirm-server.js', '--port', '80') `
+            -WorkingDirectory $SpikeDir -PassThru -WindowStyle Normal
+        Start-Sleep -Milliseconds 600
+        if ($confirm.HasExited) {
+            Write-Bad "Confirmation server exited (code $($confirm.ExitCode)). Port 80 may be taken."
+        } else {
+            Write-Ok "confirmation server on :80 (pid $($confirm.Id))"
+        }
+
+        & $node.Source (Join-Path $SpikeDir 'wifi-qr.js') `
+            --ssid $Ssid --pass $Passphrase --url 'http://play.local-ip.sh/'
+
+        Write-Host '   ON THE PHONE:' -ForegroundColor Yellow
+        Write-Info '     1. Scan the FIRST QR to join the hotspot.'
+        Write-Info '     2. Ignore any "no internet" warning and stay connected.'
+        Write-Info '     3. Scan the SECOND QR, or type this into a browser:'
+        Write-Host  '            http://play.local-ip.sh/' -ForegroundColor White
+        Write-Host ''
+        Write-Info '   A green "It worked" page is a PASS.'
+        Write-Info '   "Server not found" is a FAIL - the phone used upstream DNS, not us.'
+        Write-Info '   That name exists in no public DNS, so it can only resolve via this PC.'
         Write-Host ''
         Read-Host '   Press Enter to tear everything down'
+
+        if ($confirm -and -not $confirm.HasExited) {
+            try { Stop-Process -Id $confirm.Id -Force } catch { }
+        }
     }
 }
 catch {

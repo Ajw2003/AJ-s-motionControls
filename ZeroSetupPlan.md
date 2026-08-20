@@ -56,15 +56,36 @@ guests in the room**. Note what did *not* soften: the host still needs connectiv
 name has to resolve and the certificate has to be fetched. Phase 3.5 makes this a product
 feature instead of a trick the developer happens to know.
 
-### 2. The Windows firewall prompt needs an installer to absorb it
+### 2. The firewall needs an installer — decided, and now demonstrated
 
-Something listens now, so Windows prompts on first run. It cannot be suppressed from inside a
-running process without administrator rights. The honest fix is to **ship an installer** and add
-the firewall rule during install, where a single UAC prompt is what every player already expects
-from installing a game. Running the game then prompts for nothing.
+**Decision: the game ships as an installer, not a zip.** This is settled rather than proposed,
+and it is the one place the plan deliberately spends a UAC prompt.
 
-This trades "unzip and run" for "install and run". If that trade is unacceptable, the prompt
-stays and the goal is met everywhere except that one dialog.
+Something listens now, so Windows blocks it, and that cannot be fixed from inside a running
+process without administrator rights. The 2026-08-20 spike turned this from a predicted cost
+into a measured one:
+
+> With the hotspot running and the responder and web server both confirmed listening on
+> `0.0.0.0`, a phone on the hotspot **timed out** against `192.168.137.1:80`. Not "refused" —
+> *dropped*. Adding two inbound rules made the same request succeed immediately.
+
+The detail that matters for the installer: node's existing inbound rules were **`Private`
+profile only**, and the hotspot adapter (`Local Area Connection* 12`) carries **no network
+category at all** — it does not appear in `Get-NetConnectionProfile`, so the firewall treats it
+as `Public`. **A rule scoped to `Private` silently does nothing on the interface that matters.**
+
+So the installer must add rules with `-Profile Any`, scoped to the hotspot subnet so nothing is
+exposed to the home network or the internet:
+
+```powershell
+New-NetFirewallRule -DisplayName "..." -Direction Inbound -Protocol UDP -LocalPort 53 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any
+New-NetFirewallRule -DisplayName "..." -Direction Inbound -Protocol TCP -LocalPort 443 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any
+```
+
+This trades "unzip and run" for "install and run" — one prompt at install time, of the kind
+every player already expects from a game, in exchange for zero prompts at every party
+thereafter. **A zip cannot deliver the stated goal**, because the first launch on any machine
+would fail exactly the way the spike did, with a timeout and no explanation.
 
 ### 3. iOS still needs one in-page tap
 
@@ -309,15 +330,31 @@ there. Two modes, deliberately.
 
 ## Phase 4 — the installer
 
-Wrap the build (Inno Setup or MSIX) so that install time absorbs:
+**The distribution format is decided: an installer, not a zip.** See *The firewall needs an
+installer* above for the measurement that settled it. A zip is not a lighter-weight alternative
+here; it is a build that fails on first launch for everyone who is not the developer.
 
-- the firewall rule, on **both** Private and Public profiles — the profile mismatch described in
-  [LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) Step 3 is why a rule added during
-  development can appear to work and then prompt at a party
-- placing `relay/`, `controller/` and `node.exe`
-- a Start Menu entry
+Wrap the build (Inno Setup or MSIX) so install time absorbs:
+
+- **The firewall rules** — `-Profile Any`, never `Private` alone. The hotspot adapter has no
+  network category, so the firewall treats it as `Public`, and a `Private`-scoped rule is
+  silently inert on the one interface that matters. This is not the theoretical profile mismatch
+  [LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) Step 3 warned about — it is that warning
+  actually happening, observed as a timeout with no error message anywhere.
+- Scope those rules to the hotspot subnet (`192.168.137.0/24`) and to the specific ports rather
+  than allowing `node.exe` wholesale. Same effect for the game, far smaller blast radius, and it
+  keeps the LAN and the internet out of scope entirely.
+- Placing `relay/`, `controller/` and `node.exe`.
+- A Start Menu entry.
+- **An uninstaller that removes the firewall rules.** Leaving them behind after the game is gone
+  is exactly the kind of residue that makes people distrust hobby software.
 
 After this, first run performs zero prompts.
+
+**Sequencing:** still last. An installer that ships a build which cannot start a relay only
+hides the failure behind a progress bar — but note the spike has now shown the reverse risk too,
+that a correct build can look broken purely because nothing granted it a firewall exception.
+Phases 1-3 should be verified with rules added by hand before the installer automates them.
 
 ---
 

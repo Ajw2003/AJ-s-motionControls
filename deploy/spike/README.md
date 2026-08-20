@@ -40,6 +40,38 @@ Verified on Node v22.19.0, Windows 11 Pro 26100, 2026-08-20.
 
 Teardown restored tethering to `Off` and the SSID to its original value.
 
+### The firewall finding — and why the game ships as an installer
+
+With the hotspot up and both helpers confirmed listening on `0.0.0.0`, a phone on the hotspot
+**timed out** reaching `192.168.137.1:80`. Timed out, not refused: the packets were *dropped*.
+
+The cause is worth recording precisely, because it is invisible and will happen to anyone:
+
+- node's existing inbound firewall rules were **`Private` profile only**
+- the hotspot adapter (`Local Area Connection* 12`, `192.168.137.1`) has **no network category**
+  — it does not appear in `Get-NetConnectionProfile` at all, so the firewall treats it as
+  `Public`
+- therefore **the rules did not apply to the one interface that mattered**, and nothing anywhere
+  logged an error
+
+Two scoped rules fixed it immediately:
+
+```powershell
+New-NetFirewallRule -DisplayName "RockSkip spike - DNS"  -Direction Inbound -Protocol UDP -LocalPort 53 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any
+New-NetFirewallRule -DisplayName "RockSkip spike - HTTP" -Direction Inbound -Protocol TCP -LocalPort 80 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any
+```
+
+Remove them when finished:
+
+```powershell
+Remove-NetFirewallRule -DisplayName "RockSkip spike - DNS","RockSkip spike - HTTP"
+```
+
+**This is what settled the distribution format.** A zip cannot work: the first launch on any
+machine that is not the developer's would fail exactly this way — a timeout, with no error to
+read. The rules must be added at install time, with `-Profile Any`, and removed on uninstall.
+See [../../ZeroSetupPlan.md](../../ZeroSetupPlan.md) Phase 4.
+
 ### The one thing still inferred rather than proven
 
 ICS did not take `:53` — but **whether ICS hands phones `192.168.137.1` as their DNS server is
