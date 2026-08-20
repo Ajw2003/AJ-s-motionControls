@@ -270,6 +270,21 @@ mode as the *deterministic* path and DHCP-assigned LAN mode as the variable one.
    PowerShell interop used to verify the above. A helper executable is cleaner and fits Phase 1's
    bundling work; it is also the natural place to put hotspot teardown on exit.
 
+**3.5a Carry the game, not the internet.** When the PC is the access point it can see guests'
+traffic metadata and DNS — not HTTPS *contents*, but more than it has any need for. The game
+requires phones to reach *this PC*; it has never required giving them internet.
+
+If the hotspot carries no internet, **Android keeps mobile data as its default route** for a
+network it has judged unvalidated, using the Wi-Fi only for the local subnet — so guests' real
+browsing never traverses the host at all. That is a much stronger guarantee than promising not
+to look.
+
+**Needs its own spike before being planned around.** ICS does NAT in `ipnathlp.dll` rather than
+plain IP forwarding, so `Set-NetIPInterface -Forwarding Disabled` is probably not the lever, and
+whether Windows Firewall filters ICS-forwarded traffic is version-dependent. Try to block the
+forwarded path, then verify from a phone that the game works and general browsing does not.
+Reasoning in [SecurityReview.md](SecurityReview.md) §2.
+
 **Sequencing note:** this is worth building *before* Phase 4's installer, because a hotspot
 listener changes which firewall profile matters — a rule scoped only to the network the
 developer tested on is precisely the failure LOCAL-HTTPS-SPIKE Step 3 warns about.

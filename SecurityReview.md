@@ -43,25 +43,112 @@ Nothing worth the effort.
 - Document it in-product if the game is ever distributed: a host should know guests' phones are
   trusting the room, not the cryptography.
 
-## 2. Guests hand the host complete control of their name resolution
+## 2. Protecting guests *from the host*
 
-When a phone joins the PC's hotspot, the PC becomes its DHCP server, its gateway **and its DNS
-resolver**. The Phase 3.6 responder answers `*.local-ip.sh` and forwards everything else — which
-means the host machine sees, and could redirect, *every* domain that phone looks up while
-connected.
+The sharpest question anyone has asked about this design: when five friends join your hotspot,
+what have you just been handed?
 
-This is inherent to being someone's access point and is no different from joining any Wi-Fi
-network. It is worth stating plainly because the game *creates* that relationship deliberately,
-where normally a guest chooses it.
+### First, precisely what the host can and cannot see
 
-**Mitigations**
+Two separate things get conflated here, and the difference decides how much work this deserves.
 
-- **Forward verbatim; never rewrite, never log.** The responder must answer only the game's own
-  name and pass everything else through untouched. Any temptation to "helpfully" intercept
-  should be treated as a bug.
-- Guests should be joining a host they already trust — true at a party, false for strangers.
-- If the host machine is compromised, guests' browsing is compromised too. That raises the value
-  of the code-signing item in §7.
+| | Host can see? |
+|---|---|
+| **Which sites a phone talks to** — destination IPs, TLS SNI, packet sizes and timing | **Yes.** Unavoidable for any access point. |
+| **DNS lookups**, if the phone uses the host as its resolver | **Yes** — a readable list of every domain requested. |
+| **Contents of HTTPS traffic** — messages, passwords, page content | **No.** Decrypting it needs a root CA installed on the *phone*, which the host cannot do. |
+| **Contents of plain HTTP traffic** | Yes, but almost nothing is plain HTTP now. |
+
+So the accurate statement is **metadata and DNS, not content**. A host learns *that* a guest
+opened a bank's app; they cannot read anything inside it. That is materially smaller than "all
+their traffic can be read", and it is exactly the exposure of every coffee shop, hotel and
+friend's-house Wi-Fi anyone already uses.
+
+> **A conflation worth clearing up:** the "open resolver" problem in §4 was **not** about reading
+> guests' traffic. It was that *strangers outside the party* could abuse the resolver as a DDoS
+> amplifier. Those are unrelated problems with unrelated fixes, and §4 is already fixed.
+
+Two further points in guests' favour: modern phones increasingly defend themselves — Android
+**Private DNS** (DoT) and iOS **iCloud Private Relay** both take DNS out of the host's view
+entirely — and encrypted SNI/ECH is eroding the hostname leak too.
+
+### The reframe that does most of the work
+
+**The hotspot is the fallback, not the default.** On an ordinary network — which the 5-player
+session proved works well, across two routers — **the host is not in the path at all**. The
+router is, exactly as it always was. Guests' traffic never touches the host machine.
+
+The host only becomes the network when guests *cannot otherwise join*, and there the honest
+alternative is not "a more private option", it is **no game**. That makes it a visible, consented
+trade rather than a hidden one — provided the game actually says so, which is why the on-screen
+notice below is a requirement and not a nicety.
+
+### The strongest available technical mitigation — and it needs a spike
+
+**Stop sharing the internet.** The game needs a phone to reach *this PC*; it has never needed to
+give that phone internet access.
+
+If the hotspot carries no internet, the payoff is large and slightly surprising: **Android keeps
+mobile data as its default route for a Wi-Fi network it has judged to have no internet**, and
+uses the Wi-Fi only for that local subnet. iOS behaves similarly if less predictably. The result
+is that a guest's real browsing never traverses the host at all — not "is not logged", but
+*never arrives*.
+
+**Unverified, and it should not be planned around until it is.** Windows tethering runs through
+ICS, which performs NAT in `ipnathlp.dll` rather than plain IP forwarding, so
+`Set-NetIPInterface -Forwarding Disabled` is probably not the lever. Whether Windows Firewall
+reliably filters ICS-forwarded traffic is murky and version-dependent. **This deserves its own
+spike**, in the same style as the DNS one: try to block the forwarded path, then verify from a
+phone that the game works and general browsing does not.
+
+### What is not achievable, stated plainly
+
+- **Whoever runs the access point sees metadata.** No configuration removes this while the PC is
+  the AP.
+- **A malicious host can modify their own build.** No control in the software protects against
+  the person running it. This is the same trust model as joining anyone's Wi-Fi, and it is the
+  reason §7's code-signing matters — a signed build is at least evidence of *which* software is
+  running.
+- Building a bespoke "network app" does not escape any of this: browsers need IP over Wi-Fi, and
+  Windows offers no user-mode AP that is not ICS. See §2.1.
+
+**Mitigations to apply regardless**
+
+- **Answer only the game's own name; NXDOMAIN everything else; never log queries.** Already the
+  behaviour when `--upstream` is unset — make that the shipped default rather than an option.
+- **Do not run the resolver at all in LAN mode.** Phones use the router's DNS there, so the game
+  has no business being in that path.
+- **Tear the hotspot down when the match ends.** An access point left running after the party is
+  both a privacy and a security liability.
+- **Say it on screen**, once, in plain words: *"Guests' phones will connect through this PC. It
+  carries the game only and does not share your internet."* The second half of that sentence must
+  become true first.
+
+## 2.1 Could a purpose-built app replace the Windows hotspot?
+
+Asked directly, and worth answering directly: **no — and the reason is useful, because it tells
+you where the effort actually pays.**
+
+| Alternative | Why it does not work |
+|---|---|
+| **Bluetooth / Web Bluetooth** | Browsers cannot act as a BT network client. Web Bluetooth is BLE, peripheral-oriented, wrong direction, and far too slow for 20 Hz aim data. |
+| **Wi-Fi Direct / Wi-Fi Aware** | No browser API. A phone browser cannot address a peer over either. |
+| **A custom software access point** | Windows exposes no user-mode AP other than Mobile Hotspot. Anything else means shipping a network driver — a signed kernel-mode component, which is a different project with a much worse security story than the one being avoided. |
+| **A relay app installed on each phone** | Defeats the entire premise. The game's core promise is *scan a QR, no app download*. |
+
+The controller is a web page, so it needs IP over Wi-Fi, and on Windows that means Mobile
+Hotspot, and Mobile Hotspot means ICS. There is no way around the funnel.
+
+**But the funnel's width is ours to set.** The right conclusion is not "build a different
+network", it is **"constrain the network we are given"** — which is exactly the no-internet-
+sharing spike in §2. That is a far smaller piece of work than a bespoke stack and it is the only
+one that changes what the host can observe.
+
+Worth noting a separate helper process is needed anyway: Unity cannot call WinRT directly
+(ZeroSetupPlan Phase 3.5), so something outside Unity must drive tethering. **That helper is the
+natural home for this**: start the hotspot, apply the forwarding restrictions, and guarantee
+teardown on exit. So the instinct behind the question was right — it is the scope that shrinks,
+from "a network application" to "the process already on the plan, doing one more job."
 
 ## 3. Sharing the host's internet connection carries the host's liability
 
@@ -210,10 +297,11 @@ What is left:
 |---|---|---|
 | 1 | **DNS source guard + rate limit** (§4) | ✅ **Done** — the only issue that could harm people not playing the game |
 | 2 | **`textContent` in the scoreboard** (§5) | ✅ **Done** |
-| 3 | **Code-sign the installer** (§7) | Open — gates whether anyone can safely trust the admin prompt |
-| 4 | Per-IP connection cap, `path.relative` guard (§6) | Open — hardening on an already-solid relay |
-| 5 | Hotspot passphrase hygiene, teardown on exit (§7, §3) | Open — cheap, prevents a class of embarrassment |
-| 6 | Confirm rich-text handling on the results screen (§5) | Open — cosmetic at worst, currently unverified |
+| 3 | **Spike: hotspot that carries the game but not the internet** (§2) | Open — the only change that reduces what a host can observe about guests |
+| 4 | **Code-sign the installer** (§7) | Open — gates whether anyone can safely trust the admin prompt |
+| 5 | Per-IP connection cap, `path.relative` guard (§6) | Open — hardening on an already-solid relay |
+| 6 | Hotspot passphrase hygiene, teardown on exit (§7, §3) | Open — cheap, prevents a class of embarrassment |
+| 7 | Confirm rich-text handling on the results screen (§5) | Open — cosmetic at worst, currently unverified |
 
 **Carry §4's reasoning into the shipped code.** The fixes above are in the *spike*, and the
 production relay has not been written yet. The source guard in particular is not a detail to
