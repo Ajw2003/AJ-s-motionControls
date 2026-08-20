@@ -78,9 +78,12 @@ compelling use case is exactly those networks.
 
 ---
 
-## 4. 🔴 The DNS responder as written is an open resolver — fix before shipping
+## 4. ✅ FIXED — the DNS responder was an open resolver
 
-**This is the most serious *fixable* issue, and the spike code has the bug.**
+*Fixed 2026-08-20 in `deploy/spike/dns-responder.js`. Recorded in full because the reasoning
+must survive into the shipped implementation, which is not written yet.*
+
+**This was the most serious fixable issue, and the spike code had the bug.**
 
 `deploy/spike/dns-responder.js` was run as:
 
@@ -97,18 +100,38 @@ Binding every interface *and* forwarding for anyone who asks is the textbook def
 - The firewall rules from Phase 4 are what currently prevent this, which means one
   mis-scoped rule turns a player's PC into an attack tool
 
-**Mitigations — all of them, not a selection**
+**What was applied**
 
-- **Bind only to the hotspot address** (`192.168.137.1`), never `0.0.0.0`. In LAN mode the
-  responder should not run at all, because phones use the router's DNS there anyway.
-- **Refuse queries whose source is outside the hotspot subnet**, as defence in depth for when
-  the binding is wrong.
-- **Do not forward for non-hotspot sources**, ever.
-- **Rate-limit per source address.** Amplification needs volume.
-- Keep the Phase 4 firewall rules scoped to `192.168.137.0/24` — they already are, and this is
-  the reason it matters rather than a nicety.
+- **Safe defaults.** `--bind` now defaults to `192.168.137.1`, not `0.0.0.0`, and `--allow`
+  defaults to the bind address's `/24`. The safe configuration is the one you get by doing
+  nothing, because the dangerous one is indistinguishable while you are testing it.
+- **Source guard.** Queries from outside the permitted range are **dropped, not refused.**
+  Replying at all — even `REFUSED` — still sends a packet to a possibly-forged source, which is
+  the amplification behaviour itself. Silence is the correct answer.
+- **Per-source rate limit**, default 50/s, with a bounded map so a spoofed-source flood cannot
+  grow it without limit.
+- **A loud startup warning** when bound to `0.0.0.0` *and* forwarding.
+- Phase 4 firewall rules stay scoped to `192.168.137.0/24`.
 
-## 5. 🟠 HTML injection through player names
+Verified: a query from `10.0.0.213` (this machine's own LAN address, outside the hotspot range)
+was dropped with no reply; loopback was answered. With `--rate 10`, 30 queries produced exactly
+10 answers.
+
+> **One constraint that prevents the tidiest fix, and it must carry into production.**
+> Binding only to `192.168.137.1` is not available to the game at startup: **that address does
+> not exist until the hotspot is running**, and `:53` has to be held *before* tethering starts
+> to win the race against ICS. The spike only proved ICS will not *evict* a held port — whether
+> it claims a free one is untested, and assuming otherwise would be a guess.
+>
+> So the shipped code will very likely also bind `0.0.0.0`, which makes **the source guard the
+> load-bearing protection rather than a backstop**. It must not be treated as optional, and the
+> narrow bind should be used wherever the timing does allow it.
+
+## 5. ✅ FIXED — HTML injection through player names
+
+*Fixed 2026-08-20 in [controller/js/app.js](controller/js/app.js). The scoreboard now builds
+its two `<span>` elements and assigns `.textContent`, so a name can never be markup. Kept below
+because the same mistake is easy to reintroduce anywhere a name is rendered.*
 
 [controller/js/app.js:252](controller/js/app.js:252) builds the scoreboard with `innerHTML`:
 
@@ -125,16 +148,24 @@ Full script execution is *constrained* by the 16-character cap rather than preve
 ONLOAD=A()>` is exactly 16. The cap is the only thing standing in the way, and caps get raised
 later by people who do not know they are load-bearing.
 
-**Mitigations**
+**What was applied**
 
-- **Use `textContent`, not `innerHTML`.** One-line fix and the correct one:
-  build the two `<span>` elements and assign `.textContent`.
-- Optionally restrict names to `[A-Z0-9 ]` server-side — but do this *as well as* the above,
-  never instead of it.
-- Check the same pattern on the TV: [ResultsScreen.cs:137](Assets/Scripts/UI/ResultsScreen.cs:137)
-  renders `PlayerId` through `GUILayout.Label`. Worst case there is rich-text tag mischief
-  (`<color=…>`), which is cosmetic rather than dangerous — but it should be confirmed rather than
-  assumed.
+- `textContent` instead of `innerHTML`, and `replaceChildren()` instead of `innerHTML = ''`.
+  A comment at the call site records *why*, since the next person to build a row there will
+  reach for a template literal exactly as the original author did.
+- Verified no other `innerHTML` / `insertAdjacentHTML` / `document.write` remains anywhere in
+  `controller/`, and that every other place a name is rendered already uses `textContent`.
+
+**Still outstanding, deliberately not changed**
+
+- Server-side name restriction to something like `[A-Z0-9 ]` would be reasonable defence in
+  depth — but only *as well as* the above, never instead of it. Not applied, because escaping at
+  the render site is the fix that cannot be bypassed and adding input filtering can create false
+  confidence.
+- [ResultsScreen.cs:137](Assets/Scripts/UI/ResultsScreen.cs:137) renders `PlayerId` through
+  `GUILayout.Label`. Worst case is rich-text tag mischief (`<color=…>`) on the TV, which is
+  cosmetic rather than dangerous — **unverified either way**, and worth a look when that screen
+  is next touched.
 
 ## 6. 🟡 Relay exposure while the game is running
 
@@ -175,13 +206,21 @@ What is left:
 
 ## Priority
 
-| | Item | Why this order |
+| | Item | Status |
 |---|---|---|
-| 1 | **Bind the DNS responder to the hotspot only** (§4) | The only issue that can harm people who are not playing the game |
-| 2 | **`textContent` in the scoreboard** (§5) | Real bug, one-line fix, currently held back only by a length cap |
-| 3 | **Code-sign the installer** (§7) | Gates whether anyone can safely trust the admin prompt |
-| 4 | Per-IP connection cap, `path.relative` guard (§6) | Hardening on an already-solid relay |
-| 5 | Hotspot passphrase hygiene, teardown on exit (§7, §3) | Cheap, and prevents a whole class of embarrassment |
+| 1 | **DNS source guard + rate limit** (§4) | ✅ **Done** — the only issue that could harm people not playing the game |
+| 2 | **`textContent` in the scoreboard** (§5) | ✅ **Done** |
+| 3 | **Code-sign the installer** (§7) | Open — gates whether anyone can safely trust the admin prompt |
+| 4 | Per-IP connection cap, `path.relative` guard (§6) | Open — hardening on an already-solid relay |
+| 5 | Hotspot passphrase hygiene, teardown on exit (§7, §3) | Open — cheap, prevents a class of embarrassment |
+| 6 | Confirm rich-text handling on the results screen (§5) | Open — cosmetic at worst, currently unverified |
+
+**Carry §4's reasoning into the shipped code.** The fixes above are in the *spike*, and the
+production relay has not been written yet. The source guard in particular is not a detail to
+reimplement from memory — it is load-bearing precisely because the narrow bind is unavailable.
+
+§1–§3 are not on this list because they are **properties to preserve, not defects to fix**. The
+work there is remembering them when the next feature is designed.
 
 §1–§3 are not on this list because they are **properties to preserve, not defects to fix**. The
 work there is remembering them when the next feature is designed.

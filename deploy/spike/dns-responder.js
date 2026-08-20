@@ -13,9 +13,19 @@
  * Deliberately hand-rolled: no dependencies, so it can be dropped into the relay process
  * later without adding one. Only what a phone actually asks for is implemented.
  *
+ * Safe by default: binds the hotspot address only, and answers nobody outside its subnet.
+ * Widening either is a deliberate act, because an open resolver is a DDoS amplifier.
+ *
  *   node dns-responder.js --ip 192.168.137.1 --name play.local-ip.sh
- *   node dns-responder.js --ip 10.0.0.213 --suffix .local-ip.sh --port 5399
  *   node dns-responder.js --ip 192.168.137.1 --suffix .local-ip.sh --upstream 1.1.1.1
+ *   node dns-responder.js --ip 192.168.137.1 --suffix .local-ip.sh --bind 127.0.0.1 --port 5399
+ *
+ * Binding 0.0.0.0 is sometimes unavoidable - the hotspot address does not exist until the
+ * hotspot is running, and :53 has to be held before that to win the race against ICS. In
+ * that case --allow is the only thing standing between this and an open resolver, so pass
+ * it explicitly:
+ *
+ *   node dns-responder.js --ip 192.168.137.1 --suffix .local-ip.sh --bind 0.0.0.0 --allow 192.168.137.0/24
  */
 
 'use strict';
@@ -55,8 +65,15 @@ function parseArgs(argv) {
     name: null,        // exact match, case-insensitive
     suffix: null,      // or match anything ending in this
     port: 53,
-    bind: '0.0.0.0',
+    // Defaults to the hotspot address rather than 0.0.0.0 on purpose. A resolver that
+    // listens everywhere AND forwards for anyone is an open recursive resolver - free
+    // for any host on any attached network to use, and a DNS amplification reflector
+    // for spoofed-source DDoS. The safe configuration has to be the one you get by
+    // default, because the dangerous one is indistinguishable while you are testing it.
+    bind: '192.168.137.1',
+    allow: null,       // CIDR permitted to query; defaults to the bind address's /24
     upstream: null,    // forward non-matching queries here, if set
+    rate: 50,          // max queries per second per source address
     ttl: 60,
   };
 
@@ -64,14 +81,86 @@ function parseArgs(argv) {
     const key = argv[i].replace(/^--/, '');
     const value = argv[i + 1];
     if (!(key in args)) fail(`Unknown option: ${argv[i]}`);
-    args[key] = key === 'port' || key === 'ttl' ? Number(value) : value;
+    args[key] = ['port', 'ttl', 'rate'].includes(key) ? Number(value) : value;
   }
 
   if (!args.ip) fail('--ip is required (the address to answer with).');
   if (!args.name && !args.suffix) fail('One of --name or --suffix is required.');
   if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(args.ip)) fail(`--ip is not an IPv4 address: ${args.ip}`);
 
+  // Derive the permitted range from wherever we are listening, so the guard cannot be
+  // left behind when someone changes --bind.
+  if (!args.allow) {
+    const base = /^(\d{1,3}\.){3}\d{1,3}$/.test(args.bind) && args.bind !== '0.0.0.0'
+      ? args.bind
+      : args.ip;
+    args.allow = `${base.split('.').slice(0, 3).join('.')}.0/24`;
+  }
+
   return args;
+}
+
+// ------------------------------------------------------------ source guards
+
+function ipToInt(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let value = 0;
+  for (const part of parts) {
+    const octet = Number(part);
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) return null;
+    value = (value * 256) + octet;
+  }
+  return value;
+}
+
+function makeSubnetTest(cidr) {
+  const [network, bitsRaw] = cidr.split('/');
+  const bits = Number(bitsRaw ?? 32);
+  const base = ipToInt(network);
+  if (base === null || !Number.isInteger(bits) || bits < 0 || bits > 32) {
+    fail(`--allow is not a valid CIDR: ${cidr}`);
+  }
+  const mask = bits === 0 ? 0 : (2 ** 32 - 2 ** (32 - bits));
+  const masked = base & mask;
+
+  return (address) => {
+    // Loopback always passes, so local testing does not require widening the range.
+    if (address === '127.0.0.1') return true;
+    const value = ipToInt(address.replace(/^::ffff:/, ''));
+    if (value === null) return false;
+    return (value & mask) >>> 0 === masked >>> 0;
+  };
+}
+
+/**
+ * Per-source rolling-window limiter. Amplification needs volume, so a cap per source
+ * removes most of the value of using this as a reflector even if the range guard is
+ * somehow wrong.
+ */
+function makeRateLimiter(perSecond) {
+  const windows = new Map();
+
+  return (address) => {
+    const now = Date.now();
+    let entry = windows.get(address);
+
+    if (!entry || now - entry.start >= 1000) {
+      entry = { start: now, count: 0 };
+      windows.set(address, entry);
+    }
+
+    entry.count += 1;
+
+    // Bound the map so a spoofed-source flood cannot grow it without limit.
+    if (windows.size > 1024) {
+      for (const [key, value] of windows) {
+        if (now - value.start >= 1000) windows.delete(key);
+      }
+    }
+
+    return entry.count > perSecond;
+  };
 }
 
 function fail(message) {
@@ -199,7 +288,10 @@ function main() {
   const args = parseArgs(process.argv);
   const socket = dgram.createSocket('udp4');
   const seen = new Set();
+  const isAllowed = makeSubnetTest(args.allow);
+  const isRateLimited = makeRateLimiter(args.rate);
   let queries = 0;
+  let dropped = 0;
 
   socket.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -215,6 +307,23 @@ function main() {
   });
 
   socket.on('message', (message, remote) => {
+    // Both guards DROP rather than reply. Replying to a source outside the hotspot -
+    // even with REFUSED - still sends a packet to an address that may be forged, which
+    // is the amplification behaviour being prevented. Silence is the correct answer.
+    if (!isAllowed(remote.address)) {
+      dropped += 1;
+      if (dropped <= 5) {
+        console.log(`  ${remote.address.padEnd(15)} DROPPED - outside ${args.allow}`);
+        if (dropped === 5) console.log('  (further out-of-range drops will not be logged)');
+      }
+      return;
+    }
+
+    if (isRateLimited(remote.address)) {
+      dropped += 1;
+      return;
+    }
+
     queries += 1;
 
     let query;
@@ -267,6 +376,16 @@ function main() {
     console.log(`  DNS responder on ${args.bind}:${args.port}`);
     console.log(`  Answering  ${target}  ->  ${args.ip}   (TTL ${args.ttl}s)`);
     console.log(`  Other names: ${args.upstream ? `forwarded to ${args.upstream}` : 'NXDOMAIN'}`);
+    console.log(`  Accepting from ${args.allow} only, max ${args.rate}/s per source`);
+
+    if (args.bind === '0.0.0.0' && args.upstream) {
+      console.log('');
+      console.log('  !! WARNING: bound to every interface AND forwarding upstream.');
+      console.log('  !! The source guard above is the only thing keeping this from being');
+      console.log('  !! an open resolver, which is a DNS amplification reflector.');
+      console.log('  !! Bind to the hotspot address instead unless you know why not.');
+    }
+
     console.log('');
     console.log('  Every query is logged below. A phone address appearing here is the');
     console.log('  result the spike is looking for.');
@@ -274,7 +393,8 @@ function main() {
   });
 
   process.on('SIGINT', () => {
-    console.log(`\n\n  ${queries} quer${queries === 1 ? 'y' : 'ies'} from ${seen.size} client(s): ${[...seen].join(', ') || 'none'}\n`);
+    console.log(`\n\n  ${queries} quer${queries === 1 ? 'y' : 'ies'} from ${seen.size} client(s): ${[...seen].join(', ') || 'none'}`);
+    console.log(`  ${dropped} dropped (out of range or rate limited)\n`);
     socket.close(() => process.exit(0));
   });
 

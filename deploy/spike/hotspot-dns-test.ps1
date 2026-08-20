@@ -137,8 +137,13 @@ try {
     # may quietly fall back to mobile data - which fails the test for a reason that has
     # nothing to do with what is being tested. Forwarding keeps the phone connected and
     # still discriminates, because play.local-ip.sh resolves nowhere but here.
+    # Bound to 0.0.0.0 out of necessity, not preference: 192.168.137.1 does not exist until
+    # the hotspot is up, and we must hold :53 BEFORE that to win the race against ICS. The
+    # source guard (--allow) is therefore the real protection here - without it, listening
+    # everywhere while forwarding upstream is an open resolver and an amplification
+    # reflector. See ../../SecurityReview.md section 4.
     $responderArgs = @('dns-responder.js', '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
-                       '--port', '53', '--bind', '0.0.0.0')
+                       '--port', '53', '--bind', '0.0.0.0', '--allow', '192.168.137.0/24')
     if ($Upstream) {
         $responderArgs += @('--upstream', $Upstream)
         Write-Info "forwarding other names to $Upstream (keeps the phone from bailing to mobile data)"

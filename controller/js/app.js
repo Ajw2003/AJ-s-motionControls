@@ -245,11 +245,23 @@ function renderSpectate(message) {
   // reading it off the caption would credit every throw to the next player up.
   ui.lastThrow.textContent = renderLastThrow(message, phase);
 
-  ui.scores.innerHTML = '';
+  ui.scores.replaceChildren();
   for (const [player, score] of Object.entries(message.scores ?? {})) {
     const row = document.createElement('div');
     row.className = 'score-row' + (player === message.activePlayer ? ' active' : '');
-    row.innerHTML = `<span>${player}</span><span>${score}</span>`;
+
+    // textContent, never innerHTML. A player name is attacker-controlled text that every
+    // other phone renders, and the relay only trims/uppercases it - uppercasing is not
+    // sanitisation, because HTML tags are case-insensitive. Interpolating it as markup
+    // let a name like <H1>OWNED</H1> render as markup on everyone else's screen, held
+    // back from worse only by the 16-character cap in sanitizePlayerId.
+    const name = document.createElement('span');
+    name.textContent = player;
+
+    const points = document.createElement('span');
+    points.textContent = score;
+
+    row.append(name, points);
     ui.scores.appendChild(row);
   }
 }
