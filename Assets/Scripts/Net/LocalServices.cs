@@ -130,14 +130,48 @@ namespace Net
         /// path below for any relay not on that address: a relay started by hand on another
         /// port looked absent, so this spawned a second one that nothing ever connected to.
         ///
-        /// It probes the name rather than loopback because that is the address the certificate
-        /// is issued for when the relay is holding one. Probing 127.0.0.1 over https would
-        /// need a certificate-validation override, and there is not one anywhere in this
-        /// codebase — worth keeping that way.
+        /// This is the address shown to a human (log messages, the Fail() hint) and handed to
+        /// a phone (SecureSocketUrl, JoinUrlFor) — it is NOT what LocalServices probes its own
+        /// process with. See ProbeHealthUrl for why those had to split.
         /// </remarks>
         private string Origin => _origin ??= ResolveOrigin();
 
         private string HealthUrl => $"{Origin}/health";
+
+        /// <summary>
+        /// The address ProbeHealth/ProbeDnsBound actually connect to — loopback, once a
+        /// certificate is in play, never the public hostname in HealthUrl.
+        /// </summary>
+        /// <remarks>
+        /// In Hotspot mode the certificate's address (192.168.137.1) is not reachable on
+        /// this host until Hotspot tethering has actually started — which happens only after
+        /// this class reaches Ready. Probing the public hostname here deadlocks forever:
+        /// LocalServices waits on its own health check to reach Ready, HotspotService waits
+        /// on Ready before starting tethering, and the address the health check needs does
+        /// not exist until tethering has started. Loopback sidesteps the whole cycle — it is
+        /// always reachable regardless of hotspot state, because this is really just asking
+        /// "is the process I just spawned still alive," not a network question at all.
+        ///
+        /// A phone never sees this URL — SecureSocketUrl/JoinUrlFor still hand out the real
+        /// hostname, validated normally by every phone that connects to it. Loopback HTTPS
+        /// needs its own certificate handling since the cert's SAN never includes
+        /// "127.0.0.1"; see AcceptAnyCertificate for why that is scoped tightly enough to be
+        /// safe here and nowhere else.
+        /// </remarks>
+        private string ProbeHealthUrl => useHttps && _certificate.Ok
+            ? $"https://127.0.0.1:{securePort}/health"
+            : HealthUrl;
+
+        /// <summary>
+        /// Accepts any certificate. Scoped to LocalServices' own loopback probe of the relay
+        /// process it just spawned — a same-machine liveness check, not a network trust
+        /// decision, and not reachable from anywhere else. Nothing phone-facing ever uses
+        /// this; every real client still validates the relay's actual certificate normally.
+        /// </summary>
+        private sealed class AcceptAnyCertificate : CertificateHandler
+        {
+            protected override bool ValidateCertificate(byte[] certificateData) => true;
+        }
 
         protected override void Awake()
         {
@@ -330,8 +364,14 @@ namespace Net
         /// <summary>Single GET against /health. Invokes the callback with the result either way.</summary>
         private IEnumerator ProbeHealth(Action<bool> onResult)
         {
-            using var request = UnityWebRequest.Get(HealthUrl);
+            using var request = UnityWebRequest.Get(ProbeHealthUrl);
             request.timeout = 2;
+
+            // UnityWebRequest.Dispose() does not dispose a custom certificateHandler — this
+            // runs on a 0.25s poll during startup, so an unfreed one here would add up.
+            using var handler = useHttps && _certificate.Ok ? new AcceptAnyCertificate() : null;
+            if (handler != null) request.certificateHandler = handler;
+
             yield return request.SendWebRequest();
             onResult(request.result == UnityWebRequest.Result.Success);
         }
@@ -363,8 +403,12 @@ namespace Net
         /// </remarks>
         public IEnumerator ProbeDnsBound(Action<bool> onResult)
         {
-            using var request = UnityWebRequest.Get(HealthUrl);
+            using var request = UnityWebRequest.Get(ProbeHealthUrl);
             request.timeout = 2;
+
+            using var handler = useHttps && _certificate.Ok ? new AcceptAnyCertificate() : null;
+            if (handler != null) request.certificateHandler = handler;
+
             yield return request.SendWebRequest();
 
             if (request.result != UnityWebRequest.Result.Success)

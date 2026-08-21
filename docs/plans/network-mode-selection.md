@@ -44,6 +44,40 @@ are unchanged (LocalServices' Hotspot-mode env vars and forced `192.168.137.1` o
 HotspotService, the `/health` DNS-bound race fix, `hotspot-control.ps1`, the elevated setup) —
 read it with the above in mind for anything touching mode storage or gating specifically.
 
+## Bug found in first real Hotspot-mode test — self-deadlock, fixed
+
+First end-to-end attempt (Editor, elevated setup already run) failed at
+`[LocalServices] The relay never answered its health check.` — everything downstream (RelayClient
+falling back to the dead `rockskipping-relay.fly.dev` default, `[JoinScreen] QR request failed:
+Cannot resolve destination host`) was a cascading symptom of that one failure, not a separate bug.
+
+**Root cause:** `LocalServices` forces the certificate/relay address to `192.168.137.1` in
+Hotspot mode (correct — that's the fixed hotspot gateway address), but it was also *probing its
+own health* at `https://192-168-137-1.local-ip.sh:8443/health` — and that address is not
+reachable on this host until Hotspot tethering has actually started. `HotspotService` won't
+start tethering until `LocalServices` reports `Ready`, which requires that same health check to
+succeed. Self-deadlock: neither side can go first.
+
+**Fix:** `LocalServices` now probes its own just-spawned process over `127.0.0.1` (added
+`ProbeHealthUrl`), never the public hostname — always reachable regardless of hotspot state,
+because this was only ever "is the process I spawned still alive," not a network question.
+Loopback HTTPS needs its own certificate handling since the cert's SAN never includes
+`127.0.0.1`; added `AcceptAnyCertificate`, a `CertificateHandler` scoped tightly to this one
+same-machine liveness probe — nothing phone-facing uses it, every real client (a phone, or
+`RelayClient`'s own eventual connection) still validates the actual certificate normally via
+`SecureSocketUrl`/`JoinUrlFor`, which are untouched. `Origin`/`HealthUrl` (the public-facing
+values, used in logs and the `Fail()` hint shown on the TV) are also untouched — only what gets
+*connected to* for the internal check changed.
+
+Once `LocalServices` can reach `Ready` without waiting on the hotspot, `HotspotService` proceeds
+normally, and `RelayClient`/`JoinScreen`'s existing retry/backoff loops absorb the few seconds
+between `Ready` firing and tethering actually finishing (both already retry indefinitely on
+failure — no separate wait-for-`HotspotService.Ready` was needed there).
+
+Not yet re-tested after this fix — next step is exactly what failed before: MainMenu → Hotspot →
+Start, watch for `[LocalServices] ... Ready` and `[HotspotService]` reaching `Ready`, then confirm
+a real phone can scan both QRs.
+
 ## Context
 
 LAN mode was just fixed and confirmed working end-to-end this session (dual-homed tiebreak in
