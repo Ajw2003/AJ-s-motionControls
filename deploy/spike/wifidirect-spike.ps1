@@ -74,6 +74,9 @@ param(
     [switch] $Serve,
     [int]    $StartTimeoutSeconds = 20,
     [int]    $WaitForOfflineTimeoutSeconds = 300,
+    [int]    $Attempts = 3,
+    [int]    $SettleSeconds = 8,
+    [switch] $EnableRadio,
     [string] $LogPath
 )
 
@@ -90,6 +93,39 @@ function Write-Bad  { param([string] $m) Write-Host "   [FAIL] $m" -ForegroundCo
 function Write-Warn2{ param([string] $m) Write-Host "   [warn] $m" -ForegroundColor Yellow }
 function Write-Info { param([string] $m) Write-Host "   $m" -ForegroundColor Gray }
 function Write-Say  { param([string] $m) Write-Host "   $m" -ForegroundColor White }
+
+function Await-Operation {
+    param($Operation, [Type] $ResultType)
+    $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() |
+        Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+                       $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+    $task = $asTask.MakeGenericMethod($ResultType).Invoke($null, @($Operation))
+    $task.Wait(-1) | Out-Null
+    $task.Result
+}
+
+# The radio's software state is the difference between "Wi-Fi Direct cannot work offline" and
+# "Wi-Fi was switched off" - two findings that look identical from the outside, because a
+# software-off radio aborts the advertisement with RadioNotAvailable no matter what the network
+# looks like. The first offline run of this spike was confounded exactly this way, so the check
+# is now a precondition rather than a diagnostic.
+function Get-WiFiRadio {
+    $radioType  = [Windows.Devices.Radios.Radio,Windows.Devices,ContentType=WindowsRuntime]
+    $accessType = [Windows.Devices.Radios.RadioAccessStatus,Windows.Devices,ContentType=WindowsRuntime]
+    $access = Await-Operation $radioType::RequestAccessAsync() $accessType
+    if ("$access" -ne 'Allowed') { return [pscustomobject]@{ Radio = $null; Access = "$access" } }
+    $listType = [System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]]
+    $radios = Await-Operation $radioType::GetRadiosAsync() $listType
+    $wifi = $radios | Where-Object { "$($_.Kind)" -eq 'WiFi' } | Select-Object -First 1
+    [pscustomobject]@{ Radio = $wifi; Access = "$access" }
+}
+
+function Set-WiFiRadioOn {
+    param($Radio)
+    $stateType  = [Windows.Devices.Radios.RadioState,Windows.Devices,ContentType=WindowsRuntime]
+    $accessType = [Windows.Devices.Radios.RadioAccessStatus,Windows.Devices,ContentType=WindowsRuntime]
+    Await-Operation $Radio.SetStateAsync($stateType::On) $accessType
+}
 
 # Write-Host bypasses the pipeline, so Tee-Object cannot capture this script. A transcript can.
 try { Start-Transcript -Path $LogPath -Force | Out-Null; $transcribing = $true }
@@ -108,6 +144,7 @@ $result    = [ordered]@{
     status              = $null
     error               = $null
     uplinkAtStart       = $null
+    radioAfter          = $null
 }
 
 Write-Host ''
@@ -152,6 +189,48 @@ $uplink = Get-UplinkDescription
 Write-Info ''
 Write-Info ("connected adapters : {0}" -f $(if ($uplink.AdapterNames) { $uplink.AdapterNames } else { '(none)' }))
 Write-Info ("internet profile   : {0}" -f $(if ($uplink.InternetProfile) { $uplink.InternetProfile } else { '(null - Mobile Hotspot would fail here)' }))
+
+# ---- radio precondition. Checked here, before STEP 2 asks anyone to unplug a cable, because a
+# ---- run that cannot possibly succeed should cost nothing.
+$radioInfo = Get-WiFiRadio
+$radioState = if ($radioInfo.Radio) { "$($radioInfo.Radio.State)" } else { "(no WiFi radio; access=$($radioInfo.Access))" }
+Write-Info ("wi-fi radio        : {0}" -f $radioState)
+$ifaceRadio = (netsh wlan show interfaces) 2>&1 | Out-String
+$swOff = $ifaceRadio -match 'Software Off'
+if ($swOff) { Write-Info '                     (netsh agrees: Software Off)' }
+
+if ($radioState -ne 'On') {
+    Write-Host ''
+    if ($EnableRadio -and $radioInfo.Radio) {
+        Write-Warn2 'Wi-Fi radio is off - turning it on because -EnableRadio was passed'
+        $set = Set-WiFiRadioOn $radioInfo.Radio
+        Start-Sleep -Seconds 3
+        $radioInfo = Get-WiFiRadio
+        $radioState = if ($radioInfo.Radio) { "$($radioInfo.Radio.State)" } else { '(gone)' }
+        Write-Info "SetStateAsync -> $set, radio is now: $radioState"
+        if ($radioState -ne 'On') {
+            Write-Bad 'could not turn the radio on - stopping'
+            $result.status = 'not-tested-radio-off'
+            if ($transcribing) { Stop-Transcript | Out-Null }
+            exit 3
+        }
+        Write-Ok 'radio is On'
+    } else {
+        Write-Bad 'THE WI-FI RADIO IS OFF. Wi-Fi Direct cannot start, online or offline.'
+        Write-Host ''
+        Write-Say 'This aborts the advertisement with RadioNotAvailable and would look exactly'
+        Write-Say 'like "Wi-Fi Direct does not work offline" - a false negative. Stopping instead.'
+        Write-Host ''
+        Write-Say 'Fix it either way:'
+        Write-Say '  - Click the Wi-Fi tile in Quick Settings (Win+A) to turn Wi-Fi back on, or'
+        Write-Say '  - re-run this script with  -EnableRadio  and it will turn it on for you.'
+        Write-Host ''
+        $result.status = 'not-tested-radio-off'
+        Write-Host ($result | ConvertTo-Json) -ForegroundColor White
+        if ($transcribing) { Stop-Transcript | Out-Null }
+        exit 3
+    }
+}
 
 # ---------------------------------------------------------------- STEP 2
 
@@ -226,45 +305,88 @@ try {
     $discovType = [Windows.Devices.WiFiDirect.WiFiDirectAdvertisementListenStateDiscoverability,Windows.Devices,ContentType=WindowsRuntime]
     $credType   = [Windows.Security.Credentials.PasswordCredential,Windows.Security,ContentType=WindowsRuntime]
 
-    $publisher = $pubType::new()
-    $adv = $publisher.Advertisement
-    $adv.IsAutonomousGroupOwnerEnabled = $true
-    $adv.ListenStateDiscoverability = $discovType::Normal
-
-    $legacy = $adv.LegacySettings
-    $legacy.IsEnabled = $true
-    $legacy.Ssid = $Ssid
-    $cred = $credType::new()
-    $cred.Password = $Passphrase
-    $legacy.Passphrase = $cred
-    Write-Info "SSID '$Ssid' / passphrase '$Passphrase', autonomous GO, legacy clients enabled"
-
-    # StatusChanged carries the WiFiDirectError; the publisher's own Status property does not.
-    # PowerShell 5.1 refuses to subscribe to WinRT events at all ("cannot subscribe to Windows RT
-    # events"), so polling Status is the load-bearing signal and the error detail is a bonus we
-    # do not get here. A production C# implementation would get it.
-    $global:WfdError = $null
-    try {
-        $sub = Register-ObjectEvent -InputObject $publisher -EventName StatusChanged -Action {
-            $global:WfdError = $Event.SourceEventArgs.Error
+    # Retried, because pulling the cable reconfigures the network stack and the first attempt can
+    # land in the middle of that. A single Aborted right after an unplug is not evidence of a
+    # hard limitation; the same Aborted three times over 30 seconds is.
+    $status = 'Created'
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        if ($attempt -gt 1) {
+            Write-Info ''
+            Write-Info "attempt $attempt of $Attempts - waiting ${SettleSeconds}s for the stack to settle first"
+            for ($s = $SettleSeconds; $s -gt 0; $s--) {
+                Write-Host ("`r   settling... {0,3}s   " -f $s) -NoNewline -ForegroundColor DarkGray
+                Start-Sleep -Seconds 1
+            }
+            Write-Host "`r                           `r" -NoNewline
         }
-        Write-Info 'subscribed to StatusChanged (error detail available)'
-    } catch {
-        $sub = $null
-        Write-Info "no StatusChanged subscription ($($_.Exception.Message.Trim()))"
-        Write-Info 'polling Status instead - an abort will be visible but unexplained'
+
+        # A fresh publisher per attempt - an aborted one is not documented as restartable, and
+        # reusing it would make a retry prove nothing.
+        $publisher = $pubType::new()
+        $adv = $publisher.Advertisement
+        $adv.IsAutonomousGroupOwnerEnabled = $true
+        $adv.ListenStateDiscoverability = $discovType::Normal
+
+        $legacy = $adv.LegacySettings
+        $legacy.IsEnabled = $true
+        $legacy.Ssid = $Ssid
+        $cred = $credType::new()
+        $cred.Password = $Passphrase
+        $legacy.Passphrase = $cred
+        if ($attempt -eq 1) {
+            Write-Info "SSID '$Ssid' / passphrase '$Passphrase', autonomous GO, legacy clients enabled"
+        }
+
+        # StatusChanged carries the WiFiDirectError; the publisher's own Status property does not.
+        # PowerShell 5.1 refuses to subscribe to WinRT events at all ("cannot subscribe to Windows
+        # RT events"), so polling Status is the load-bearing signal and the error detail is a
+        # bonus we do not get here. The radio precondition in STEP 1 exists because that missing
+        # detail is what made the first offline run ambiguous.
+        $global:WfdError = $null
+        try {
+            $sub = Register-ObjectEvent -InputObject $publisher -EventName StatusChanged -Action {
+                $global:WfdError = $Event.SourceEventArgs.Error
+            }
+            if ($attempt -eq 1) { Write-Info 'subscribed to StatusChanged (error detail available)' }
+        } catch {
+            $sub = $null
+            if ($attempt -eq 1) {
+                Write-Info "no StatusChanged subscription ($($_.Exception.Message.Trim()))"
+                Write-Info 'polling Status instead - an abort will be visible but unexplained'
+            }
+        }
+
+        $publisher.Start()
+
+        $deadline = (Get-Date).AddSeconds($StartTimeoutSeconds)
+        while ((Get-Date) -lt $deadline -and "$($publisher.Status)" -eq 'Created') {
+            Write-Host ("`r   attempt {0}: status Created (up to {1}s)   " -f $attempt, $StartTimeoutSeconds) -NoNewline -ForegroundColor DarkGray
+            Start-Sleep -Milliseconds 250
+        }
+        Write-Host "`r                                                       `r" -NoNewline
+
+        $status = "$($publisher.Status)"
+        if ($status -eq 'Started') { break }
+
+        Write-Warn2 "attempt $attempt of ${Attempts}: $status"
+        # Re-check the radio - a failed start can leave it software-off, which would poison
+        # every later attempt and, worse, look like a fresh independent failure.
+        $recheck = Get-WiFiRadio
+        $recheckState = if ($recheck.Radio) { "$($recheck.Radio.State)" } else { '(none)' }
+        if ($recheckState -ne 'On') {
+            Write-Bad "the radio is now '$recheckState' - the failed start turned it off"
+            Write-Info 'that is itself a finding: production code would have to restore it'
+            if ($EnableRadio -and $recheck.Radio) {
+                Set-WiFiRadioOn $recheck.Radio | Out-Null
+                Start-Sleep -Seconds 3
+                Write-Info 'turned it back on for the next attempt'
+            } else {
+                break
+            }
+        }
+        if ($sub) { try { Unregister-Event -SubscriptionId $sub.Id -ErrorAction SilentlyContinue } catch { }; $sub = $null }
     }
 
-    $publisher.Start()
-
-    $deadline = (Get-Date).AddSeconds($StartTimeoutSeconds)
-    while ((Get-Date) -lt $deadline -and "$($publisher.Status)" -eq 'Created') {
-        Write-Host ("`r   status: Created (waiting up to {0}s)   " -f $StartTimeoutSeconds) -NoNewline -ForegroundColor DarkGray
-        Start-Sleep -Milliseconds 250
-    }
-    Write-Host "`r                                                 `r" -NoNewline
-
-    $status = "$($publisher.Status)"
     $result.status = $status
     $result.error  = if ($global:WfdError) { "$($global:WfdError)" } else { $null }
 
@@ -436,6 +558,23 @@ finally {
             Write-Ok 'advertisement stopped (it would have died with this process anyway - nothing persists)'
         } catch { Write-Warn2 "stop failed: $($_.Exception.Message)" }
     }
+
+    # The radio state AFTER the session matters as much as before it. The timeline of the first
+    # offline run suggests stopping an advertisement can leave the radio software-off, which
+    # would silently poison the next run - and in production would leave the host's Wi-Fi off
+    # after a match. Measured here rather than assumed.
+    try {
+        $radioAfter = Get-WiFiRadio
+        $radioAfterState = if ($radioAfter.Radio) { "$($radioAfter.Radio.State)" } else { '(none)' }
+        $result.radioAfter = $radioAfterState
+        if ($radioAfterState -eq 'On') {
+            Write-Ok "wi-fi radio after this run: On (the session left it usable)"
+        } else {
+            Write-Bad "wi-fi radio after this run: $radioAfterState"
+            Write-Info 'the session turned the radio off. This poisons the NEXT run, and in'
+            Write-Info 'production would leave the host with Wi-Fi off after a match.'
+        }
+    } catch { Write-Warn2 "could not read radio state after the run: $($_.Exception.Message)" }
 
     Write-Step 'RESULT'
     Write-Host ''

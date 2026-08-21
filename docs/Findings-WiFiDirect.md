@@ -65,7 +65,53 @@ all keep working untouched.
 Stage A proves the mechanism and the addressing. It does **not** answer the actual question,
 because an uplink was present — `startedWithNoUplink: false`.
 
-## Stage B — the real question (pending)
+## Stage B, attempt 1 — INVALID, do not cite it
+
+The first offline run returned `"status": "Aborted", "uplinkAtStart": "none"`, which reads as a
+clean "Wi-Fi Direct cannot start offline either." **It is not that.** It is a false negative.
+
+Afterwards the Wi-Fi radio was found to be:
+
+```
+    Radio status           : Hardware On
+                             Software Off
+```
+
+A software-off radio aborts `WiFiDirectAdvertisementPublisher` with `RadioNotAvailable`
+regardless of the network. Because PowerShell 5.1 cannot subscribe to WinRT events, the script
+had no error code to show, so the abort was indistinguishable from a genuine offline limitation.
+
+**Control test that settles it:** re-running Stage A *online*, with the radio still software-off,
+also returned `Aborted`. The abort tracks the radio, not the network. The offline question is
+therefore still open.
+
+Timeline strongly suggests the radio was turned off by *the spike's own previous run*: two Stage A
+runs succeeded, and the radio was off by the time the offline run started. Nothing else touched
+it.
+
+### Two changes came out of this
+
+1. **Radio state is now a precondition, checked before STEP 2 asks anyone to unplug a cable.** The
+   script reads it through `Windows.Devices.Radios.Radio` (which works unelevated —
+   `RequestAccessAsync -> Allowed`) and refuses to run rather than produce another false negative.
+   `-EnableRadio` turns it on via `SetStateAsync`, opt-in rather than automatic.
+2. **Radio state after the run is now measured and reported** (`radioAfter`), because if a Wi-Fi
+   Direct session reliably leaves the radio software-off, that is a production problem
+   independent of whether offline hosting works: the host's Wi-Fi would be off after every match,
+   and each run would poison the next.
+
+   **Tested, and the hypothesis is disproved.** A Stage A run with `-EnableRadio` returned
+   `"radioAfter": "On"` — the session leaves the radio usable. Whatever switched Wi-Fi off
+   between the two earlier runs was external to the spike (a Windows or OEM toggle, plausibly
+   when Ethernet reconnected), not caused by it. No cleanup obligation falls on production code
+   from this. The check stays in, because it costs nothing and it is what caught the false
+   negative.
+
+The start is also retried (`-Attempts`, default 3, with `-SettleSeconds` between) so that a
+transient failure while the network stack reconfigures after an unplug cannot be mistaken for a
+hard limit — and each retry re-checks the radio.
+
+## Stage B, attempt 2 — the real question (pending)
 
 Does it still start, still get `192.168.137.1`, and still get DHCP with **no adapter connected at
 all**? Step 5 is the one genuinely in doubt: ICS assigned that address and bound `:67` here while
