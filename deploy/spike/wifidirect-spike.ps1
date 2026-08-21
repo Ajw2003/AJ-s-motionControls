@@ -225,14 +225,26 @@ function Show-DnsQuerySummary {
     if ($queries.Count -eq 0) {
         Write-Bad 'ZERO DNS queries reached this machine.'
         Write-Info 'The phone did not ask us at all - so nothing about the responder is at fault.'
-        Write-Info 'It resolved somewhere else. On Android the usual causes, in order:'
-        Write-Info '  1. Mobile data. A network that fails Android connectivity validation keeps'
+        Write-Info 'It resolved somewhere else. Causes, in the order worth testing:'
+        Write-Info '  1. THE BROWSER, not the OS. Chrome has its own DNS-over-HTTPS setting'
+        Write-Info '     (chrome://settings/security > "Use secure DNS") which is SEPARATE from'
+        Write-Info '     Android Private DNS and survives turning that off. With it on, Chrome'
+        Write-Info '     never uses the system resolver and we see nothing. Turn it off, or test'
+        Write-Info '     with a browser that has no DoH of its own.'
+        Write-Info '  2. Mobile data. A network that fails Android connectivity validation keeps'
         Write-Info '     cellular as the default route for DNS. Turn mobile data OFF and retry.'
-        Write-Info '  2. Private DNS (Settings > Network > Private DNS). Set it to Off - when it'
+        Write-Info '  3. Private DNS (Settings > Network > Private DNS). Set it to Off - when it'
         Write-Info '     is set to a hostname, every lookup goes over TLS to that server and the'
         Write-Info '     local resolver is never consulted.'
-        Write-Info '  3. -DnsUpstream <ip> so we stop answering NXDOMAIN for everything else,'
-        Write-Info '     which is what makes the network fail validation in the first place.'
+        Write-Info '  4. DHCP is not advertising us as the resolver at all. See the interface'
+        Write-Info '     report above - if ICS hands the phone an upstream resolver instead of'
+        Write-Info '     192.168.137.1, the phone is asking the internet and getting NXDOMAIN.'
+        Write-Info '  5. -DnsUpstream <ip> so we stop answering NXDOMAIN for everything else,'
+        Write-Info '     which is what makes the network fail validation in (2).'
+        Write-Info ''
+        Write-Info 'To see where the queries ARE going, in an ADMIN shell while a phone is joined:'
+        Write-Info '  pktmon filter remove; pktmon filter add -p 53; pktmon start --capture --pkt-size 128'
+        Write-Info '  (reproduce on the phone, then) pktmon stop; pktmon format PktMon.etl -o dns.txt'
     } else {
         Write-Ok "$($queries.Count) DNS quer(ies) reached this machine - the phone DID ask us:"
         foreach ($q in ($queries | Select-Object -Last 8)) { Write-Info "  $($q.Trim())" }
@@ -752,6 +764,23 @@ try {
         }
     }
 
+    # What the hotspot interface itself is configured with. ICS normally advertises its own
+    # address (192.168.137.1) to DHCP clients as the resolver; if it is instead handing out the
+    # host's upstream servers, the phone asks the internet and gets NXDOMAIN for a name only we
+    # know - and no query ever reaches us, which is indistinguishable from the browser bypassing
+    # us unless we look here.
+    if (($Dns -or $DnsAfter) -and $wfd) {
+        Write-Step 'STEP 5d  What resolver is this interface set up with?'
+        try {
+            $srv = Get-DnsClientServerAddress -InterfaceIndex $wfd.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            $list = if ($srv) { ($srv.ServerAddresses -join ', ') } else { '' }
+            Write-Info ("hotspot interface resolvers : {0}" -f $(if ($list) { $list } else { '(none set)' }))
+        } catch { Write-Warn2 "could not read interface DNS: $($_.Exception.Message)" }
+        Write-Info 'Windows does not expose the DHCP options ICS hands out, so confirm on the'
+        Write-Info 'phone: Wi-Fi > the network > Advanced/Details should show DNS 192.168.137.1.'
+        Write-Info 'If it shows anything else, that is the answer and no browser setting matters.'
+    }
+
     if ($Dns -and $dnsProc) {
         Write-Step 'STEP 5c  Did the responder survive the group owner starting?'
         if ($dnsProc.HasExited) {
@@ -837,7 +866,20 @@ try {
         Write-Host ''
         Write-Say '>>> ON YOUR PHONE, IN ORDER:'
         Write-Say '      1. Point the camera at SCAN 1 above and tap the Wi-Fi prompt.'
-        Write-Say '      2. Point it at SCAN 2 to open the page.'
+        Write-Say ''
+        Write-Say '      2. If the page fails to resolve, force the resolver by hand. Android'
+        Write-Say '         hides the DHCP-provided DNS unless you switch to static, and ICS'
+        Write-Say '         appears not to advertise a working one:'
+        Write-Say "           Wi-Fi > tap '$showSsid' > IP settings > Static"
+        Write-Say '           IP address      192.168.137.157'
+        Write-Say '           Gateway         192.168.137.1'
+        Write-Say '           Prefix length   24'
+        Write-Say '           DNS 1           192.168.137.1     <- the whole point'
+        Write-Say '         Then reload. If it works with this and not with DHCP, the defect is'
+        Write-Say '         what ICS hands out - not the responder, not Wi-Fi Direct.'
+        Write-Say '         Set IP settings back to DHCP afterwards.'
+        Write-Say ''
+        Write-Say '      3. Then point the camera at SCAN 2 to open the page.'
         Write-Host ''
         Write-Info "If you would rather type it: network '$showSsid', password '$showPass'"
         if ($joinUrl) { Write-Info "then $joinUrl" }

@@ -227,18 +227,65 @@ holding `192.168.137.1:53`, `CLIENT JOINED: 192.168.137.157`. The phone joined b
 never sent us a lookup at all. That exonerates the responder completely and moves the problem onto
 the phone's resolver selection.
 
-Ranked causes, all Android-side:
+### Ruled out (tested 2026-08-21)
 
-1. **Mobile data.** Android validates a network by fetching a known URL. This network has no
-   internet, so validation fails, and an unvalidated Wi-Fi network does not get to be the default
-   route for DNS — cellular does. The phone resolves `play.local-ip.sh` against its carrier's
-   resolver, which has never heard of it.
-2. **Private DNS.** If set to a hostname (Settings → Network → Private DNS), every lookup goes
-   over TLS to that server and the local resolver is never consulted, regardless of routing.
-3. **Our own NXDOMAIN policy makes (1) worse.** The responder answers `*.local-ip.sh` and
-   NXDOMAINs everything else, including Android's connectivity probe — so we actively cause the
-   validation failure that pushes DNS onto cellular. `-DnsUpstream <ip>` forwards other names
-   instead.
+- **Mobile data off** — still zero queries.
+- **Android Private DNS off** — still zero queries.
+
+Both were the leading theories and both are wrong. Whatever is resolving is not choosing cellular
+over an unvalidated Wi-Fi, and is not Android's system-wide DoT.
+
+### Leading explanation: the phone is never handed a resolver
+
+Evidence, all from the same run:
+
+- The phone gets an address by DHCP (`192.168.137.157`), so ICS's DHCP server is running, and
+  `SharedAccess\Parameters\ScopeAddress` is `192.168.137.1` as expected.
+- HTTP **by IP** works. No DNS needed for that, so it proves nothing about resolution.
+- **`:53` was free even after the group owner started.** Our responder bound
+  `192.168.137.1:53` unopposed. A healthy ICS runs a DNS proxy there; this one does not.
+- **Zero queries reach us — including drops.** `dns-responder.js` logs out-of-subnet queries as
+  `DROPPED - outside <allow>`, so an empty log means nothing arrived at the socket at all. This
+  is not a firewall or allow-list issue. Confirmed separately: no `Block` rules exist for
+  `node`, and both spike allow rules are present and enabled.
+- The phone loops `Checking the quality of your Internet connection…` → `Connected without
+  internet` → repeat. That is what Android does when it cannot resolve its connectivity probe.
+
+One explanation covers all five: ICS advertises a DNS server that nothing is listening on (or
+advertises none), so the phone has no usable resolver, never asks us, and can never validate.
+
+**Decisive test (no code):** set a static IP on the phone with DNS `192.168.137.1`. If names then
+resolve, the responder and the whole Wi-Fi Direct path are fine and the only defect is what DHCP
+hands out.
+
+If that is confirmed, the production fix is bounded and known: **serve our own DHCP** rather than
+relying on ICS's, so the DNS option is ours to set. That is the same class of work as
+`relay/dns.js` and needs no elevation.
+
+### The validation loop needs solving regardless
+
+Even with DNS fixed, Android will keep failing its connectivity probe offline, because there is no
+internet to probe. The standard answer is to satisfy the probe locally: resolve the probe
+hostnames to `192.168.137.1` and return **HTTP 204** from `/generate_204` (Android) and the
+expected `Success` body from `/hotspot-detect.html` (iOS). That makes the network validate with no
+uplink at all — and unlike `-DnsUpstream`, it works offline, which is the entire point.
+
+### Still open
+
+1. **The browser, not the OS.** Chrome has its own DNS-over-HTTPS setting
+   (`chrome://settings/security` → "Use secure DNS"), **separate from Android Private DNS and
+   unaffected by turning it off**. With it on, Chrome never consults the system resolver, which
+   produces exactly what was observed: `ERR_NAME_NOT_RESOLVED` in the browser and zero queries at
+   the host. This is the top candidate now precisely because the two OS-level settings were
+   already cleared.
+2. **DHCP may not be advertising us as the resolver.** ICS normally hands clients its own address
+   as DNS, but the host side shows `hotspot interface resolvers: (none set)`, and ICS's own DNS
+   proxy was evidently not holding `:53` (our responder bound it without contest). If the phone
+   was handed an upstream resolver instead of `192.168.137.1`, no browser setting matters. Windows
+   does not expose the DHCP options ICS sends, so this has to be read off the phone: Wi-Fi →
+   network → Advanced/Details.
+3. **Our NXDOMAIN policy** still makes any validation-driven fallback worse — `-DnsUpstream <ip>`
+   forwards other names — but with mobile data off it can no longer be the whole story.
 
 Note the tension (3) creates with the actual goal: **upstream forwarding requires an uplink**, and
 the whole point is running with none. If Android's validation behaviour turns out to be the
