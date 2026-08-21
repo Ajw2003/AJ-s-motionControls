@@ -84,6 +84,7 @@ param(
     [switch] $EnableRadio,
     [switch] $QrHidden,
     [switch] $Dns,
+    [switch] $DnsAfter,
     [string] $LogPath
 )
 
@@ -133,11 +134,97 @@ function Get-WiFiRadio {
     [pscustomobject]@{ Radio = $wifi; Access = "$access" }
 }
 
+# Shared by -Dns (before the group owner) and -DnsAfter (once it is up). The ordering is the
+# whole question, so the two paths must differ ONLY in when this is called - anything else
+# would confound the comparison.
+function Start-DnsResponder {
+    param([string] $SpikeDirectory, [switch] $BindHotspotAddressOnly)
+
+    $dnsJs = Join-Path $SpikeDirectory 'dns-responder.js'
+    if (-not (Test-Path $dnsJs)) { Write-Bad "dns-responder.js not found at $dnsJs"; return $null }
+
+    $held = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue)
+    if ($held.Count) {
+        foreach ($h in $held) {
+            $ho = Get-Process -Id $h.OwningProcess -ErrorAction SilentlyContinue
+            Write-Warn2 (":53 already held on {0} by {1} (pid {2})" -f $h.LocalAddress, $(if ($ho) { $ho.ProcessName } else { '?' }), $h.OwningProcess)
+        }
+    } else {
+        Write-Ok ':53 is free'
+    }
+
+    # Binding the hotspot address specifically is only possible once it exists, which is the
+    # point of -DnsAfter: it leaves :53 on every other address to ICS instead of taking the
+    # wildcard out from under it.
+    $bind = if ($BindHotspotAddressOnly) { '192.168.137.1' } else { '0.0.0.0' }
+    $dnsArgs = @($dnsJs, '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
+                 '--bind', $bind, '--allow', '192.168.137.0/24')
+    Write-Info "binding $bind`:53"
+
+    $proc = Start-Process -FilePath 'node' -ArgumentList $dnsArgs -PassThru -NoNewWindow
+    Start-Sleep -Seconds 2
+
+    if ($proc.HasExited) {
+        Write-Bad "the responder exited immediately (code $($proc.ExitCode)) - it could not have the port"
+        return $null
+    }
+    $mine = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue |
+        Where-Object { $_.OwningProcess -eq $proc.Id })
+    if ($mine.Count) { Write-Ok "responder holds :53 (pid $($proc.Id))" }
+    else { Write-Warn2 "responder is running (pid $($proc.Id)) but does not appear to hold :53" }
+
+    $rule = Get-NetFirewallRule -DisplayName 'RockSkipping spike DNS' -ErrorAction SilentlyContinue
+    if (-not $rule) {
+        Write-Warn2 'no inbound rule for UDP 53 - the phone will get ERR_NAME_NOT_RESOLVED.'
+        Write-Info  'Run this ONCE in an ADMIN PowerShell (this script will not do it for you):'
+        Write-Host  ''
+        Write-Host  '     New-NetFirewallRule -DisplayName "RockSkipping spike DNS" -Direction Inbound -Protocol UDP -LocalPort 53 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any' -ForegroundColor White
+        Write-Host  ''
+    } else {
+        Write-Ok 'inbound firewall rule "RockSkipping spike DNS" is present'
+    }
+    return $proc
+}
+
 function Set-WiFiRadioOn {
     param($Radio)
     $stateType  = [Windows.Devices.Radios.RadioState,Windows.Devices,ContentType=WindowsRuntime]
     $accessType = [Windows.Devices.Radios.RadioAccessStatus,Windows.Devices,ContentType=WindowsRuntime]
     Await-Operation $Radio.SetStateAsync($stateType::On) $accessType
+}
+
+function Get-WiFiDirectAdapters {
+    # PowerShell unrolls an array returned from a function: zero elements arrive as $null and
+    # one element as a bare object, and under Set-StrictMode .Count on either throws. Every
+    # CALL SITE therefore wraps this in @(). Do not also return `,@(...)` from here - the two
+    # idioms together produce a nested array, and $adapter.Name then fails instead.
+    Get-NetAdapter -ErrorAction SilentlyContinue |
+        Where-Object { $_.InterfaceDescription -match 'Wi-Fi Direct' -and $_.Status -eq 'Up' }
+}
+
+# This driver reports "P2P GO ports count: 1". A group owner left behind by a process that died
+# without running its cleanup holds that single port, and every later start returns Aborted
+# (ResourceInUse) with no hint as to why - which cost a full debugging cycle on 2026-08-20,
+# chasing a DNS-ordering theory for a failure that had nothing to do with DNS.
+#
+# Cycling the radio tears the orphan down, and does so unelevated - no Disable-NetAdapter, no
+# admin shell.
+function Clear-StaleGroupOwner {
+    param($Radio)
+    $stateType  = [Windows.Devices.Radios.RadioState,Windows.Devices,ContentType=WindowsRuntime]
+    $accessType = [Windows.Devices.Radios.RadioAccessStatus,Windows.Devices,ContentType=WindowsRuntime]
+
+    Write-Info 'cycling the Wi-Fi radio to tear it down...'
+    Await-Operation $Radio.SetStateAsync($stateType::Off) $accessType | Out-Null
+    Start-Sleep -Seconds 4
+    $mid = @(Get-WiFiDirectAdapters).Count
+    Await-Operation $Radio.SetStateAsync($stateType::On) $accessType | Out-Null
+    Start-Sleep -Seconds 5
+
+    $left = @(Get-WiFiDirectAdapters).Count
+    if ($left -eq 0) { Write-Ok "stale group owner cleared (gone after radio off: $($mid -eq 0))" }
+    else { Write-Bad "$left Wi-Fi Direct adapter(s) still up after a radio cycle" }
+    return ($left -eq 0)
 }
 
 # Write-Host bypasses the pipeline, so Tee-Object cannot capture this script. A transcript can.
@@ -232,6 +319,7 @@ if ($radioState -ne 'On') {
             exit 3
         }
         Write-Ok 'radio is On'
+        $radioInfo = Get-WiFiRadio
     } else {
         Write-Bad 'THE WI-FI RADIO IS OFF. Wi-Fi Direct cannot start, online or offline.'
         Write-Host ''
@@ -246,6 +334,30 @@ if ($radioState -ne 'On') {
         Write-Host ($result | ConvertTo-Json) -ForegroundColor White
         if ($transcribing) { Stop-Transcript | Out-Null }
         exit 3
+    }
+}
+
+# ---- stale group-owner precondition. Same reasoning as the radio: fail before STEP 2 asks
+# ---- anyone to unplug a cable, and fail with the actual reason rather than a bare Aborted.
+$stale = @(Get-WiFiDirectAdapters)
+if ($stale.Count) {
+    Write-Host ''
+    Write-Warn2 "A Wi-Fi Direct adapter is ALREADY up before this run started:"
+    foreach ($s in $stale) { Write-Info "  $($s.Name) - $($s.InterfaceDescription)" }
+    Write-Info 'This driver has one P2P GO port. An orphan holds it and every start below will'
+    Write-Info 'return Aborted (ResourceInUse). Orphans come from a run that was killed instead'
+    Write-Info 'of exited - Ctrl+C is fine, Stop-Process is not.'
+    Write-Host ''
+    if ($radioInfo.Radio) {
+        if (Clear-StaleGroupOwner $radioInfo.Radio) {
+            $radioInfo = Get-WiFiRadio
+        } else {
+            Write-Bad 'could not clear it - stopping rather than reporting a meaningless Aborted'
+            $result.status = 'not-tested-stale-group-owner'
+            Write-Host ($result | ConvertTo-Json) -ForegroundColor White
+            if ($transcribing) { Stop-Transcript | Out-Null }
+            exit 4
+        }
     }
 }
 
@@ -315,58 +427,12 @@ try {
     # ------------------------------------------------------------ STEP 2b
 
     if ($Dns) {
-        Write-Step 'STEP 2b  DNS responder - started BEFORE the group owner, deliberately'
-        Write-Info 'ICS takes UDP :53 when it brings up the network. deploy/spike/hotspot-dns-test.ps1'
-        Write-Info 'established that binding first wins and ICS does not contend for it afterwards,'
-        Write-Info 'so the ordering here is the experiment, not a detail.'
-
-        $dnsJs = Join-Path $SpikeDir 'dns-responder.js'
-        if (-not (Test-Path $dnsJs)) {
-            Write-Bad "dns-responder.js not found at $dnsJs"
-        } else {
-            $held = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue)
-            if ($held.Count) {
-                foreach ($h in $held) {
-                    $ho = Get-Process -Id $h.OwningProcess -ErrorAction SilentlyContinue
-                    Write-Warn2 (":53 is already held on {0} by {1} (pid {2})" -f $h.LocalAddress, $(if ($ho) { $ho.ProcessName } else { '?' }), $h.OwningProcess)
-                }
-                Write-Info 'starting anyway - the bind will fail loudly if it cannot have the port'
-            } else {
-                Write-Ok ':53 is free'
-            }
-
-            # 0.0.0.0 because 192.168.137.1 does not exist until the group owner is up, and we
-            # have to hold the port before that. --allow is then the only thing keeping this
-            # from being an open resolver, so it is not optional.
-            $dnsArgs = @($dnsJs, '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
-                         '--bind', '0.0.0.0', '--allow', '192.168.137.0/24')
-            $dnsProc = Start-Process -FilePath 'node' -ArgumentList $dnsArgs -PassThru -NoNewWindow
-            Start-Sleep -Seconds 2
-
-            if ($dnsProc.HasExited) {
-                Write-Bad "the responder exited immediately (code $($dnsProc.ExitCode))"
-                $dnsProc = $null
-            } else {
-                $mine = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue |
-                    Where-Object { $_.OwningProcess -eq $dnsProc.Id })
-                if ($mine.Count) {
-                    Write-Ok "responder holds :53 (pid $($dnsProc.Id))"
-                } else {
-                    Write-Warn2 "responder is running (pid $($dnsProc.Id)) but does not appear to hold :53"
-                }
-            }
-
-            $dnsRule = Get-NetFirewallRule -DisplayName 'RockSkipping spike DNS' -ErrorAction SilentlyContinue
-            if (-not $dnsRule) {
-                Write-Warn2 'no inbound rule for UDP 53 - the phone will get ERR_NAME_NOT_RESOLVED.'
-                Write-Info  'Run this ONCE in an ADMIN PowerShell (this script will not do it for you):'
-                Write-Host  ''
-                Write-Host  '     New-NetFirewallRule -DisplayName "RockSkipping spike DNS" -Direction Inbound -Protocol UDP -LocalPort 53 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any' -ForegroundColor White
-                Write-Host  ''
-            } else {
-                Write-Ok 'inbound firewall rule "RockSkipping spike DNS" is present'
-            }
-        }
+        Write-Step 'STEP 2b  DNS responder - started BEFORE the group owner'
+        Write-Info 'ICS takes UDP :53 when it brings up the network. hotspot-dns-test.ps1 found'
+        Write-Info 'that binding first wins and ICS does not contend afterwards; that holds here'
+        Write-Info 'too - both orderings work. -DnsAfter is the other one, and binds'
+        Write-Info '192.168.137.1:53 specifically rather than the wildcard.'
+        $dnsProc = Start-DnsResponder -SpikeDirectory $SpikeDir
     }
 
     Write-Step 'STEP 3  Starting a Wi-Fi Direct autonomous group owner (legacy WPA2 SSID)'
@@ -443,6 +509,16 @@ try {
         if ($status -eq 'Started') { break }
 
         Write-Warn2 "attempt $attempt of ${Attempts}: $status"
+        # Stop the failed publisher explicitly. An abort can still leave the virtual adapter
+        # up, and that adapter holds the driver's only GO port - so an unstopped failure
+        # guarantees the next attempt fails too, making the retry loop prove nothing.
+        try { $publisher.Stop() } catch { }
+        $orphan = @(Get-WiFiDirectAdapters)
+        if ($orphan.Count) {
+            Write-Info "a Wi-Fi Direct adapter is still up after the failed attempt - clearing it"
+            $r = Get-WiFiRadio
+            if ($r.Radio) { Clear-StaleGroupOwner $r.Radio | Out-Null }
+        }
         # Re-check the radio - a failed start can leave it software-off, which would poison
         # every later attempt and, worse, look like a fresh independent failure.
         $recheck = Get-WiFiRadio
@@ -462,7 +538,9 @@ try {
     }
 
     $result.status = $status
-    $result.attemptsUsed = $attempt
+    # $attempt is Attempts+1 when the loop runs out rather than breaking on success - reporting
+    # that as "4 of 3" is just noise in a result someone has to read.
+    $result.attemptsUsed = [Math]::Min($attempt, $Attempts)
     $result.error  = if ($global:WfdError) { "$($global:WfdError)" } else { $null }
 
     if ($status -eq 'Started') {
@@ -602,6 +680,21 @@ try {
 
     # ------------------------------------------------------------ STEP 5c
 
+    if ($DnsAfter) {
+        Write-Step 'STEP 5c  DNS responder - started AFTER the group owner'
+        Write-Info 'The other ordering. The group owner is already up, so ICS has had its chance'
+        Write-Info 'at :53 and 192.168.137.1 now exists to bind to specifically. Whether anything'
+        Write-Info 'is left for us is the question.'
+        $dnsProc = Start-DnsResponder -SpikeDirectory $SpikeDir -BindHotspotAddressOnly
+        if (-not $dnsProc) {
+            Write-Bad 'could not start the responder after the group owner either.'
+            Write-Info 'If ICS holds 0.0.0.0:53, a bind to 192.168.137.1:53 cannot succeed on'
+            Write-Info 'Windows without exclusive-address options. That would mean local DNS and'
+            Write-Info 'a Wi-Fi Direct AP cannot coexist as currently built, and the responder'
+            Write-Info 'would have to move into ICS-free territory (static addressing, own DHCP).'
+        }
+    }
+
     if ($Dns -and $dnsProc) {
         Write-Step 'STEP 5c  Did the responder survive the group owner starting?'
         if ($dnsProc.HasExited) {
@@ -673,7 +766,7 @@ try {
             # itself exercises DNS. An IP URL performs no lookup and would pass whether or not
             # the responder works - which is exactly how the last run looked like a success
             # until the final step.
-            $joinUrl = if ($Dns -and $dnsProc -and -not $dnsProc.HasExited) { 'http://play.local-ip.sh/' }
+            $joinUrl = if (($Dns -or $DnsAfter) -and $dnsProc -and -not $dnsProc.HasExited) { 'http://play.local-ip.sh/' }
                        elseif ($result.address) { "http://$($result.address)/" }
                        else { $null }
             if ($joinUrl) { $qrArgs += @('--url', $joinUrl) }
@@ -752,7 +845,17 @@ finally {
     if ($publisher) {
         try {
             if ("$($publisher.Status)" -eq 'Started') { $publisher.Stop() }
-            Write-Ok 'advertisement stopped (it would have died with this process anyway - nothing persists)'
+            Start-Sleep -Seconds 2
+            # NOT "nothing persists" - that claim was in here and it was wrong. A killed process
+            # leaves the virtual adapter up, holding the driver's only GO port, and the next run
+            # fails with a bare Aborted that names no cause. Say what is actually true.
+            $left = @(Get-WiFiDirectAdapters)
+            if ($left.Count) {
+                Write-Warn2 "advertisement stopped, but $($left.Count) Wi-Fi Direct adapter(s) still up"
+                Write-Info  'the next run will clear it automatically at STEP 1'
+            } else {
+                Write-Ok 'advertisement stopped and the virtual adapter is gone'
+            }
         } catch { Write-Warn2 "stop failed: $($_.Exception.Message)" }
     }
 

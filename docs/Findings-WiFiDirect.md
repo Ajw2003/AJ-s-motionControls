@@ -217,6 +217,45 @@ query 192-168-137-1.local-ip.sh A -> rcode NOERROR, authoritative true, answer 1
 Still unproven: that a **phone** resolves through it. The proof is the phone's address appearing
 in `dns-responder.log`, not a successful page load — a page can load for other reasons.
 
+## The orphaned group owner — the real cause of every unexplained `Aborted`
+
+The `-Dns` run failed all three attempts, and the obvious inference was that holding `0.0.0.0:53`
+stopped ICS bringing the network up. **That inference was wrong**, and it survived one round of
+apparent confirmation: re-running `-Dns` reproduced the failure, which looked like proof and was
+not.
+
+The actual cause: **a leftover `Microsoft Wi-Fi Direct Virtual Adapter` was still `Up` with no
+spike running.** This driver reports `P2P GO ports count: 1`. An orphan holds that single port, so
+every subsequent start returns `Aborted` (`ResourceInUse`) — with no error code available, because
+PowerShell cannot subscribe to the WinRT event that carries it. Any change made between runs
+looks causal.
+
+The orphan came from a process being **killed** rather than exited, so its cleanup never ran. The
+script's own output claimed the opposite — *"it would have died with this process anyway - nothing
+persists"* — which is false and actively misleading. Fixed.
+
+Once cleared, **both** DNS orderings start on the first attempt:
+
+| Run | Result |
+|---|---|
+| `-Dns` (responder holds `0.0.0.0:53` first) | `Started`, `attemptsUsed: 1` |
+| `-DnsAfter` (responder binds `192.168.137.1:53` after) | `Started`, `attemptsUsed: 1` |
+
+So `hotspot-dns-test.ps1`'s finding — bind first wins, ICS does not contend — holds for Wi-Fi
+Direct too. There is no ordering constraint to design around.
+
+### What this obliges production code to do
+
+1. **Detect a pre-existing Wi-Fi Direct adapter before starting** and refuse, or clear it. A bare
+   `Aborted` names no cause, and the single GO port makes this failure permanent until cleared.
+2. **Clear it by cycling the Wi-Fi radio** — `Radio.SetStateAsync(Off)` then `On` via
+   `Windows.Devices.Radios`. Confirmed to tear the orphan down, **unelevated**. No
+   `Disable-NetAdapter`, no admin shell.
+3. **Stop the publisher on every failed attempt**, not just successful ones, before retrying.
+4. **Survive being killed.** A host process that is force-terminated will orphan the group owner.
+   Since cleanup cannot be guaranteed on kill, startup must assume an orphan may exist — which is
+   what (1) is for.
+
 ## Superseded: the SSID hypothesis (kept, because it was wrong in a useful way)
 
 The group owner was up, addressed and serving DHCP, but the phone could not find
