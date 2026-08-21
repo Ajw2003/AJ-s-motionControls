@@ -111,6 +111,16 @@ namespace Net
         private float _retryDelay = 1f;
 
         /// <summary>
+        /// True from Awake until LocalServices reports a settled state. While true, Start
+        /// must not connect: LocalServices.Awake runs before LocalServices.Start, so at
+        /// Awake time it has not begun obtaining a certificate yet, even on the fast
+        /// cached-certificate path — resolving RelayUrl here would lock in a value from
+        /// before the derived address was known. See Findings-PhoneUnreachable.md's
+        /// Phase 3.1 amendment.
+        /// </summary>
+        private bool _waitingForLocalServices;
+
+        /// <summary>
         /// Capped low on purpose. The relay holds a room for 60s after its host drops and
         /// the phones stop waiting after 45s, so a host that backs off to ten-second
         /// intervals can burn that whole budget on two failed attempts and lose the room
@@ -139,13 +149,67 @@ namespace Net
             persistBetweenScenes = true;
             base.Awake();
 
-            RelayUrl = ResolveRelayUrl(relayUrl);
-            PublicOrigin = DeriveOrigin(RelayUrl);
+            if (LocalServices.HasInstance)
+            {
+                // LocalServices may still be obtaining a certificate; wait for it to settle
+                // rather than resolving against a value it hasn't produced yet.
+                _waitingForLocalServices = true;
+                LocalServices.Instance.StateChanged += OnLocalServicesStateChanged;
+            }
+            else
+            {
+                Resolve(null);
+            }
         }
 
         private void Start()
         {
+            if (_waitingForLocalServices) return; // OnLocalServicesStateChanged connects once settled.
             _ = ConnectAsync();
+        }
+
+        /// <summary>
+        /// Fires once LocalServices reaches a state that either has a derived address to
+        /// offer (Ready) or definitively does not (Failed, or Idle because it was never
+        /// asked to run a local relay). Any other state is still in progress.
+        /// </summary>
+        private void OnLocalServicesStateChanged(ServiceState state)
+        {
+            if (state is ServiceState.ObtainingCertificate or ServiceState.InstallingDependencies
+                or ServiceState.StartingRelay) return;
+
+            LocalServices.Instance.StateChanged -= OnLocalServicesStateChanged;
+            _waitingForLocalServices = false;
+
+            Resolve(state == ServiceState.Ready ? LocalServices.Instance.SecureSocketUrl : null);
+            _ = ConnectAsync();
+        }
+
+        /// <summary>
+        /// Settles RelayUrl and PublicOrigin. relay-url.txt, the manual escape hatch, always
+        /// wins when present. Otherwise prefers <paramref name="derivedUrl"/> — the local
+        /// relay's certificate-derived address, when LocalServices supplied one — and falls
+        /// back to the configured default.
+        /// </summary>
+        private void Resolve(string derivedUrl)
+        {
+            var overridden = ReadOverride();
+            if (overridden != null)
+            {
+                Debug.Log($"[RelayClient] Using {OverrideFileName}: {overridden}");
+                RelayUrl = overridden;
+            }
+            else if (!string.IsNullOrEmpty(derivedUrl))
+            {
+                Debug.Log($"[RelayClient] Using the local relay's derived address: {derivedUrl}");
+                RelayUrl = derivedUrl;
+            }
+            else
+            {
+                RelayUrl = relayUrl;
+            }
+
+            PublicOrigin = DeriveOrigin(RelayUrl);
         }
 
         /// <summary>The address a phone should open, with the room code pre-filled.</summary>
@@ -153,18 +217,6 @@ namespace Net
         {
             if (string.IsNullOrEmpty(PublicOrigin)) return null;
             return string.IsNullOrEmpty(roomCode) ? PublicOrigin : $"{PublicOrigin}/?room={roomCode}";
-        }
-
-        /// <summary>
-        /// Reads the override file if it exists, otherwise keeps the inspector value.
-        /// </summary>
-        private static string ResolveRelayUrl(string configured)
-        {
-            var overridden = ReadOverride();
-            if (overridden == null) return configured;
-
-            Debug.Log($"[RelayClient] Using {OverrideFileName}: {overridden}");
-            return overridden;
         }
 
         /// <summary>
@@ -231,7 +283,7 @@ namespace Net
                 _nextRetryTime = Time.time + 1f;
             }
 
-            if (!IsConnected && !_connecting && Time.time >= _nextRetryTime)
+            if (!_waitingForLocalServices && !IsConnected && !_connecting && Time.time >= _nextRetryTime)
             {
                 _ = ConnectAsync();
             }
@@ -450,6 +502,9 @@ namespace Net
 
         protected override void OnDestroy()
         {
+            if (_waitingForLocalServices && LocalServices.HasInstance)
+                LocalServices.Instance.StateChanged -= OnLocalServicesStateChanged;
+
             _cts?.Cancel();
             _socket?.Dispose();
             _sendLock.Dispose();
