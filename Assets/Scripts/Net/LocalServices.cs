@@ -15,10 +15,6 @@ namespace Net
     public enum ServiceState
     {
         Idle,
-
-        /// <summary>First run only: waiting for ModeSelectScreen to report LAN or Hotspot.</summary>
-        AwaitingModeSelection,
-
         ObtainingCertificate,
         InstallingDependencies,
         StartingRelay,
@@ -102,7 +98,13 @@ namespace Net
 
         private CertificateProvider.Result _certificate;
 
-        private NetworkMode _mode;
+        /// <summary>
+        /// The mode this session launched with, read once at Start(). StartScreen (the
+        /// MainMenu scene) is what actually gates this — by the time Bootstrap's scene loads
+        /// at all, a mode has already been chosen and persisted, so there is nothing to wait
+        /// for here.
+        /// </summary>
+        public NetworkMode Mode { get; private set; }
 
         /// <summary>
         /// The name the certificate covers for this machine, once one has been obtained —
@@ -151,28 +153,11 @@ namespace Net
                 return;
             }
 
-            if (!NetworkModeGate.Instance.Resolved)
-            {
-                // First run only — a saved preference resolves synchronously in
-                // NetworkModeGate.Awake(), before this Start() ever runs, so the returning-
-                // player path never reaches this branch at all.
-                SetState(ServiceState.AwaitingModeSelection, "Choose LAN or Hotspot mode on the TV to continue…");
-                NetworkModeGate.Instance.Chosen += OnModeChosen;
-                return;
-            }
+            // StartScreen (the MainMenu scene) is the actual gate: nothing here runs until a
+            // player deliberately presses Start, which is also the only place the mode can be
+            // changed, so by the time this scene has loaded a mode is already decided.
+            Mode = NetworkModeStore.Load();
 
-            BeginLaunch(NetworkModeGate.Instance.Mode);
-        }
-
-        private void OnModeChosen(NetworkMode mode)
-        {
-            NetworkModeGate.Instance.Chosen -= OnModeChosen;
-            BeginLaunch(mode);
-        }
-
-        private void BeginLaunch(NetworkMode mode)
-        {
-            _mode = mode;
             _group = ChildProcessGroup.Create();
             StartCoroutine(LaunchSequence());
         }
@@ -224,7 +209,7 @@ namespace Net
         /// bypassing detection entirely rather than leaving it to fail or guess wrong.
         /// </summary>
         private string EffectiveLanAddressOverride =>
-            _mode == NetworkMode.Hotspot ? "192.168.137.1" : lanAddressOverride;
+            Mode == NetworkMode.Hotspot ? "192.168.137.1" : lanAddressOverride;
 
         private IEnumerator ObtainCertificate()
         {
@@ -419,7 +404,7 @@ namespace Net
 
             // Hotspot-only, and env-gated the same way on the relay side: server.js's DNS
             // branch does nothing unless DNS_RESPOND_IP is set, so this is inert in LAN mode.
-            if (_mode == NetworkMode.Hotspot)
+            if (Mode == NetworkMode.Hotspot)
             {
                 env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", "192.168.137.1"));
                 env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));

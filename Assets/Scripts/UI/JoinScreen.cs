@@ -262,11 +262,6 @@ namespace Ui
         {
             if (!visible) return;
 
-            // ModeSelectScreen owns the screen while a mode hasn't been chosen yet — without
-            // this guard, DrawProgress() below and its full-screen picker would both try to
-            // draw a full panel with no defined OnGUI ordering between the two components.
-            if (_services != null && _services.State == ServiceState.AwaitingModeSelection) return;
-
             EnsureStyles();
 
             var turns = TurnManager.HasInstance ? TurnManager.Instance : null;

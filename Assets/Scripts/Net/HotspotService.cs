@@ -96,11 +96,11 @@ namespace Net
                 return;
             }
 
-            if (state != ServiceState.Ready) return; // still settling, including AwaitingModeSelection
+            if (state != ServiceState.Ready) return; // still settling
 
             LocalServices.Instance.StateChanged -= OnLocalServicesStateChanged;
 
-            if (!NetworkModeGate.HasInstance || NetworkModeGate.Instance.Mode != NetworkMode.Hotspot)
+            if (LocalServices.Instance.Mode != NetworkMode.Hotspot)
             {
                 SetState(HotspotState.NotApplicable, "LAN mode — no hotspot needed.");
                 return;

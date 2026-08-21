@@ -3,6 +3,47 @@
 **Status:** implemented, compiles clean. Not yet tested end-to-end — see Verification below.
 Elevated one-time setup (scheduled task + firewall rule) still needs to be run by hand.
 
+## Revision — a real MainMenu scene replaced the in-session picker
+
+The first pass (everything below this point) gated mode selection with a `NetworkModeGate`
+singleton that blocked `LocalServices` mid-session on true first run, backed by `PlayerPrefs`,
+with a `ModeSelectScreen` OnGUI overlay (F3 to reopen) for changing it later. Feedback after
+using it: `PlayerPrefs` makes the setting hard to actually get at (Windows registry, invisible,
+not cleared by deleting the game folder), and starting the network session — LocalServices,
+RelayClient, and in particular HotspotService's tethering — automatically on launch isn't
+acceptable; it needs to wait on a deliberate action.
+
+Fixed by moving the gate from *inside* a session to *before* one exists at all:
+
+- **New `Assets/Scenes/MainMenu.unity`**, scene 0 in Build Settings (ahead of `Bootstrap`).
+  Holds a `Ui.StartScreen` component and nothing else network-related — `LocalServices` isn't
+  touched until `Bootstrap.unity` loads, which only happens when `StartScreen.BeginMatch()`
+  calls `SceneManager.LoadScene(SceneNames.Bootstrap)`. This is the actual "securely gated
+  behind user interaction" boundary: no relay spawn, no certificate fetch, no hotspot, until
+  that button (or Enter) is pressed.
+- **`NetworkModeGate` and `ModeSelectScreen` deleted.** With the scene boundary doing the
+  gating, `LocalServices.Start()` just reads the mode synchronously — `Mode =
+  NetworkModeStore.Load();` — no waiting, no event, no `AwaitingModeSelection` state. Simpler
+  than the first pass, not just relocated.
+- **`NetworkModeStore` now backed by a plain file** (`network-mode.txt`, gitignored, same
+  convention as `relay-url.txt`/`relay-env.txt`) instead of `PlayerPrefs`. `Load(fallback:
+  NetworkMode.Lan)` — the safe default — never throws or blocks; `Save()` writes immediately on
+  every click in `StartScreen`, no separate "apply" step.
+- **`StartScreen`** shows the LAN/Hotspot picker *every time* the game launches, before Start —
+  so "easily changeable" is now structural (you see it every session) rather than needing a
+  hidden toggle key. Picking a mode saves it immediately; there is no "restart to apply"
+  message anymore, because nothing has started yet to need one.
+- `LocalServices` gained a public `Mode` property (the mode this session actually launched
+  with) so `HotspotService` reads a single source of truth instead of a second gate object.
+- `RelayClient`'s `OnLocalServicesStateChanged` reverted to its original three-state
+  in-progress list (`AwaitingModeSelection` no longer exists).
+- `JoinScreen`'s `AwaitingModeSelection` guard was removed for the same reason.
+
+Everything from "Files" onward below describes the *first pass* and is kept for the parts that
+are unchanged (LocalServices' Hotspot-mode env vars and forced `192.168.137.1` override,
+HotspotService, the `/health` DNS-bound race fix, `hotspot-control.ps1`, the elevated setup) —
+read it with the above in mind for anything touching mode storage or gating specifically.
+
 ## Context
 
 LAN mode was just fixed and confirmed working end-to-end this session (dual-homed tiebreak in
