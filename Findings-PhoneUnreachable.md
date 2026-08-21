@@ -128,6 +128,36 @@ to the dead `wss://rockskipping-relay.fly.dev`.
 
 ---
 
+## Amendment — Phase 3.1 needs a design decision, not just a wire-up
+
+**Date:** 2026-08-20. Found while verifying this document's logic against the actual code
+before implementing anything.
+
+The fix as written ("makes the QR derive from the same source as the certificate") is
+underspecified in a way that matters: `RelayClient.Awake()` resolves and caches `RelayUrl`
+and `PublicOrigin` **synchronously**, but `LocalServices` does not begin obtaining the
+certificate until its own `Start()` coroutine, which Unity always runs after every object's
+`Awake()` has completed. A naive "read the certificate-derived address in `RelayClient`"
+would read a value that does not exist yet — even on the fast, cached-certificate path —
+and would silently reproduce this exact class of bug (right code, wrong timing) in a new
+place.
+
+Two ways to resolve it:
+
+- **A.** `RelayClient.Awake()` checks `LocalServices.HasInstance`. Absent (the normal,
+  deployed-service path most players are on) → behave exactly as today, no change. Present
+  → defer resolving `RelayUrl`/`PublicOrigin`, and defer the first `ConnectAsync()`, until
+  `LocalServices.StateChanged` reports `Ready` (then use `SecureSocketUrl`) or `Failed`/HTTPS
+  disabled (then fall back to `relay-url.txt`/the configured default).
+- **B.** Have `LocalServices` write `relay-url.txt` itself once the certificate resolves, so
+  `RelayClient` keeps its existing file-read mechanism as the only source of truth. This still
+  needs the same Ready-gated deferral underneath — it just moves the coordination into a file
+  instead of an event — so it does not actually avoid the ordering problem, only relocates it.
+
+Leaning toward **A**: it only changes behaviour on the local/dev/zero-setup path where
+`LocalServices` is active, and leaves the default path untouched. Not implemented — needs a
+decision before either is built.
+
 ## Order to take these
 
 1. **Firewall rule** — unblocks testing immediately, and confirms the diagnosis.

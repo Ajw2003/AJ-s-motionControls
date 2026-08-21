@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
@@ -182,10 +183,14 @@ namespace Net
         /// NICs, Bluetooth and virtual switches leave lying around — a plain sweep of every
         /// unicast address returns those too, and they look entirely plausible.
         ///
-        /// Ambiguity is an error rather than a guess, which is a deliberate inheritance from
-        /// the PowerShell version. A wrong address here fails at the phone in exactly the same
-        /// way a broken certificate does, and that is the confusion worth spending an error
-        /// message to avoid.
+        /// More than one candidate is not automatically an error: a docked laptop with
+        /// Ethernet and Wi-Fi both up is an ordinary setup, and the routing table already
+        /// knows which one Windows would actually use. That address breaks the tie. Only
+        /// when the preferred route matches none of the candidates — or can't be determined
+        /// at all — does this fall back to refusing to guess, which is a deliberate
+        /// inheritance from the PowerShell version: a wrong address here fails at the phone
+        /// in exactly the same way a broken certificate does, and that is the confusion
+        /// worth spending an error message to avoid.
         /// </remarks>
         public static string ResolveLanAddress(string overrideAddress, out string error, out string detail)
         {
@@ -254,6 +259,15 @@ namespace Net
 
             if (candidates.Count > 1)
             {
+                var preferred = PreferredRouteAddress();
+                foreach (var c in candidates)
+                {
+                    if (c.Value != preferred) continue;
+                    Debug.Log($"[CertificateProvider] {candidates.Count} candidates; the routing " +
+                              $"table prefers {preferred} ({c.Key}).");
+                    return preferred;
+                }
+
                 var listed = new List<string>();
                 foreach (var c in candidates) listed.Add($"{c.Value} ({c.Key})");
 
@@ -266,6 +280,35 @@ namespace Net
 
             Debug.Log($"[CertificateProvider] LAN address {candidates[0].Value} on {candidates[0].Key}.");
             return candidates[0].Value;
+        }
+
+        /// <summary>
+        /// Asks the routing table which local address Windows would actually use to reach
+        /// the outside world, to break a tie between several plausible interfaces.
+        /// </summary>
+        /// <remarks>
+        /// Connecting a UDP socket transmits no packets — it only resolves the route — so
+        /// this asks the question directly instead of guessing from interface metrics, which
+        /// .NET does not expose fully enough to rank interfaces by. 203.0.113.0/24 is
+        /// TEST-NET-3, reserved for documentation and never contacted.
+        ///
+        /// Returns null if the route can't be resolved at all (no default route reachable),
+        /// which the caller treats the same as a preference matching no candidate: fall back
+        /// to refusing to guess.
+        /// </remarks>
+        private static string PreferredRouteAddress()
+        {
+            try
+            {
+                using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                probe.Connect("203.0.113.1", 9);
+                return (probe.LocalEndPoint as IPEndPoint)?.Address.ToString();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[CertificateProvider] Could not resolve a preferred route: {e.Message}");
+                return null;
+            }
         }
 
         // -------------------------------------------------------------- cache state

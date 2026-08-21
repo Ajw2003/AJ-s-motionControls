@@ -336,12 +336,17 @@ with a timeout and no error to read.
 
 Wrap the build (Inno Setup or MSIX) so install time absorbs:
 
-- **The firewall rules** — `-Profile Any`, never `Private` alone. The hotspot adapter carries no
-  network category, so Windows treats it as `Public` and a `Private`-scoped rule is **silently
-  inert on the one interface that matters**. This is not a theoretical profile mismatch; it is
-  the observed failure, seen as dropped packets with nothing logged anywhere.
-- Scope those rules to `192.168.137.0/24` and to specific ports rather than allowing `node.exe`
-  wholesale. Same effect for the game, far smaller blast radius.
+- **The firewall rules** — `-Profile Any`, never `Private` alone. An adapter with no assigned
+  network category — the hotspot adapter, and just as often an ordinary Wi-Fi adapter Windows
+  never got around to categorising — is treated as `Public`, and a `Private`-scoped rule is
+  **silently inert on the one interface that matters**. This is not a theoretical profile
+  mismatch; it has now been observed twice — once on the hotspot adapter, once on a Wi-Fi
+  adapter in plain LAN mode — as dropped packets with nothing logged anywhere. See
+  `Findings-PhoneUnreachable.md` for the LAN-mode occurrence.
+- Scope those rules to `LocalSubnet`, not the fixed `192.168.137.0/24` hotspot range — a rule
+  scoped only to the hotspot subnet leaves ordinary LAN play broken by this identical failure.
+  `LocalSubnet` covers both modes while still keeping the rule off the internet. Scope to
+  specific ports rather than allowing `node.exe` wholesale either way.
 - **A scheduled task with highest privileges** that disables IP forwarding on the hotspot
   interface, so the game can call it per session without a UAC prompt (Phase 4.2). **No
   parameters** — hardcode the interface match, or it becomes a local privilege-escalation vector.
