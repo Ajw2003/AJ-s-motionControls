@@ -292,6 +292,66 @@ build). A downloaded build still fails before any of the above matters.
 are not needed by the game. `RockSkipping relay` and `RockSkipping spike DNS` are each registered
 twice.
 
+## The last offline blocker: the HOST cannot resolve its own relay
+
+Found 2026-08-21, in-game, after the tethering fix landed. **The hotspot works offline. The game
+still does not**, and the reason is neither the hotspot nor the phones.
+
+From the Unity log of an offline run:
+
+```
+[HotspotService]   no internet profile; tethering from 'Ethernet 4' instead
+[HotspotService] Tethering is on. Disabling IP forwarding on the hotspot interface
+[LocalServices] Serving HTTPS for 192-168-137-1.local-ip.sh on :8443.
+[RelayClient] Connect to wss://192-168-137-1.local-ip.sh:8443 failed (Unable to connect to
+              the remote server); retrying in 2s
+```
+
+Tethering succeeded from a no-connectivity profile — the fix works. The relay started and is
+serving. What fails is **Unity connecting to a relay running on the same machine**, because it
+connects by *name* and the host has no way to resolve that name offline:
+
+```
+host DNS servers : 64.59.135.148, 64.59.128.114     (the ISP's resolvers)
+hosts file       : no local-ip.sh entry
+Resolve-DnsName 192-168-137-1.local-ip.sh -> 192.168.137.1   (online only, via public DNS)
+```
+
+This is exactly why it "only works when connected to Wi-Fi": online, the name resolves publicly;
+offline, nothing answers.
+
+**Phones are not affected.** They receive our responder as their resolver over the hotspot, which
+is the path already proven end to end. The host is the odd one out: it does not take DHCP from
+itself, so it never consults the responder bound on its own `0.0.0.0:53`.
+
+### Recommended fix: a hosts entry, added by the elevated one-time setup
+
+```
+192.168.137.1  192-168-137-1.local-ip.sh
+```
+
+This is unusually safe, because **`local-ip.sh` names encode their own address**: the public DNS
+answer for `192-168-137-1.local-ip.sh` *is* `192.168.137.1`. The entry duplicates the public
+answer exactly, so it is correct whether or not the hotspot is running, online or off, and can
+never point somewhere wrong. It also keeps TLS validation fully intact — the name still matches
+the certificate.
+
+It belongs beside the scheduled task and firewall rules in the installer's elevated step; it is
+one line, written once, and needs no maintenance because Hotspot mode's address is fixed.
+
+Scope: this fixes **Hotspot mode only**. LAN mode's address varies per network, so a static entry
+cannot cover it — but LAN mode implies a network with working DNS, so it does not need one.
+
+### The alternative, and why not
+
+`RelayClient` could connect to `127.0.0.1:8443` and skip DNS. `LocalServices` already does
+something similar for its own health probe, with `AcceptAnyCertificate` scoped tightly to it.
+
+The difference matters: the health probe only ever asked "is the process I spawned alive", while
+`RelayClient`'s connection is the game's actual control channel. Relaxing certificate validation
+there widens the exception from a liveness check to the real protocol path, to avoid writing one
+line in a file. The hosts entry costs an elevated write the installer is already doing.
+
 ## What went wrong in getting here
 
 Recorded because the process failure was more expensive than the technical one.
