@@ -85,6 +85,12 @@ param(
     [switch] $QrHidden,
     [switch] $Dns,
     [switch] $DnsAfter,
+    # Forward names we are not authoritative for, instead of answering NXDOMAIN. This is not a
+    # convenience: Android probes a known host to decide whether a network is usable, and a
+    # network that NXDOMAINs everything fails that probe. An unvalidated network keeps mobile
+    # data as the default route, and the phone then resolves through cellular - never asking
+    # us, which is exactly what the 2026-08-21 run showed (zero queries logged).
+    [string] $DnsUpstream,
     [string] $LogPath
 )
 
@@ -159,6 +165,13 @@ function Start-DnsResponder {
     $bind = if ($BindHotspotAddressOnly) { '192.168.137.1' } else { '0.0.0.0' }
     $dnsArgs = @($dnsJs, '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
                  '--bind', $bind, '--allow', '192.168.137.0/24')
+    if ($DnsUpstream) {
+        $dnsArgs += @('--upstream', $DnsUpstream)
+        Write-Info "forwarding other names to $DnsUpstream (so the phone's probe can validate)"
+    } else {
+        Write-Info 'other names -> NXDOMAIN (no -DnsUpstream). If the phone resolves via cellular'
+        Write-Info 'instead of asking us, this is the first thing to change.'
+    }
     Write-Info "binding $bind`:53"
 
     $proc = Start-Process -FilePath 'node' -ArgumentList $dnsArgs -PassThru -NoNewWindow
@@ -184,6 +197,47 @@ function Start-DnsResponder {
         Write-Ok 'inbound firewall rule "RockSkipping spike DNS" is present'
     }
     return $proc
+}
+
+# "Did the phone ask US for DNS?" is the single most important fact in this whole test, and on
+# 2026-08-21 it was only discoverable by reading dns-responder.log by hand afterwards. The run
+# looked like a success right up to the phone. Counting queries here puts the answer in the
+# script's own output, where the person running it can see it.
+$script:DnsLogBaseline = 0
+function Get-DnsLogPath { param([string] $SpikeDirectory) Join-Path $SpikeDirectory 'dns-responder.log' }
+
+function Set-DnsQueryBaseline {
+    param([string] $SpikeDirectory)
+    $p = Get-DnsLogPath $SpikeDirectory
+    $script:DnsLogBaseline = if (Test-Path $p) { @(Get-Content $p -ErrorAction SilentlyContinue).Count } else { 0 }
+}
+
+function Show-DnsQuerySummary {
+    param([string] $SpikeDirectory)
+    $p = Get-DnsLogPath $SpikeDirectory
+    if (-not (Test-Path $p)) { Write-Warn2 'no dns-responder.log to read'; return 0 }
+
+    $all = @(Get-Content $p -ErrorAction SilentlyContinue)
+    $new = if ($all.Count -gt $script:DnsLogBaseline) { $all[$script:DnsLogBaseline..($all.Count - 1)] } else { @() }
+    # Query lines carry an arrow; the banner lines the responder prints on startup do not.
+    $queries = @($new | Where-Object { $_ -match '->' -and $_ -notmatch 'Answering' })
+
+    if ($queries.Count -eq 0) {
+        Write-Bad 'ZERO DNS queries reached this machine.'
+        Write-Info 'The phone did not ask us at all - so nothing about the responder is at fault.'
+        Write-Info 'It resolved somewhere else. On Android the usual causes, in order:'
+        Write-Info '  1. Mobile data. A network that fails Android connectivity validation keeps'
+        Write-Info '     cellular as the default route for DNS. Turn mobile data OFF and retry.'
+        Write-Info '  2. Private DNS (Settings > Network > Private DNS). Set it to Off - when it'
+        Write-Info '     is set to a hostname, every lookup goes over TLS to that server and the'
+        Write-Info '     local resolver is never consulted.'
+        Write-Info '  3. -DnsUpstream <ip> so we stop answering NXDOMAIN for everything else,'
+        Write-Info '     which is what makes the network fail validation in the first place.'
+    } else {
+        Write-Ok "$($queries.Count) DNS quer(ies) reached this machine - the phone DID ask us:"
+        foreach ($q in ($queries | Select-Object -Last 8)) { Write-Info "  $($q.Trim())" }
+    }
+    return $queries.Count
 }
 
 function Set-WiFiRadioOn {
@@ -249,6 +303,7 @@ $result    = [ordered]@{
     broadcastSsid       = $null
     broadcastPassphrase = $null
     attemptsUsed        = $null
+    dnsQueries          = $null
 }
 
 Write-Host ''
@@ -432,6 +487,7 @@ try {
         Write-Info 'that binding first wins and ICS does not contend afterwards; that holds here'
         Write-Info 'too - both orderings work. -DnsAfter is the other one, and binds'
         Write-Info '192.168.137.1:53 specifically rather than the wildcard.'
+        Set-DnsQueryBaseline -SpikeDirectory $SpikeDir
         $dnsProc = Start-DnsResponder -SpikeDirectory $SpikeDir
     }
 
@@ -685,6 +741,7 @@ try {
         Write-Info 'The other ordering. The group owner is already up, so ICS has had its chance'
         Write-Info 'at :53 and 192.168.137.1 now exists to bind to specifically. Whether anything'
         Write-Info 'is left for us is the question.'
+        Set-DnsQueryBaseline -SpikeDirectory $SpikeDir
         $dnsProc = Start-DnsResponder -SpikeDirectory $SpikeDir -BindHotspotAddressOnly
         if (-not $dnsProc) {
             Write-Bad 'could not start the responder after the group owner either.'
@@ -837,6 +894,8 @@ finally {
         try { Stop-Process -Id $confirm.Id -Force -ErrorAction SilentlyContinue; Write-Ok 'confirm-server stopped' } catch { }
     }
     if ($dnsProc) {
+        Write-Step 'DNS - did the phone actually ask us?'
+        try { $result.dnsQueries = Show-DnsQuerySummary -SpikeDirectory $SpikeDir } catch { Write-Warn2 $_.Exception.Message }
         try { Stop-Process -Id $dnsProc.Id -Force -ErrorAction SilentlyContinue; Write-Ok 'DNS responder stopped (:53 released)' } catch { }
     }
     if ($sub) {

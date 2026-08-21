@@ -217,6 +217,40 @@ query 192-168-137-1.local-ip.sh A -> rcode NOERROR, authoritative true, answer 1
 Still unproven: that a **phone** resolves through it. The proof is the phone's address appearing
 in `dns-responder.log`, not a successful page load — a page can load for other reasons.
 
+## DNS: the phone never asked us
+
+With `-DnsAfter`, everything on the host worked — group owner up on the first attempt, responder
+holding `192.168.137.1:53`, `CLIENT JOINED: 192.168.137.157`. The phone joined by QR, then failed
+`http://play.local-ip.sh/` with `ERR_NAME_NOT_RESOLVED`.
+
+**`dns-responder.log` recorded zero queries.** Not a wrong answer, not a firewall drop — the phone
+never sent us a lookup at all. That exonerates the responder completely and moves the problem onto
+the phone's resolver selection.
+
+Ranked causes, all Android-side:
+
+1. **Mobile data.** Android validates a network by fetching a known URL. This network has no
+   internet, so validation fails, and an unvalidated Wi-Fi network does not get to be the default
+   route for DNS — cellular does. The phone resolves `play.local-ip.sh` against its carrier's
+   resolver, which has never heard of it.
+2. **Private DNS.** If set to a hostname (Settings → Network → Private DNS), every lookup goes
+   over TLS to that server and the local resolver is never consulted, regardless of routing.
+3. **Our own NXDOMAIN policy makes (1) worse.** The responder answers `*.local-ip.sh` and
+   NXDOMAINs everything else, including Android's connectivity probe — so we actively cause the
+   validation failure that pushes DNS onto cellular. `-DnsUpstream <ip>` forwards other names
+   instead.
+
+Note the tension (3) creates with the actual goal: **upstream forwarding requires an uplink**, and
+the whole point is running with none. If Android's validation behaviour turns out to be the
+blocker, offline play cannot fix it by forwarding — it would need the phone to be off mobile data,
+or a different approach to naming entirely. That makes this the most important open question in
+the design, not a detail.
+
+**Instrumentation added:** the spike now counts queries received and reports them as a step
+(`dnsQueries` in the result), instead of that fact living only in a log file. The 2026-08-21 run
+looked like a complete success right up until the phone, and the one datum that explained it was
+invisible in the spike's own output.
+
 ## The orphaned group owner — the real cause of every unexplained `Aborted`
 
 The `-Dns` run failed all three attempts, and the obvious inference was that holding `0.0.0.0:53`
