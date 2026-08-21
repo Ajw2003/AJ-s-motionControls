@@ -226,6 +226,72 @@ remain tetherable, starts from one, and renders join QRs. If it reports zero tet
 offline, then Open Question 2 was right for the wrong reason, and Wi-Fi Direct plus a home-grown
 DHCP server becomes the fallback — with the spike already written and the radio half proven.
 
+## What is needed to run this in the game
+
+Audited 2026-08-21. **Almost everything is already in place** — the game's Hotspot path was built
+around the correct ordering before any of this was measured.
+
+### Already working, verified on this machine
+
+| Piece | State |
+|---|---|
+| `network-mode.txt` | `Hotspot` |
+| `hotspot-control.ps1` profile fallback | Fixed — tethers from any profile |
+| `LocalServices` Hotspot env | Sets `DNS_RESPOND_IP` / `DNS_ALLOW` / `DNS_SUFFIX`, forces `192.168.137.1` |
+| DNS bind address | `relay/dns.js` defaults to `0.0.0.0`, so it binds before the hotspot address exists |
+| **Ordering** | `HotspotService.BeginTethering()` waits on `LocalServices.ProbeDnsBound` *before* tethering — exactly the order the spike proved is required |
+| Certificate | Cached, `*.local-ip.sh`, valid to **2026-11-17** (88 days). Covers `192-168-137-1.local-ip.sh` |
+| Scheduled task | `RockSkippingDisableForwarding` present, Ready |
+| Firewall | `RockSkipping relay` TCP/8443 LocalSubnet; `RockSkipping hotspot DNS` UDP/53 on `192.168.137.0/24` |
+| Node + `relay/node_modules` | Present |
+
+Note the certificate expiry recorded elsewhere in the docs (`2026-09-18`) is **stale** — it was
+renewed on 2026-08-20.
+
+**So the answer to "what is needed" is: press Play.** Nothing else is required for this machine.
+
+### Two defects that will bite, both observed during testing
+
+Neither blocks a clean first run, and both produce failures that look like something else.
+
+**1. Stale tethering wedges the next session, and restarting does not fix it.**
+
+Tethering survives the process that started it. If a session crashes — or a spike is killed — the
+hotspot stays up, ICS keeps `0.0.0.0:53`, and on the next launch the relay's DNS responder cannot
+bind. `dnsBound` stays false and `HotspotService` fails with:
+
+> "The local DNS responder never bound. Port 53 may already be in use... **Restart and try
+> again.**"
+
+Restarting does not help, because the tethering that is causing it is still running. This
+happened twice while testing the spikes.
+
+*Fix:* run `hotspot-control.ps1 -Action Stop` once at startup in Hotspot mode, **before**
+`LocalServices` spawns the relay — the relay is what needs `:53`, so the cleanup has to precede
+it. The `Stop` action already exists and is safe to call when nothing is tethering.
+
+**2. A software-off Wi-Fi radio reports as `tethering-failed:Unknown`.**
+
+The radio can be off for ordinary reasons — a laptop toggle, an OEM utility disabling Wi-Fi while
+wired. `StartTetheringAsync` then returns `Unknown`, and the player sees a failure that names no
+cause and suggests no action.
+
+*Fix:* check `Windows.Devices.Radios.Radio` in `hotspot-control.ps1` before starting, return a
+distinct `radio-off` error, and optionally turn it on — `RequestAccessAsync` returns `Allowed`
+unelevated, and `SetStateAsync` works without a prompt. Both spikes already do this.
+
+### Separate: shipping it to someone else
+
+Unchanged and out of scope for playing on this machine — `ZeroSetupPlan.md` blockers 1–3 (Node is
+not bundled, dependencies install at runtime, `relay/` and `controller/` are not copied into the
+build). A downloaded build still fails before any of the above matters.
+
+### Housekeeping
+
+`RockSkipping spike HTTP` / `RockSkipping spike DNS` firewall rules were added for the spikes and
+are not needed by the game. `RockSkipping relay` and `RockSkipping spike DNS` are each registered
+twice.
+
 ## What went wrong in getting here
 
 Recorded because the process failure was more expensive than the technical one.
