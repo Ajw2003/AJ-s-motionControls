@@ -176,7 +176,48 @@ So the obligation on production code is real but narrower than first thought: it
 before retrying"**. Without that, attempt 2's failure guarantees attempt 3's failure, and the
 retry loop proves nothing.
 
-## Stage C — a real phone (BLOCKED: network not findable)
+## Stage C — a real phone JOINED, over Wi-Fi Direct
+
+```
+[ok]   CLIENT JOINED: 192.168.137.157  (mac B2-CE-09-43-91-4D)
+       HIT #1  from 192.168.137.157  for http://192.168.137.1/   [by IP - network/firewall only]
+```
+
+The phone associated, took a DHCP lease from ICS, and loaded a page served by this machine.
+Association, addressing, routing and the firewall are all confirmed working over a Wi-Fi Direct
+group owner.
+
+**What fixed the join was the QR, and the reason is worth keeping.** The network was findable all
+along — the phone's Wi-Fi list simply does not surface it the way a person expects, so two test
+cycles were spent concluding "the network is not there" about a network that was working. The
+`WIFI:` payload joins by SSID directly and never consults that list. This is now a project rule in
+[`../CLAUDE.md`](../CLAUDE.md): render the QR, never ask anyone to hunt for a network name.
+
+### The remaining gap: DNS
+
+`http://play.local-ip.sh/` failed with `ERR_NAME_NOT_RESOLVED`. Not a Wi-Fi Direct problem —
+**the spike never started a DNS responder.** `confirm-server.js` tells the phone to try the name,
+and nothing on the host was answering.
+
+Note how close this came to reading as a clean pass: `http://192.168.137.1/` succeeded, and an IP
+URL performs no DNS lookup at all. The spike now points SCAN 2 at the *name* when `-Dns` is on,
+so the QR itself exercises resolution rather than quietly skipping it.
+
+`-Dns` starts `dns-responder.js` **before** the group owner, which is the ordering
+`hotspot-dns-test.ps1` established as load-bearing — ICS takes `:53` when it brings the network
+up, and binding first wins. STEP 5c then re-checks who holds the port once the AP is live.
+
+Responder verified independently on 2026-08-20, both names authoritative:
+
+```
+query play.local-ip.sh A -> rcode NOERROR, authoritative true, answer 192.168.137.1
+query 192-168-137-1.local-ip.sh A -> rcode NOERROR, authoritative true, answer 192.168.137.1
+```
+
+Still unproven: that a **phone** resolves through it. The proof is the phone's address appearing
+in `dns-responder.log`, not a successful page load — a page can load for other reasons.
+
+## Superseded: the SSID hypothesis (kept, because it was wrong in a useful way)
 
 The group owner was up, addressed and serving DHCP, but the phone could not find
 `RockSkip Direct` in its Wi-Fi list.

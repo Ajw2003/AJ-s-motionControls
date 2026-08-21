@@ -83,6 +83,7 @@ param(
     [int]    $SettleSeconds = 8,
     [switch] $EnableRadio,
     [switch] $QrHidden,
+    [switch] $Dns,
     [string] $LogPath
 )
 
@@ -146,6 +147,7 @@ catch { $transcribing = $false; Write-Warn2 "could not start transcript at ${Log
 $publisher = $null
 $sub       = $null
 $confirm   = $null
+$dnsProc   = $null
 $wfd       = $null
 $result    = [ordered]@{
     startedWithNoUplink = $null
@@ -310,6 +312,63 @@ if ($null -eq $profileNow) {
 # ---------------------------------------------------------------- STEP 3
 
 try {
+    # ------------------------------------------------------------ STEP 2b
+
+    if ($Dns) {
+        Write-Step 'STEP 2b  DNS responder - started BEFORE the group owner, deliberately'
+        Write-Info 'ICS takes UDP :53 when it brings up the network. deploy/spike/hotspot-dns-test.ps1'
+        Write-Info 'established that binding first wins and ICS does not contend for it afterwards,'
+        Write-Info 'so the ordering here is the experiment, not a detail.'
+
+        $dnsJs = Join-Path $SpikeDir 'dns-responder.js'
+        if (-not (Test-Path $dnsJs)) {
+            Write-Bad "dns-responder.js not found at $dnsJs"
+        } else {
+            $held = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue)
+            if ($held.Count) {
+                foreach ($h in $held) {
+                    $ho = Get-Process -Id $h.OwningProcess -ErrorAction SilentlyContinue
+                    Write-Warn2 (":53 is already held on {0} by {1} (pid {2})" -f $h.LocalAddress, $(if ($ho) { $ho.ProcessName } else { '?' }), $h.OwningProcess)
+                }
+                Write-Info 'starting anyway - the bind will fail loudly if it cannot have the port'
+            } else {
+                Write-Ok ':53 is free'
+            }
+
+            # 0.0.0.0 because 192.168.137.1 does not exist until the group owner is up, and we
+            # have to hold the port before that. --allow is then the only thing keeping this
+            # from being an open resolver, so it is not optional.
+            $dnsArgs = @($dnsJs, '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
+                         '--bind', '0.0.0.0', '--allow', '192.168.137.0/24')
+            $dnsProc = Start-Process -FilePath 'node' -ArgumentList $dnsArgs -PassThru -NoNewWindow
+            Start-Sleep -Seconds 2
+
+            if ($dnsProc.HasExited) {
+                Write-Bad "the responder exited immediately (code $($dnsProc.ExitCode))"
+                $dnsProc = $null
+            } else {
+                $mine = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue |
+                    Where-Object { $_.OwningProcess -eq $dnsProc.Id })
+                if ($mine.Count) {
+                    Write-Ok "responder holds :53 (pid $($dnsProc.Id))"
+                } else {
+                    Write-Warn2 "responder is running (pid $($dnsProc.Id)) but does not appear to hold :53"
+                }
+            }
+
+            $dnsRule = Get-NetFirewallRule -DisplayName 'RockSkipping spike DNS' -ErrorAction SilentlyContinue
+            if (-not $dnsRule) {
+                Write-Warn2 'no inbound rule for UDP 53 - the phone will get ERR_NAME_NOT_RESOLVED.'
+                Write-Info  'Run this ONCE in an ADMIN PowerShell (this script will not do it for you):'
+                Write-Host  ''
+                Write-Host  '     New-NetFirewallRule -DisplayName "RockSkipping spike DNS" -Direction Inbound -Protocol UDP -LocalPort 53 -RemoteAddress 192.168.137.0/24 -Action Allow -Profile Any' -ForegroundColor White
+                Write-Host  ''
+            } else {
+                Write-Ok 'inbound firewall rule "RockSkipping spike DNS" is present'
+            }
+        }
+    }
+
     Write-Step 'STEP 3  Starting a Wi-Fi Direct autonomous group owner (legacy WPA2 SSID)'
 
     # WinRT types only project into PowerShell through the [Type,WinMD,ContentType=WindowsRuntime]
@@ -541,6 +600,34 @@ try {
         Write-Info "netsh reports $($Matches[2]) WLAN interface(s) - a running GO usually adds one"
     }
 
+    # ------------------------------------------------------------ STEP 5c
+
+    if ($Dns -and $dnsProc) {
+        Write-Step 'STEP 5c  Did the responder survive the group owner starting?'
+        if ($dnsProc.HasExited) {
+            Write-Bad "the responder died when the network came up (exit $($dnsProc.ExitCode))"
+            Write-Info 'ICS would have to be displaced or replaced for local DNS to work here.'
+        } else {
+            $after = @(Get-NetUDPEndpoint -LocalPort 53 -ErrorAction SilentlyContinue)
+            $ours  = @($after | Where-Object { $_.OwningProcess -eq $dnsProc.Id })
+            $theirs = @($after | Where-Object { $_.OwningProcess -ne $dnsProc.Id })
+            if ($ours.Count -and -not $theirs.Count) {
+                Write-Ok "responder is the SOLE holder of :53 (pid $($dnsProc.Id)) - ICS did not contend"
+            } elseif ($ours.Count) {
+                Write-Warn2 "responder holds :53, but so does something else:"
+                foreach ($t in $theirs) {
+                    $to = Get-Process -Id $t.OwningProcess -ErrorAction SilentlyContinue
+                    Write-Info ("  {0} by {1} (pid {2})" -f $t.LocalAddress, $(if ($to) { $to.ProcessName } else { '?' }), $t.OwningProcess)
+                }
+            } else {
+                Write-Bad 'the responder no longer holds :53'
+            }
+            Write-Info ''
+            Write-Info 'The real proof is the responder logging a query from the phone address.'
+            Write-Info "Watch deploy/spike/dns-responder.log while the phone loads the page."
+        }
+    }
+
     # ------------------------------------------------------------ STEP 6
 
     if ($KeepRunning) {
@@ -582,7 +669,14 @@ try {
         $qrJs = Join-Path $SpikeDir 'wifi-qr.js'
         if (Test-Path $qrJs) {
             $qrArgs = @('--ssid', $showSsid, '--pass', $showPass, '--hidden', $(if ($QrHidden) { 'true' } else { 'false' }))
-            if ($result.address) { $qrArgs += @('--url', "http://$($result.address)/") }
+            # With the responder up, SCAN 2 carries the NAME rather than the address, so the QR
+            # itself exercises DNS. An IP URL performs no lookup and would pass whether or not
+            # the responder works - which is exactly how the last run looked like a success
+            # until the final step.
+            $joinUrl = if ($Dns -and $dnsProc -and -not $dnsProc.HasExited) { 'http://play.local-ip.sh/' }
+                       elseif ($result.address) { "http://$($result.address)/" }
+                       else { $null }
+            if ($joinUrl) { $qrArgs += @('--url', $joinUrl) }
             # Straight to the console, not captured - capturing round-trips the block
             # characters through PowerShell's encoding and can wreck the symbol.
             & node $qrJs @qrArgs
@@ -596,7 +690,7 @@ try {
         Write-Say '      2. Point it at SCAN 2 to open the page.'
         Write-Host ''
         Write-Info "If you would rather type it: network '$showSsid', password '$showPass'"
-        if ($result.address) { Write-Info "then http://$($result.address)/" }
+        if ($joinUrl) { Write-Info "then $joinUrl" }
         Write-Host ''
         Write-Info 'If SCAN 1 fails to connect:'
         Write-Info '  - Re-run with -QrHidden. That flags the network as hidden in the payload,'
@@ -648,6 +742,9 @@ finally {
     Write-Step 'Cleanup'
     if ($confirm) {
         try { Stop-Process -Id $confirm.Id -Force -ErrorAction SilentlyContinue; Write-Ok 'confirm-server stopped' } catch { }
+    }
+    if ($dnsProc) {
+        try { Stop-Process -Id $dnsProc.Id -Force -ErrorAction SilentlyContinue; Write-Ok 'DNS responder stopped (:53 released)' } catch { }
     }
     if ($sub) {
         try { Unregister-Event -SubscriptionId $sub.Id -ErrorAction SilentlyContinue } catch { }
