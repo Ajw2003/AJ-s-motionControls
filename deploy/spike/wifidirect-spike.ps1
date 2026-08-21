@@ -67,7 +67,12 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Ssid = 'RockSkip Direct',
+    # The Wi-Fi Direct spec requires a group owner's SSID to begin with "DIRECT-". Windows
+    # accepts any string here without complaint and echoes it straight back from
+    # LegacySettings.Ssid, so the readback is NOT evidence of what is in the beacon - and the
+    # host cannot scan its own AP to check. Defaulting to a compliant name removes the whole
+    # question. The first phone test used 'RockSkip Direct' and the network was not findable.
+    [string] $Ssid = 'DIRECT-RockSkip',
     [string] $Passphrase = 'skipdirect',
     [switch] $WaitForOffline,
     [switch] $KeepRunning,
@@ -77,12 +82,19 @@ param(
     [int]    $Attempts = 3,
     [int]    $SettleSeconds = 8,
     [switch] $EnableRadio,
+    [switch] $QrHidden,
     [string] $LogPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
+
+# The QR renderer draws with half-block characters, and node emits them as UTF-8. A console
+# left on codepage 437 turns the symbol into mojibake that no phone can read. Setting
+# OutputEncoding calls SetConsoleOutputCP, which applies to child processes sharing this
+# console too - which is what actually matters here, since node does the drawing.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $SpikeDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $LogPath) { $LogPath = Join-Path $SpikeDir 'wifidirect-run.log' }
@@ -145,6 +157,9 @@ $result    = [ordered]@{
     error               = $null
     uplinkAtStart       = $null
     radioAfter          = $null
+    broadcastSsid       = $null
+    broadcastPassphrase = $null
+    attemptsUsed        = $null
 }
 
 Write-Host ''
@@ -388,6 +403,7 @@ try {
     }
 
     $result.status = $status
+    $result.attemptsUsed = $attempt
     $result.error  = if ($global:WfdError) { "$($global:WfdError)" } else { $null }
 
     if ($status -eq 'Started') {
@@ -398,6 +414,40 @@ try {
         } else {
             Write-Warn2 "started, but an uplink was present ($($result.uplinkAtStart))"
             Write-Info  'rerun with -WaitForOffline for the answer that actually matters'
+        }
+
+        # Windows is free to substitute its own SSID and passphrase for the legacy AP - the
+        # values set before Start() are a request, not a guarantee. Sending someone to their
+        # phone to look for a network name that is not being broadcast wastes a whole test
+        # cycle, so read back what the radio is actually advertising and use that everywhere.
+        try {
+            $realSsid = "$($adv.LegacySettings.Ssid)"
+            $realPass = "$($adv.LegacySettings.Passphrase.Password)"
+            $result.broadcastSsid = $realSsid
+            $result.broadcastPassphrase = $realPass
+
+            if ($realSsid -ne $Ssid) {
+                Write-Warn2 "Windows substituted the SSID."
+                Write-Say   "  requested:   $Ssid"
+                Write-Say   "  BROADCASTING: $realSsid"
+            } else {
+                # Worth stating plainly: this property is the value we set, echoed back. It is
+                # not read from the beacon, and the host has no way to scan its own AP (netsh
+                # shows one WLAN interface even with a GO running). Only a phone can confirm.
+                Write-Info "LegacySettings.Ssid reads back as '$realSsid' (echo of what was set,"
+                Write-Info 'not a reading of the beacon - only a phone can confirm the real name)'
+            }
+            if ($realSsid -notlike 'DIRECT-*') {
+                Write-Warn2 "'$realSsid' does not start with DIRECT-, which the Wi-Fi Direct spec"
+                Write-Warn2 'requires of a group owner. Windows may be beaconing a different name.'
+            }
+            if ($realPass -ne $Passphrase) {
+                Write-Warn2 "Windows substituted the passphrase - the real one is: $realPass"
+            }
+        } catch {
+            Write-Warn2 "could not read back the legacy settings: $($_.Exception.Message)"
+            $realSsid = $Ssid
+            $realPass = $Passphrase
         }
     } else {
         Write-Bad "publisher status: $status$(if ($result.error) { " (error: $($result.error))" })"
@@ -473,6 +523,24 @@ try {
         Write-Info 'That would mean shipping our own DHCP responder next to relay/dns.js.'
     }
 
+    # ------------------------------------------------------------ STEP 5b
+
+    Write-Step 'STEP 5b  What the radio is actually transmitting'
+    Write-Info 'If a phone cannot see the network, the answer is almost always in here: the'
+    Write-Info 'SSID being broadcast, or the band/channel it landed on. A 6 GHz channel is'
+    Write-Info 'invisible to most phones; 5 GHz is invisible to a few older ones.'
+    Write-Host ''
+    $ifaceDump = (netsh wlan show interfaces) 2>&1 | Out-String
+    foreach ($line in ($ifaceDump -split "`r?`n")) {
+        if ($line.Trim()) { Write-Host "     $($line.TrimEnd())" -ForegroundColor DarkGray }
+    }
+    Write-Host ''
+    # A GO shows up as a second, "Secondary"-type interface while it is running. Its SSID and
+    # channel are the ground truth for what a phone would see.
+    if ($ifaceDump -match 'There (is|are) (\d+) interfaces?') {
+        Write-Info "netsh reports $($Matches[2]) WLAN interface(s) - a running GO usually adds one"
+    }
+
     # ------------------------------------------------------------ STEP 6
 
     if ($KeepRunning) {
@@ -500,13 +568,45 @@ try {
             }
         }
 
-        Write-Host ''
-        Write-Say '>>> ON YOUR PHONE:'
-        Write-Say "      1. Settings -> Wi-Fi, and look for the network:   $Ssid"
-        Write-Say "      2. Password:                                      $Passphrase"
-        if ($result.address) {
-            Write-Say "      3. Open a browser and go to:                      http://$($result.address)/"
+        # These are the read-back values, not what was requested - see the substitution check
+        # in STEP 3. Printing the requested name when Windows is broadcasting a different one
+        # sends someone hunting for a network that does not exist.
+        $showSsid = if ($result.broadcastSsid) { $result.broadcastSsid } else { $Ssid }
+        $showPass = if ($result.broadcastPassphrase) { $result.broadcastPassphrase } else { $Passphrase }
+
+        # Scan, do not hunt. Browsing the Wi-Fi list is the worst way to join this network:
+        # phones routinely filter P2P/DIRECT- SSIDs out of the picker UI even when the radio
+        # can see them perfectly well, which is very likely what happened on the first two
+        # phone attempts. A WIFI: payload joins by SSID directly and never consults that list.
+        # deploy/spike/wifi-qr.js already renders this - reuse it rather than writing another.
+        $qrJs = Join-Path $SpikeDir 'wifi-qr.js'
+        if (Test-Path $qrJs) {
+            $qrArgs = @('--ssid', $showSsid, '--pass', $showPass, '--hidden', $(if ($QrHidden) { 'true' } else { 'false' }))
+            if ($result.address) { $qrArgs += @('--url', "http://$($result.address)/") }
+            # Straight to the console, not captured - capturing round-trips the block
+            # characters through PowerShell's encoding and can wreck the symbol.
+            & node $qrJs @qrArgs
+        } else {
+            Write-Warn2 "wifi-qr.js not found at $qrJs - falling back to typing it in by hand"
         }
+
+        Write-Host ''
+        Write-Say '>>> ON YOUR PHONE, IN ORDER:'
+        Write-Say '      1. Point the camera at SCAN 1 above and tap the Wi-Fi prompt.'
+        Write-Say '      2. Point it at SCAN 2 to open the page.'
+        Write-Host ''
+        Write-Info "If you would rather type it: network '$showSsid', password '$showPass'"
+        if ($result.address) { Write-Info "then http://$($result.address)/" }
+        Write-Host ''
+        Write-Info 'If SCAN 1 fails to connect:'
+        Write-Info '  - Re-run with -QrHidden. That flags the network as hidden in the payload,'
+        Write-Info '    which makes the phone actively probe for the SSID instead of relying on'
+        Write-Info '    seeing it in a passive scan.'
+        Write-Info '  - Tell me the exact error the phone gives. "Could not join" and "network'
+        Write-Info '    not found" mean different things and point at different causes.'
+        Write-Info '  - On Android, Settings -> Wi-Fi -> Wi-Fi Direct lists P2P peers. If this PC'
+        Write-Info '    shows up there, the radio IS beaconing and the problem is only the'
+        Write-Info '    legacy/AP layer. That is the single most useful thing you can check.'
         Write-Host ''
         Write-Info 'Any phone that appears below has completed DHCP - association alone does not'
         Write-Info 'create a neighbour entry with an IPv4 address, so this line is the real proof.'

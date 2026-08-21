@@ -2,7 +2,40 @@
 
 **Spike:** [`deploy/spike/wifidirect-spike.ps1`](../deploy/spike/wifidirect-spike.ps1)
 **Question:** [ZeroSetupPlan.md](ZeroSetupPlan.md) Open Question 2, reopened.
-**Status:** Stage A passed. Stages B and C pending a real offline run.
+**Status:** **Stage B passed — Wi-Fi Direct starts with no network attached.** Stage C (a real
+phone joining) is blocked on the SSID not being findable.
+
+## The headline
+
+**`ZeroSetupPlan.md`'s ceiling is not a Windows limit, it is a Mobile Hotspot limit.** With the
+Ethernet cable out and Wi-Fi connected to nothing — `GetInternetConnectionProfile()` returning
+null, the exact condition where `hotspot-control.ps1` gives up with `no-connection-profile` — a
+Wi-Fi Direct autonomous group owner started anyway, took `192.168.137.1`, and had DHCP serving on
+it:
+
+```
+   [ok]   no connected adapter, no internet profile - THIS IS THE REAL TEST CONDITION
+   Control - what Mobile Hotspot would say under these exact conditions:
+     GetInternetConnectionProfile() -> null. NetworkOperatorTetheringManager has
+     nothing to tether from; hotspot-control.ps1 would return no-connection-profile.
+   ...
+   [ok]   publisher status: Started
+   [ok]   STARTED WITH NO NETWORK ATTACHED - the thing Mobile Hotspot cannot do
+   [ok]   address is 192.168.137.1 - the address LocalServices already pins the certificate to
+   [ok]   UDP :67 bound on 192.168.137.1 by svchost (pid 2196)
+```
+
+That is the best of the four outcomes tabled below: the address and DHCP both survive with no
+uplink, so the cached certificate, `DNS_RESPOND_IP`, the relay bind, and the `192.168.137.0/24`
+firewall rule all keep working untouched.
+
+**It took three attempts.** Attempts 1 and 2 aborted; attempt 2 left the radio software-off, which
+`-EnableRadio` restored before attempt 3 succeeded. Any production implementation must retry and
+must restore the radio between attempts — a single-shot call would have concluded, wrongly, that
+this does not work.
+
+**Still open:** no phone has joined yet. The network was not findable by name — see
+Stage C below.
 
 ## Why this was worth trying
 
@@ -127,7 +160,47 @@ Three outcomes and what each costs:
 | Started, but **APIPA** `169.254.x.x` | Expensive. Nothing configured the interface, so we assign the address ourselves *and* serve DHCP, and the certificate's pinned name has to survive that. |
 | Aborted | Dead end. Record it and Hotspot mode's "host must stay attached to something" ceiling stands. |
 
-## Stage C — a real phone (pending)
+## Correction to the radio finding above
+
+The "each run kills the radio" hypothesis was disproved for *successful* runs and that still
+holds (`radioAfter: "On"` every time the advertisement started). But the offline run showed the
+other half: **a failed start does turn the radio off.**
+
+```
+[warn] attempt 2 of 3: Aborted
+[FAIL] the radio is now 'Off' - the failed start turned it off
+```
+
+So the obligation on production code is real but narrower than first thought: it is not
+"restore the radio after every session", it is **"restore the radio after every failed start,
+before retrying"**. Without that, attempt 2's failure guarantees attempt 3's failure, and the
+retry loop proves nothing.
+
+## Stage C — a real phone (BLOCKED: network not findable)
+
+The group owner was up, addressed and serving DHCP, but the phone could not find
+`RockSkip Direct` in its Wi-Fi list.
+
+**The host cannot diagnose this itself.** `netsh wlan show interfaces` reports one WLAN interface
+even with a group owner running — the GO does not appear, and a radio cannot scan its own AP. The
+phone is the only available instrument.
+
+`LegacySettings.Ssid` reads back as whatever was set, which looked like confirmation and is not:
+it echoes the property, it does not read the beacon. Ruled out as evidence.
+
+**Leading hypothesis: the SSID.** The Wi-Fi Direct spec requires a group owner's SSID to begin
+with `DIRECT-`. Windows accepted `RockSkip Direct` without complaint and echoed it back, but may
+beacon something else entirely. The spike's default SSID is now `DIRECT-RockSkip`, and STEP 6 asks
+for every visible network name rather than a yes/no — an unexpected name is the most informative
+thing that can come back.
+
+Other candidates if that is not it:
+
+- **Band.** The card is 6 GHz-capable and was associated on 6 GHz channel 101 during one test, but
+  `P2P GO on 6 GHz: Not Supported`, so the GO must land on 2.4 or 5 GHz — both normally visible to
+  phones. Lower suspicion.
+- **Scan caching.** Phones hold scan results far longer than feels reasonable; the network had
+  existed for seconds. Cheap to rule out by toggling phone Wi-Fi.
 
 Association is not the result; a DHCP lease and a loaded page are. The spike watches
 `Get-NetNeighbor` on the Wi-Fi Direct interface, because a neighbour entry with an IPv4 address
