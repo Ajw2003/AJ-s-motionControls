@@ -412,10 +412,26 @@ Both need the machine's network genuinely cut, and together they decide whether 
 *no internet* or the stricter *no network*:
 
 1. Does `CreateFromConnectionProfile()` succeed from a **connected-but-no-internet** profile?
-2. Does tethering start with **no adapter connected at all**?
+   Still open.
+2. Does tethering start with **no adapter connected at all**? **Answered — no, confirmed
+   2026-08-20.** With Wi-Fi and Ethernet both disconnected, `GetInternetConnectionProfile()`
+   returns null and hotspot start fails immediately (`hotspot-control.ps1`'s
+   `no-connection-profile` result). This is not a bug to fix — `NetworkOperatorTetheringManager`
+   is built to *share an existing connection*, not conjure a network from nothing, and there is
+   no parameter or workaround within that API that changes this. **"Offline" in this design has
+   always meant guests need no internet and no shared network with the host — not that the host
+   machine itself needs zero connectivity.** The host must stay attached to *something* (even a
+   network with no internet route, if question 1 turns out to also succeed) for Hotspot mode to
+   start at all.
 
-Neither blocks Phases 1–3. Until answered, treat fully-offline play as plausible rather than
-planned.
+   The only way past this ceiling is a different Windows mechanism entirely — the deprecated
+   `netsh wlan hostednetwork` / Hosted Network feature, which some Wi-Fi drivers can run
+   independent of any uplink. Unproven here, unsupported on plenty of modern drivers, and a
+   materially different (less reliable) code path than `NetworkOperatorTetheringManager` — not
+   something to bolt on without deciding it's worth the risk first.
+
+Question 1 doesn't block Phases 1–3. Until answered, treat "works while genuinely offline but
+still connected to *some* network" as plausible rather than confirmed.
 
 ## Risks
 

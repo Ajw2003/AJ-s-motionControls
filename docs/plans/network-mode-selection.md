@@ -78,6 +78,17 @@ Not yet re-tested after this fix — next step is exactly what failed before: Ma
 Start, watch for `[LocalServices] ... Ready` and `[HotspotService]` reaching `Ready`, then confirm
 a real phone can scan both QRs.
 
+**Retested 2026-08-20 — works.** Confirmed end-to-end with Wi-Fi/Ethernet connected: relay
+reaches `Ready`, hotspot starts, both QRs scan, a phone joins and plays a round.
+
+**Separately confirmed the same day: Hotspot mode does NOT start with Wi-Fi and Ethernet both
+disconnected.** This is `ZeroSetupPlan.md`'s Open Question 2, now answered — see that doc for the
+detail. Not a bug in this implementation; `NetworkOperatorTetheringManager` requires an existing
+connection profile to tether from, by design, with no workaround inside that API. The host PC
+needs to stay attached to *some* network for Hotspot mode to start — "offline" here means guests
+need no internet and no shared network with the host, not that the host itself needs zero
+connectivity.
+
 ## Context
 
 LAN mode was just fixed and confirmed working end-to-end this session (dual-homed tiebreak in
