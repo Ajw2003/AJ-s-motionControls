@@ -616,7 +616,7 @@ unbuilt (M2). Distance and skips were. **This milestone was completed ahead of M
 Water shader and ripples, splash/skip VFX and SFX, camera framing, controller haptics **on Android only** (iOS vibration is unreliable — do not design around it), reconnect handling, results screen.
 
 **Already built, ahead of the milestone sequence:** the water and ripple shader, camera framing,
-and reconnect handling ([deploy/RECONNECT-TEST.md](deploy/RECONNECT-TEST.md)). VFX/SFX and
+and reconnect handling ([deploy/RECONNECT-TEST.md](../deploy/RECONNECT-TEST.md)). VFX/SFX and
 haptics are not started.
 
 ---
@@ -637,4 +637,4 @@ haptics are not started.
 - **Scene transitions:** run a full Lobby → Game → Results → Lobby loop twice and confirm no `MissingReferenceException` appears in the console, the socket never reconnects, and scores carry across correctly. Repeated exceptions on transition mean the destroyed-subscriber fix didn't land; a phone bounced to the join screen means `RelayClient` isn't persisting.
 - **Physics tuning:** if players can't tell why a throw failed, add a post-throw readout on the TV ("too steep!", "too soft!") — the original Skip Skimmer leans heavily on this feedback.
 
-**Local development loop:** tick **Start Local Services** on `Bootstrap` to run the relay on this machine (or start it by hand with `node relay/server.js`), and point Unity at it with a `relay-url.txt` containing `ws://localhost:3000` — both steps are needed. That origin is not secure, so motion sensors will not work on it, which makes this a desktop-only loop. **Real-phone testing goes through `pwsh ./deploy/local-https.ps1`**, which serves the same relay from this machine over HTTPS on a borrowed certificate — there is no deployed relay any more, and no tunnel to run either ([deploy/README.md](deploy/README.md)).
+**Local development loop:** tick **Start Local Services** on `Bootstrap` to run the relay on this machine (or start it by hand with `node relay/server.js`), and point Unity at it with a `relay-url.txt` containing `ws://localhost:3000` — both steps are needed. That origin is not secure, so motion sensors will not work on it, which makes this a desktop-only loop. **Real-phone testing goes through `pwsh ./deploy/local-https.ps1`**, which serves the same relay from this machine over HTTPS on a borrowed certificate — there is no deployed relay any more, and no tunnel to run either ([deploy/README.md](../deploy/README.md)).

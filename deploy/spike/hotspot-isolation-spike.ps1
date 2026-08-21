@@ -20,7 +20,7 @@
                                        Everything is restored on exit.
 
     Nothing here is a security control until a phone has confirmed it end to end. See
-    ../../SecurityReview.md section 2.
+    ../../docs/SecurityReview.md section 2.
 
 .PARAMETER Apply
     Attempt the mitigations rather than only measuring. Requires an elevated shell.

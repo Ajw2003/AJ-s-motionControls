@@ -4,7 +4,7 @@
 certificate management, no configuration. Setup — including certificate renewal — is automatic.
 
 **Status: designed and de-risked; not yet implemented.** Every mechanism this plan depends on has
-been proven by a working spike ([deploy/spike/](deploy/spike/)), including two that were expected
+been proven by a working spike ([deploy/spike/](../deploy/spike/)), including two that were expected
 to fail. **No production code has been written.** The game today still cannot be handed to anyone
 else — see *The four blockers*.
 
@@ -56,7 +56,7 @@ The real blockers are that **a downloaded build cannot currently start a relay a
 | 1 | **Node.js is not bundled** | Hard failure: "Install Node 20 or newer from nodejs.org and relaunch" | [LocalServices.cs:175](Assets/Scripts/Net/LocalServices.cs:175) |
 | 2 | **Dependencies install at runtime** | First run shells out to `npm install`, needing npm and internet, 180s timeout | [LocalServices.cs:219](Assets/Scripts/Net/LocalServices.cs:219) |
 | 3 | **`relay/` and `controller/` are not in the build** | Looks for `<exe folder>/relay/server.js`; both live outside `Assets/`, so Unity never copies them | [LocalServices.cs:420](Assets/Scripts/Net/LocalServices.cs:420) |
-| 4 | **The certificate is manual and expires** | Only `deploy/local-https.ps1` obtains it; the current copy expires **2026-09-18** | [local-https.ps1:283](deploy/local-https.ps1:283) |
+| 4 | **The certificate is manual and expires** | Only `deploy/local-https.ps1` obtains it; the current copy expires **2026-09-18** | [local-https.ps1:283](../deploy/local-https.ps1:283) |
 
 A build handed to somebody else today fails at #3 before it ever reaches #1. This is invisible
 because the developer's machine has Node, a populated `node_modules`, both directories from the
@@ -155,12 +155,12 @@ the repo performs it today.
 
 # Phase 2 — automatic certificates 🟡 IN PROGRESS
 
-**Built:** [CertificateProvider.cs](Assets/Scripts/Net/CertificateProvider.cs) — detection,
+**Built:** [CertificateProvider.cs](../Assets/Scripts/Net/CertificateProvider.cs) — detection,
 caching, expiry check, download, SAN verification — wired into `LocalServices` ahead of the
 relay, which now receives `TLS_CERT`/`TLS_KEY` from it. `relay-env.txt` still overrides, so the
 developer escape hatch survives. Phase 4.3's DNS responder landed at the same time as
-[relay/dns.js](relay/dns.js), env-gated behind `DNS_RESPOND_IP`, with 26 tests in
-[relay/test-dns.js](relay/test-dns.js).
+[relay/dns.js](../relay/dns.js), env-gated behind `DNS_RESPOND_IP`, with 26 tests in
+[relay/test-dns.js](../relay/test-dns.js).
 
 **Not done:** confirming the C# path end to end in the editor, and deleting
 `deploy/local-https.ps1` once it is. The script is marked deprecated meanwhile.

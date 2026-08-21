@@ -15,19 +15,19 @@
 > on a borrowed `*.local-ip.sh` wildcard certificate for a name that encodes the machine's LAN
 > IP (`10.0.0.213` → `10-0-0-213.local-ip.sh`). `deploy/local-https.ps1` sets the whole thing
 > up. Phone-to-PC WebRTC DataChannels still carry `AIM` and `THROW`, and both ends still
-> recover from a wifi drop — [deploy/RECONNECT-TEST.md](deploy/RECONNECT-TEST.md).
+> recover from a wifi drop — [deploy/RECONNECT-TEST.md](../deploy/RECONNECT-TEST.md).
 >
 > **What that cost:** requirement 2 below ("hosting is: install and play") is no longer met —
 > hosting now means running a script, and something listens on the host machine. Requirement 1
 > is met only *on the local network*: a guest on mobile data can no longer join at all. Both
 > were knowingly traded for removing the single point of failure and the hosting bill. The
 > objections §2 raises against this design were never refuted — see
-> [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md).
+> [deploy/LOCAL-HTTPS-SPIKE.md](../deploy/LOCAL-HTTPS-SPIKE.md).
 >
 > **`skiprocking.ca` is not part of this.** It is registered and resolves to registrar parking;
 > nothing in the codebase references it. It was a cosmetic vanity name for the Fly app.
 >
-> Runbook: [deploy/README.md](deploy/README.md).
+> Runbook: [deploy/README.md](../deploy/README.md).
 
 This document supersedes the "Why a hosted relay rather than direct LAN connection" section of
 [PLAN.md](PLAN.md).
@@ -80,7 +80,7 @@ Phone motion sensors require a **secure context**. Chrome has refused `DeviceMot
 `DeviceOrientationEvent` on insecure origins since Chrome 76; Safari never allowed them; the
 Generic Sensor API is stricter still, and camera-based motion needs `getUserMedia`, which is
 also gated. Touch and pointer events are the only ungated input. The controller already checks
-this — `isSecureContextOk()` in [controller/js/sensors.js](controller/js/sensors.js).
+this — `isSecureContextOk()` in [controller/js/sensors.js](../controller/js/sensors.js).
 
 A secure context means HTTPS with a certificate chaining to a root **already in the phone's
 trust store**. Trust stores hold public CA roots and user-installed roots. Requirement 1
@@ -168,7 +168,7 @@ connection fails to establish, traffic falls back to this path rather than to no
 
 What shipped:
 
-1. [relay/server.js](relay/server.js) serves both the WebSocket and the controller page —
+1. [relay/server.js](../relay/server.js) serves both the WebSocket and the controller page —
    `STATIC_DIR` resolves as `../controller`, so the two directories have to sit side by side.
    It was deployed to **Fly.io**, which terminated TLS and renewed the certificate itself, so
    every line of ACME code this document once specified went unwritten.
@@ -208,8 +208,8 @@ that used to check this, `relay/test-deployed.js`, was deleted with the Fly conf
 
 An optimisation layered on Phase 1, not a replacement for it.
 
-**What shipped:** [Assets/Scripts/Net/PeerLink.cs](Assets/Scripts/Net/PeerLink.cs) holds one
-peer connection per phone; [controller/js/peer.js](controller/js/peer.js) is its other half.
+**What shipped:** [Assets/Scripts/Net/PeerLink.cs](../Assets/Scripts/Net/PeerLink.cs) holds one
+peer connection per phone; [controller/js/peer.js](../controller/js/peer.js) is its other half.
 `AIM` and `THROW` go direct; everything else stays on the relay. The relay itself was not
 touched — `npm test` is green at 23/23 without a single change, exactly as predicted below.
 
@@ -317,7 +317,7 @@ downstream knows the difference.
 A throwaway Unity peer and a standalone `spike.html` answered the question above: a Unity peer
 answers an offer from a phone browser, opens a DataChannel, and reports which candidate pair
 won. It did, so the spike was superseded by the real implementation —
-`Assets/Scripts/Net/PeerLink.cs` and [controller/js/peer.js](controller/js/peer.js) — and both
+`Assets/Scripts/Net/PeerLink.cs` and [controller/js/peer.js](../controller/js/peer.js) — and both
 the spike and its test document have been removed.
 
 One caveat worth keeping from that exercise: some routers isolate clients from each other on
@@ -377,7 +377,7 @@ silently:
    the *certificate* path breaking — `local-ip.sh` down, or the borrowed cert expired. The relay
    would serve plain HTTP on the LAN and the controller would switch to touch aiming, reusing the
    `computeSimulatedThrowDescriptor` seam already in
-   [controller/js/throw.js](controller/js/throw.js). No certificate is possible here, so no
+   [controller/js/throw.js](../controller/js/throw.js). No certificate is possible here, so no
    motion sensors — but a party still happens.
 
    **This tier is now more load-bearing than it was**, because local hosting depends on a third
@@ -390,13 +390,13 @@ silently:
    hosting a hotspot from the PC, which keeps motion controls rather than degrading to touch.
 
    **And as of 2026-08-20 this tier may be largely obsolete.** A spike
-   ([deploy/spike/](deploy/spike/)) proved the PC can answer DNS for its own hotspot clients:
+   ([deploy/spike/](../deploy/spike/)) proved the PC can answer DNS for its own hotspot clients:
    a phone resolved `play.local-ip.sh`, a name no public resolver answers. With the certificate
    already cached for up to 90 days, **the host needs no internet at play time** — which is
    precisely the case this tier existed to cover, and it is covered *with* motion controls
    rather than by degrading to touch. What is still unproven is whether Windows will start
    tethering with no network attached at all. See
-   [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) *Results — 2026-08-20*. Tier 3 is
+   [deploy/LOCAL-HTTPS-SPIKE.md](../deploy/LOCAL-HTTPS-SPIKE.md) *Results — 2026-08-20*. Tier 3 is
    now specifically the **certificate** fallback, which is a narrower and more honest job than
    the catch-all it used to be.
 
@@ -406,7 +406,7 @@ The previous designs accumulated machinery that this one does not need. Removing
 the implementation work:
 
 - `cloudflared` spawning, the `TunnelUrlPattern` regex, and the stderr-scraping `Update()`
-  loop in [Assets/Scripts/Net/LocalServices.cs](Assets/Scripts/Net/LocalServices.cs). The join
+  loop in [Assets/Scripts/Net/LocalServices.cs](../Assets/Scripts/Net/LocalServices.cs). The join
   URL is now a constant.
 - The entire DNS-01 / Porkbun / API-token design: `hosting.config.json`, the credential
   handling, the env-var fallback, the address discovery, the A-record upsert. HTTP-01 on a
@@ -509,7 +509,7 @@ host-specific code in it.
 **Per-host self-hosting is now what ships — for exactly one host.** The host machine serves
 the page under a certificate that is not ours, borrowed from `local-ip.sh`, depending on no
 service we operate. That is what §2 rejected on paper, and it works: see
-[deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md).
+[deploy/LOCAL-HTTPS-SPIKE.md](../deploy/LOCAL-HTTPS-SPIKE.md).
 
 **What is still not built is per-host self-hosting for an *arbitrary* host**, which is the
 thing §2's objections were actually about. The blocker is unchanged and unaddressed: a shared

@@ -41,7 +41,9 @@ namespace Net
         private const string CertUrl = "https://local-ip.sh/server.pem";
         private const string KeyUrl = "https://local-ip.sh/server.key";
         private const string CacheDirName = "local-https";
-        private const string Suffix = ".local-ip.sh";
+
+        /// <summary>Internal so LocalServices can derive DNS_SUFFIX from the same value.</summary>
+        internal const string Suffix = ".local-ip.sh";
 
         /// <summary>
         /// Renew this far ahead of expiry. Large enough that a party is never the moment the

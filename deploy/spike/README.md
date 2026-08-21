@@ -6,7 +6,7 @@ guest joining for the first time has nothing. If the PC can answer `*.local-ip.s
 acting as the access point, the last reason the host needs to be online at play time disappears
 and **offline play becomes possible**.
 
-Context: [../../ZeroSetupPlan.md](../../ZeroSetupPlan.md) Phase 3.6.
+Context: [../../docs/ZeroSetupPlan.md](../../docs/ZeroSetupPlan.md) Phase 3.6.
 
 ---
 
@@ -66,7 +66,7 @@ promise not to look. Android additionally keeps mobile data as its default route
 judges unvalidated, so at a real party guests' traffic and DNS bypass the PC entirely.
 
 **Catch:** the toggle needs administrator rights and ICS re-enables forwarding on every tethering
-start, making it a per-session runtime action. See [../../SecurityReview.md](../../SecurityReview.md)
+start, making it a per-session runtime action. See [../../docs/SecurityReview.md](../../docs/SecurityReview.md)
 §2 for the scheduled-task approach that avoids a UAC prompt per party.
 
 **Testing note:** turn **off mobile data** on the phone first. Otherwise Android falls back to
@@ -103,7 +103,7 @@ Remove-NetFirewallRule -DisplayName "RockSkip spike - DNS","RockSkip spike - HTT
 **This is what settled the distribution format.** A zip cannot work: the first launch on any
 machine that is not the developer's would fail exactly this way — a timeout, with no error to
 read. The rules must be added at install time, with `-Profile Any`, and removed on uninstall.
-See [../../ZeroSetupPlan.md](../../ZeroSetupPlan.md) Phase 4.
+See [../../docs/ZeroSetupPlan.md](../../docs/ZeroSetupPlan.md) Phase 4.
 
 ### Confirmed with a real phone — 2026-08-20
 

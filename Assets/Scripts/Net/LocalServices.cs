@@ -15,6 +15,10 @@ namespace Net
     public enum ServiceState
     {
         Idle,
+
+        /// <summary>First run only: waiting for ModeSelectScreen to report LAN or Hotspot.</summary>
+        AwaitingModeSelection,
+
         ObtainingCertificate,
         InstallingDependencies,
         StartingRelay,
@@ -98,6 +102,8 @@ namespace Net
 
         private CertificateProvider.Result _certificate;
 
+        private NetworkMode _mode;
+
         /// <summary>
         /// The name the certificate covers for this machine, once one has been obtained —
         /// 10-0-0-213.local-ip.sh. Null when HTTPS is off or the certificate step failed.
@@ -145,6 +151,28 @@ namespace Net
                 return;
             }
 
+            if (!NetworkModeGate.Instance.Resolved)
+            {
+                // First run only — a saved preference resolves synchronously in
+                // NetworkModeGate.Awake(), before this Start() ever runs, so the returning-
+                // player path never reaches this branch at all.
+                SetState(ServiceState.AwaitingModeSelection, "Choose LAN or Hotspot mode on the TV to continue…");
+                NetworkModeGate.Instance.Chosen += OnModeChosen;
+                return;
+            }
+
+            BeginLaunch(NetworkModeGate.Instance.Mode);
+        }
+
+        private void OnModeChosen(NetworkMode mode)
+        {
+            NetworkModeGate.Instance.Chosen -= OnModeChosen;
+            BeginLaunch(mode);
+        }
+
+        private void BeginLaunch(NetworkMode mode)
+        {
+            _mode = mode;
             _group = ChildProcessGroup.Create();
             StartCoroutine(LaunchSequence());
         }
@@ -188,12 +216,22 @@ namespace Net
                 : $"Local relay at {Origin}.");
         }
 
+        /// <summary>
+        /// In Hotspot mode the address is not detected — CertificateProvider.ResolveLanAddress
+        /// only considers interfaces with their own default gateway, and the hotspot's own AP
+        /// adapter has none (it hands out 192.168.137.1 as a gateway to its clients but has no
+        /// gateway configured on itself). This forces the one address that is ever correct,
+        /// bypassing detection entirely rather than leaving it to fail or guess wrong.
+        /// </summary>
+        private string EffectiveLanAddressOverride =>
+            _mode == NetworkMode.Hotspot ? "192.168.137.1" : lanAddressOverride;
+
         private IEnumerator ObtainCertificate()
         {
             SetState(ServiceState.ObtainingCertificate, "Checking the certificate…");
 
             CertificateProvider.Result result = default;
-            yield return CertificateProvider.Ensure(lanAddressOverride, r => result = r);
+            yield return CertificateProvider.Ensure(EffectiveLanAddressOverride, r => result = r);
 
             if (!result.Ok)
             {
@@ -233,7 +271,7 @@ namespace Net
 
             SetState(ServiceState.StartingRelay, "Starting the relay…");
 
-            var node = ResolveExecutable("node", new[] { @"C:\Program Files\nodejs" });
+            var node = ProcessUtil.ResolveExecutable("node", new[] { @"C:\Program Files\nodejs" });
             if (node == null)
             {
                 Fail("Node.js not found.",
@@ -292,7 +330,7 @@ namespace Net
 
             if (!install.HasExited)
             {
-                TryKill(install);
+                ProcessUtil.TryKill(install);
                 Fail("npm install timed out.", $"Run it yourself in {relayDir} and relaunch.");
                 yield break;
             }
@@ -313,23 +351,59 @@ namespace Net
             onResult(request.result == UnityWebRequest.Result.Success);
         }
 
+        [Serializable]
+        private struct HealthDns
+        {
+            public bool enabled;
+            public bool bound;
+        }
+
+        [Serializable]
+        private struct HealthPayload
+        {
+            public bool ok;
+            public HealthDns dns;
+        }
+
+        /// <summary>
+        /// Probes /health and reports whether the DNS responder has actually finished
+        /// binding — a plain health-endpoint success only proves the HTTP listener is up.
+        /// </summary>
+        /// <remarks>
+        /// relay/server.js initiates the UDP :53 bind inside its httpServer.listen()
+        /// callback but does not await it before that callback returns, so /health can
+        /// answer before the bind has resolved one way or the other. HotspotService needs
+        /// the stronger guarantee before starting tethering, since the responder must win a
+        /// race against ICS for :53 — this turns that inferred timing into a confirmed one.
+        /// </remarks>
+        public IEnumerator ProbeDnsBound(Action<bool> onResult)
+        {
+            using var request = UnityWebRequest.Get(HealthUrl);
+            request.timeout = 2;
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                onResult(false);
+                yield break;
+            }
+
+            try
+            {
+                var payload = JsonUtility.FromJson<HealthPayload>(request.downloadHandler.text);
+                onResult(payload.ok && payload.dns.bound);
+            }
+            catch
+            {
+                onResult(false);
+            }
+        }
+
         // ------------------------------------------------------------------ processes
 
         private Process Spawn(string fileName, string arguments, string workingDirectory)
         {
-            var info = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-
-            // Populated from this process's environment, so these are additions to it.
-            // Available only because UseShellExecute is false.
+            var env = new List<KeyValuePair<string, string>>();
 
             // The certificate goes on first so relay-env.txt can still override it. That
             // ordering is the point: a developer pinning a hand-made certificate or a
@@ -337,14 +411,24 @@ namespace Net
             // hatch is not one.
             if (_certificate.Ok)
             {
-                info.Environment["TLS_CERT"] = _certificate.CertPath;
-                info.Environment["TLS_KEY"] = _certificate.KeyPath;
-                info.Environment["PORT"] = securePort.ToString();
+                env.Add(new KeyValuePair<string, string>("TLS_CERT", _certificate.CertPath));
+                env.Add(new KeyValuePair<string, string>("TLS_KEY", _certificate.KeyPath));
+                env.Add(new KeyValuePair<string, string>("PORT", securePort.ToString()));
                 Debug.Log($"[LocalServices] Serving HTTPS for {_certificate.HostName} on :{securePort}.");
             }
 
+            // Hotspot-only, and env-gated the same way on the relay side: server.js's DNS
+            // branch does nothing unless DNS_RESPOND_IP is set, so this is inert in LAN mode.
+            if (_mode == NetworkMode.Hotspot)
+            {
+                env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", "192.168.137.1"));
+                env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));
+                env.Add(new KeyValuePair<string, string>("DNS_SUFFIX", CertificateProvider.Suffix));
+                Debug.Log("[LocalServices] Hotspot mode: DNS responder will bind on 192.168.137.0/24.");
+            }
+
             var overrides = ReadRelayEnvironment();
-            foreach (var entry in overrides) info.Environment[entry.Key] = entry.Value;
+            env.AddRange(overrides);
 
             if (overrides.Count > 0)
             {
@@ -353,55 +437,13 @@ namespace Net
                           string.Join(", ", overrides.ConvertAll(e => e.Key)));
             }
 
-            try
-            {
-                var process = new Process { StartInfo = info, EnableRaisingEvents = true };
-
-                // Both streams are drained. A redirected stream that nobody reads fills
-                // its pipe buffer and blocks the child permanently — a chatty child
-                // reaches that within seconds.
-                process.OutputDataReceived += (_, e) => { if (e.Data != null) _output.Enqueue(e.Data); };
-                process.ErrorDataReceived += (_, e) => { if (e.Data != null) _output.Enqueue(e.Data); };
-
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-
-                _group?.Adopt(process);
-
-                Debug.Log($"[LocalServices] Started {Path.GetFileName(fileName)} {arguments} (pid {process.Id})");
-                return process;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LocalServices] Failed to start {fileName}: {e.Message}");
-                return null;
-            }
-        }
-
-        private static void TryKill(Process process)
-        {
-            if (process == null) return;
-
-            try
-            {
-                if (!process.HasExited) process.Kill();
-                process.WaitForExit(2000);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[LocalServices] Could not stop pid: {e.Message}");
-            }
-            finally
-            {
-                process.Dispose();
-            }
+            return ProcessUtil.Spawn(fileName, arguments, workingDirectory, env, _group, _output);
         }
 
         private void Shutdown()
         {
             // A relay we merely borrowed belongs to whoever started it.
-            if (_ownsRelay) TryKill(_relay);
+            if (_ownsRelay) ProcessUtil.TryKill(_relay);
             _relay = null;
 
             // Closes the job object, which terminates anything the kills above missed.
@@ -493,52 +535,6 @@ namespace Net
         {
             var candidate = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "relay"));
             return File.Exists(Path.Combine(candidate, "server.js")) ? candidate : null;
-        }
-
-        /// <summary>
-        /// Finds an executable on PATH, then in a list of known install locations.
-        /// The fallbacks matter: an installer that edits PATH does not change the
-        /// environment of an already-running Unity, so a freshly installed tool is
-        /// invisible until a restart that nobody realises they need.
-        /// </summary>
-        private static string ResolveExecutable(string name, IEnumerable<string> extraDirectories)
-        {
-            var extensions = Application.platform == RuntimePlatform.WindowsEditor ||
-                             Application.platform == RuntimePlatform.WindowsPlayer
-                ? new[] { ".exe", ".cmd", ".bat", "" }
-                : new[] { "" };
-
-            var pathDirs = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-                .Split(Path.PathSeparator);
-
-            foreach (var directory in JoinDirectories(pathDirs, extraDirectories))
-            {
-                if (string.IsNullOrWhiteSpace(directory)) continue;
-
-                foreach (var extension in extensions)
-                {
-                    string full;
-                    try
-                    {
-                        full = Path.Combine(directory.Trim(), name + extension);
-                    }
-                    catch (ArgumentException)
-                    {
-                        break; // a malformed PATH entry; skip the whole directory
-                    }
-
-                    if (File.Exists(full)) return full;
-                }
-            }
-
-            return null;
-        }
-
-        private static IEnumerable<string> JoinDirectories(IEnumerable<string> first, IEnumerable<string> second)
-        {
-            foreach (var item in first) yield return item;
-            if (second == null) yield break;
-            foreach (var item in second) yield return item;
         }
 
         // ------------------------------------------------------------------ state

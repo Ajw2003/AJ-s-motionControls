@@ -65,8 +65,8 @@ rather depend on infrastructure you control.
 
 ## The DNS server is not a rewrite of `dns.js` — it's a different threat model
 
-[relay/dns.js](relay/dns.js) is deliberately narrow: it's gated to a hotspot's own subnet
-(`allow` CIDR, [dns.js:225](relay/dns.js:225)) precisely *because* it answers with a single fixed
+[relay/dns.js](../relay/dns.js) is deliberately narrow: it's gated to a hotspot's own subnet
+(`allow` CIDR, [dns.js:225](../relay/dns.js:225)) precisely *because* it answers with a single fixed
 IP and only ever runs while a LAN with no other resolver exists. That guard is what makes it safe
 — see the "open recursive resolver" incident already documented in
 [SecurityReview.md:250](SecurityReview.md:250).
@@ -74,7 +74,7 @@ IP and only ever runs while a LAN with no other resolver exists. That guard is w
 A public-facing version can't use a subnet allow-list — it must be reachable from anywhere. It
 has to be safe by construction instead:
 
-- **Never forwards.** `dns.js`'s `upstream` option ([dns.js:219](relay/dns.js:219)) must not
+- **Never forwards.** `dns.js`'s `upstream` option ([dns.js:219](../relay/dns.js:219)) must not
   exist in this build at all — a public authoritative server that only ever answers its own zone
   or refuses cannot be used as an amplification reflector, because there's no code path that
   sends a query anywhere on a client's behalf.

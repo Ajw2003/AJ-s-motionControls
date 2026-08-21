@@ -141,7 +141,7 @@ try {
     # the hotspot is up, and we must hold :53 BEFORE that to win the race against ICS. The
     # source guard (--allow) is therefore the real protection here - without it, listening
     # everywhere while forwarding upstream is an open resolver and an amplification
-    # reflector. See ../../SecurityReview.md section 4.
+    # reflector. See ../../docs/SecurityReview.md section 4.
     $responderArgs = @('dns-responder.js', '--ip', '192.168.137.1', '--suffix', '.local-ip.sh',
                        '--port', '53', '--bind', '0.0.0.0', '--allow', '192.168.137.0/24')
     if ($Upstream) {

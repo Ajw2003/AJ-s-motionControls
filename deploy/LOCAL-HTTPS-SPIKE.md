@@ -18,7 +18,7 @@ certificate for a name that resolves to a LAN IP, gives an Android phone a secur
 One cost still cannot be measured on a machine that has already been developed on, and it can
 only be measured once ever per machine. **Read Step 3 before you run this at a party.**
 
-Written against [HostingPlan.md](../HostingPlan.md) §2, which had rejected a version of this on
+Written against [HostingPlan.md](../docs/HostingPlan.md) §2, which had rejected a version of this on
 paper. §2's economics are unchanged by adoption — what changed is that the design they argued
 for no longer exists.
 
@@ -277,7 +277,7 @@ should be surfaced in-game rather than living only in this document.
 > it.**
 >
 > The name always has to resolve, which needs a DNS path — see the certificate-broker row in
-> [HostingPlan.md](../HostingPlan.md) §2, which notes this design "does not enable offline play
+> [HostingPlan.md](../docs/HostingPlan.md) §2, which notes this design "does not enable offline play
 > either: the phone still needs public DNS to resolve the name."
 >
 > Separately, and this *is* independent evidence:

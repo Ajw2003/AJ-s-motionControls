@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Text;
 using Managers;
 using Net;
 using UnityEngine;
@@ -37,9 +38,15 @@ namespace Ui
         [Tooltip("White border around the code, in modules. Below 4 many scanners fail to lock on.")]
         [SerializeField] private int quietZoneModules = 4;
 
-        private Texture2D _qr;
-        private string _qrSourceUrl;
-        private bool _qrRequestInFlight;
+        private class QrSlot
+        {
+            public Texture2D Texture;
+            public string SourceData;
+            public bool RequestInFlight;
+        }
+
+        private readonly QrSlot _gameQr = new();
+        private readonly QrSlot _wifiQr = new();
 
         private LocalServices _services;
         private RelayClient _client;
@@ -62,6 +69,7 @@ namespace Ui
             if (_client == null && RelayClient.HasInstance) _client = RelayClient.Instance;
 
             EnsureQrMatchesJoinUrl();
+            EnsureWifiQrMatchesHotspot();
         }
 
         /// <summary>
@@ -74,21 +82,58 @@ namespace Ui
         {
             // LocalServices is optional now — a normal host has none. Only the relay
             // connection is required, and it is what knows the address.
-            if (_qrRequestInFlight || _client == null) return;
+            if (_gameQr.RequestInFlight || _client == null) return;
 
             var joinUrl = _client.JoinUrlFor(_client.RoomCode);
-            if (string.IsNullOrEmpty(joinUrl) || joinUrl == _qrSourceUrl) return;
+            if (string.IsNullOrEmpty(joinUrl) || joinUrl == _gameQr.SourceData) return;
 
-            StartCoroutine(FetchQr(joinUrl));
+            StartCoroutine(FetchQr(_gameQr, joinUrl));
         }
 
-        private IEnumerator FetchQr(string joinUrl)
+        /// <summary>
+        /// Same re-derive-and-refetch-on-change shape as the game QR, gated on HotspotService
+        /// actually being up — a normal LAN host never has one, and never fetches this.
+        /// </summary>
+        private void EnsureWifiQrMatchesHotspot()
         {
-            _qrRequestInFlight = true;
+            if (_wifiQr.RequestInFlight || _client == null) return;
+            if (!HotspotService.HasInstance || HotspotService.Instance.State != HotspotState.Ready) return;
+
+            var payload = BuildWifiPayload(HotspotService.Instance.Ssid, HotspotService.Instance.Passphrase);
+            if (payload == _wifiQr.SourceData) return;
+
+            StartCoroutine(FetchQr(_wifiQr, payload));
+        }
+
+        /// <summary>
+        /// WIFI:T:WPA;S:ssid;P:passphrase;; — the payload both Android and iOS cameras
+        /// recognise as "join this network". Escaping ported from deploy/spike/wifi-qr.js's
+        /// escapeValue(); a passphrase containing one of these five characters is rare but
+        /// not impossible, and an unescaped one silently truncates the field.
+        /// </summary>
+        private static string BuildWifiPayload(string ssid, string passphrase) =>
+            $"WIFI:T:WPA;S:{EscapeWifiValue(ssid)};P:{EscapeWifiValue(passphrase)};;";
+
+        private static string EscapeWifiValue(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+
+            var builder = new StringBuilder(value.Length);
+            foreach (var c in value)
+            {
+                if (c is '\\' or ';' or ',' or ':' or '"') builder.Append('\\');
+                builder.Append(c);
+            }
+            return builder.ToString();
+        }
+
+        private IEnumerator FetchQr(QrSlot slot, string data)
+        {
+            slot.RequestInFlight = true;
 
             // Asked of the same service that serves the page, not of a local process —
             // a normal host is not running one.
-            var endpoint = $"{_client.PublicOrigin}/qr?data={UnityWebRequest.EscapeURL(joinUrl)}";
+            var endpoint = $"{_client.PublicOrigin}/qr?data={UnityWebRequest.EscapeURL(data)}";
             using (var request = UnityWebRequest.Get(endpoint))
             {
                 request.timeout = 5;
@@ -98,8 +143,8 @@ namespace Ui
                 {
                     try
                     {
-                        BuildQrTexture(JsonUtility.FromJson<QrMatrix>(request.downloadHandler.text));
-                        _qrSourceUrl = joinUrl;
+                        BuildQrTexture(slot, JsonUtility.FromJson<QrMatrix>(request.downloadHandler.text));
+                        slot.SourceData = data;
                     }
                     catch (Exception e)
                     {
@@ -113,10 +158,10 @@ namespace Ui
                 }
             }
 
-            _qrRequestInFlight = false;
+            slot.RequestInFlight = false;
         }
 
-        private void BuildQrTexture(QrMatrix matrix)
+        private void BuildQrTexture(QrSlot slot, QrMatrix matrix)
         {
             if (matrix == null || matrix.rows == null || matrix.size <= 0)
                 throw new InvalidOperationException("empty matrix");
@@ -124,8 +169,8 @@ namespace Ui
             var quiet = Mathf.Max(0, quietZoneModules);
             var dimension = matrix.size + quiet * 2;
 
-            if (_qr != null) Destroy(_qr);
-            _qr = new Texture2D(dimension, dimension, TextureFormat.RGBA32, false)
+            if (slot.Texture != null) Destroy(slot.Texture);
+            slot.Texture = new Texture2D(dimension, dimension, TextureFormat.RGBA32, false)
             {
                 filterMode = FilterMode.Point,   // nearest-neighbour keeps module edges hard
                 wrapMode = TextureWrapMode.Clamp,
@@ -151,13 +196,14 @@ namespace Ui
                 }
             }
 
-            _qr.SetPixels32(pixels);
-            _qr.Apply();
+            slot.Texture.SetPixels32(pixels);
+            slot.Texture.Apply();
         }
 
         private void OnDestroy()
         {
-            if (_qr != null) Destroy(_qr);
+            if (_gameQr.Texture != null) Destroy(_gameQr.Texture);
+            if (_wifiQr.Texture != null) Destroy(_wifiQr.Texture);
             if (_panelTexture != null) Destroy(_panelTexture);
         }
 
@@ -215,6 +261,11 @@ namespace Ui
         private void OnGUI()
         {
             if (!visible) return;
+
+            // ModeSelectScreen owns the screen while a mode hasn't been chosen yet — without
+            // this guard, DrawProgress() below and its full-screen picker would both try to
+            // draw a full panel with no defined OnGUI ordering between the two components.
+            if (_services != null && _services.State == ServiceState.AwaitingModeSelection) return;
 
             EnsureStyles();
 
@@ -306,14 +357,32 @@ namespace Ui
                 return;
             }
 
-            GUILayout.Label("Scan to play — or open the address and type the code", _status);
+            var hotspotReady = HotspotService.HasInstance && HotspotService.Instance.State == HotspotState.Ready;
+
+            GUILayout.Label(hotspotReady
+                ? "Scan 1: join Wi-Fi     Scan 2: open the game"
+                : "Scan to play — or open the address and type the code", _status);
             GUILayout.Space(12);
 
-            if (_qr != null)
+            if (hotspotReady)
+            {
+                // Two scans, not one — a WIFI: payload joins a network, a URL payload opens
+                // a page, and no single QR does both. Smaller than the single-QR size below
+                // so the pair fits the panel side by side.
+                var side = Mathf.Min(Screen.height * 0.24f, Screen.width * 0.16f);
+                GUILayout.BeginHorizontal();
+                GUILayout.FlexibleSpace();
+                DrawQr(_wifiQr, side);
+                GUILayout.Space(20);
+                DrawQr(_gameQr, side);
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+            }
+            else if (_gameQr.Texture != null)
             {
                 // Square, sized off the shorter axis so it never overflows the panel.
                 var side = Mathf.Min(Screen.height * 0.34f, Screen.width * 0.22f);
-                GUI.DrawTexture(CenteredSquare(side), _qr, ScaleMode.ScaleToFit);
+                GUI.DrawTexture(CenteredSquare(side), _gameQr.Texture, ScaleMode.ScaleToFit);
             }
             else
             {
@@ -362,7 +431,8 @@ namespace Ui
             GUI.DrawTexture(panel, _panelTexture);
             GUILayout.BeginArea(new Rect(panel.x + 10, panel.y + 10, panel.width - 20, panel.height - 20));
 
-            if (_qr != null) GUI.DrawTexture(CenteredSquare(panel.width - 40f), _qr, ScaleMode.ScaleToFit);
+            if (_gameQr.Texture != null)
+                GUI.DrawTexture(CenteredSquare(panel.width - 40f), _gameQr.Texture, ScaleMode.ScaleToFit);
 
             GUILayout.Label(_client?.RoomCode ?? "----", _body);
             GUILayout.EndArea();
@@ -377,6 +447,18 @@ namespace Ui
         {
             var row = GUILayoutUtility.GetRect(side, side, GUILayout.ExpandWidth(true));
             return new Rect(row.x + (row.width - side) * 0.5f, row.y, side, side);
+        }
+
+        /// <summary>
+        /// A fixed-size square inside a horizontal group — unlike CenteredSquare, which
+        /// claims the whole row's width to center a single item, this reserves exactly
+        /// `side` so two of these can sit side by side inside one GUILayout.BeginHorizontal.
+        /// </summary>
+        private void DrawQr(QrSlot slot, float side)
+        {
+            var rect = GUILayoutUtility.GetRect(side, side, GUILayout.Width(side), GUILayout.Height(side));
+            if (slot.Texture != null) GUI.DrawTexture(rect, slot.Texture, ScaleMode.ScaleToFit);
+            else GUI.Label(rect, "(building…)", _hint);
         }
     }
 }

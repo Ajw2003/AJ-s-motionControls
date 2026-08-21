@@ -2,7 +2,7 @@
 
 Gets the controller page served from **this PC** over HTTPS, so a phone on the same network
 gets a secure context and its motion sensors unlock. Design and reasoning:
-[HostingPlan.md](../HostingPlan.md) §2.
+[HostingPlan.md](../docs/HostingPlan.md) §2.
 
 > **This replaces the Fly.io deployment.** The hosted relay is gone: `fly.toml`, `Dockerfile`,
 > `.dockerignore`, `deploy/Caddyfile`, `deploy/rockskip-relay.service` and

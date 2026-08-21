@@ -284,17 +284,17 @@ was dropped with no reply; loopback was answered. With `--rate 10`, 30 queries p
 
 ## 5. ✅ FIXED — HTML injection through player names
 
-*Fixed 2026-08-20 in [controller/js/app.js](controller/js/app.js). The scoreboard now builds
+*Fixed 2026-08-20 in [controller/js/app.js](../controller/js/app.js). The scoreboard now builds
 its two `<span>` elements and assigns `.textContent`, so a name can never be markup. Kept below
 because the same mistake is easy to reintroduce anywhere a name is rendered.*
 
-[controller/js/app.js:252](controller/js/app.js:252) builds the scoreboard with `innerHTML`:
+[controller/js/app.js:252](../controller/js/app.js:252) builds the scoreboard with `innerHTML`:
 
 ```js
 row.innerHTML = `<span>${player}</span><span>${score}</span>`;
 ```
 
-`player` is server-supplied, and `sanitizePlayerId` ([relay/server.js:94](relay/server.js:94))
+`player` is server-supplied, and `sanitizePlayerId` ([relay/server.js:94](../relay/server.js:94))
 only does `trim().toUpperCase().slice(0, 16)`. **Uppercasing is not sanitisation — HTML tags are
 case-insensitive.** So a name of `<H1>OWNED</H1>` renders as markup in every other player's
 browser.

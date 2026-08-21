@@ -28,6 +28,10 @@ namespace Managers
         [Tooltip("TV screen showing the room code, join URL and QR. This is what guests read.")]
         [SerializeField] private bool showJoinScreen = true;
 
+        [Tooltip("LAN/Hotspot mode picker, shown before a match on first run and reachable " +
+                 "afterward from its corner affordance.")]
+        [SerializeField] private bool showModeSelectScreen = true;
+
         [Tooltip("Final standings when a match ends.")]
         [SerializeField] private bool showResultsScreen = true;
 
@@ -58,6 +62,11 @@ namespace Managers
             // round, the winning throw would be missing from the results screen.
             _ = ScoreManager.Instance;
 
+            // Before LocalServices, unconditionally — LocalServices.Start() reads
+            // NetworkModeGate.Instance.Resolved, and ModeSelectScreen needs a gate to bind
+            // to even when startLocalServices is off (the plain desktop dev loop).
+            _ = Net.NetworkModeGate.Instance;
+
             // Development only, and off by default — a normal host connects out to the
             // deployed service and runs nothing locally. Created before RelayClient so a
             // local relay is listening before the client tries it; the client retries with
@@ -74,11 +83,19 @@ namespace Managers
             // sending over the relay, which is what makes this safe to enable by default.
             if (usePeerConnections) _ = Net.PeerLink.Instance;
 
+            // Created unconditionally, like RelayClient — the mode isn't known yet on a
+            // true first run (it only resolves later, via NetworkModeGate.Chosen), so this
+            // can't be gated the same way LocalServices is. It waits for LocalServices.Ready
+            // and self-selects out (HotspotState.NotApplicable) whenever the eventual mode
+            // turns out to be Lan, or LocalServices isn't running at all.
+            _ = Net.HotspotService.Instance;
+
             // After RelayClient so it can subscribe before any phone joins, and after
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;
 
             if (showJoinScreen) CreateJoinScreen();
+            if (showModeSelectScreen) CreateModeSelectScreen();
             if (showResultsScreen) CreateResultsScreen();
             if (showDebugHud) CreateDebugHud();
             if (showAimPreview) CreateAimPreview();
@@ -94,6 +111,16 @@ namespace Managers
 
             var screen = new GameObject("JoinScreen");
             screen.AddComponent<Ui.JoinScreen>();
+            DontDestroyOnLoad(screen);
+        }
+
+        /// <summary>Persistent for the same reason as the rest: it outlives any one scene.</summary>
+        private static void CreateModeSelectScreen()
+        {
+            if (FindFirstObjectByType<Ui.ModeSelectScreen>() != null) return;
+
+            var screen = new GameObject("ModeSelectScreen");
+            screen.AddComponent<Ui.ModeSelectScreen>();
             DontDestroyOnLoad(screen);
         }
 

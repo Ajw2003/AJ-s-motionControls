@@ -405,6 +405,12 @@ const useDns = Boolean(DNS_RESPOND_IP);
 
 let dnsResponder = null;
 
+// True only once the UDP :53 bind has actually resolved — the listen() callback below only
+// *initiates* the bind, it doesn't wait for it, so a caller that needs to know DNS is really
+// listening (HotspotService, before it starts tethering — the responder must win the race
+// against ICS for :53) has to check this, not just that /health answers at all.
+let dnsBound = false;
+
 function handleRequest(req, res) {
   // Base is a formality — only the path and query are ever read.
   const url = new URL(req.url || '/', 'http://localhost');
@@ -427,6 +433,7 @@ function handleRequest(req, res) {
         rssMb: Math.round(memory.rss / 1048576),
         heapMb: Math.round(memory.heapUsed / 1048576),
         uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
+        dns: { enabled: useDns, bound: dnsBound },
       }));
     return;
   }
@@ -578,6 +585,7 @@ function shutdown() {
   // Released explicitly so a restart can rebind it. Leaving :53 held by a dying process
   // is exactly how the race against ICS gets lost on the next run.
   if (dnsResponder) { dnsResponder.stop().catch(() => {}); dnsResponder = null; }
+  dnsBound = false;
 
   wss.close(() => httpServer.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
@@ -615,7 +623,9 @@ function startDns() {
     return;
   }
 
-  dnsResponder.start().catch((err) => {
+  dnsResponder.start().then(() => {
+    dnsBound = true;
+  }).catch((err) => {
     // EADDRINUSE here almost certainly means ICS got :53 first, which breaks name
     // resolution for every phone on the hotspot. Loud, because the symptom at the phone
     // is an unrelated-looking "server not found".

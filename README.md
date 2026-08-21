@@ -3,7 +3,7 @@
 A couch party game: the game runs on a PC driving a TV, and players use their phones as
 motion controllers through a web page — no app download, Jackbox-style.
 
-**Read [PLAN.md](PLAN.md) first.** It has the full architecture, the cross-platform sensor
+**Read [PLAN.md](docs/PLAN.md) first.** It has the full architecture, the cross-platform sensor
 problem, the physics design, and the milestone breakdown. This file only covers how to run
 what currently exists.
 
@@ -15,8 +15,9 @@ what currently exists.
 | `relay/` | Node WebSocket relay, and the HTTP server for the controller page |
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
 | `deploy/` | Hosting runbook and `local-https.ps1`, which serves the controller over HTTPS |
-| `PLAN.md` | Full design and implementation plan |
-| `HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
+| `docs/` | Project documentation and plans |
+| `docs/PLAN.md` | Full design and implementation plan |
+| `docs/HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
 
 ## Status
 
@@ -73,7 +74,7 @@ Players scan the QR — it pre-fills the room code via `?room=CODE` — and type
 
 **The phone must be on the same network as the PC.** The name resolves to a private address,
 so it is unreachable from mobile data — a guest on cellular cannot join. That is the standing
-limitation of local hosting and is not a bug; [HostingPlan.md](HostingPlan.md) §2 has the
+limitation of local hosting and is not a bug; [HostingPlan.md](docs/HostingPlan.md) §2 has the
 derivation, and [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) has the rest of
 what it costs.
 
