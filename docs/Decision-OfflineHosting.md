@@ -1,7 +1,7 @@
 # Decision: how the host runs a network with no internet
 
 **Date:** 2026-08-21
-**Status:** Decided, pending one confirmation run.
+**Status:** Decided and confirmed offline.
 **Answer: use Mobile Hotspot. Drop Wi-Fi Direct. The blocker was a bug in our code, not a
 Windows limitation.**
 
@@ -125,19 +125,103 @@ profiles at all — but it stops firing merely because the internet is absent.
   once it is up. `hotspot-dns-test.ps1` already established this and `HotspotService` is already
   built around it.
 
-## The one thing still unconfirmed
+## First offline attempt — inconclusive, not a failure
+
+The offline run returned `StartTetheringAsync -> Unknown` and looked like a clean refutation. It
+is not one, for two reasons found immediately afterwards:
+
+1. **The Wi-Fi radio was off.** Checked right after that run: `wi-fi radio: Off`. A hotspot *is*
+   the Wi-Fi radio, so this guarantees failure — and it fails with the uninformative status
+   `Unknown`, which is indistinguishable from "Windows cannot do this offline". Switching Wi-Fi
+   off is also the most natural way to make a machine offline, so this is the likely path, not an
+   exotic one. **Exactly the same confound derailed the Wi-Fi Direct spike**, and the check was
+   not carried across to this script.
+2. **It tried one profile and stopped.** It selected `Ethernet 4` — the adapter whose cable had
+   just been pulled — and never tried the other three, which is the whole point of enumerating
+   them.
+
+What that run *did* establish, and this part is solid: **all four profiles still enumerate as
+tetherable while fully offline.**
+
+```
+tetherable profiles while offline: 4
+   Ethernet 4  (None)
+   TP-Link_C978_6G  (None)
+   Wilkins  (None)
+   Bluetooth Network Connection 3  (None)
+```
+
+The spike now gates on radio state (with `-EnableRadio` to fix it), tries **every** profile in
+turn, and records per-profile results in `attempts`. Verified online with the radio restored:
+`TP-Link_C978_6G=Success`, connectivity `None`, DHCP up, ICS DNS proxy on `0.0.0.0:53`.
+
+## Confirmed offline
+
+Run 2026-08-21 with the Ethernet cable out, Wi-Fi radio on and joined to nothing:
+
+```
+=== STEP 2  Waiting for the machine to go completely offline
+   [ok]   no connected adapter, no internet profile - the real test condition
+   tetherable profiles while offline: 4
+
+=== STEP 3  Trying to start tethering from each of 4 profile(s)
+   --- 'Ethernet 4'  (connectivity=None)
+   [ok]   StartTetheringAsync -> Success  from 'Ethernet 4'
+   [ok]   STARTED WITH NO NETWORK ATTACHED
+
+=== STEP 4  Is the network it created actually usable by a phone?
+   [ok]   hotspot address: 192.168.137.1
+   [ok]   DHCP listening on UDP :67
+   [ok]   UDP :53 held on 0.0.0.0 by svchost
+```
+
+Tethering starts from a profile whose adapter is **physically unplugged**, on a machine with no
+network of any kind, and builds a fully configured network with DHCP and DNS. The decision is
+settled: **ZeroSetupPlan Open Question 2 is wrong, and this is not a Windows limitation.**
+
+Verified separately, online, that the DNS half composes correctly — our responder bound `:53`
+before tethering and **kept it**:
+
+```
+=== STEP 2c  DNS responder - bound BEFORE tethering, the only order that works
+   [ok]   responder holds :53 (pid 12856)
+   [ok]   StartTetheringAsync -> Success
+   [ok]   OUR responder is the sole holder of :53 - ICS did not take it
+   [ok]   UDP :53 held on 0.0.0.0 by node (pid 12856)
+```
+
+### Two operational facts this surfaced
+
+1. **Tethering survives the process that started it.** A previous run left the hotspot on, which
+   kept ICS holding `:53` and silently prevented our responder from binding at all. The spike now
+   detects and stops pre-existing tethering first. `HotspotService` needs the same defence: a
+   crashed host must not leave a hotspot up, and a later start must not assume `:53` is free.
+2. **The Wi-Fi radio must be on and the check must come first.** A software-off radio fails
+   tethering with the uninformative status `Unknown`. Both spikes now gate on it.
+
+## Remaining work (not blockers)
 
 Whether any tetherable profile still **enumerates** when the machine is fully offline. The
 evidence says yes — the profiles above persist while their adapters are disconnected, and none of
 them depend on Ethernet — but "very likely" is not "measured".
 
-One run confirms it, and it is a single action rather than a loop:
+The last unproven link is a **phone** resolving `play.local-ip.sh` over an offline hotspot and
+loading the page by name. Everything either side of it is proven; this joins the two halves:
 
 ```
-./deploy/spike/hotspot-offline-spike.ps1 -WaitForOffline -KeepRunning
+./deploy/spike/hotspot-offline-spike.ps1 -WaitForOffline -KeepRunning -EnableRadio -Dns -Serve
 ```
 
-Unplug the cable when asked. It re-enumerates profiles *after* going offline, reports how many
+`-Dns` binds the responder before tethering, `-Serve` puts confirm-server on :80, and scan 2 then
+carries the **name** rather than the IP. The result to look for is confirm-server printing
+`[BY NAME - this is the result]`, corroborated by the query count the spike prints at exit.
+
+Unplug the cable when asked — **and do not switch Wi-Fi off**. Disconnect from the network if it
+is joined to one, but leave the radio on; the hotspot needs it. `-EnableRadio` turns it back on if
+it does get switched off.
+
+If that passes, offline play is proven end to end and the only code change outstanding is the
+four-line `Get-TetheringManager` fix above. It re-enumerates profiles *after* going offline, reports how many
 remain tetherable, starts from one, and renders join QRs. If it reports zero tetherable profiles
 offline, then Open Question 2 was right for the wrong reason, and Wi-Fi Direct plus a home-grown
 DHCP server becomes the fallback — with the spike already written and the radio half proven.
