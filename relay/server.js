@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
 const nodePath = require('path');
+const { createResponder } = require('./dns');
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -379,15 +380,30 @@ function serveQr(req, res, query) {
 }
 
 // LOAD-BEARING. This began as a spike and its comment said to delete it; it is now
-// the only way the game is played. deploy/local-https.ps1 hands this process a
-// LAN certificate and a key, and the phone will not hand out motion sensors to a
-// page that is not on a secure origin — so without this branch there is no input.
+// the only way the game is played. CertificateProvider hands this process a LAN
+// certificate and a key, and the phone will not hand out motion sensors to a page
+// that is not on a secure origin — so without this branch there is no input.
 //
 // Env-gated, so the default path is byte-identical to before: with neither
 // variable set, this is the plain http.createServer it has always been.
 const TLS_CERT = process.env.TLS_CERT;
 const TLS_KEY = process.env.TLS_KEY;
 const useTls = Boolean(TLS_CERT && TLS_KEY);
+
+// Local DNS, in the same env-gated shape and for the same reason: with the variable
+// unset, nothing about this file changes.
+//
+// Set in HOTSPOT MODE ONLY. On a LAN the phones use the router's resolver, and running
+// one here would be answering questions nobody asked us. DNS_ALLOW is not optional when
+// DNS_RESPOND_IP is set — dns.js refuses to start without it, because an unguarded
+// resolver is a DDoS amplifier rather than merely untidy. See SecurityReview.md §4.
+const DNS_RESPOND_IP = process.env.DNS_RESPOND_IP;
+const DNS_ALLOW = process.env.DNS_ALLOW;
+const DNS_SUFFIX = process.env.DNS_SUFFIX || '.local-ip.sh';
+const DNS_UPSTREAM = process.env.DNS_UPSTREAM || null;
+const useDns = Boolean(DNS_RESPOND_IP);
+
+let dnsResponder = null;
 
 function handleRequest(req, res) {
   // Base is a formality — only the path and query are ever read.
@@ -558,6 +574,11 @@ function shutdown() {
   clearInterval(roomSweep);
   clearInterval(hostGraceSweep);
   for (const room of [...rooms.values()]) closeRoom(room, 'Server shutting down');
+
+  // Released explicitly so a restart can rebind it. Leaving :53 held by a dying process
+  // is exactly how the race against ICS gets lost on the next run.
+  if (dnsResponder) { dnsResponder.stop().catch(() => {}); dnsResponder = null; }
+
   wss.close(() => httpServer.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
 }
@@ -572,4 +593,35 @@ httpServer.listen(PORT, BIND_HOST, () => {
   log(`  controller page  ${scheme}://localhost:${PORT}/`);
   log(`  websocket        ${wsScheme}://localhost:${PORT}/`);
   log(`  serving static from ${STATIC_DIR}`);
+
+  if (useDns) startDns();
 });
+
+function startDns() {
+  try {
+    dnsResponder = createResponder({
+      ip: DNS_RESPOND_IP,
+      suffix: DNS_SUFFIX,
+      allow: DNS_ALLOW,
+      upstream: DNS_UPSTREAM,
+      log,
+    });
+  } catch (err) {
+    // Thrown for a missing DNS_ALLOW, which is a configuration mistake rather than a
+    // runtime condition. Refusing to start the resolver is correct; killing the relay
+    // with it is not, because the game still works on a LAN without one.
+    log(`DNS responder NOT started: ${err.message}`);
+    dnsResponder = null;
+    return;
+  }
+
+  dnsResponder.start().catch((err) => {
+    // EADDRINUSE here almost certainly means ICS got :53 first, which breaks name
+    // resolution for every phone on the hotspot. Loud, because the symptom at the phone
+    // is an unrelated-looking "server not found".
+    log(`DNS responder FAILED to bind: ${err.code || err.message}`);
+    log('  Phones on the hotspot will not resolve the game address.');
+    log('  The responder must bind :53 before tethering starts.');
+    dnsResponder = null;
+  });
+}

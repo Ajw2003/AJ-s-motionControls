@@ -153,10 +153,24 @@ the repo performs it today.
 > because `HttpListener` HTTPS needs `netsh http add sslcert` — an admin operation, which is
 > precisely what this plan is avoiding. Revisit once bundling proves annoying.
 
-# Phase 2 — automatic certificates
+# Phase 2 — automatic certificates 🟡 IN PROGRESS
 
-*Small, well-understood, and the only phase with a deadline: the cached certificate expires
-**2026-09-18**, after which the current dev loop stops working.*
+**Built:** [CertificateProvider.cs](Assets/Scripts/Net/CertificateProvider.cs) — detection,
+caching, expiry check, download, SAN verification — wired into `LocalServices` ahead of the
+relay, which now receives `TLS_CERT`/`TLS_KEY` from it. `relay-env.txt` still overrides, so the
+developer escape hatch survives. Phase 4.3's DNS responder landed at the same time as
+[relay/dns.js](relay/dns.js), env-gated behind `DNS_RESPOND_IP`, with 26 tests in
+[relay/test-dns.js](relay/test-dns.js).
+
+**Not done:** confirming the C# path end to end in the editor, and deleting
+`deploy/local-https.ps1` once it is. The script is marked deprecated meanwhile.
+
+> **The deadline moved, and the reason is worth recording.** This section previously said the
+> cached certificate expires 2026-09-18. That was true of *that copy* — `%TEMP%` has since been
+> cleared, which took it, and a fresh download now returns a certificate valid to
+> **2026-11-17**. So the calendar pressure is off, but the incident is a live demonstration of
+> why the cache cannot live in `%TEMP%`: `Application.persistentDataPath` is not swept by
+> Storage Sense, which is precisely why the new provider uses it.
 
 Move certificate handling out of `deploy/local-https.ps1` into a `CertificateProvider` that runs
 before `LocalServices`:

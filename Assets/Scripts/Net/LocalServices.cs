@@ -15,6 +15,7 @@ namespace Net
     public enum ServiceState
     {
         Idle,
+        ObtainingCertificate,
         InstallingDependencies,
         StartingRelay,
         Ready,
@@ -60,6 +61,19 @@ namespace Net
         [Tooltip("Echo relay output into the Unity console.")]
         [SerializeField] private bool verboseLogging;
 
+        [Header("HTTPS")]
+        [Tooltip("Obtain a certificate and serve the controller over HTTPS. Required for phone " +
+                 "motion sensors — an insecure origin makes them unavailable. Turn off only for " +
+                 "a desktop-only loop where no phone is involved.")]
+        [SerializeField] private bool useHttps = true;
+
+        [Tooltip("Leave empty to detect. Set only when this machine has several plausible " +
+                 "network interfaces, where detection refuses to guess between them.")]
+        [SerializeField] private string lanAddressOverride;
+
+        [Tooltip("Port for the HTTPS relay. Ignored when HTTPS is off.")]
+        [SerializeField] private int securePort = 8443;
+
         [Header("Timeouts (seconds)")]
         [SerializeField] private float dependencyInstallTimeout = 180f;
         [SerializeField] private float relayStartTimeout = 30f;
@@ -81,6 +95,23 @@ namespace Net
         private readonly ConcurrentQueue<string> _output = new();
 
         private string _origin;
+
+        private CertificateProvider.Result _certificate;
+
+        /// <summary>
+        /// The name the certificate covers for this machine, once one has been obtained —
+        /// 10-0-0-213.local-ip.sh. Null when HTTPS is off or the certificate step failed.
+        /// </summary>
+        /// <remarks>
+        /// This is what a phone must use. The raw IP would not match the certificate, and a
+        /// name mismatch on a phone reads as a configuration mistake rather than the naming
+        /// rule it actually is.
+        /// </remarks>
+        public string CertificateHostName => _certificate.Ok ? _certificate.HostName : null;
+
+        /// <summary>The wss:// address a phone should be pointed at, or null when HTTPS is off.</summary>
+        public string SecureSocketUrl =>
+            _certificate.Ok ? $"wss://{_certificate.HostName}:{securePort}" : null;
 
         /// <summary>
         /// Where the relay actually lives, derived from the same relay-url.txt RelayClient
@@ -141,10 +172,40 @@ namespace Net
                 yield break;
             }
 
+            // Before the relay, because the relay reads the certificate paths out of its
+            // environment at startup and has no way to pick them up afterwards.
+            if (useHttps)
+            {
+                yield return ObtainCertificate();
+                if (State == ServiceState.Failed) yield break;
+            }
+
             yield return StartRelay(relayDir);
             if (State == ServiceState.Failed) yield break;
 
-            SetState(ServiceState.Ready, $"Local relay at {Origin}.");
+            SetState(ServiceState.Ready, useHttps && _certificate.Ok
+                ? $"Relay at {SecureSocketUrl}."
+                : $"Local relay at {Origin}.");
+        }
+
+        private IEnumerator ObtainCertificate()
+        {
+            SetState(ServiceState.ObtainingCertificate, "Checking the certificate…");
+
+            CertificateProvider.Result result = default;
+            yield return CertificateProvider.Ensure(lanAddressOverride, r => result = r);
+
+            if (!result.Ok)
+            {
+                Fail(result.Error, result.Detail);
+                yield break;
+            }
+
+            _certificate = result;
+
+            // The origin is derived from the certificate's name from here on, so the page,
+            // the socket and the certificate cannot drift onto different hosts.
+            _origin = $"https://{result.HostName}:{securePort}";
         }
 
         private IEnumerator StartRelay(string relayDir)
@@ -269,6 +330,19 @@ namespace Net
 
             // Populated from this process's environment, so these are additions to it.
             // Available only because UseShellExecute is false.
+
+            // The certificate goes on first so relay-env.txt can still override it. That
+            // ordering is the point: a developer pinning a hand-made certificate or a
+            // different port must win over anything derived automatically, or the escape
+            // hatch is not one.
+            if (_certificate.Ok)
+            {
+                info.Environment["TLS_CERT"] = _certificate.CertPath;
+                info.Environment["TLS_KEY"] = _certificate.KeyPath;
+                info.Environment["PORT"] = securePort.ToString();
+                Debug.Log($"[LocalServices] Serving HTTPS for {_certificate.HostName} on :{securePort}.");
+            }
+
             var overrides = ReadRelayEnvironment();
             foreach (var entry in overrides) info.Environment[entry.Key] = entry.Value;
 

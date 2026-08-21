@@ -6,8 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node test-relay.js",
-    "test:deployed": "node test-deployed.js",
+    "test": "node test-relay.js && node test-dns.js",
     "loadtest": "node loadtest.js"
   },
   "engines": {

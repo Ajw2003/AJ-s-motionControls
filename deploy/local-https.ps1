@@ -2,10 +2,20 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Serves the controller page from this machine over HTTPS, so a phone gets a secure
-    context and its motion sensors unlock. Automates deploy/LOCAL-HTTPS-SPIKE.md.
+    DEPRECATED. Serves the controller page from this machine over HTTPS, so a phone gets a
+    secure context and its motion sensors unlock. Automates deploy/LOCAL-HTTPS-SPIKE.md.
 
 .DESCRIPTION
+    SUPERSEDED BY Assets/Scripts/Net/CertificateProvider.cs, which does the same work at
+    launch with nobody having to remember to run anything. This script is kept only until
+    that path has been confirmed working in the editor, and should then be deleted rather
+    than maintained. Do not add to it.
+
+    It is also already partly broken: Test-Chain shells out to `node test-deployed.js`,
+    deleted in 1cd7647, so a run aborts at its final step. Start-Relay happens first, so the
+    relay is up by then and a run remains usable as a way to get a certificate back.
+
+
     Detects this machine's LAN IP, borrows the published *.local-ip.sh certificate for
     the matching IP-encoded name, points Unity at it, starts the relay with TLS, and
     proves the whole chain works before you pick up the phone.
