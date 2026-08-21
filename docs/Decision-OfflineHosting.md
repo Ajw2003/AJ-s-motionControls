@@ -1,7 +1,7 @@
 # Decision: how the host runs a network with no internet
 
 **Date:** 2026-08-21
-**Status:** Decided and confirmed offline.
+**Status:** Decided, confirmed offline, and **implemented** in `hotspot/hotspot-control.ps1`.
 **Answer: use Mobile Hotspot. Drop Wi-Fi Direct. The blocker was a bug in our code, not a
 Windows limitation.**
 
@@ -75,7 +75,7 @@ a resolver at all) on top of the existing DNS responder, plus captive-portal pro
 is a large amount of new networking code to replace something Windows already does correctly on
 the other path.
 
-## The change
+## The change (applied 2026-08-21)
 
 In `hotspot/hotspot-control.ps1`, `Get-TetheringManager` currently gives up when there is no
 internet:

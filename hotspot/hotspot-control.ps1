@@ -74,12 +74,46 @@ function Write-Result {
     exit ([int](-not $Result.ok))
 }
 
-function Get-TetheringManager {
-    $profile = [Windows.Networking.Connectivity.NetworkInformation,Windows.Networking,ContentType=WindowsRuntime]::GetInternetConnectionProfile()
-    if ($null -eq $profile) { return $null }
+# Tethering needs *a* connection profile to hang off. It does not need that profile to carry
+# internet, or even to be connected - measured 2026-08-21, see docs/Decision-OfflineHosting.md.
+#
+# This used to ask only GetInternetConnectionProfile(), which returns null whenever there is no
+# internet, and reported that as no-connection-profile. That single call is the entire reason
+# Hotspot mode appeared not to work offline, and why ZeroSetupPlan.md recorded Open Question 2
+# as "answered - no". Confirmed with the Ethernet cable out and Wi-Fi joined to nothing:
+# tethering starts, takes 192.168.137.1, and serves DHCP and DNS.
+$script:TetheringProfileName = $null
 
+function Get-TetheringManager {
+    $ni = [Windows.Networking.Connectivity.NetworkInformation,Windows.Networking,ContentType=WindowsRuntime]
     $mgrType = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking,ContentType=WindowsRuntime]
-    return $mgrType::CreateFromConnectionProfile($profile)
+
+    # Preferred: the internet-bearing profile. Online behaviour is then byte-for-byte what it
+    # was before this change, which matters because this path is shared with every LAN-mode
+    # session that has been tested to date.
+    $profile = $ni::GetInternetConnectionProfile()
+    if ($null -ne $profile) {
+        try {
+            $manager = $mgrType::CreateFromConnectionProfile($profile)
+            $script:TetheringProfileName = $profile.ProfileName
+            return $manager
+        } catch {
+            Write-Progress2 "  [warn] internet profile '$($profile.ProfileName)' rejected tethering: $($_.Exception.Message)"
+        }
+    }
+
+    # Offline: any profile that will host tethering. Remembered Wi-Fi networks and an idle
+    # Bluetooth PAN adapter all qualify, and all keep enumerating while disconnected.
+    foreach ($p in $ni::GetConnectionProfiles()) {
+        try {
+            $manager = $mgrType::CreateFromConnectionProfile($p)
+            $script:TetheringProfileName = $p.ProfileName
+            Write-Progress2 "  no internet profile; tethering from '$($p.ProfileName)' instead"
+            return $manager
+        } catch { }
+    }
+
+    return $null
 }
 
 if ($Action -eq 'Start') {
@@ -87,8 +121,13 @@ if ($Action -eq 'Start') {
         Write-Progress2 'Resolving the tethering manager…'
         $manager = Get-TetheringManager
         if ($null -eq $manager) {
+            # Still the right result, but it now means something much rarer than it used to:
+            # not "no internet" (which is fine and supported), but "no network profile of any
+            # kind will host tethering" — a machine with no Wi-Fi adapter, or a radio switched
+            # off. The message says so, because the old one sent people looking for an uplink
+            # that is not required.
             Write-Result @{ ok = $false; error = 'no-connection-profile'
-                message = 'No internet connection profile — this machine has no uplink to tether from.' }
+                message = 'No connection profile can host tethering. Internet is not required, but a Wi-Fi adapter with its radio on is — check that Wi-Fi is not switched off.' }
         }
 
         $wasOn = ($manager.TetheringOperationalState -eq 'On')
@@ -132,7 +171,11 @@ if ($Action -eq 'Start') {
             Write-Progress2 "  [warn] $warning"
         }
 
-        Write-Result @{ ok = $true; ssid = $Ssid; passphrase = $Passphrase; warning = $warning }
+        # profile is additive and purely diagnostic — it answers "did we tether from the
+        # internet connection or fall back?" in the one line HotspotService already logs,
+        # which is the difference between an online and an offline session.
+        Write-Result @{ ok = $true; ssid = $Ssid; passphrase = $Passphrase; warning = $warning
+            profile = $script:TetheringProfileName }
     } catch {
         Write-Result @{ ok = $false; error = 'exception'; message = $_.Exception.Message }
     }
@@ -142,7 +185,7 @@ else {
         Write-Progress2 'Stopping tethering…'
         $manager = Get-TetheringManager
         if ($null -eq $manager) {
-            # No uplink profile to resolve a manager from — nothing left to stop. Not an
+            # No profile at all to resolve a manager from — nothing left to stop. Not an
             # error: this runs on the way out, and the goal is a clean exit, not a fight.
             Write-Result @{ ok = $true; stopped = $false }
         }

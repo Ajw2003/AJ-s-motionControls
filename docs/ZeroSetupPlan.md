@@ -406,32 +406,43 @@ Not "it works on this machine" — that is what hid all four blockers:
 Steps 4–9 are the ones that matter: they are the failures that otherwise surface months later, at
 a party, with no terminal open.
 
-## Open questions
+## Open questions — both CLOSED, 2026-08-21
 
-Both need the machine's network genuinely cut, and together they decide whether "offline" means
-*no internet* or the stricter *no network*:
+> **This section previously recorded question 2 as "Answered — no" and reasoned that
+> `NetworkOperatorTetheringManager` offers "no parameter or workaround within that API". That was
+> wrong, and it was wrong about our own code rather than about Windows.** The full evidence and
+> the decision are in [Decision-OfflineHosting.md](Decision-OfflineHosting.md); the corrected
+> answers are below. The original text is left only in git history, because leaving a confidently
+> stated false conclusion in a planning document is how it gets cited again.
 
 1. Does `CreateFromConnectionProfile()` succeed from a **connected-but-no-internet** profile?
-   Still open.
-2. Does tethering start with **no adapter connected at all**? **Answered — no, confirmed
-   2026-08-20.** With Wi-Fi and Ethernet both disconnected, `GetInternetConnectionProfile()`
-   returns null and hotspot start fails immediately (`hotspot-control.ps1`'s
-   `no-connection-profile` result). This is not a bug to fix — `NetworkOperatorTetheringManager`
-   is built to *share an existing connection*, not conjure a network from nothing, and there is
-   no parameter or workaround within that API that changes this. **"Offline" in this design has
-   always meant guests need no internet and no shared network with the host — not that the host
-   machine itself needs zero connectivity.** The host must stay attached to *something* (even a
-   network with no internet route, if question 1 turns out to also succeed) for Hotspot mode to
-   start at all.
+   **Yes — and more than asked.** It succeeds from profiles whose adapter is not connected at
+   all. Every profile on the test machine returned a working manager with `MaxClientCount 8`,
+   including two remembered Wi-Fi networks that were not joined and an idle Bluetooth PAN adapter.
 
-   The only way past this ceiling is a different Windows mechanism entirely — the deprecated
-   `netsh wlan hostednetwork` / Hosted Network feature, which some Wi-Fi drivers can run
-   independent of any uplink. Unproven here, unsupported on plenty of modern drivers, and a
-   materially different (less reliable) code path than `NetworkOperatorTetheringManager` — not
-   something to bolt on without deciding it's worth the risk first.
+2. Does tethering start with **no adapter connected at all**? **Yes — confirmed end to end,
+   2026-08-21**, with the Ethernet cable physically out and Wi-Fi joined to nothing:
+   `StartTetheringAsync -> Success`, address `192.168.137.1`, DHCP on `:67`, DNS on `:53`, and a
+   real phone joining and loading a page by name.
 
-Question 1 doesn't block Phases 1–3. Until answered, treat "works while genuinely offline but
-still connected to *some* network" as plausible rather than confirmed.
+   The earlier "no" came from `hotspot-control.ps1` asking only `GetInternetConnectionProfile()`,
+   which returns null whenever there is no internet — by definition, not by limitation. It never
+   asked `GetConnectionProfiles()`. Fixed: the internet profile is still preferred (so online
+   behaviour is unchanged), with a fallback to any profile that will host tethering.
+
+   Two confounds cost most of the investigation and are worth remembering, because both produce
+   failures that look like hard limits:
+   - **A software-off Wi-Fi radio** fails tethering with the uninformative status `Unknown`.
+     Switching Wi-Fi off is also the most natural way to make a machine "offline". Both spikes
+     now check the radio before anything else.
+   - **Tethering survives the process that started it**, so a previous session can leave ICS
+     holding `:53` and silently prevent our DNS responder from binding.
+
+   `netsh wlan hostednetwork` is moot as an escape hatch — nothing needs escaping — and is
+   unavailable on this hardware anyway (`Hosted network supported: No`).
+
+**"Offline" can now mean the strict version: the host needs zero connectivity.** Guests need no
+internet, no shared network, and the host needs no uplink either.
 
 ## Risks
 
