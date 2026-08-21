@@ -43,7 +43,20 @@ namespace Ui
             public Texture2D Texture;
             public string SourceData;
             public bool RequestInFlight;
+
+            // Failure state. Without these, a failed fetch leaves SourceData unchanged, so the
+            // "does the URL differ from what is on screen?" test is still true next frame and
+            // the request is retried immediately — at frame rate, logging every time. In Hotspot
+            // mode that is guaranteed to happen at least briefly: PublicOrigin points at
+            // 192.168.137.1, which does not exist until tethering finishes coming up.
+            public float NextAttemptTime;
+            public int ConsecutiveFailures;
+            public string LastLoggedError;
         }
+
+        /// <summary>First retry delay, doubling to <see cref="QrRetryMaxSeconds"/>.</summary>
+        private const float QrRetryBaseSeconds = 0.5f;
+        private const float QrRetryMaxSeconds = 5f;
 
         private readonly QrSlot _gameQr = new();
         private readonly QrSlot _wifiQr = new();
@@ -83,6 +96,7 @@ namespace Ui
             // LocalServices is optional now — a normal host has none. Only the relay
             // connection is required, and it is what knows the address.
             if (_gameQr.RequestInFlight || _client == null) return;
+            if (Time.realtimeSinceStartup < _gameQr.NextAttemptTime) return;
 
             var joinUrl = _client.JoinUrlFor(_client.RoomCode);
             if (string.IsNullOrEmpty(joinUrl) || joinUrl == _gameQr.SourceData) return;
@@ -97,6 +111,7 @@ namespace Ui
         private void EnsureWifiQrMatchesHotspot()
         {
             if (_wifiQr.RequestInFlight || _client == null) return;
+            if (Time.realtimeSinceStartup < _wifiQr.NextAttemptTime) return;
             if (!HotspotService.HasInstance || HotspotService.Instance.State != HotspotState.Ready) return;
 
             var payload = BuildWifiPayload(HotspotService.Instance.Ssid, HotspotService.Instance.Passphrase);
@@ -145,6 +160,17 @@ namespace Ui
                     {
                         BuildQrTexture(slot, JsonUtility.FromJson<QrMatrix>(request.downloadHandler.text));
                         slot.SourceData = data;
+
+                        if (slot.ConsecutiveFailures > 0)
+                        {
+                            // Say so explicitly. Otherwise the console's last word on the subject
+                            // is a warning, and a transient startup race reads like a real fault.
+                            Debug.Log($"[JoinScreen] QR fetched after {slot.ConsecutiveFailures} " +
+                                      "failed attempt(s) — the relay became reachable.");
+                        }
+                        slot.ConsecutiveFailures = 0;
+                        slot.LastLoggedError = null;
+                        slot.NextAttemptTime = 0f;
                     }
                     catch (Exception e)
                     {
@@ -153,8 +179,25 @@ namespace Ui
                 }
                 else
                 {
-                    // Not fatal — the URL and code are on screen and can be typed.
-                    Debug.LogWarning($"[JoinScreen] QR request failed: {request.error}");
+                    slot.ConsecutiveFailures++;
+
+                    // Back off, so a relay that is not up yet is not hammered once per frame.
+                    var delay = Mathf.Min(QrRetryMaxSeconds,
+                        QrRetryBaseSeconds * Mathf.Pow(2f, slot.ConsecutiveFailures - 1));
+                    slot.NextAttemptTime = Time.realtimeSinceStartup + delay;
+
+                    // Log each DISTINCT error once. Repeating an identical message while retrying
+                    // adds no information and buries everything else — and this failure is
+                    // expected during startup in Hotspot mode, where the address the QR is
+                    // fetched from does not exist until tethering completes.
+                    if (request.error != slot.LastLoggedError)
+                    {
+                        slot.LastLoggedError = request.error;
+                        // Not fatal — the URL and code are on screen and can be typed.
+                        Debug.LogWarning($"[JoinScreen] QR request failed: {request.error} " +
+                                         "(retrying quietly with backoff; the code and URL are " +
+                                         "still on screen and can be typed)");
+                    }
                 }
             }
 
