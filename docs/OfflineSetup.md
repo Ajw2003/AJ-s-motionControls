@@ -37,10 +37,11 @@ Recorded because each was a genuine blocker and none was obvious:
 
 ---
 
-## Prerequisites, as they stand today
+## Prerequisites
 
-Everything below is currently **manual**, done once per machine. This is the list that setup
-automation has to replace.
+What a machine needs before offline play works. All of it is now done by
+[`deploy/setup-offline.ps1`](../deploy/setup-offline.ps1) — the commands are kept here because
+knowing what the script does to a machine matters more than the script being convenient.
 
 ### Elevated (needs Administrator)
 
@@ -79,10 +80,27 @@ anywhere wrong. TLS validation is unaffected — the name still matches the cert
 
 ---
 
-## What setup automation must do
+## Setup automation — [`deploy/setup-offline.ps1`](../deploy/setup-offline.ps1)
 
-A single idempotent script — `deploy/setup-offline.ps1` — run once per machine, elevated,
-replacing all of the above. Requirements, in the order they matter:
+**Written and verified.** One idempotent script, run once per machine, replacing everything in
+the section above.
+
+```powershell
+./deploy/setup-offline.ps1 -DryRun      # inspect; needs no elevation, changes nothing
+./deploy/setup-offline.ps1              # apply; needs Administrator
+./deploy/setup-offline.ps1 -Uninstall   # return a test machine to clean
+```
+
+`-DryRun` deliberately requires no elevation, because it writes nothing — which makes it the
+right way to check a machine before committing to changing it, and the way this script was
+tested.
+
+Its first real run found, on the development machine: a duplicate `RockSkipping relay` rule,
+three obsolete spike rules, and two copies of the hosts entry — all created by hand-running the
+individual commands during this investigation. That is the case idempotency exists for, and it
+is not hypothetical.
+
+### Requirements it was built to, in the order they matter
 
 **Idempotent above all.** It will be run repeatedly during testing, on machines in every possible
 half-configured state. Every step must check before acting and report `already present` rather
