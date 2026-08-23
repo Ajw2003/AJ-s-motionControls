@@ -1207,7 +1207,7 @@
     "m_DefaultRefNameVersion": 1,
     "m_RefNameGeneratedByDisplayName": "Crest Color",
     "m_DefaultReferenceName": "_Crest_Color",
-    "m_OverrideReferenceName": "_CrestColor_1",
+    "m_OverrideReferenceName": "_CrestColor",
     "m_GeneratePropertyBlock": true,
     "m_UseCustomSlotLabel": false,
     "m_CustomSlotLabel": "",

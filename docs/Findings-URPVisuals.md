@@ -231,14 +231,37 @@ under URP, so nothing in code should be doing this — but the material is autho
 
 ---
 
-## What I changed vs. what's proposed
+## Status — all applied
 
-**Changed** — one file, reversible with `git checkout Assets/Resources/WaterRipple.hlsl`:
+Everything in steps 1, 2, 4, 5 and the horizon item is now in the working tree, on top of commit
+`b365e88`. Step 6 (contact splash / foam) belongs to the SFX/VFX work and is not started.
 
-- `Assets/Resources/WaterRipple.hlsl` — analytic anti-aliasing. Signature unchanged, so your
-  graph is unaffected.
+| File | Change |
+|---|---|
+| `ProjectSettings/ProjectSettings.asset` | `m_ActiveColorSpace: 0` → `1` (Linear) |
+| `Assets/Resources/WaterRipple.hlsl` | Analytic anti-aliasing via `ddx`/`ddy`. Signature unchanged, so the graph needed no rewiring |
+| `Assets/Resources/WaterRippleURP.shadergraph` | Crest property reference `_CrestColor_1` → `_CrestColor` |
+| `Assets/Resources/RockSkipping_WaterRipple.mat` | `_BaseColor` → `(0.06, 0.16, 0.28)`; dropped the orphaned `_Color` and `_CrestColor_1`. `_CrestColor` was already the right value and is now live |
+| `Assets/Scripts/Game/RockController.cs` | `visualFloatOffset`; sink descent + tumble; position written once at the end of `Update` |
+| `Assets/Scripts/Game/AimPreview.cs` | Linear fog to the background colour, 120→600 |
 
-**Proposed, not applied** — everything in steps 1, 2, 4, 5, 6 and both items above.
+**Resolved by inspection, no change needed:** the graph's master stack already has
+**Metallic = 0.0** and **Smoothness = 0.5**, exactly as intended. The material's `_Metallic: 0.5`
+and `_Glossiness: 0.5` are dead Built-in leftovers bound to nothing — harmless, and Unity strips
+them on the next material save. Left in place rather than hand-edited out.
+
+### Verify on the next run
+
+1. **Lake is deep navy**, not electric blue, and rings are pale blue against it.
+2. **No speckle** — rings read as smooth bands near camera, fading cleanly with distance.
+3. **Stone rests on the surface**, no hard cut line, and visibly sinks when the run ends.
+4. **No hard horizon line** — the lake fades into the background.
+5. **Fog reaches the water.** URP Lit Shader Graph should apply fog automatically, but this was
+   not verified against this URP version. If the stone fogs and the water doesn't, the graph needs
+   fog enabled explicitly.
+
+Expect everything to look **darker** than the video — that's the Linear switch being correct, not
+a regression. Retune light intensity from there rather than reverting.
 
 ---
 

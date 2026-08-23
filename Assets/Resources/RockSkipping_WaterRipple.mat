@@ -81,9 +81,7 @@ Material:
     - _ZWriteControl: 0
     - _Zero: 0
     m_Colors:
-    - _BaseColor: {r: 0, g: 0.06282711, b: 1, a: 1}
-    - _Color: {r: 0.21693665, g: 0.44472006, b: 0.7075472, a: 1}
+    - _BaseColor: {r: 0.06, g: 0.16, b: 0.28, a: 1}
     - _CrestColor: {r: 0.55, g: 0.75, b: 0.95, a: 1}
-    - _CrestColor_1: {r: 0.3160377, g: 0.88859123, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
