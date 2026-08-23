@@ -67,21 +67,21 @@ Material:
     - _ReceiveShadows: 1
     - _RippleLife: 2.5
     - _RippleSpeed: 6
-    - _RippleWaveLength: 0
+    - _RippleWaveLength: 1
     - _RippleWavelength: 1
     - _RippleWidth: 1.5
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
     - _TroughDarkness: 0.35
-    - _Trough_Darkness: 0
+    - _Trough_Darkness: 0.35
     - _WorkflowMode: 1
     - _ZTest: 4
     - _ZWrite: 1
     - _ZWriteControl: 0
     - _Zero: 0
     m_Colors:
-    - _BaseColor: {r: 0.06, g: 0.16, b: 0.28, a: 1}
+    - _BaseColor: {r: 0.057493784, g: 0.3582201, b: 0.7169812, a: 1}
     - _CrestColor: {r: 0.55, g: 0.75, b: 0.95, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
