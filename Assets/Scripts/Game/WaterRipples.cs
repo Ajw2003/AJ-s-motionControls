@@ -17,7 +17,7 @@ namespace Game
     /// </remarks>
     public class WaterRipples : MonoBehaviour
     {
-        /// <summary>Must match MAX_RIPPLES in WaterRipple.shader.</summary>
+        /// <summary>Must match MAX_RIPPLES in WaterRipple.hlsl (and WaterRipple.shader, while it lasts).</summary>
         public const int MaxRipples = 16;
 
         [Tooltip("Seconds a ring takes to fade out entirely.")]
@@ -103,7 +103,10 @@ namespace Game
 
         private void LateUpdate()
         {
-            if (_material == null) return;
+            // No _material guard. The ripple array is pushed as a global rather than a
+            // material property — see the remarks on the Shader.SetGlobalVectorArray call
+            // below — so this no longer needs the material at all. With nothing bound
+            // there is no water to read the globals either, so publishing them is free.
 
             // Drop what has expired, then pack the survivors into the front of the array.
             // Compacting is what lets the fragment loop run zero iterations while idle.
@@ -125,8 +128,18 @@ namespace Game
 
             for (var i = live; i < MaxRipples; i++) _packed[i] = Vector4.zero;
 
-            _material.SetVectorArray(RipplesId, _packed);
-            _material.SetInt(RippleCountId, live);
+            // Global rather than per-material, and that is a URP requirement rather than a
+            // preference. Shader Graph has no array property type, so an array can never
+            // live inside the UnityPerMaterial CBUFFER the SRP Batcher requires — which
+            // makes Material.SetVectorArray a global set wearing a per-material costume.
+            // Setting the global directly is the same operation without the ambiguity, and
+            // costs nothing here: there is exactly one water plane, so global scope is not
+            // a restriction. See the matching remarks in WaterRipple.hlsl.
+            //
+            // The fixed-size caveat is unchanged and still load-bearing: the array length
+            // is fixed by the first call, and a shorter one later is silently ignored.
+            Shader.SetGlobalVectorArray(RipplesId, _packed);
+            Shader.SetGlobalInt(RippleCountId, live);
         }
 
         private void PushTuning()

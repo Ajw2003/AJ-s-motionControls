@@ -275,7 +275,12 @@ namespace Game
             _line.widthMultiplier = 0.12f;
             _line.numCapVertices = 4;
             _line.useWorldSpace = true;
-            _line.material = PlaceholderArt.Create(Color.white, PlaceholderArt.ArcQueue);
+            // alwaysOnTop, because under URP real depth sorting would let the water occlude
+            // the arc wherever it dips toward the surface — and an aiming guide that is
+            // hidden by the thing it is arcing over teaches nothing. This is the one
+            // renderer in the scene that genuinely wants to ignore depth.
+            _line.material = PlaceholderArt.Create(
+                Color.white, PlaceholderArt.ArcQueue, alwaysOnTop: true);
 
             var colour = new Color(0.55f, 0.85f, 1f);
             _line.startColor = colour;
