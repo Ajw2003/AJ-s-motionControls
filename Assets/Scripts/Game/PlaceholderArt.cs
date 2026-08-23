@@ -22,18 +22,20 @@ namespace Game
     ///
     /// Fixed by pinning an explicit queue per role. Unity honours renderQueue before any
     /// distance sorting, so the order is now deterministic no matter where the camera is.
+    /// That pinning is the only thing in this file worth keeping — it is a bug fix, not
+    /// decoration.
     ///
-    /// <b>Under URP that fix is not just unnecessary, it is actively harmful — see
-    /// <see cref="Create"/>.</b> URP chooses the opaque or the transparent pass by render
-    /// queue, so pinning 3100 on an opaque material moves it into the transparent pass,
-    /// where depth writes are off. That reproduces the original bug exactly: the queue
-    /// pinning was a workaround for an empty depth buffer, and applying it under URP is
-    /// what empties the depth buffer. So the queues are honoured under the Built-in
-    /// pipeline and deliberately ignored under URP, except where something genuinely
-    /// wants to draw over the top.
+    /// The queues are pinned under URP too, and that is deliberate rather than an
+    /// oversight. URP picks the opaque or transparent pass by render queue, so a stone at
+    /// 3100 lands in the transparent pass and draws over the water without depth testing
+    /// against it — which is exactly what is wanted here. The stone's lower half is below
+    /// the water plane at every bounce (SkipPhysics clamps its centre to the surface), and
+    /// letting the water occlude that half honestly reads as a hard flat cut across the
+    /// stone. Drawing it over the top hides a geometry problem that is not worth solving
+    /// properly. Sinking is handled as a deliberate effect at the end of a run instead.
     ///
-    /// Shader selection is pipeline-aware for the same reason. Under URP, Standard is not
-    /// an error — it is magenta.
+    /// Shader selection is pipeline-aware, and that part is not optional. Under URP,
+    /// Standard is not an error — it is magenta.
     /// </remarks>
     public static class PlaceholderArt
     {
@@ -47,30 +49,10 @@ namespace Game
         public const int ArcQueue = 3200;
 
         /// <summary>
-        /// True when a scriptable render pipeline (URP, here) is driving rendering, rather
-        /// than the Built-in pipeline.
+        /// An opaque material for the placeholder scene, pinned to an explicit draw order.
         /// </summary>
-        /// <remarks>
-        /// Not cached. The pipeline asset can be swapped at runtime through quality level
-        /// changes, and this is called a handful of times at scene build — never per frame.
-        /// </remarks>
-        private static bool UsingScriptableRenderPipeline =>
-            GraphicsSettings.currentRenderPipeline != null;
-
-        /// <summary>
-        /// An opaque material for the placeholder scene.
-        /// </summary>
-        /// <param name="renderQueue">
-        /// One of the queue constants above. Honoured under the Built-in pipeline, where it
-        /// is the documented draw-order fix. Ignored under URP unless
-        /// <paramref name="alwaysOnTop"/> is set — see the class remarks.
-        /// </param>
-        /// <param name="alwaysOnTop">
-        /// For things that must never be occluded no matter what is in front of them. Only
-        /// the aim arc wants this: it is a guide, and an arc hidden by the water it is
-        /// arcing over teaches nothing. Everything else should take real depth sorting.
-        /// </param>
-        public static Material Create(Color colour, int renderQueue, bool alwaysOnTop = false)
+        /// <param name="renderQueue">One of the queue constants above.</param>
+        public static Material Create(Color colour, int renderQueue)
         {
             var shader = FindOpaqueShader();
 
@@ -78,17 +60,7 @@ namespace Game
             // across both pipelines: it binds to whichever property carries [MainColor],
             // which is _Color on Standard and _BaseColor on URP/Lit. Naming either one
             // directly here would break on the other.
-            var material = new Material(shader) { color = colour };
-
-            // Under URP, leaving the queue alone is the whole point: URP/Lit defaults to
-            // the opaque queue with depth writes on, which is what makes depth sorting
-            // arbitrate properly and retires the workaround this class was built around.
-            if (alwaysOnTop || !UsingScriptableRenderPipeline)
-            {
-                material.renderQueue = renderQueue;
-            }
-
-            return material;
+            return new Material(shader) { color = colour, renderQueue = renderQueue };
         }
 
         /// <summary>
@@ -118,9 +90,7 @@ namespace Game
                 return Create(colour, WaterQueue);
             }
 
-            var material = new Material(shader) { color = colour };
-            if (!UsingScriptableRenderPipeline) material.renderQueue = WaterQueue;
-            return material;
+            return new Material(shader) { color = colour, renderQueue = WaterQueue };
         }
 
         /// <summary>
@@ -139,7 +109,9 @@ namespace Game
         /// </remarks>
         private static Shader FindOpaqueShader()
         {
-            if (UsingScriptableRenderPipeline)
+            // Not cached: the pipeline asset can be swapped at runtime through a quality
+            // level change, and this runs a handful of times at scene build, never per frame.
+            if (GraphicsSettings.currentRenderPipeline != null)
             {
                 var urp = Shader.Find("Universal Render Pipeline/Lit")
                        ?? Shader.Find("Universal Render Pipeline/Simple Lit")

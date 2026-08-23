@@ -31,39 +31,6 @@ namespace Game
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
         internal static readonly Vector3 StoneScale = new(0.35f, 0.25f, 0.35f);
 
-        /// <summary>
-        /// How far above its solved position a stone must be drawn to rest ON the water
-        /// rather than half inside it.
-        /// </summary>
-        /// <remarks>
-        /// SkipPhysics clamps the stone's CENTRE to the water plane, and the aim rig puts
-        /// the throw origin at y = 0, so both the live stone and the aim ghost sit half
-        /// submerged by construction. Built-in hid that behind ZWrite Off; URP writes real
-        /// depth, so the water occludes the lower half and it reads as a hard flat cut.
-        ///
-        /// Measured off the mesh rather than assumed to be half of StoneScale.y, because
-        /// Rock.fbx is an imported mesh — nothing guarantees it is a unit cube centred on
-        /// its own origin, and a hardcoded 0.125 is only right if it happens to be. The
-        /// centre term handles a mesh whose pivot is not in the middle: what matters is
-        /// where the BOTTOM is, not how tall it is.
-        ///
-        /// Shared, and living next to StoneScale on purpose. The ghost and the live stone
-        /// reading different offsets would put the thing a player aims with at a different
-        /// height from the thing that gets thrown — the same class of bug the shared scale
-        /// above exists to prevent.
-        /// </remarks>
-        internal static float StoneFloatOffset(GameObject stone)
-        {
-            if (stone == null) return StoneScale.y * 0.5f;
-
-            var filter = stone.GetComponent<MeshFilter>();
-            var mesh = filter != null ? filter.sharedMesh : null;
-            if (mesh == null) return stone.transform.localScale.y * 0.5f;
-
-            var bounds = mesh.bounds;
-            return (bounds.extents.y - bounds.center.y) * stone.transform.localScale.y;
-        }
-
         private void Update()
         {
             EnsureBound();

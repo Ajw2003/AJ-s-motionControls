@@ -64,9 +64,6 @@ namespace Game
         private LineRenderer _line;
         private Transform _ghost;
 
-        /// <summary>How far the ghost is lifted so it rests on the water. See BuildGhost.</summary>
-        private float _ghostFloatOffset;
-
         // Sized from the tuning in Awake rather than left at a literal: PredictSeconds /
         // FixedStep is about 1100 points, so a hardcoded 512 quietly grew and reallocated
         // on the first arc of every session.
@@ -244,14 +241,7 @@ namespace Game
 
         private void UpdateGhost()
         {
-            // Lifted so the ghost rests ON the water rather than half inside it. The throw
-            // origin sits at y = 0, which is the water plane, so without this the ghost is
-            // sliced flat by the surface for the entire time a player is aiming — which is
-            // most of the time anyone is looking at the screen.
-            //
-            // The same offset the thrown stone uses, from the same place, so the stone a
-            // player lines up cannot sit at a different height from the one that leaves.
-            _ghost.position = throwOrigin.position + Vector3.up * _ghostFloatOffset;
+            _ghost.position = throwOrigin.position;
 
             // The phone IS the rock. Nothing is added on top.
             //
@@ -285,12 +275,7 @@ namespace Game
             _line.widthMultiplier = 0.12f;
             _line.numCapVertices = 4;
             _line.useWorldSpace = true;
-            // alwaysOnTop, because under URP real depth sorting would let the water occlude
-            // the arc wherever it dips toward the surface — and an aiming guide that is
-            // hidden by the thing it is arcing over teaches nothing. This is the one
-            // renderer in the scene that genuinely wants to ignore depth.
-            _line.material = PlaceholderArt.Create(
-                Color.white, PlaceholderArt.ArcQueue, alwaysOnTop: true);
+            _line.material = PlaceholderArt.Create(Color.white, PlaceholderArt.ArcQueue);
 
             var colour = new Color(0.55f, 0.85f, 1f);
             _line.startColor = colour;
@@ -310,9 +295,6 @@ namespace Game
             var grey = Color.gray3;
             ghost.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
-
-            // Measured after the scale is applied, since the offset scales with the stone.
-            _ghostFloatOffset = RockLauncher.StoneFloatOffset(ghost);
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);

@@ -22,40 +22,6 @@ namespace Game
         [SerializeField] private float despawnDelay = 2.5f;
 
         /// <summary>
-        /// How far above the solved position the stone is drawn, so it rests ON the water
-        /// rather than half inside it. Defaults to half the stone's height.
-        /// </summary>
-        /// <remarks>
-        /// SkipPhysics clamps the stone's CENTRE to the water plane, so its lower half has
-        /// always been below the surface at every bounce. Under the Built-in pipeline that
-        /// was invisible: everything ran ZWrite Off behind hand-pinned render queues, so
-        /// the stone drew over the water regardless of where it actually was. URP/Lit is
-        /// opaque and writes depth, so the water now correctly occludes the submerged half
-        /// and it reads as a hard straight cut across the stone.
-        ///
-        /// So this is a presentation fix for a geometry bug the renderer started telling
-        /// the truth about — not a change to where the stone goes. It lives here rather
-        /// than in SkipPhysics deliberately: the solver is pure and owns the maths, and an
-        /// offset applied in there would move the real contact point and change the bounce.
-        /// </remarks>
-        [Tooltip("Draws the stone resting on the surface instead of half-submerged. " +
-                 "Leave at 0 to measure it off the mesh — see RockLauncher.StoneFloatOffset. " +
-                 "Set a value only to override that.")]
-        [SerializeField] private float visualFloatOffset;
-
-        [Header("Sink")]
-        [Tooltip("How long the stone takes to disappear under the surface once it has sunk.")]
-        [SerializeField] private float sinkDuration = 0.7f;
-
-        [Tooltip("How far below the waterline it ends up. Only needs to be deep enough to " +
-                 "be hidden — the water occludes it long before it gets there.")]
-        [SerializeField] private float sinkDepth = 1.4f;
-
-        [Tooltip("Degrees the stone tips over as it goes under, so it drops like a stone " +
-                 "rather than descending like a lift.")]
-        [SerializeField] private float sinkTumbleDeg = 55f;
-
-        /// <summary>
         /// Ceiling on how fast the stone is drawn turning, in deg/s. Shared with the aim
         /// ghost so the two cannot spin differently.
         /// </summary>
@@ -93,12 +59,6 @@ namespace Game
         private float _spinRate;
         private float _perBounceSpinRetention = 1.0f;
 
-        /// <summary>
-        /// Seconds since the stone sank. Zero while flying, which is what keeps the sink
-        /// descent out of the airborne path entirely.
-        /// </summary>
-        private float _sinkElapsed;
-
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
         public float Distance => Vector3.Distance(_origin, _state.Position);
@@ -125,17 +85,7 @@ namespace Game
                 _perBounceSpinRetention = 1.0f;
             }
 
-            // Measured once, here, rather than hardcoded: the launcher builds this object
-            // from Rock.fbx, so the mesh is the only thing that knows where its own bottom
-            // is. Zero means "not overridden in the inspector".
-            if (visualFloatOffset <= 0f)
-            {
-                visualFloatOffset = RockLauncher.StoneFloatOffset(gameObject);
-            }
-
-            // Offset here too, not just in Update, so the stone does not appear at the
-            // solved position for one frame and then jump up to its drawn one.
-            transform.position = state.Position + Vector3.up * visualFloatOffset;
+            transform.position = state.Position;
             transform.rotation = state.Attitude;
             IsFlying = true;
         }
@@ -173,51 +123,26 @@ namespace Game
                         break;
                     }
                 }
+
+                // Only while flying, deliberately. Once the run is over this stops writing
+                // position at all, which is what leaves the transform free for a sink
+                // coroutine to own without Update fighting it back every frame.
+                transform.position = _state.Position;
             }
 
             if (!IsFlying)
             {
                 // Coast to a stop smoothly over ~0.8 seconds while underwater
                 _spinRate *= Mathf.Exp(-Time.deltaTime / 0.8f);
-                _sinkElapsed += Time.deltaTime;
             }
 
             _spinAngle += _spinRate * Time.deltaTime;
-
-            // How far under the surface the stone has settled, and how far it has tipped
-            // over on the way down. Both are zero while it is flying, so the airborne path
-            // is exactly what it always was.
-            //
-            // Cubic ease-out: it drops away quickly and then slows, which is what a stone
-            // losing the last of its momentum into water actually does. Linear read as a
-            // lift descending.
-            var sink = 0f;
-            var tumble = 0f;
-            if (_sinkElapsed > 0f)
-            {
-                var t = Mathf.Clamp01(_sinkElapsed / Mathf.Max(sinkDuration, 0.0001f));
-                var eased = 1f - Mathf.Pow(1f - t, 3f);
-                sink = sinkDepth * eased;
-                tumble = sinkTumbleDeg * eased;
-            }
-
-            // Position is written once, here, for both the flying and the sinking case —
-            // it used to be set inside the IsFlying branch, which left no single place the
-            // float offset could be applied without being overwritten a frame later.
-            transform.position = _state.Position + Vector3.up * (visualFloatOffset - sink);
 
             // Attitude on the left, spin on the right: the stone turns about its own face
             // normal, the way a skipping stone does, rather than about the world's up.
             // Attitude comes straight from the phone and is never adjusted — the ~20
             // degrees the water wants lives in SkipPhysics, not here.
-            //
-            // The sink tumble goes on the far left, in world space, so it tips the whole
-            // stone over regardless of which way the phone happened to be held. Applied on
-            // the right it would have been about the stone's own axis, which for a flat
-            // stone lying face-up is barely visible.
-            transform.rotation =
-                Quaternion.AngleAxis(tumble, Vector3.right) *
-                _state.Attitude * Quaternion.Euler(0f, _spinAngle, 0f);
+            transform.rotation = _state.Attitude * Quaternion.Euler(0f, _spinAngle, 0f);
         }
 
         private void Finish()

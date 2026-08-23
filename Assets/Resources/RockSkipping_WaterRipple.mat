@@ -67,7 +67,7 @@ Material:
     - _ReceiveShadows: 1
     - _RippleLife: 2.5
     - _RippleSpeed: 6
-    - _RippleWaveLength: 1
+    - _RippleWaveLength: 2.5
     - _RippleWavelength: 1
     - _RippleWidth: 1.5
     - _SrcBlend: 1
