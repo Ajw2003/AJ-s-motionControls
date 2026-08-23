@@ -25,8 +25,8 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _Glossiness: 0.86
-    - _Metallic: 0.838
+    - _Glossiness: 0.5
+    - _Metallic: 0.5
     - _RippleLife: 2.5
     - _RippleSpeed: 6
     - _RippleWavelength: 1

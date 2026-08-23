@@ -153,9 +153,9 @@ namespace Game
             go.name = "Rock";
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
             go.transform.localScale = StoneScale;
-
+            var grey = Color.gray3;
             go.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(new Color(0.85f, 0.87f, 0.95f), PlaceholderArt.StoneQueue);
+                PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
 
             return go.AddComponent<RockController>();
         }

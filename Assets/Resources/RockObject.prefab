@@ -9,6 +9,18 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: f1e001d32893f0449afa8c2fd75cc035, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.65
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f1e001d32893f0449afa8c2fd75cc035, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.08
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f1e001d32893f0449afa8c2fd75cc035, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.45
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f1e001d32893f0449afa8c2fd75cc035, type: 3}
       propertyPath: m_LocalPosition.x
       value: 42.5076
       objectReference: {fileID: 0}
@@ -51,7 +63,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: f1e001d32893f0449afa8c2fd75cc035, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 10302, guid: 0000000000000000f000000000000000, type: 0}
+      objectReference: {fileID: 2100000, guid: 51462e96ff368544dad8d3dab63f6912, type: 2}
     - target: {fileID: 919132149155446097, guid: f1e001d32893f0449afa8c2fd75cc035, type: 3}
       propertyPath: m_Name
       value: RockObject

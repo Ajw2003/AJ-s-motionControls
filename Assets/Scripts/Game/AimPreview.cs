@@ -292,8 +292,9 @@ namespace Game
             ghost.name = "GhostRock";
             ghost.transform.localScale = RockLauncher.StoneScale;
             Destroy(ghost.GetComponent<Collider>());
+            var grey = Color.gray3;
             ghost.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(new Color(0.9f, 0.92f, 1f), PlaceholderArt.StoneQueue);
+                PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
