@@ -154,8 +154,14 @@ namespace Game
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
             go.transform.localScale = StoneScale;
             var grey = Color.gray3;
-            go.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
+            var material = PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
+
+            // Ignores depth while it is in play, so the water cannot cut off the half of it
+            // that is below the surface. RockController hands it back to the depth buffer
+            // when the run ends, which is what makes the sink readable.
+            PlaceholderArt.SetDepthTested(material, false);
+
+            go.GetComponent<MeshRenderer>().material = material;
 
             return go.AddComponent<RockController>();
         }

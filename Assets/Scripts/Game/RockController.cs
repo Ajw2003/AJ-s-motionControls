@@ -1,3 +1,4 @@
+using System.Collections;
 using EventSystems;
 using EventTypes.SkipEvents;
 using UnityEngine;
@@ -20,6 +21,14 @@ namespace Game
         [SerializeField] private float targetFinalSpinRetention = 0.001f;
 
         [SerializeField] private float despawnDelay = 2.5f;
+
+        [Header("Sink")]
+        [Tooltip("How long the stone takes to slip under once the run has ended.")]
+        [SerializeField] private float sinkDuration = 0.6f;
+
+        [Tooltip("How far it travels down. Only needs to be far enough to be out of sight — " +
+                 "the water occludes it well before it gets there.")]
+        [SerializeField] private float sinkDepth = 1.5f;
 
         /// <summary>
         /// Ceiling on how fast the stone is drawn turning, in deg/s. Shared with the aim
@@ -153,7 +162,50 @@ namespace Game
                 new ThrowCompletedEvent(_playerId, _state.SkipCount, Distance));
 
             Debug.Log($"[Rock] {_playerId}: {_state.SkipCount} skips over {Distance:F1} m");
+
+            // Scheduled here rather than at the end of the sink, so the object's lifetime
+            // stays decoupled from the effect. despawnDelay comfortably outlasts
+            // sinkDuration, and anything hanging off ThrowCompletedEvent still gets its
+            // full window whether the sink runs, is retuned, or is switched off entirely.
             Destroy(gameObject, despawnDelay);
+
+            StartCoroutine(SinkRoutine());
+        }
+
+        /// <summary>
+        /// Drops the stone under the surface once its run is over.
+        /// </summary>
+        /// <remarks>
+        /// The whole effect is the first line. While the stone is in play it ignores depth
+        /// so the water cannot cut off the half of it that is below the surface (see
+        /// PlaceholderArt.SetDepthTested); handing it back to the depth buffer here is what
+        /// lets the water swallow it as it descends. The translation on its own would just
+        /// slide a fully-visible stone downwards.
+        ///
+        /// Safe to own the transform because Update only writes position while IsFlying,
+        /// and IsFlying is already false by the time this starts. Rotation is still driven
+        /// there, so the stone keeps spinning down as it goes under.
+        /// </remarks>
+        private IEnumerator SinkRoutine()
+        {
+            var renderer = GetComponent<MeshRenderer>();
+            if (renderer != null) PlaceholderArt.SetDepthTested(renderer.material, true);
+
+            var start = transform.position;
+            var end = start + Vector3.down * sinkDepth;
+
+            var elapsed = 0f;
+            while (elapsed < sinkDuration)
+            {
+                elapsed += Time.deltaTime;
+
+                // Cubic ease-out: it drops away quickly and then slows, the way a stone
+                // losing the last of its momentum into water does. Linear reads as a lift.
+                var t = Mathf.Clamp01(elapsed / Mathf.Max(sinkDuration, 0.0001f));
+                transform.position = Vector3.Lerp(start, end, 1f - Mathf.Pow(1f - t, 3f));
+
+                yield return null;
+            }
         }
     }
 }

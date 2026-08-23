@@ -48,6 +48,38 @@ namespace Game
         /// <summary>The aim arc, above both — it is a guide and must never be hidden.</summary>
         public const int ArcQueue = 3200;
 
+        private static readonly int ZTestId = Shader.PropertyToID("_ZTest");
+
+        /// <summary>
+        /// Whether this material is allowed to be hidden by things already in the depth
+        /// buffer. Off means it draws over the scene regardless of what is in front of it.
+        /// </summary>
+        /// <remarks>
+        /// This, not the render queue, is what decides whether the water can cut the stone
+        /// in half — and the distinction cost a round of debugging, so it is worth stating
+        /// plainly. The queue constants above control draw ORDER only. A stone at
+        /// StoneQueue really does draw after the water, but URP/Lit still runs ZTest
+        /// LEqual, so its submerged fragments fail against the depth the water already
+        /// wrote and are discarded anyway. Reordering cannot fix an occlusion problem.
+        ///
+        /// Under the Built-in pipeline this never came up because the water ran ZWrite Off
+        /// — there was nothing in the depth buffer to lose to. URP's water is opaque and
+        /// writes depth, so the test finally has something to bite on.
+        ///
+        /// SkipPhysics clamps the stone's centre to the water plane, so its lower half is
+        /// genuinely below the surface at every bounce. Rather than move the geometry, the
+        /// stone simply ignores depth while it is in play, and is handed back to the depth
+        /// buffer at the end of a run so it can be seen to sink.
+        /// </remarks>
+        public static void SetDepthTested(Material material, bool depthTested)
+        {
+            if (material == null) return;
+
+            material.SetInt(ZTestId, (int)(depthTested
+                ? CompareFunction.LessEqual
+                : CompareFunction.Always));
+        }
+
         /// <summary>
         /// An opaque material for the placeholder scene, pinned to an explicit draw order.
         /// </summary>
