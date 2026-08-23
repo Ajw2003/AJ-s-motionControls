@@ -74,6 +74,34 @@ void RippleWave(
 {
     wave = 0.0;
 
+    // How much world space one screen pixel covers here, in the water plane. This is
+    // what makes the rings anti-alias, and it is the whole fix for the "ripples look
+    // like badly rendered particles" bug.
+    //
+    // The lake is 2000 units across and the camera looks along it at a grazing angle,
+    // so a pixel near the horizon spans many world units. Once a pixel is wider than
+    // half a wavelength the sine below is being point-sampled far under Nyquist, and
+    // consecutive pixels land on unrelated points of the wave — which is not a ring any
+    // more, it is white noise shaped like a ring. That is exactly what it looked like.
+    //
+    // Computed ONCE, here, and deliberately not inside the loop. Screen-space
+    // derivatives are only defined under uniform control flow, and the loop below has
+    // two `continue`s in it — taking ddx/ddy in there is undefined behaviour that
+    // happens to work on some hardware and returns garbage on the rest.
+    float2 dpdx = ddx(worldPos.xz);
+    float2 dpdy = ddy(worldPos.xz);
+    float footprint = max(length(dpdx), length(dpdy));
+
+    // Nyquist says two samples per wavelength is the floor. Fade from "just resolvable"
+    // to "comfortably resolved" over a 3x window rather than cutting at the limit, so
+    // rings dissolve smoothly into flat water instead of ending on a visible line.
+    float nyquist = footprint * 2.0;
+    float resolve = smoothstep(nyquist, nyquist * 3.0, rippleWavelength);
+
+    // Nothing here can be drawn honestly at this distance. Bail before the loop rather
+    // than multiplying by zero sixteen times.
+    if (resolve <= 0.0) return;
+
     int count = min(_RippleCount, MAX_RIPPLES);
     for (int r = 0; r < count; r++)
     {
@@ -99,6 +127,10 @@ void RippleWave(
         // hard line.
         wave += phase * band * band * life * life * rip.w;
     }
+
+    // Applied to the sum rather than per-ripple: the footprint is a property of the
+    // pixel, not of any one ring, so every ring at this pixel is equally unresolvable.
+    wave *= resolve;
 }
 
 // Shader Graph resolves Custom Function entry points by precision suffix and will ask

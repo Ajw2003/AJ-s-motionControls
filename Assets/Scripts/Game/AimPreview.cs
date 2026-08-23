@@ -333,11 +333,33 @@ namespace Game
             var camera = Camera.main;
             if (camera == null) return;
 
+            // One colour for the empty sky and for what the lake fades into, so the two
+            // cannot disagree — see the fog block below, where the hard horizon is fixed.
+            var horizon = new Color(0.05f, 0.09f, 0.15f);
+
             camera.transform.position = new Vector3(0, 2f, -3);
             camera.transform.LookAt(new Vector3(0f, 0f, 4f));
-            camera.backgroundColor = new Color(0.05f, 0.09f, 0.15f);
+            camera.backgroundColor = horizon;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 1000f;
+
+            // The lake is 2000 units across (a 10-unit Plane scaled by 200) but the far
+            // clip is 1000, so the far half is cut off by the frustum and the cut shows as
+            // a hard line across the middle of the screen with flat background above it.
+            //
+            // Fogging to the background colour rather than moving the clip plane out:
+            // pushing the far plane past 2000 would double the depth range and spend real
+            // depth precision on water nobody can make out anyway, and the plane would
+            // still end in a hard edge — just further away. Fading it into the same colour
+            // the sky is cleared to means the edge is gone rather than relocated.
+            //
+            // Ends well inside the clip plane so the fade is complete before the geometry
+            // is cut, which is the whole point.
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogColor = horizon;
+            RenderSettings.fogStartDistance = 120f;
+            RenderSettings.fogEndDistance = 600f;
         }
     }
 }

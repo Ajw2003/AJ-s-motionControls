@@ -59,6 +59,22 @@ dependencies — you don't need to add them.
 **PASS:** Package Manager lists "Universal RP" as installed. Console has no resolution errors.
 The game still runs exactly as before — importing URP alone changes nothing until step 2.
 
+### 1b. Switch to Linear colour space
+
+**Project Settings → Player → Other Settings → Color Space = Linear.**
+
+URP's lighting math assumes Linear. Left in Gamma it still renders — which is why this is so easy
+to miss — but every lit surface comes out oversaturated with wrong values, and you'll spend the
+rest of the migration trying to fix it in material colours where it cannot be fixed.
+
+This step was missing from the first version of this document, and it cost a full round of
+debugging. See [`Findings-URPVisuals.md` §1](Findings-URPVisuals.md).
+
+> Expect a long asset reimport, and expect the scene to look **different** immediately — usually
+> darker. That's correct. Anything tuned by eye under Gamma will need retuning; don't revert.
+
+**PASS:** `ProjectSettings/ProjectSettings.asset` contains `m_ActiveColorSpace: 1`.
+
 ### 2. Create and assign the URP asset
 
 1. `Assets/Settings/` → **Create → Rendering → URP Asset (with Universal Renderer)**.
@@ -158,18 +174,30 @@ properties into the rest.
 
 #### 4d. Wave → colour
 
-Six nodes, reproducing the original's last three lines exactly:
+Seven nodes, reproducing the original's last three lines exactly:
 
 ```
 albedo = lerp(_BaseColor, _CrestColor, saturate(wave));
 albedo *= 1.0 - saturate(-wave) * _TroughDarkness;
 ```
 
-```
-Wave ──> Saturate ──────────────────> Lerp( _BaseColor, _CrestColor, T ) ──┐
-                                                                           │
-Wave ──> Negate ──> Saturate ──> Multiply(_TroughDarkness) ──> One Minus ──┴──> Multiply ──> Base Color
-```
+![Shader Graph wiring for step 4d](images/urp-shadergraph-wave-to-colour.svg)
+
+The `Wave` output from the Custom Function node (dashed, built in 4c) forks into two branches:
+
+| # | Node | Input from | Purpose |
+|---|---|---|---|
+| 1 | **Saturate** | `Wave` | Clamps crests to 0..1 — the `saturate(wave)` blend factor |
+| 2 | **Lerp** | A = `_BaseColor`, B = `_CrestColor`, T = ① | The crest colour blend |
+| 3 | **Negate** | `Wave` | Flips troughs positive, for `saturate(-wave)` |
+| 4 | **Saturate** | ③ | Clamps troughs to 0..1 — anything that was a crest becomes 0 here |
+| 5 | **Multiply** | A = ④, B = `_TroughDarkness` | Scales how dark a trough goes |
+| 6 | **One Minus** | ⑤ | The `1.0 - …` darkening factor |
+| 7 | **Multiply** | A = ②, B = ⑥ | Applies the darkening to the blended colour → **Base Color** |
+
+Note the two branches carry different types: the top one becomes Color (Vector4) at the Lerp, the
+bottom stays Float the whole way. Node ⑦ multiplies a Vector4 by a Float, which broadcasts across
+all channels — that's the `albedo *= …` in the source line.
 
 Master stack: **Metallic = 0**, **Smoothness = 0.5** — the Standard defaults the original
 deliberately matched so an unrippled lake shades identically to before.
