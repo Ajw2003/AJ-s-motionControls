@@ -64,6 +64,9 @@ namespace Game
         private LineRenderer _line;
         private Transform _ghost;
 
+        /// <summary>How far the ghost is lifted so it rests on the water. See BuildGhost.</summary>
+        private float _ghostFloatOffset;
+
         // Sized from the tuning in Awake rather than left at a literal: PredictSeconds /
         // FixedStep is about 1100 points, so a hardcoded 512 quietly grew and reallocated
         // on the first arc of every session.
@@ -241,7 +244,14 @@ namespace Game
 
         private void UpdateGhost()
         {
-            _ghost.position = throwOrigin.position;
+            // Lifted so the ghost rests ON the water rather than half inside it. The throw
+            // origin sits at y = 0, which is the water plane, so without this the ghost is
+            // sliced flat by the surface for the entire time a player is aiming — which is
+            // most of the time anyone is looking at the screen.
+            //
+            // The same offset the thrown stone uses, from the same place, so the stone a
+            // player lines up cannot sit at a different height from the one that leaves.
+            _ghost.position = throwOrigin.position + Vector3.up * _ghostFloatOffset;
 
             // The phone IS the rock. Nothing is added on top.
             //
@@ -300,6 +310,9 @@ namespace Game
             var grey = Color.gray3;
             ghost.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
+
+            // Measured after the scale is applied, since the offset scales with the stone.
+            _ghostFloatOffset = RockLauncher.StoneFloatOffset(ghost);
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);

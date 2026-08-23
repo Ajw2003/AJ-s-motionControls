@@ -39,8 +39,9 @@ namespace Game
         /// offset applied in there would move the real contact point and change the bounce.
         /// </remarks>
         [Tooltip("Draws the stone resting on the surface instead of half-submerged. " +
-                 "Half the stone's height; see RockLauncher.StoneScale.")]
-        [SerializeField] private float visualFloatOffset = 0.125f;
+                 "Leave at 0 to measure it off the mesh — see RockLauncher.StoneFloatOffset. " +
+                 "Set a value only to override that.")]
+        [SerializeField] private float visualFloatOffset;
 
         [Header("Sink")]
         [Tooltip("How long the stone takes to disappear under the surface once it has sunk.")]
@@ -122,6 +123,14 @@ namespace Game
             else
             {
                 _perBounceSpinRetention = 1.0f;
+            }
+
+            // Measured once, here, rather than hardcoded: the launcher builds this object
+            // from Rock.fbx, so the mesh is the only thing that knows where its own bottom
+            // is. Zero means "not overridden in the inspector".
+            if (visualFloatOffset <= 0f)
+            {
+                visualFloatOffset = RockLauncher.StoneFloatOffset(gameObject);
             }
 
             // Offset here too, not just in Update, so the stone does not appear at the

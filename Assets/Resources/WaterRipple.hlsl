@@ -93,14 +93,26 @@ void RippleWave(
     float footprint = max(length(dpdx), length(dpdy));
 
     // Nyquist says two samples per wavelength is the floor. Fade from "just resolvable"
-    // to "comfortably resolved" over a 3x window rather than cutting at the limit, so
-    // rings dissolve smoothly into flat water instead of ending on a visible line.
+    // to "comfortably resolved" over a 3x window rather than cutting at the limit.
+    //
+    // This fades the fine corrugation ONLY. An earlier version multiplied the whole wave
+    // by this and bailed out when it hit zero, which deleted the ripples outright: the
+    // wavelength is 2.5 units, so anything past a few metres needs a sub-half-unit pixel
+    // footprint to survive, and almost no pixel on a lake viewed at a grazing angle has
+    // one. Fixing the aliasing by removing the thing that was aliasing is not a fix.
     float nyquist = footprint * 2.0;
-    float resolve = smoothstep(nyquist, nyquist * 3.0, rippleWavelength);
+    float detailFade = smoothstep(nyquist, nyquist * 3.0, rippleWavelength);
 
-    // Nothing here can be drawn honestly at this distance. Bail before the loop rather
-    // than multiplying by zero sixteen times.
-    if (resolve <= 0.0) return;
+    // A ring is still a real disturbance in the water even when its corrugation is too
+    // fine to draw. Where the sine cannot be resolved the wave falls back to this — a
+    // steady crest — so distance costs a ring its ripples, never its existence.
+    const float SmoothCrest = 0.55;
+
+    // The band envelope is far lower frequency than the sine, but it is not immune: once
+    // it is thinner than a pixel it breaks into a dashed line. Widening it to a few pixel
+    // footprints keeps distant rings solid, and costs nothing near the camera where
+    // rippleWidth is comfortably the larger of the two.
+    float width = max(rippleWidth, footprint * 3.0);
 
     int count = min(_RippleCount, MAX_RIPPLES);
     for (int r = 0; r < count; r++)
@@ -116,21 +128,22 @@ void RippleWave(
 
         // Windowed to the neighbourhood of the expanding front. Without this every
         // ripple rings the entire lake at once.
-        float band = saturate(1.0 - abs(d - front) / max(rippleWidth, 0.0001));
+        float band = saturate(1.0 - abs(d - front) / max(width, 0.0001));
         if (band <= 0.0) continue;
 
         // Trailing wavefronts behind the leading edge. Wavelength alone spans the look:
         // large is one clean shockwave, small is concentric rings.
         float phase = sin((front - d) * (6.28318530718 / max(rippleWavelength, 0.0001)));
 
+        // Corrugation where it can be drawn, a smooth crest where it cannot. This is the
+        // whole anti-aliasing fix: the sine is what turns into noise once it goes
+        // sub-pixel, so that is the only term distance is allowed to take away.
+        float shape = lerp(SmoothCrest, phase, detailFade);
+
         // band and life squared so rings ease out at both edges rather than ending on a
         // hard line.
-        wave += phase * band * band * life * life * rip.w;
+        wave += shape * band * band * life * life * rip.w;
     }
-
-    // Applied to the sum rather than per-ripple: the footprint is a property of the
-    // pixel, not of any one ring, so every ring at this pixel is equally unresolvable.
-    wave *= resolve;
 }
 
 // Shader Graph resolves Custom Function entry points by precision suffix and will ask
