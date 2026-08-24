@@ -61,6 +61,7 @@ Material:
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _Glossiness: 0.5
+    - _Metalic: 0.5
     - _Metallic: 0.5
     - _QueueControl: 0
     - _QueueOffset: 0
@@ -70,6 +71,7 @@ Material:
     - _RippleWaveLength: 1
     - _RippleWavelength: 1
     - _RippleWidth: 1.5
+    - _Smoothness: 0.5
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
