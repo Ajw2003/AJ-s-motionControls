@@ -66,6 +66,14 @@ namespace Game
         {
             _material = waterMaterial;
 
+            // Off by default, and this is what stops the water cutting the stone in half.
+            // SkipPhysics clamps the stone's centre to the surface, so its lower half is
+            // genuinely below the water at every bounce; with nothing in the depth buffer
+            // there is nothing to occlude it and it draws whole. RockController turns this
+            // back on for the length of a sink. See PlaceholderArt.SetWaterDepthWrite for
+            // why the render queue could never have done this job.
+            SetDepthWriting(false);
+
             if (tuning != null)
             {
                 _minImpactSpeed = tuning.MaxSpeed * minImpactSpeedFraction;
@@ -74,6 +82,14 @@ namespace Game
 
             PushTuning();
         }
+
+        /// <summary>
+        /// Lets the water hide things drawn after it, or not. Off during play so the stone
+        /// is never cut by the surface; on while a stone is sinking, so the water can
+        /// swallow it.
+        /// </summary>
+        public void SetDepthWriting(bool writesDepth) =>
+            PlaceholderArt.SetWaterDepthWrite(_material, writesDepth);
 
         private void Awake()
         {

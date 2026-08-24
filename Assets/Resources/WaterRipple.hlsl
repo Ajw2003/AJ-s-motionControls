@@ -92,27 +92,28 @@ void RippleWave(
     float2 dpdy = ddy(worldPos.xz);
     float footprint = max(length(dpdx), length(dpdy));
 
-    // Nyquist says two samples per wavelength is the floor. Fade from "just resolvable"
-    // to "comfortably resolved" over a 3x window rather than cutting at the limit.
+    // Hold the ring pattern at a roughly constant SCREEN size instead of a constant world
+    // size. This is the anti-aliasing fix, and it is the third attempt at it — the first
+    // two are worth recording because both failure modes are visible in a recording.
     //
-    // This fades the fine corrugation ONLY. An earlier version multiplied the whole wave
-    // by this and bailed out when it hit zero, which deleted the ripples outright: the
-    // wavelength is 2.5 units, so anything past a few metres needs a sub-half-unit pixel
-    // footprint to survive, and almost no pixel on a lake viewed at a grazing angle has
-    // one. Fixing the aliasing by removing the thing that was aliasing is not a fix.
-    float nyquist = footprint * 2.0;
-    float detailFade = smoothstep(nyquist, nyquist * 3.0, rippleWavelength);
-
-    // A ring is still a real disturbance in the water even when its corrugation is too
-    // fine to draw. Where the sine cannot be resolved the wave falls back to this — a
-    // steady crest — so distance costs a ring its ripples, never its existence.
-    const float SmoothCrest = 0.55;
-
-    // The band envelope is far lower frequency than the sine, but it is not immune: once
-    // it is thinner than a pixel it breaks into a dashed line. Widening it to a few pixel
-    // footprints keeps distant rings solid, and costs nothing near the camera where
-    // rippleWidth is comfortably the larger of the two.
-    float width = max(rippleWidth, footprint * 3.0);
+    // The rings are authored at a 1-2.5 unit wavelength on a lake 2000 units across, seen
+    // at a grazing angle. Past the near field one pixel spans more than a whole cycle, so
+    // point-sampling the sine there returns unrelated values per pixel: that was the
+    // salt-and-pepper "poorly rendered particles" look. Fading the wave out by how
+    // resolvable it was deleted the ripples entirely instead, because almost no pixel on
+    // the lake clears that bar. Falling back to a flat crest where the sine died turned
+    // them into soft white blobs, because almost every pixel took the fallback.
+    //
+    // Clamping the wavelength and the band width to the pixel footprint fixes the cause
+    // rather than the symptom: the pattern simply gets physically larger with distance, so
+    // it stays a resolvable sine everywhere and never needs to be faded, substituted or
+    // point-sampled below Nyquist. Distant rings are wider than they would "really" be —
+    // an honest trade against noise, blobs, or nothing at all.
+    //
+    // Near the camera both maxes pick the authored value, so close-up rings are exactly as
+    // tuned and none of this is doing anything.
+    float wavelength = max(rippleWavelength, footprint * 6.0);
+    float width      = max(rippleWidth,      footprint * 4.0);
 
     int count = min(_RippleCount, MAX_RIPPLES);
     for (int r = 0; r < count; r++)
@@ -133,16 +134,11 @@ void RippleWave(
 
         // Trailing wavefronts behind the leading edge. Wavelength alone spans the look:
         // large is one clean shockwave, small is concentric rings.
-        float phase = sin((front - d) * (6.28318530718 / max(rippleWavelength, 0.0001)));
-
-        // Corrugation where it can be drawn, a smooth crest where it cannot. This is the
-        // whole anti-aliasing fix: the sine is what turns into noise once it goes
-        // sub-pixel, so that is the only term distance is allowed to take away.
-        float shape = lerp(SmoothCrest, phase, detailFade);
+        float phase = sin((front - d) * (6.28318530718 / max(wavelength, 0.0001)));
 
         // band and life squared so rings ease out at both edges rather than ending on a
         // hard line.
-        wave += shape * band * band * life * life * rip.w;
+        wave += phase * band * band * life * life * rip.w;
     }
 }
 

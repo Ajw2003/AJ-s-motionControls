@@ -293,15 +293,8 @@ namespace Game
             ghost.transform.localScale = RockLauncher.StoneScale;
             Destroy(ghost.GetComponent<Collider>());
             var grey = Color.gray3;
-            var material = PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
-
-            // Same depth exemption as the live stone. The throw origin sits at y = 0, which
-            // is the water plane, so without this the ghost is sliced flat by the surface
-            // for the whole time anyone is aiming — and unlike the thrown stone, it never
-            // moves off it.
-            PlaceholderArt.SetDepthTested(material, false);
-
-            ghost.GetComponent<MeshRenderer>().material = material;
+            ghost.GetComponent<MeshRenderer>().material =
+                PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
