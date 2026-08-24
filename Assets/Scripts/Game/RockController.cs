@@ -94,6 +94,11 @@ namespace Game
                 _perBounceSpinRetention = 1.0f;
             }
 
+            // In case a previous sink was interrupted — by a despawn landing mid-descent,
+            // or a match reset — rather than trusting the last one to have tidied up.
+            var water = FindFirstObjectByType<WaterRipples>();
+            if (water != null) water.SetDepthWriting(false);
+
             transform.position = state.Position;
             transform.rotation = state.Attitude;
             IsFlying = true;
@@ -176,11 +181,15 @@ namespace Game
         /// Drops the stone under the surface once its run is over.
         /// </summary>
         /// <remarks>
-        /// The whole effect is the first line. While the stone is in play it ignores depth
-        /// so the water cannot cut off the half of it that is below the surface (see
-        /// PlaceholderArt.SetDepthTested); handing it back to the depth buffer here is what
-        /// lets the water swallow it as it descends. The translation on its own would just
-        /// slide a fully-visible stone downwards.
+        /// The descent on its own would just slide a fully-visible stone downwards. What
+        /// makes it read as sinking is the first line: during play the water writes no
+        /// depth, so nothing can occlude the stone and it is never cut by the surface;
+        /// switching depth writing on lets the water swallow it as it goes down.
+        ///
+        /// That toggle lives on the WATER rather than the stone, and not by preference —
+        /// URP's Lit shader exposes no _ZTest to turn off, and a render queue only decides
+        /// draw order, not occlusion. PlaceholderArt.SetWaterDepthWrite records both dead
+        /// ends in full.
         ///
         /// Safe to own the transform because Update only writes position while IsFlying,
         /// and IsFlying is already false by the time this starts. Rotation is still driven
@@ -188,8 +197,8 @@ namespace Game
         /// </remarks>
         private IEnumerator SinkRoutine()
         {
-            var renderer = GetComponent<MeshRenderer>();
-            if (renderer != null) PlaceholderArt.SetDepthTested(renderer.material, true);
+            var water = FindFirstObjectByType<WaterRipples>();
+            if (water != null) water.SetDepthWriting(true);
 
             var start = transform.position;
             var end = start + Vector3.down * sinkDepth;
@@ -206,6 +215,12 @@ namespace Game
 
                 yield return null;
             }
+
+            // Handed back before this object is destroyed. Left on, the next throw's stone
+            // would be cut by the surface again — and the cause would be a coroutine that
+            // finished on a rock that no longer exists, which is a miserable thing to find.
+            if (water != null) water.SetDepthWriting(false);
         }
+
     }
 }

@@ -25,14 +25,10 @@ namespace Game
     /// That pinning is the only thing in this file worth keeping — it is a bug fix, not
     /// decoration.
     ///
-    /// The queues are pinned under URP too, and that is deliberate rather than an
-    /// oversight. URP picks the opaque or transparent pass by render queue, so a stone at
-    /// 3100 lands in the transparent pass and draws over the water without depth testing
-    /// against it — which is exactly what is wanted here. The stone's lower half is below
-    /// the water plane at every bounce (SkipPhysics clamps its centre to the surface), and
-    /// letting the water occlude that half honestly reads as a hard flat cut across the
-    /// stone. Drawing it over the top hides a geometry problem that is not worth solving
-    /// properly. Sinking is handled as a deliberate effect at the end of a run instead.
+    /// The queues are pinned under URP too, and they still only buy draw ORDER. They do
+    /// NOT stop the water hiding the stone — depth testing does that, and it is settled
+    /// separately by SetWaterDepthWrite below. Assuming a later queue was enough to draw
+    /// over the water cost a debugging round, so it is spelled out here as well.
     ///
     /// Shader selection is pipeline-aware, and that part is not optional. Under URP,
     /// Standard is not an error — it is magenta.
@@ -48,36 +44,42 @@ namespace Game
         /// <summary>The aim arc, above both — it is a guide and must never be hidden.</summary>
         public const int ArcQueue = 3200;
 
-        private static readonly int ZTestId = Shader.PropertyToID("_ZTest");
+        private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
 
         /// <summary>
-        /// Whether this material is allowed to be hidden by things already in the depth
-        /// buffer. Off means it draws over the scene regardless of what is in front of it.
+        /// Whether the water writes depth, and so whether it is able to hide anything
+        /// drawn after it.
         /// </summary>
         /// <remarks>
-        /// This, not the render queue, is what decides whether the water can cut the stone
-        /// in half — and the distinction cost a round of debugging, so it is worth stating
-        /// plainly. The queue constants above control draw ORDER only. A stone at
-        /// StoneQueue really does draw after the water, but URP/Lit still runs ZTest
-        /// LEqual, so its submerged fragments fail against the depth the water already
-        /// wrote and are discarded anyway. Reordering cannot fix an occlusion problem.
+        /// This is the only lever available for the stone-cut-in-half problem, and finding
+        /// that out took two wrong turns worth recording.
         ///
-        /// Under the Built-in pipeline this never came up because the water ran ZWrite Off
-        /// — there was nothing in the depth buffer to lose to. URP's water is opaque and
-        /// writes depth, so the test finally has something to bite on.
+        /// The render queue was the first. Queues control draw ORDER only: a stone at
+        /// StoneQueue really does draw after the water, but it still runs ZTest LEqual, so
+        /// its submerged fragments fail against the depth the water already wrote and are
+        /// discarded regardless of when they are drawn. Reordering cannot fix occlusion.
         ///
-        /// SkipPhysics clamps the stone's centre to the water plane, so its lower half is
-        /// genuinely below the surface at every bounce. Rather than move the geometry, the
-        /// stone simply ignores depth while it is in play, and is handed back to the depth
-        /// buffer at the end of a run so it can be seen to sink.
+        /// Setting _ZTest on the STONE was the second, and it silently did nothing.
+        /// URP's hand-written Lit.shader has no ZTest line in its ForwardLit pass and
+        /// declares no _ZTest property, so it is hardwired to LEqual and SetInt lands on a
+        /// property that does not exist. (Shader Graph materials DO expose _ZTest, which is
+        /// what made this look plausible — the water material has one. The stone is not a
+        /// Shader Graph material.)
+        ///
+        /// So the toggle has to live on the water, which IS a Shader Graph material with
+        /// material override enabled, and therefore really does emit ZWrite[_ZWrite]. With
+        /// depth writing off there is nothing in the buffer to occlude the stone and it
+        /// draws whole; turning it back on lets the water swallow the stone as it sinks.
+        ///
+        /// Safe now in a way it was not before URP, because the queues above are explicit
+        /// and distinct. The original draw-order bug came from every object sharing one
+        /// Transparent queue and falling back to sorting by distance to bounds centre;
+        /// with water, stone and arc pinned to 2000/3100/3200 that cannot recur.
         /// </remarks>
-        public static void SetDepthTested(Material material, bool depthTested)
+        public static void SetWaterDepthWrite(Material waterMaterial, bool writesDepth)
         {
-            if (material == null) return;
-
-            material.SetInt(ZTestId, (int)(depthTested
-                ? CompareFunction.LessEqual
-                : CompareFunction.Always));
+            if (waterMaterial == null) return;
+            waterMaterial.SetInt(ZWriteId, writesDepth ? 1 : 0);
         }
 
         /// <summary>
