@@ -12,11 +12,28 @@ codebase specifically will spring on an audio/VFX layer.
 
 Four facts about this project change what is and isn't possible. Read these before the design.
 
-### 1.1 Built-in Render Pipeline — not URP
+### 1.1 Universal Render Pipeline
 
-`ProjectSettings/GraphicsSettings.asset` has `m_CustomRenderPipeline: {fileID: 0}`, and
-`Packages/manifest.json` has no `com.unity.render-pipelines.*`. This is the stock Built-in
-pipeline.
+> **Revised 2026-08-25.** This section originally described the Built-in pipeline and said in bold
+> "do not migrate to URP for this work," on the grounds that migrating meant rewriting the water.
+> The migration happened on `urp-migration` and the water was rewritten. The cost that argument was
+> avoiding is already paid, so the constraint is gone and every conclusion drawn from it inverts.
+> See [`Findings-URPVisuals.md`](Findings-URPVisuals.md) and
+> [`Migration-URP.md`](Migration-URP.md) for that work, and
+> [`Plan-SfxVfx-Delta.md`](Plan-SfxVfx-Delta.md) for the full audit this revision came from.
+
+`Packages/manifest.json` has `com.unity.render-pipelines.universal: 17.3.0` on Unity 6000.3.10f1.
+The pipeline assets are `Assets/Resources/RockSkippingUrp.asset` and
+`RockSkippingUrp_Renderer.asset`; the global settings live at
+`Assets/UniversalRenderPipelineGlobalSettings.asset`.
+
+The water is now [`WaterRippleURP.shadergraph`](../Assets/Resources/WaterRippleURP.shadergraph)
+(with `WaterRipple.hlsl` behind it). The old Built-in surface shader
+[`WaterRipple.shader`](../Assets/Resources/WaterRipple.shader) survives only as a runtime fallback
+in [`PlaceholderArt.CreateWater`](../Assets/Scripts/Game/PlaceholderArt.cs#L118), which tries the
+graph first and the surface shader second. The two assets are named differently on purpose —
+`Resources.Load` would be ambiguous otherwise. When the fallback goes, the graph takes the plain
+name.
 
 Consequences:
 
@@ -24,41 +41,54 @@ Consequences:
 |---|---|
 | Particle System (Shuriken) | Yes — `com.unity.modules.particlesystem` is in the manifest |
 | `TrailRenderer` / `LineRenderer` | Yes, built-in |
-| VFX Graph | **No** — URP/HDRP only |
-| Shader Graph | **No** — URP/HDRP only |
-| URP `Volume` post-processing (bloom, vignette) | **No** |
-| Post Processing Stack v2 (`com.unity.postprocessing`) | Yes, if added — this is the Built-in route to bloom |
+| Shader Graph | **Yes, and already in use** — the water is one |
+| VFX Graph | **Yes** — `com.unity.visualeffectgraph: 17.3.0`, added 2026-08-25 for this work |
+| URP `Volume` post-processing (bloom, vignette, colour grading) | **Yes** — a Global Volume, no package needed |
+| Post Processing Stack v2 (`com.unity.postprocessing`) | **Do not add.** Wrong stack for URP; it is the Built-in route and would conflict |
 
-**Do not migrate to URP for this work.** [`WaterRipple.shader`](../Assets/Resources/WaterRipple.shader#L73)
-is a *surface shader* (`#pragma surface surf Standard fullforwardshadows addshadow`). Surface
-shaders do not compile under URP. Migrating means rewriting the water — which is the one piece of
-real art the project has — as a side effect of adding a trail. If bloom turns out to be wanted for
-sun-glint on the water, add PPv2 as a separate, later decision.
+**Bloom is no longer deferred and no longer costs a package.** §6.11 is superseded: a Global Volume
+with a Bloom override is a scene addition, not a dependency decision. It still changes the global
+look, so make it deliberately — but the reason it was parked ("needs PPv2, a package addition") no
+longer applies.
 
-### 1.2 Render queues are pinned by hand, and new renderers will break if they aren't
+**VFX Graph is in, by decision, for authoring visibility.** Shuriken would carry the particle counts
+this game actually needs — a 20-burst skip run is nothing — so this is not a throughput choice. It
+is that the graph is inspectable and tunable as a visual artifact rather than as a wall of
+Shuriken module foldouts, which is the same reason `SkipTuning` and the proposed `TrailTuning`
+exist. Two things follow:
 
-[`PlaceholderArt`](../Assets/Scripts/Game/PlaceholderArt.cs) carries a long comment about a bug
-where the 200-unit water plane painted over the stone and the aim arc. The cause: everything ran
-`ZWrite Off`, so the depth buffer stayed empty and Unity fell back to sorting transparent
-renderers by distance to each renderer's *bounds centre*. The water's centre is at z = 60; the
-camera trails the stone by a few units; the moment the stone passed z = 60 the water sorted nearer
-and drew last.
+- **Keep the trail a `TrailRenderer`** (§5.1). VFX Graph is for the *bursts* — skip splash (§6.5),
+  sink splash, launch spray (§6.8). A ribbon behind a moving transform is what `TrailRenderer` is
+  for and a graph would be strictly more work.
+- **VFX Graph output is GPU-simulated and does not respect `Material.renderQueue` the way a mesh
+  renderer does.** Its sorting comes from the output context's own blend/sort settings. So the
+  §1.2 queue discipline below covers the trail and any world-space UI, but a VFX Graph splash needs
+  its depth and ordering set *in the graph's output context*. Budget an afternoon to find this out
+  the pleasant way rather than the §1.2 way.
 
-The fix was explicit `renderQueue` per role:
+### 1.2 Render queues are pinned by hand — and post-URP, depth is a separate lever that moves
+
+> **Revised 2026-08-25.** The queue discipline below still holds. What changed is that the water
+> now writes depth *some of the time*, which both defeats the original "queue is enough" reasoning
+> and invalidates this section's old claim that soft particles are permanently impossible.
+
+**The original bug.** [`PlaceholderArt`](../Assets/Scripts/Game/PlaceholderArt.cs) carries a long
+comment about the 200-unit water plane painting over the stone and the aim arc. The cause:
+everything ran `ZWrite Off`, so the depth buffer stayed empty and Unity fell back to sorting
+transparent renderers by distance to each renderer's *bounds centre*. The water's centre is at
+z = 60; the camera trails the stone by a few units; the moment the stone passed z = 60 the water
+sorted nearer and drew last.
+
+The fix was explicit `renderQueue` per role, and those three constants are what exists today
+([PlaceholderArt.cs:39](../Assets/Scripts/Game/PlaceholderArt.cs#L39)):
 
 ```
 WaterQueue = 2000    StoneQueue = 3100    ArcQueue = 3200
 ```
 
-The water still writes no depth ([`WaterRipple.shader:56`](../Assets/Resources/WaterRipple.shader#L56)
-`ZWrite Off`).
-
-**Every new renderer this plan adds — trail, splash particles, score popups, launch spray — must
-pin a queue in `PlaceholderArt` or it will vanish behind the water at the exact moment the rock is
-furthest out, which is the moment anyone is looking.** This is the single most likely way the VFX
-work "mysteriously stops working halfway down the lake."
-
-Proposed additions to `PlaceholderArt`:
+**Every new renderer this plan adds — trail, splash, score popups — must pin a queue in
+`PlaceholderArt`.** Still true, still the most likely way the VFX work "mysteriously stops working
+halfway down the lake." Proposed additions, unchanged:
 
 ```csharp
 public const int WaterQueue      = 2000;
@@ -69,8 +99,55 @@ public const int ArcQueue        = 3200;
 public const int WorldUiQueue    = 3300;  // score popups — above everything
 ```
 
-Also: because the water writes no depth, **soft particles will not work** (they need depth to fade
-against). Use hard-edged particles and rely on the queue ordering.
+#### What URP changed: order and occlusion are now two different problems
+
+`PlaceholderArt` documents two dead ends found after the migration, and both are worth reading
+before touching a renderer:
+
+1. **A later queue does not beat `ZTest LEqual`.** Queues control draw *order* only. A stone at
+   `StoneQueue` genuinely draws after the water, but its submerged fragments still fail the depth
+   test against whatever the water wrote and are discarded regardless. Reordering cannot fix
+   occlusion.
+2. **`_ZTest` on the stone silently does nothing.** URP's hand-written `Lit.shader` has no `ZTest`
+   line in its ForwardLit pass and declares no `_ZTest` property, so it is hardwired to `LEqual`
+   and `SetInt` lands on a property that does not exist. (Shader Graph materials *do* expose
+   `_ZTest` — which is what made this look plausible, since the water material has one. The stone
+   is not a Shader Graph material.)
+
+The only working lever is depth-write **on the water**, which is a Shader Graph material with
+material override enabled and therefore really does emit `ZWrite[_ZWrite]`:
+[`PlaceholderArt.SetWaterDepthWrite`](../Assets/Scripts/Game/PlaceholderArt.cs#L79).
+
+#### The depth-write window, and why it matters to every effect here
+
+[`WaterRipples`](../Assets/Scripts/Game/WaterRipples.cs#L73) turns water depth-write **on for the
+length of a sink** and off otherwise, so the lake can visibly swallow the stone instead of the
+stone drawing whole through it.
+
+So the water's depth behaviour is not a constant. It flips mid-throw, at the exact moment the
+biggest effects fire. Three consequences:
+
+- **Soft particles: still no, but for a new reason.** The old reason ("the water never writes
+  depth, so there is nothing to fade against") is obsolete. The new reason is worse: they would
+  fade against the water during a sink and not during flight, so a splash would change character
+  between the skip bursts and the final one for no authored reason. Use hard-edged particles.
+- **Anything spawned during a sink can be clipped by the water.** The sink splash and the final
+  ripple both land inside the depth-write window. Author them at or above the waterline, or accept
+  that the submerged half is gone. This is the successor to the original "vanishes past z = 60"
+  trap — same symptom, different cause, equally delayed and confusing.
+- **The trail must stop emitting on sink** (§5.1 already says this for a different reason —
+  so it doesn't follow the stone underwater). Post-URP it is doubly required: an emitting trail
+  entering the depth-write window gets cut rather than fading.
+
+#### Before relying on anything depth-based
+
+URP exposes a real depth texture, but only if the renderer asset asks for it. Check whether
+`Assets/Resources/RockSkippingUrp_Renderer.asset` has **Depth Texture** enabled before designing
+any effect that samples it. Enabling it is a per-frame cost on a scene that currently does not pay
+it, so that is a decision, not a default.
+
+**VFX Graph outputs sit outside all of the above** — their sorting and depth behaviour come from
+the output context in the graph, not from `Material.renderQueue`. See §1.1.
 
 ### 1.3 Serialized fields are always default on anything Bootstrap creates
 
@@ -521,10 +598,14 @@ realtime, so a timescale dip desynchronises the felt timing between phone and TV
 under 60ms and test with a phone in hand. Listed for completeness; I'd leave it out of the first
 pass.
 
-### 6.11 Bloom / sun glint — *deferred*
+### 6.11 Bloom / sun glint — *no longer blocked; still a look decision*
 
-Needs Post Processing Stack v2 (§1.1). Nice on water, but it's a package addition and a global
-look change. Revisit once the rest lands.
+> **Revised 2026-08-25.** This said "deferred — needs Post Processing Stack v2, a package
+> addition." Under URP it needs no package: add a Global Volume with a Bloom override. See §1.1.
+
+The dependency argument for deferring is gone. What remains is that bloom is a global look change,
+so it's worth doing deliberately and looking at, rather than switching on. Sun glint on the water
+is the reason to want it.
 
 ---
 
@@ -632,8 +713,16 @@ haptics.
    scene load; if not, phase alone is correct and simpler.
 5. **Trail on the aim ghost?** The ghost doesn't move, so a trail would be invisible — unless you
    want a style preview during aiming.
-6. **Post Processing Stack v2 — in or out?** §6.11. Deferring is the recommendation, but it's a
-   look decision worth making deliberately rather than by omission.
+6. ~~**Post Processing Stack v2 — in or out?**~~ **Closed 2026-08-25: out, and moot.** PPv2 is the
+   Built-in stack and would conflict with URP. Bloom is now a Global Volume override needing no
+   package (§1.1, §6.11). The remaining question is narrower: add a Global Volume with Bloom to the
+   placeholder scene, yes or no?
+7. **VFX Graph output ordering — where does it actually land?** §1.1. GPU-simulated output does not
+   honour `Material.renderQueue`, so the §1.2 queue constants don't cover it. Needs one afternoon
+   of finding out empirically where a splash sorts against water, stone and arc, and whether the
+   depth-write window (§1.2) clips it.
+8. **URP renderer Depth Texture — on or off?** §1.2. Off costs nothing and rules out depth-based
+   effects; on costs a per-frame pass the scene doesn't currently pay.
 
 ---
 
