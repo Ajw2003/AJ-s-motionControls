@@ -99,7 +99,7 @@ namespace Game
             var launch = SkipPhysics.CreateLaunch(
                 _preview.ThrowOrigin.position, message.power, attitude, message.spinRate, tuning);
 
-            _active = CreateRockObject();
+            _active = CreateRockObject(tuning);
             _active.Launch(launch, tuning, message.playerId);
         }
 
@@ -145,7 +145,7 @@ namespace Game
         /// from every angle for free — which is what the stone has to do now that it
         /// tracks the phone one-to-one.
         /// </remarks>
-        private static RockController CreateRockObject()
+        private static RockController CreateRockObject(SkipTuning tuning)
         {
             var rock = Resources.Load<GameObject>("RockObject");
             var go = Instantiate(rock);
@@ -155,7 +155,15 @@ namespace Game
             go.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
 
-            return go.AddComponent<RockController>();
+            var controller = go.AddComponent<RockController>();
+
+            // After the controller, because the trail reads IsFlying and Speed off it. The
+            // same tuning the throw is about to be simulated with is handed over so the
+            // trail's speed thresholds cannot drift from the launch speed they scale
+            // against — see TrailTuning's remarks on why they are fractions.
+            RockTrail.Attach(go, tuning);
+
+            return controller;
         }
     }
 }

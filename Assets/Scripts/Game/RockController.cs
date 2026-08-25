@@ -72,6 +72,21 @@ namespace Game
         public int SkipCount => _state.SkipCount;
         public float Distance => Vector3.Distance(_origin, _state.Position);
 
+        /// <summary>
+        /// How fast the stone is travelling right now, in m/s. Read-only, for presentation.
+        /// </summary>
+        /// <remarks>
+        /// Exposed rather than derived from the transform by whoever wants it: position is
+        /// only written while IsFlying, so a frame-delta reading would report a stone that
+        /// had stopped dead the instant a run ended and then report the sink descent as
+        /// speed. This is the solver's own number and stays correct in both.
+        ///
+        /// A property, not an event, and that keeps it on the right side of the line this
+        /// class documents. Reading state publishes nothing and cannot fire on a throw that
+        /// never happened.
+        /// </remarks>
+        public float Speed => _state.Velocity.magnitude;
+
         public void Launch(SkipState state, SkipTuning tuning, string playerId)
         {
             _state = state;

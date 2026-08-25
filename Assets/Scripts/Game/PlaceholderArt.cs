@@ -38,6 +38,17 @@ namespace Game
         /// <summary>Drawn first, so everything else lands on top of it.</summary>
         public const int WaterQueue = 2000;
 
+        /// <summary>
+        /// The stone's trail: above the water, below the stone that is drawing it.
+        /// </summary>
+        /// <remarks>
+        /// Below StoneQueue on purpose. The trail is emitted from the stone's own centre,
+        /// so its newest segment and the stone occupy the same space — drawn after, a
+        /// translucent ribbon washes over the near face of the thing it is meant to be
+        /// trailing and the stone reads as fogged.
+        /// </remarks>
+        public const int TrailQueue = 3050;
+
         /// <summary>The stone and its aiming ghost, above the water.</summary>
         public const int StoneQueue = 3100;
 
@@ -125,6 +136,55 @@ namespace Game
             }
 
             return new Material(shader) { color = colour, renderQueue = WaterQueue };
+        }
+
+        /// <summary>
+        /// A transparent, vertex-coloured material for a <see cref="TrailRenderer"/>.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="Create"/> because a trail needs two things an opaque lit
+        /// material does not have: alpha blending, and respect for vertex colour. A
+        /// TrailRenderer's gradient reaches the shader as vertex colour and nothing else —
+        /// on a shader that ignores it the ribbon comes out flat white and the authored fade
+        /// silently does nothing, which looks like the gradient failing to apply rather than
+        /// the material being wrong.
+        ///
+        /// The tint is left white here. Colour is the gradient's job; multiplying a second
+        /// colour in underneath would mean two places to edit one look.
+        ///
+        /// Sprites/Default first here, and that inverts FindOpaqueShader's URP-first rule
+        /// on purpose rather than by oversight. Three things have to be true at once for a
+        /// trail — alpha blending, vertex colour, and a sampled main texture for the dashed
+        /// style — and Sprites/Default is the only name that has all three with no setup and
+        /// is guaranteed to be in Always Included Shaders, so it cannot come back null in a
+        /// player build. It renders correctly under URP; it is simply unlit.
+        ///
+        /// URP's Particles/Unlit would be the richer choice but defaults to an OPAQUE
+        /// surface, so using it means setting _Surface, _Blend, _SrcBlend, _DstBlend, ZWrite
+        /// and the _SURFACE_TYPE_TRANSPARENT keyword by hand from code. Every one of those is
+        /// a silent no-op if the property name is wrong — which is exactly the failure mode
+        /// SetWaterDepthWrite records losing a debugging round to on the stone's _ZTest.
+        /// Worth revisiting deliberately if the trail ever needs to receive light; not worth
+        /// carrying untested for a ribbon that is meant to read as spray.
+        /// </remarks>
+        public static Material CreateTrail()
+        {
+            var shader = Shader.Find("Sprites/Default")
+                      ?? Shader.Find("Universal Render Pipeline/Particles/Unlit");
+
+            if (shader == null)
+            {
+                Debug.LogWarning("[PlaceholderArt] No trail shader resolved — trail will not draw.");
+                return null;
+            }
+
+            // Tint left white. Colour is the gradient's job, and a second colour multiplied
+            // in underneath would mean two places to edit one look.
+            return new Material(shader)
+            {
+                color = Color.white,
+                renderQueue = TrailQueue,
+            };
         }
 
         /// <summary>
