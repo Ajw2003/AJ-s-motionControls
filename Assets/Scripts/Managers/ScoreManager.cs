@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using EventSystems;
+using EventTypes.MatchEvents;
 using EventTypes.SkipEvents;
 using Singleton;
 using UnityEngine;
@@ -48,7 +49,17 @@ namespace Managers
                 return;
 
             _scores.TryGetValue(e.PlayerId, out var current);
-            _scores[e.PlayerId] = current + total;
+            var updated = current + total;
+            _scores[e.PlayerId] = updated;
+
+            // After the dictionary is written, never before. TurnManager handles this same
+            // ThrowCompletedEvent immediately after this method returns and reads the scores
+            // to build standings and broadcast them — a subscriber woken here finds the
+            // total already banked, matching what every other reader will see.
+            //
+            // Below the empty-id guard above, so a throw with no player attached scores
+            // nothing and announces nothing rather than announcing points that went nowhere.
+            EventManager.Instance?.Publish(new ScoreAwardedEvent(e.PlayerId, total, updated));
         }
 
         public int GetScore(string playerId)

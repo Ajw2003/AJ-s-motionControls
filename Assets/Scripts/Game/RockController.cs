@@ -117,6 +117,19 @@ namespace Game
             transform.position = state.Position;
             transform.rotation = state.Attitude;
             IsFlying = true;
+
+            // Last, so anything reacting to a launch finds the stone already placed,
+            // oriented and flying rather than mid-construction.
+            //
+            // Power is recovered from the launch speed rather than passed in. CreateLaunch
+            // builds the velocity from a unit horizontal heading, so its magnitude is
+            // exactly the speed it started from, and that speed is Lerp(MinSpeed, MaxSpeed,
+            // power) — inverting the lerp returns the original number with no error. Adding
+            // a power parameter here purely to re-publish it would create a second copy of
+            // a value that is already recoverable, and a second copy can disagree.
+            var power = Mathf.InverseLerp(tuning.MinSpeed, tuning.MaxSpeed, state.Velocity.magnitude);
+
+            EventManager.Instance?.Publish(new RockLaunchedEvent(_origin, power, totalSkips));
         }
 
         private void Update()
@@ -148,6 +161,13 @@ namespace Game
 
                     if (step.Sank)
                     {
+                        // Before Finish, and the order is the point. Finish publishes
+                        // ThrowCompletedEvent, which banks the score and rotates the turn
+                        // synchronously — so publishing the splash first means the stone's
+                        // own moment is handled before the match moves on top of it.
+                        EventManager.Instance?.Publish(
+                            new RockSunkEvent(_state.Position, step.ImpactSpeed, _state.SkipCount));
+
                         Finish();
                         break;
                     }

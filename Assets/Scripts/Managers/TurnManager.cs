@@ -61,6 +61,35 @@ namespace Managers
 
         public MatchPhase Phase { get; private set; } = MatchPhase.Lobby;
 
+        /// <summary>
+        /// The one place Phase is ever assigned. Announces real changes and swallows
+        /// redundant ones.
+        /// </summary>
+        /// <remarks>
+        /// A setter rather than three assignments with a Publish next to each, because the
+        /// duplicate that eventually gets missed is the bug: a phase change that moves the
+        /// field without announcing it leaves music and screens on the previous phase with
+        /// nothing in the log to say why.
+        ///
+        /// The equality check is not tidiness either. ReturnToLobby is reachable from the
+        /// lobby — OnPlayerLeft calls it whenever the roster empties, and the guard there is
+        /// on Phase != Lobby, but StartMatch with no players and other paths can still land
+        /// here with nothing to change. Announcing that would restart lobby music every time
+        /// the last player disconnects.
+        ///
+        /// Published after the assignment, so a subscriber reading Phase sees the new value
+        /// rather than the one it is being told is over.
+        /// </remarks>
+        private void SetPhase(MatchPhase phase)
+        {
+            if (Phase == phase) return;
+
+            var from = Phase;
+            Phase = phase;
+
+            EventManager.Instance?.Publish(new MatchPhaseChangedEvent(from, phase));
+        }
+
         /// <summary>Null outside the Playing phase — nobody may throw in a lobby.</summary>
         public string ActivePlayer =>
             Phase == MatchPhase.Playing && _current >= 0 && _current < _players.Count
@@ -143,7 +172,7 @@ namespace Managers
             ClearLastThrow();
 
             _round = 0;
-            Phase = MatchPhase.Playing;
+            SetPhase(MatchPhase.Playing);
 
             Debug.Log($"[TurnManager] Match started — {_players.Count} players, {roundsPerMatch} rounds");
             StartTurn(0);
@@ -198,7 +227,7 @@ namespace Managers
 
         private void EndMatch()
         {
-            Phase = MatchPhase.Results;
+            SetPhase(MatchPhase.Results);
             _current = -1;
 
             RebuildStandings();
@@ -212,13 +241,18 @@ namespace Managers
 
             Debug.Log($"[TurnManager] Match over after {_round} rounds — winner: {winner ?? "tied"}");
 
+            // The computed winner is passed through rather than recomputed downstream, so
+            // the tie rule above stays the single definition of who won. Null here means a
+            // tie and is expected — see MatchEndedEvent.
+            EventManager.Instance?.Publish(new MatchEndedEvent(winner));
+
             SendTurnStates();
         }
 
         /// <summary>Back to the join screen with scores cleared, ready for another match.</summary>
         public void ReturnToLobby()
         {
-            Phase = MatchPhase.Lobby;
+            SetPhase(MatchPhase.Lobby);
             _current = -1;
             _round = 0;
 
@@ -242,6 +276,12 @@ namespace Managers
 
             SendTurnStates();
             Debug.Log($"[TurnManager] Round {_round + 1}/{roundsPerMatch}: {ActivePlayer}'s turn");
+
+            // After _current is set, so ActivePlayer resolves to the player this announces.
+            // After SendTurnStates too, so the phone that is now up has already been told
+            // before anything on the TV starts celebrating the handover.
+            EventManager.Instance?.Publish(
+                new TurnStartedEvent(ActivePlayer, _round, roundsPerMatch));
         }
 
         // ------------------------------------------------------------------ standings
