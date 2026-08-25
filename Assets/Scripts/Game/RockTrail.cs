@@ -41,6 +41,30 @@ namespace Game
         private float _maxSpeed;
 
         /// <summary>
+        /// Local rotation that lays the ribbon flat in the stone's own face plane.
+        /// </summary>
+        /// <remarks>
+        /// LineAlignment.TransformZ builds every trail quad facing the transform's local +Z,
+        /// so making the ribbon flat WITH the stone is a question of pointing this child's
+        /// +Z along the stone's face normal — and the face normal is local +Y, not +Z.
+        /// RockController spins the stone with Quaternion.Euler(0, angle, 0) applied on the
+        /// right, which is a turn about its own local Y, and calls that "about its own face
+        /// normal." So the flat face is the local XZ plane and its normal is local up.
+        ///
+        /// Euler(-90, 0, 0) is the rotation that carries +Z onto +Y, and no other component
+        /// is needed: the remaining freedom is a turn about the ribbon's own normal, which
+        /// does not change the plane it lies in.
+        ///
+        /// It also cannot be shaken by the spin, which is the part worth having. The stone
+        /// turns about local Y at up to MaxVisualSpinDegPerSec; this child's +Z IS local Y,
+        /// and a rotation about an axis leaves that axis fixed — so the ribbon's plane is
+        /// invariant under the spin and the trail cannot strobe or flicker as the stone
+        /// whirls. Aligning to any other local axis would have it flipping edge-on twice per
+        /// revolution.
+        /// </remarks>
+        private static readonly Quaternion FaceAlignedRotation = Quaternion.Euler(-90f, 0f, 0f);
+
+        /// <summary>
         /// Hangs a configured trail off a rock, or returns null if the style is None or the
         /// material could not be built.
         /// </summary>
@@ -74,6 +98,7 @@ namespace Game
             // the surface exactly where the ripple does.
             var go = new GameObject("RockTrail");
             go.transform.SetParent(rock.transform, false);
+            go.transform.localRotation = FaceAlignedRotation;
 
             var self = go.AddComponent<RockTrail>();
             self.Init(tuning, skipTuning, material, rock.GetComponent<RockController>());
@@ -107,11 +132,24 @@ namespace Game
             _trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _trail.receiveShadows = false;
 
-            // Aligned to the camera rather than kept flat. The camera drops to near the
-            // waterline while following a throw (RockLauncher.FollowActiveRock locks its Y
-            // to the home height), so a view-aligned ribbon stays readable edge-on where a
-            // world-aligned one would vanish to a line at exactly that angle.
-            _trail.alignment = LineAlignment.View;
+            // Flat in the stone's own face plane, not billboarded at the camera. The stone
+            // tracks the phone one-to-one and its face angle is the variable the whole game
+            // is about, so a ribbon lying in that plane shows the angle of every bounce —
+            // whereas LineAlignment.View turns to meet the camera and reads the same width
+            // whatever the stone is doing, which is the one thing it should not do here.
+            //
+            // FaceAlignedRotation on this child is the other half of this line and they only
+            // work as a pair: TransformZ faces local +Z, and the rotation is what puts local
+            // +Z on the stone's face normal. Changing either alone silently tilts the ribbon
+            // off the face.
+            //
+            // Cost, and it is real: a plane seen edge-on is a line. The camera sits near the
+            // waterline (RockLauncher.FollowActiveRock locks its Y to the home height) and a
+            // well-thrown stone lies nearly flat, so the face plane is close to horizontal
+            // and the view of it is close to grazing — the trail will read thin on exactly
+            // the good throws. Widen it if so: WidthMultiplier, or the Wake style, which is
+            // WakeWidthScale times wider for this reason.
+            _trail.alignment = LineAlignment.TransformZ;
 
             if (tuning.Style == TrailTuning.TrailStyle.Dashed) ApplyDash(tuning);
 
