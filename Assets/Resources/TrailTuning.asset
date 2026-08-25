@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Game.TrailTuning
   Style: 1
   Time: 0.55
-  WidthMultiplier: 0.8
+  WidthMultiplier: 1
   WidthCurve:
     serializedVersion: 2
     m_Curve:
