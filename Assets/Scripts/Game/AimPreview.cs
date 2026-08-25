@@ -290,7 +290,6 @@ namespace Game
             var rock = Resources.Load<GameObject>("RockObject");
             var ghost = Instantiate(rock);
             ghost.name = "GhostRock";
-            ghost.transform.localScale = RockLauncher.StoneScale;
             Destroy(ghost.GetComponent<Collider>());
             var grey = Color.gray3;
             ghost.GetComponent<MeshRenderer>().material =

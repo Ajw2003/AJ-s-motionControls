@@ -29,7 +29,6 @@ namespace Game
         public RockController ActiveRock => _active;
 
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
-        internal static readonly Vector3 StoneScale = new(0.35f, 0.25f, 0.35f);
 
         private void Update()
         {
@@ -152,7 +151,6 @@ namespace Game
             var go = Instantiate(rock);
             go.name = "Rock";
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
-            go.transform.localScale = StoneScale;
             var grey = Color.gray3;
             go.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
