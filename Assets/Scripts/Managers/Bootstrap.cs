@@ -37,6 +37,10 @@ namespace Managers
         [Tooltip("Live trajectory arc plus placeholder water. Scaffolding until the real lake scene exists.")]
         [SerializeField] private bool showAimPreview = true;
 
+        [Tooltip("Sound. Off runs the game silently — nothing else changes, because every " +
+                 "sound hangs off events rather than off gameplay code.")]
+        [SerializeField] private bool enableAudio = true;
+
         [Tooltip("Carry aim and throw over a direct WebRTC channel to each phone instead of " +
                  "through the hosted relay. Falls back to the relay per-phone if it cannot " +
                  "connect, so turning it off only costs latency. HostingPlan.md §5.")]
@@ -50,6 +54,13 @@ namespace Managers
             // here sets persistBetweenScenes = true in its own Awake, so each one
             // survives from here to Results.
             _ = EventManager.Instance;
+
+            // First of the real managers, and the ordering is a trap rather than a
+            // preference. SingletonBase.Instance auto-creates a bare instance for whoever
+            // asks first, so anything touching AudioManager.Instance before this line gets a
+            // manager with no bank, no mixer and no voice pool — and the real one would then
+            // destroy itself in Awake as the duplicate. Nothing below may be moved above it.
+            if (enableAudio) _ = AudioManager.Instance;
 
             // Before TurnManager, and that ordering is load-bearing. Both subscribe to
             // ThrowCompletedEvent, and EventManager delivers in subscription order — so
@@ -84,6 +95,12 @@ namespace Managers
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;
 
+            // Last of the subscribers, deliberately. EventManager delivers in subscription
+            // order, so creating this after ScoreManager and TurnManager means that by the
+            // time it hears a throw ending, the points are banked and the phase has settled
+            // — it can read final state to decide what to play rather than racing it.
+            if (enableAudio) CreateSfxDirector();
+
             if (showJoinScreen) CreateJoinScreen();
             if (showResultsScreen) CreateResultsScreen();
             if (showDebugHud) CreateDebugHud();
@@ -94,6 +111,20 @@ namespace Managers
         /// Persistent because the room code stays valid across every scene — a latecomer
         /// scanning during the Game scene must still be able to get in.
         /// </summary>
+        /// <summary>
+        /// Turns gameplay events into sounds. Not a singleton and not persistent by its own
+        /// choice — it holds no state worth keeping and is cheap to rebuild, so it follows
+        /// the screens rather than the managers.
+        /// </summary>
+        private static void CreateSfxDirector()
+        {
+            if (FindFirstObjectByType<Audio.SfxDirector>() != null) return;
+
+            var director = new GameObject(nameof(Audio.SfxDirector));
+            director.AddComponent<Audio.SfxDirector>();
+            DontDestroyOnLoad(director);
+        }
+
         private static void CreateJoinScreen()
         {
             if (FindFirstObjectByType<Ui.JoinScreen>() != null) return;
