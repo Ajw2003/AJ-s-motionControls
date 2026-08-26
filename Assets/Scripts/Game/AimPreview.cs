@@ -160,6 +160,7 @@ namespace Game
 
             BuildLine();
             BuildGhost();
+            BuildShoreRocks();
         }
 
         private void OnDestroy()
@@ -219,10 +220,15 @@ namespace Game
 
         private void OnAim(AimMessage aim)
         {
-            // Only the active player steers the preview; a stray frame from someone
-            // else's phone must not yank the arc around.
-            var active = TurnManager.HasInstance ? TurnManager.Instance.ActivePlayer : null;
-            if (!string.IsNullOrEmpty(active) && aim.playerId != active) return;
+            // Playing only. TurnManager.ActivePlayer is null outside Playing, so the old
+            // guard here (active-is-empty-or-matches) let every lobby AIM frame from every
+            // phone through — latent until ShoreRocks started streaming AIM during
+            // selection, at which point it would have yanked this ghost around a lobby it
+            // has no business appearing in. See the plan's constraints section.
+            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing) return;
+
+            var active = TurnManager.Instance.ActivePlayer;
+            if (aim.playerId != active) return;
 
             if (aim.playerId != _lastAimPlayer)
             {
@@ -445,6 +451,23 @@ namespace Game
             // localScale — capturing before it would bake the parent's scale into the base
             // the charge multiplies, and the ghost would jump size on the first wind-up.
             _ghostBaseScale = _ghost.localScale;
+        }
+
+        /// <summary>
+        /// The lobby's shore of six stones, sharing this component's throw origin so the
+        /// fan is centred on the same rig the arc and the live throw use.
+        /// </summary>
+        private void BuildShoreRocks()
+        {
+            // Parented like the ghost, the line and the water: to this component's
+            // transform, which Bootstrap marks DontDestroyOnLoad, rather than to
+            // throwOrigin — CreateOrigin's object is a bare root GameObject with no such
+            // marking of its own. Safe to treat this transform's local space as
+            // origin-relative because throwOrigin is created at (0,0,0) by CreateOrigin
+            // and nothing in this project ever assigns the [SerializeField] override.
+            var shore = new GameObject("ShoreRocks");
+            shore.transform.SetParent(transform, false);
+            shore.AddComponent<ShoreRocks>().Bind(throwOrigin);
         }
 
         private void BuildPlaceholderScene()

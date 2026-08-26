@@ -65,6 +65,14 @@
     }
     button:disabled { opacity: 0.4; }
 
+    /* A secondary action, not a stone or the primary CTA — flat and quiet so
+       CONFIRM stays the one thing on this screen that looks pressable at a glance. */
+    button.link {
+      background: transparent; color: var(--muted);
+      font-size: 14px; font-weight: 600; padding: 10px 20px;
+      box-shadow: none; text-decoration: underline;
+    }
+
     /* A stone, not a button. Irregular radii give it a worn, asymmetric outline, and
        the off-centre highlight reads as a lit surface rather than flat fill. */
     #gripBtn {
@@ -120,6 +128,14 @@
     <input id="codeInput" type="text" placeholder="ROOM CODE" maxlength="4" autocomplete="off">
     <button id="joinBtn">JOIN GAME</button>
     <p>Enter the code shown on the TV.</p>
+  </section>
+
+  <!-- Choosing a stone -->
+  <section id="chooseScreen" class="screen">
+    <h2>Choose your stone</h2>
+    <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
+    <button id="confirmBtn">CONFIRM</button>
+    <button id="recentreBtn" class="link">RE-CENTRE</button>
   </section>
 
   <!-- Spectating -->

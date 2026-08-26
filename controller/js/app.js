@@ -6,7 +6,7 @@
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
-import { ThrowController, ThrowState, ThrowTuning } from './throw.js';
+import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { PeerLink, Transport } from './peer.js';
 
@@ -15,8 +15,11 @@ const el = (id) => document.getElementById(id);
 const ui = {
   status: el('status'),
   joinScreen: el('joinScreen'),
+  chooseScreen: el('chooseScreen'),
   waitScreen: el('waitScreen'),
   throwScreen: el('throwScreen'),
+  confirmBtn: el('confirmBtn'),
+  recentreBtn: el('recentreBtn'),
   joinError: el('joinError'),
   nameInput: el('nameInput'),
   codeInput: el('codeInput'),
@@ -57,10 +60,11 @@ function sendInput(payload) {
 }
 
 function showScreen(name) {
-  for (const screen of [ui.joinScreen, ui.waitScreen, ui.throwScreen]) {
+  for (const screen of [ui.joinScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
     screen.classList.remove('active');
   }
-  ({ join: ui.joinScreen, wait: ui.waitScreen, throw: ui.throwScreen })[name].classList.add('active');
+  ({ join: ui.joinScreen, choose: ui.chooseScreen, wait: ui.waitScreen, throw: ui.throwScreen })[name]
+    .classList.add('active');
 }
 
 function setStatus(text, kind = '') {
@@ -93,6 +97,42 @@ function renderGripButton(state) {
   const armed = state === ThrowState.ARMED;
   ui.gripBtn.classList.toggle('held', armed);
   ui.gripBtn.textContent = armed ? 'SWING!' : 'TAP TO AIM';
+}
+
+// ---------------------------------------------------------------- lobby pointing
+
+/**
+ * AIM streaming for the shore-pointing rock picker, deliberately independent of
+ * ThrowController's arm/swing state machine rather than reusing `thrower.arm()`.
+ *
+ * That independence is the whole safety property: ThrowController's release
+ * detection (`_onSample` -> `_fire()`) only runs while `state === ARMED`, so a
+ * lobby that never arms it can never fire a throw no matter how the phone is
+ * swung while choosing a stone. Suppressing `_fire()` after the fact would have
+ * meant trusting every future change to the swing detector to remember the lobby
+ * exists; not arming it at all needs no such promise.
+ */
+let lobbyAimTimer = null;
+let lobbySeq = 0;
+
+function startLobbyAim() {
+  if (lobbyAimTimer !== null) return; // idempotent — SPECTATE repeats while in LOBBY
+  motion.calibrate();
+  lobbyAimTimer = setInterval(() => {
+    const payload = buildAimPayload(motion.latest, ++lobbySeq, 0, 0);
+    if (payload) sendInput(payload);
+  }, 50); // 20Hz, matching ThrowController's aimHz default
+}
+
+function stopLobbyAim() {
+  if (lobbyAimTimer === null) return;
+  clearInterval(lobbyAimTimer);
+  lobbyAimTimer = null;
+}
+
+function bindChoose() {
+  ui.confirmBtn.addEventListener('click', () => sendInput({ type: 'PICK_ROCK' }));
+  ui.recentreBtn.addEventListener('click', () => motion.calibrate());
 }
 
 function bindGrip() {
@@ -146,6 +186,11 @@ function handleMessage(message) {
       break;
 
     case 'TURN':
+      // Any TURN means the match has left the lobby — stop here rather than waiting
+      // for the next SPECTATE, so the phone is never streaming AIM into a turn it
+      // no longer applies to.
+      stopLobbyAim();
+
       if (message.yourTurn) {
         ui.throwResult.textContent = '';
         showScreen('throw');
@@ -219,9 +264,17 @@ function renderSpectate(message) {
   const phase = message.phase ?? 'PLAYING';
 
   if (phase === 'LOBBY') {
-    ui.waitTitle.textContent = 'Waiting for the game to start';
-    ui.waitDetail.textContent = 'You are in. Watch the TV.';
-  } else if (phase === 'RESULTS') {
+    // SPECTATE repeats throughout the lobby (a player joining or leaving, for
+    // instance) — showScreen/startLobbyAim are both idempotent, so re-entering
+    // this branch on every one of those pings is harmless.
+    showScreen('choose');
+    startLobbyAim();
+    return;
+  }
+
+  stopLobbyAim();
+
+  if (phase === 'RESULTS') {
     const winner = leader(message.scores);
     ui.waitTitle.textContent = 'Final scores';
     ui.waitDetail.textContent = winner
@@ -388,6 +441,7 @@ function init() {
 
   ui.joinBtn.addEventListener('click', join);
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));
+  bindChoose();
   bindGrip();
   renderGripButton(thrower.state); // see renderGripButton — nothing else paints the initial label
   tryLockPortrait();

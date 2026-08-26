@@ -68,6 +68,9 @@ namespace Net
         /// <summary>The authoritative throw for a turn.</summary>
         public event Action<ThrowMessage> ThrowReceived;
 
+        /// <summary>A phone confirming its highlighted stone. See PickRockMessage.</summary>
+        public event Action<PickRockMessage> PickRockReceived;
+
         public event Action<string> RoomCodeAssigned;
 
         /// <summary>
@@ -461,6 +464,14 @@ namespace Net
                     var thrown = JsonUtility.FromJson<ThrowMessage>(json);
                     if (trustedPlayerId != null) thrown.playerId = trustedPlayerId;
                     ThrowReceived?.Invoke(thrown);
+                    break;
+                }
+
+                case MessageType.PickRock:
+                {
+                    var picked = JsonUtility.FromJson<PickRockMessage>(json);
+                    if (trustedPlayerId != null) picked.playerId = trustedPlayerId;
+                    PickRockReceived?.Invoke(picked);
                     break;
                 }
 

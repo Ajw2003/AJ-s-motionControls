@@ -23,6 +23,7 @@ namespace Net
         public const string PlayerLeft = "PLAYER_LEFT";
         public const string Aim = "AIM";
         public const string Throw = "THROW";
+        public const string PickRock = "PICK_ROCK";
         public const string Turn = "TURN";
         public const string Spectate = "SPECTATE";
         public const string Error = "ERROR";
@@ -121,6 +122,17 @@ namespace Net
         /// floors it at a nominal so a player holding still to aim still sees an arc.
         /// </remarks>
         public float power;
+    }
+
+    /// <summary>
+    /// A phone confirming its highlighted stone. Carries no rock id on purpose — the TV
+    /// owns the shore layout and therefore the highlight; the tap only means "confirm
+    /// whatever that is". Dropped outside the Lobby phase, mirroring ThrowMessage's guard.
+    /// </summary>
+    [Serializable]
+    public class PickRockMessage
+    {
+        public string playerId;
     }
 
     /// <summary>The authoritative throw. Exactly one per gesture.</summary>

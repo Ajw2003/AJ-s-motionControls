@@ -440,6 +440,19 @@ already built by this plan.
 
 ## Build log
 
+**2026-08-26 — Part 2 (selection state) built; Part 1 confirmed compiling.**
+`RockSelection.cs` (new singleton), `RockPickedEvent.cs`, and the `PICK_ROCK` wire format
+(`Messages.cs` + `RelayClient.cs`) are in, wired into `Bootstrap` after `RelayClient` and
+before `TurnManager`. Confirmed compiling clean in the open Editor (Console checked by hand —
+no errors), which also retroactively confirms Part 1's assets/scripts from the entry below.
+
+Deviation from the plan text: `RandomRocks`/`ActiveTuningSet` live as plain fields on
+`RockSelection` rather than on a `MatchSettings` singleton, since Part 5 hasn't been built yet
+and RockSelection can't function without reading them from somewhere. Part 5 should read/write
+these properties rather than duplicate the state. Also, `RockSelection` does not yet subscribe
+to `PickRockReceived` — `PICK_ROCK` carries no rock id (a tap confirms whatever's highlighted),
+and only Part 3's `ShoreRocks` will know what that is, so that wiring is deferred to Part 3.
+
 **2026-08-26 — scrapped an unasked-for compile checker.**
 While implementing Part 1 I built `tools/check-compile.ps1`, a script that compiled every
 script under `Assets/` out-of-band (Unity holds an exclusive project lock, so

@@ -91,6 +91,12 @@ namespace Managers
             // whenever the mode turns out to be Lan, or LocalServices isn't running at all.
             _ = Net.HotspotService.Instance;
 
+            // Before TurnManager, whose broadcast path will ask it for each player's rock
+            // — see docs/plans/rock-choosing-system.md Part 2. Placed after RelayClient
+            // rather than earlier so a future direct subscription to a RelayClient event
+            // (Part 3's ShoreRocks needs one) can assume the instance already exists.
+            _ = RockSelection.Instance;
+
             // After RelayClient so it can subscribe before any phone joins, and after
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;
