@@ -150,12 +150,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Managers.Bootstrap
   firstScene: Lobby
   autoLoadFirstScene: 0
-  eventDebugLogging: 1
+  eventDebugLogging: 0
   startLocalServices: 1
   showJoinScreen: 1
   showResultsScreen: 1
   showDebugHud: 1
   showAimPreview: 1
+  enableAudio: 1
   usePeerConnections: 1
 --- !u!4 &181819789
 Transform:

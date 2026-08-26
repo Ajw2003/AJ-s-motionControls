@@ -17,11 +17,11 @@ MonoBehaviour:
   MinSpeed: 5
   MaxSpeed: 45
   LaunchPitchDeg: 5
-  BestFaceAngleDeg: 5
-  ToleranceDeg: 30
+  BestFaceAngleDeg: -5
+  ToleranceDeg: 20
   MinRetention: 0.75
   MaxRetention: 0.95
-  OptimalAngle: 10
+  OptimalAngle: 0
   MinSkipSpeed: 7
   SkipExitAngleDeg: 5
   OpeningHopAngleDeg: 7
