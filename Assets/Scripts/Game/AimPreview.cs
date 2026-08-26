@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using EventSystems;
+using EventTypes.MatchEvents;
 using Managers;
 using Net;
 using UnityEngine;
@@ -59,7 +61,21 @@ namespace Game
 
         /// <summary>Shared with RockLauncher so preview and live throw use one rig.</summary>
         public Transform ThrowOrigin => throwOrigin;
+
+        /// <summary>
+        /// The active player's tuning, refreshed on TurnStartedEvent rather than resolved
+        /// per frame. Falls back to whatever Awake resolved (SerializeField, then
+        /// Resources/SkipTuning, then a bare default) until the first turn starts, and
+        /// stays there if RockSelection or the catalog cannot resolve one — see OnTurnStarted.
+        /// </summary>
         public SkipTuning Tuning => tuning;
+
+        /// <summary>
+        /// The active player's rock, alongside <see cref="Tuning"/> — RockLauncher reads
+        /// both from here rather than re-resolving, so the ghost and the live throw can
+        /// never land on different rocks for the same turn.
+        /// </summary>
+        public RockDefinition CurrentRock { get; private set; }
 
         private string _lastAimPlayer;
 
@@ -153,7 +169,10 @@ namespace Game
                                  "tuned without a recompile.");
             }
 
-            _path = new List<Vector3>(tuning.MaxPredictSteps + 1);
+            // Sized from the whole catalog's longest prediction, not this one tuning's —
+            // a player picking a stone with a longer PredictSeconds must not be the thing
+            // that grows this buffer mid-aim. See RockCatalog.MaxPredictSteps.
+            _path = new List<Vector3>(RockCatalog.LoadOrWarn().MaxPredictSteps + 1);
 
             if (createPlaceholderScene) BuildPlaceholderScene();
             if (throwOrigin == null) throwOrigin = CreateOrigin();
@@ -161,10 +180,14 @@ namespace Game
             BuildLine();
             BuildGhost();
             BuildShoreRocks();
+
+            EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnTurnStarted);
         }
 
         private void OnDestroy()
         {
+            EventManager.Instance?.UnsubscribeFromAllEvents(this);
+
             // Before the unsubscribe, not after: the early return below is conditional and
             // anything placed under it is skipped for a preview that never bound a client.
             if (_lineMaterial != null) Destroy(_lineMaterial);
@@ -172,6 +195,45 @@ namespace Game
 
             if (_client == null) return;
             _client.AimReceived -= OnAim;
+        }
+
+        /// <summary>
+        /// Resolves the new active player's rock and tuning once per turn, and swaps the
+        /// ghost's mesh and scale to match — see the class remarks on <see cref="Tuning"/>.
+        /// </summary>
+        /// <remarks>
+        /// Only sharedMesh and localScale are touched. RockDefinition.MeshRotation is
+        /// deliberately left unapplied here — the ghost's rotation is overwritten every
+        /// frame from the phone's live attitude (see UpdateGhost), and RockController does
+        /// the same from the solver's attitude, so neither has anywhere to compose a
+        /// per-mesh correction without also changing what the solver reads as the stone's
+        /// face angle. Every mesh RockCatalogBuilder has produced so far imports flat, so
+        /// this has not yet needed solving for real.
+        /// </remarks>
+        private void OnTurnStarted(TurnStartedEvent e)
+        {
+            if (!RockSelection.HasInstance) return;
+
+            var selection = RockSelection.Instance;
+            var rock = selection.For(e.PlayerId);
+            if (rock == null) return; // empty catalog — keep the existing fallback tuning/ghost
+
+            CurrentRock = rock;
+
+            var resolved = selection.TuningFor(e.PlayerId);
+            if (resolved != null) tuning = resolved;
+
+            if (rock.Mesh == null || _ghost == null) return;
+
+            var filter = _ghost.GetComponent<MeshFilter>();
+            if (filter != null) filter.sharedMesh = rock.Mesh;
+
+            _ghost.localScale = rock.LocalScale;
+
+            // Re-captured, not left stale: UpdateGhostCharge multiplies from this every
+            // frame, and a base scale from the previous rock would make the ghost jump
+            // size the instant the next wind-up starts.
+            _ghostBaseScale = _ghost.localScale;
         }
 
         private void Update()

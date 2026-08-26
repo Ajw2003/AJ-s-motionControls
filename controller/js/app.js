@@ -20,6 +20,7 @@ const ui = {
   throwScreen: el('throwScreen'),
   confirmBtn: el('confirmBtn'),
   recentreBtn: el('recentreBtn'),
+  chooseRock: el('chooseRock'),
   joinError: el('joinError'),
   nameInput: el('nameInput'),
   codeInput: el('codeInput'),
@@ -269,6 +270,11 @@ function renderSpectate(message) {
     // this branch on every one of those pings is harmless.
     showScreen('choose');
     startLobbyAim();
+
+    // Only present once ShoreRocks has resolved a highlight for this phone and
+    // TurnManager has broadcast it — blank until then, which the CSS collapses.
+    const mine = message.rocks?.[myPlayerId];
+    ui.chooseRock.textContent = mine?.rockName ? `On: ${mine.rockName}` : '';
     return;
   }
 

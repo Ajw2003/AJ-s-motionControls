@@ -113,7 +113,15 @@ namespace Managers
             EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnPlayerJoined);
             EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnPlayerLeft);
             EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
+
+            // Otherwise a confirmed pick sits invisible until some unrelated event (another
+            // player joining, say) happens to trigger the next SPECTATE — a lobby where
+            // everyone has already joined could confirm rocks all match and nobody's phone
+            // would ever show it.
+            EventManager.Instance?.Subscribe<RockPickedEvent>(this, OnRockPicked);
         }
+
+        private void OnRockPicked(RockPickedEvent e) => BroadcastSpectate();
 
         private void Update()
         {
@@ -318,23 +326,26 @@ namespace Managers
         }
 
         /// <summary>
-        /// What the phones call the current rock. Read from the tuning asset rather than a
-        /// literal so it moves with the stone it names — the same load AimPreview does, and
-        /// cached because this is on the broadcast path.
+        /// What the phones call a player's current rock. No longer cached — a global cache
+        /// stopped being valid the moment the rock became per-player rather than one
+        /// tuning asset for the whole game. "Pebble" on a missing catalog/pick matches the
+        /// same fallback RockSelection.For itself degrades to.
         /// </summary>
-        private string RockDisplayName
+        private static string RockDisplayNameFor(string playerId)
         {
-            get
-            {
-                if (_rockDisplayName != null) return _rockDisplayName;
-
-                var tuning = Resources.Load<Game.SkipTuning>("SkipTuning");
-                _rockDisplayName = string.IsNullOrEmpty(tuning?.DisplayName) ? "Pebble" : tuning.DisplayName;
-                return _rockDisplayName;
-            }
+            var name = RockSelection.HasInstance ? RockSelection.Instance.For(playerId)?.DisplayName : null;
+            return string.IsNullOrEmpty(name) ? "Pebble" : name;
         }
 
-        private string _rockDisplayName;
+        /// <summary>Every connected player's rock, for the shore/lobby readout on idle phones.</summary>
+        private IEnumerable<(string PlayerId, string RockId, string RockName)> BuildPlayerRocks()
+        {
+            foreach (var player in _players)
+            {
+                var rock = RockSelection.HasInstance ? RockSelection.Instance.For(player) : null;
+                yield return (player, rock?.Id ?? string.Empty, RockDisplayNameFor(player));
+            }
+        }
 
         /// <summary>
         /// Match state for the idle phones, sent on change only.
@@ -348,11 +359,13 @@ namespace Managers
         /// </remarks>
         private void BroadcastSpectate()
         {
+            var active = ActivePlayer;
             RelayClient.Instance?.Send(OutboundMessages.BuildSpectate(
-                ActivePlayer ?? string.Empty, RockDisplayName,
+                active ?? string.Empty, active != null ? RockDisplayNameFor(active) : "Pebble",
                 _lastPlayer, _lastSkips, _lastDistance,
                 ScoreManager.Instance?.Scores,
-                Phase.ToString().ToUpperInvariant(), _round + 1, roundsPerMatch));
+                Phase.ToString().ToUpperInvariant(), _round + 1, roundsPerMatch,
+                BuildPlayerRocks()));
         }
 
         protected override void OnDestroy()

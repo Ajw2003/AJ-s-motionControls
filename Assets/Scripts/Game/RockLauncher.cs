@@ -89,7 +89,11 @@ namespace Game
 
             if (_active != null && _active.IsFlying) return; // one rock at a time
 
+            // Both read from AimPreview rather than re-resolved here, so the ghost this
+            // player just aimed with and the stone that actually flies can never land on
+            // different rocks for the same turn — see AimPreview.OnTurnStarted.
             var tuning = _preview.Tuning;
+            var rock = _preview.CurrentRock;
 
             // No negations. The phone's rotation becomes a Unity rotation exactly once, in
             // PhoneAttitude, and everything downstream uses the result as-is — see that
@@ -99,7 +103,7 @@ namespace Game
             var launch = SkipPhysics.CreateLaunch(
                 _preview.ThrowOrigin.position, message.power, attitude, message.spinRate, tuning);
 
-            _active = CreateRockObject(tuning);
+            _active = CreateRockObject(rock, tuning);
             _active.Launch(launch, tuning, message.playerId);
         }
 
@@ -134,26 +138,35 @@ namespace Game
         }
 
         /// <summary>
-        /// A flat box.
+        /// The live stone: <paramref name="rock"/>'s mesh, scale and tint when there is
+        /// one, else the prefab's own plain box — the original single-rock look, kept as
+        /// the fallback for a catalog that failed to load rather than taking the throw
+        /// path down over it. See RockCatalog.CreateDefault's doc for why an empty
+        /// catalog degrading to this is the deliberate behaviour project-wide.
         /// </summary>
         /// <remarks>
-        /// A box, not a scaled sphere, and that is the whole reason the custom Stone
-        /// shader and the welded-on chip cube are gone. A scaled sphere is a surface of
-        /// revolution: it renders identically at every yaw, so no amount of spin was ever
-        /// visible on it, and both the shader and the chip existed to fake an asymmetry
-        /// back in. A box has flat faces and hard edges, so it shows its own rotation
-        /// from every angle for free — which is what the stone has to do now that it
-        /// tracks the phone one-to-one.
+        /// A box was the original shape for a reason worth keeping in mind for the
+        /// fallback: a scaled sphere is a surface of revolution and renders identically at
+        /// every yaw, so a box was chosen so the stone shows its own rotation from every
+        /// angle. RockCatalogBuilder's meshes carry that concern themselves now.
         /// </remarks>
-        private static RockController CreateRockObject(SkipTuning tuning)
+        private static RockController CreateRockObject(RockDefinition rock, SkipTuning tuning)
         {
-            var rock = Resources.Load<GameObject>("RockObject");
-            var go = Instantiate(rock);
+            var prefab = Resources.Load<GameObject>("RockObject");
+            var go = Instantiate(prefab);
             go.name = "Rock";
             Destroy(go.GetComponent<Collider>()); // the custom solver owns collision
-            var grey = Color.gray3;
+
+            if (rock != null && rock.Mesh != null)
+            {
+                var filter = go.GetComponent<MeshFilter>();
+                if (filter != null) filter.sharedMesh = rock.Mesh;
+                go.transform.localScale = rock.LocalScale;
+            }
+
+            var tint = rock != null ? rock.Tint : Color.gray3;
             go.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
+                PlaceholderArt.Create(tint, PlaceholderArt.StoneQueue);
 
             var controller = go.AddComponent<RockController>();
 

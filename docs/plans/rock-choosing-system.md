@@ -440,6 +440,30 @@ already built by this plan.
 
 ## Build log
 
+**2026-08-26 — Part 4 (wiring into play) built. Not yet verified in-editor.**
+`AimPreview` now resolves `Tuning`/`CurrentRock` from `RockSelection.TuningFor`/`For` on
+`TurnStartedEvent` (cached per turn, not per frame), sizes `_path` from
+`RockCatalog.MaxPredictSteps`, and swaps the ghost's mesh + scale (re-capturing
+`_ghostBaseScale`) to match. `RockLauncher.CreateRockObject` now takes the `RockDefinition`
+too and applies mesh/scale/tint, falling back to the original plain box when one is missing.
+`TurnManager`'s cached global `RockDisplayName` is gone — replaced with `RockDisplayNameFor`
+per player — and `BroadcastSpectate` now also sends a `"rocks"` map (id + name per connected
+player) via a new `OutboundMessages.BuildSpectate` parameter, so the phone's choose screen
+(added in Part 3) can show "On: <rock>" once resolved. `RockPickedEvent` now triggers an
+immediate `BroadcastSpectate` — without it a confirmed pick could sit invisible until some
+unrelated broadcast happened to go out.
+
+Deliberately **not** applied: `RockDefinition.MeshRotation`. Both the ghost and the live rock
+have their rotation overwritten wholesale every frame from phone/solver attitude, with nowhere
+to compose a static per-mesh correction without also changing what the solver reads as face
+angle — see the remarks on `AimPreview.OnTurnStarted`. Every mesh built so far imports flat, so
+this is a real but so-far-unobserved gap, not a fix that got skipped.
+
+Also skipped: hand-editing `Resources/RockObject.prefab` to drop its `MeshCollider` override.
+Functionally moot — `RockLauncher`/`AimPreview` both `Destroy()` whatever collider the instance
+has at spawn regardless of type — and not worth the risk of hand-editing prefab YAML for a
+cosmetic cleanup.
+
 **2026-08-26 — Part 2 (selection state) built; Part 1 confirmed compiling.**
 `RockSelection.cs` (new singleton), `RockPickedEvent.cs`, and the `PICK_ROCK` wire format
 (`Messages.cs` + `RelayClient.cs`) are in, wired into `Bootstrap` after `RelayClient` and

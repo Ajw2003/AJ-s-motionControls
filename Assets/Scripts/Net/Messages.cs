@@ -192,11 +192,16 @@ namespace Net
         /// <param name="lastPlayer">Who threw the <paramref name="lastSkips"/> result. Named
         /// separately from activePlayer on purpose: the turn has already advanced by the time
         /// this goes out, so without it a phone would credit the throw to the wrong player.</param>
+        /// <param name="playerRocks">Every connected player's rock, so an idle phone in the
+        /// lobby can show what everyone has claimed — not just <paramref name="rockName"/>,
+        /// which only ever names the active player's stone. Null is fine; the "rocks" object
+        /// is simply empty, which is what a build without RockSelection running degrades to.</param>
         public static string BuildSpectate(
             string activePlayer, string rockName,
             string lastPlayer, int lastSkips, float lastDistance,
             IReadOnlyDictionary<string, int> scores,
-            string phase = "PLAYING", int round = 1, int totalRounds = 1)
+            string phase = "PLAYING", int round = 1, int totalRounds = 1,
+            IEnumerable<(string PlayerId, string RockId, string RockName)> playerRocks = null)
         {
             var sb = new StringBuilder(288);
             sb.Append('{')
@@ -218,6 +223,20 @@ namespace Net
                 {
                     if (!first) sb.Append(',');
                     sb.Append($"\"{Escape(pair.Key)}\":{pair.Value}");
+                    first = false;
+                }
+            }
+
+            sb.Append("},\"rocks\":{");
+
+            if (playerRocks != null)
+            {
+                var first = true;
+                foreach (var (playerId, rockId, playerRockName) in playerRocks)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append($"\"{Escape(playerId)}\":{{\"rockId\":\"{Escape(rockId)}\"," +
+                              $"\"rockName\":\"{Escape(playerRockName)}\"}}");
                     first = false;
                 }
             }
