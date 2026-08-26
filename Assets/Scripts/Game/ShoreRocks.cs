@@ -13,11 +13,13 @@ namespace Game
     /// one by heading alone. See docs/plans/rock-choosing-system.md Part 3.
     /// </summary>
     /// <remarks>
-    /// Active only while <see cref="MatchPhase.Lobby"/> is current — this is the other half
-    /// of the fix the plan's constraints call for: AimPreview only reacts to AIM while
-    /// Playing, this only reacts while in the Lobby, so the two never fight over the same
-    /// frame. Built by AimPreview alongside the placeholder water, sharing its throw
-    /// origin and camera framing — see <see cref="Bind"/>.
+    /// Active while <see cref="TurnManager.IsChoosingPhase"/> is true — Lobby (a fresh
+    /// match) or Choosing (a mid-match re-pick TurnManager can trigger periodically or on
+    /// demand). This is the other half of the fix the plan's constraints call for:
+    /// AimPreview only reacts to AIM while Playing, this only reacts during a choosing
+    /// phase, so the two never fight over the same frame. Built by AimPreview alongside
+    /// the placeholder water, sharing its throw origin and camera framing — see
+    /// <see cref="Bind"/>.
     ///
     /// Yaw only, on purpose. A player thinking about their choice naturally lets the phone
     /// drop, and a 2-D pick would lose their selection when they did. Absolute compass
@@ -95,8 +97,8 @@ namespace Game
             // No MatchPhaseChangedEvent has fired yet at boot — TurnManager starts in
             // Lobby and only announces a CHANGE — so the initial state has to be read
             // directly rather than waited for.
-            var inLobby = !TurnManager.HasInstance || TurnManager.Instance.Phase == MatchPhase.Lobby;
-            SetVisible(inLobby);
+            var choosing = !TurnManager.HasInstance || TurnManager.IsChoosingPhase(TurnManager.Instance.Phase);
+            SetVisible(choosing);
         }
 
         private void OnDestroy()
@@ -227,7 +229,7 @@ namespace Game
 
         private void OnAim(AimMessage aim)
         {
-            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Lobby) return;
+            if (!TurnManager.HasInstance || !TurnManager.IsChoosingPhase(TurnManager.Instance.Phase)) return;
             if (string.IsNullOrEmpty(aim.playerId)) return;
 
             var attitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
@@ -246,7 +248,7 @@ namespace Game
 
         private void OnPickRock(PickRockMessage message)
         {
-            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Lobby) return;
+            if (!TurnManager.HasInstance || !TurnManager.IsChoosingPhase(TurnManager.Instance.Phase)) return;
             if (string.IsNullOrEmpty(message.playerId) || _stones.Length == 0) return;
 
             // No pointer yet means this phone never sent an AIM frame — the documented
@@ -276,13 +278,13 @@ namespace Game
 
         private void OnMatchPhaseChanged(MatchPhaseChangedEvent e)
         {
-            var enteringLobby = e.To == MatchPhase.Lobby;
-            SetVisible(enteringLobby);
+            var enteringChoosing = TurnManager.IsChoosingPhase(e.To);
+            SetVisible(enteringChoosing);
 
-            if (!enteringLobby) return;
+            if (!enteringChoosing) return;
 
-            // Every new match re-picks from scratch, same timing as RockSelection's own
-            // clear — see its OnMatchPhaseChanged.
+            // Every fresh Lobby AND every mid-match Choosing pause re-picks from scratch,
+            // same timing as RockSelection's own clear — see its OnMatchPhaseChanged.
             foreach (var pointer in _pointers.Values)
             {
                 if (pointer.Marker != null) Destroy(pointer.Marker.gameObject);

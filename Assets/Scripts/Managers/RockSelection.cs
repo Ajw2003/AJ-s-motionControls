@@ -21,11 +21,15 @@ namespace Managers
     /// properties rather than duplicate the state in a second place.
     ///
     /// <b>PICK_ROCK carries no rock id</b> (see Messages.cs) — a tap means "confirm
-    /// whatever is highlighted", and only the shore layout (Part 3's ShoreRocks, not
-    /// built yet) knows what that is. So this class exposes <see cref="Pick"/> for
-    /// whatever owns that highlight to call; it does not itself subscribe to
-    /// RelayClient.PickRockReceived, because it has nothing to resolve that event into
-    /// without ShoreRocks. Wiring that up is Part 3's job.
+    /// whatever is highlighted", and only the shore layout (<see cref="Game.ShoreRocks"/>)
+    /// knows what that is. So this class exposes <see cref="Pick"/> for whatever owns
+    /// that highlight to call, rather than subscribing to RelayClient.PickRockReceived
+    /// itself.
+    ///
+    /// <b>Picks reset on entering either Lobby or Choosing</b> — see
+    /// <see cref="TurnManager.IsChoosingPhase"/>. A fresh Lobby is the start of a new
+    /// match; Choosing is a mid-match pause TurnManager can trigger periodically (or on
+    /// demand) so players can swap stones without the round count or scores moving.
     /// </remarks>
     public class RockSelection : SingletonBase<RockSelection>
     {
@@ -86,25 +90,27 @@ namespace Managers
             {
                 AssignRandomRocks();
             }
-            else if (e.To == MatchPhase.Lobby)
+            else if (TurnManager.IsChoosingPhase(e.To))
             {
-                // Every new match re-picks from scratch. For() degrades gracefully for
-                // anyone still connected — it falls back to the catalog default the
-                // instant their entry is gone, same as before they ever picked.
+                // Every fresh Lobby AND every mid-match Choosing pause re-picks from
+                // scratch — see TurnManager.IsChoosingPhase for why the two are treated
+                // as one case here. For() degrades gracefully for anyone still connected —
+                // it falls back to the catalog default the instant their entry is gone,
+                // same as before they ever picked.
                 _picks.Clear();
             }
         }
 
         /// <summary>
-        /// Records a confirmed pick. Refused once the match has started — a PICK_ROCK
-        /// arriving mid-match is stale, mirroring the Lobby-only guard on THROW — and
+        /// Records a confirmed pick. Refused outside a choosing phase — a PICK_ROCK
+        /// arriving mid-throw is stale, mirroring the Playing-only guard on THROW — and
         /// while random mode is on, since a pointed pick would otherwise silently win
         /// back control the moment the player confirms.
         /// </summary>
         public void Pick(string playerId, string rockId)
         {
             if (string.IsNullOrEmpty(playerId) || randomRocks) return;
-            if (TurnManager.HasInstance && TurnManager.Instance.Phase != MatchPhase.Lobby) return;
+            if (TurnManager.HasInstance && !TurnManager.IsChoosingPhase(TurnManager.Instance.Phase)) return;
 
             var rock = _catalog.ById(rockId);
             if (rock == null) return;

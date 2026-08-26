@@ -12,11 +12,19 @@ namespace Managers
     /// <summary>Where the match is in its lifecycle. Drives what every screen shows.</summary>
     public enum MatchPhase
     {
-        /// <summary>Players are joining. Nobody may throw yet.</summary>
+        /// <summary>Players are joining, or a finished match is about to start a fresh one. Nobody may throw yet.</summary>
         Lobby,
 
         /// <summary>Turns are rotating. Exactly one player may throw at a time.</summary>
         Playing,
+
+        /// <summary>
+        /// A mid-match pause for re-picking stones — see TurnManager.EnterChoosing. Distinct
+        /// from Lobby because entering it must not reset scores or the round count the way
+        /// a fresh Lobby does; everything else about it (the shore, the phone's choose
+        /// screen, RockSelection accepting picks) is identical, via IsChoosingPhase.
+        /// </summary>
+        Choosing,
 
         /// <summary>Final standings are up. Throws are refused until the next match.</summary>
         Results,
@@ -47,10 +55,25 @@ namespace Managers
                  "test client cannot throw for itself.")]
         [SerializeField] private KeyCode nextTurnKey = KeyCode.N;
 
+        [Header("Rock choosing")]
+        [Tooltip("Pause for a re-pick after every Nth round completes, mid-match. 0 turns " +
+                 "this off — rocks are then only chosen at the start of a match. Exists " +
+                 "mainly so the choosing flow can be exercised without playing a whole " +
+                 "match every time; tune down to 1 while testing it.")]
+        [SerializeField] private int reChooseEveryRounds = 3;
+
+        [Tooltip("Manual trigger for the same pause, any time during Playing — for testing " +
+                 "on demand rather than waiting for a round boundary. Not guarded against a " +
+                 "rock mid-flight; it is a dev key, not something a player can reach.")]
+        [SerializeField] private KeyCode forceChooseKey = KeyCode.C;
+
         private readonly List<string> _players = new();
         private readonly List<PlayerStanding> _standings = new();
         private int _current = -1;
         private int _round;
+
+        /// <summary>Whether ResumeAfterChoosing hands the turn to the next player or repeats the current one. See EnterChoosing.</summary>
+        private bool _resumeAdvances;
 
         // The throw that just finished, carried on the next broadcast. Kept here rather
         // than streamed while the rock flies: phones are not a spectator screen in a couch
@@ -105,6 +128,15 @@ namespace Managers
         public bool CanStartMatch => Phase != MatchPhase.Playing && _players.Count > 0;
         public KeyCode StartMatchKey => startMatchKey;
 
+        /// <summary>
+        /// Whether phones should be on their choose screen and ShoreRocks should be up.
+        /// The single definition of "this phase looks like the lobby to a rock picker" —
+        /// RockSelection and ShoreRocks both gate on this rather than on Lobby directly, so
+        /// the two phases that need it can never drift apart one at a time.
+        /// </summary>
+        public static bool IsChoosingPhase(MatchPhase phase) =>
+            phase == MatchPhase.Lobby || phase == MatchPhase.Choosing;
+
         protected override void Awake()
         {
             persistBetweenScenes = true;
@@ -125,8 +157,30 @@ namespace Managers
 
         private void Update()
         {
-            if (Input.GetKeyDown(startMatchKey) && CanStartMatch) StartMatch();
+            // Split by phase rather than one CanStartMatch check driving StartMatch
+            // unconditionally: that used to let a press from Results skip straight into
+            // Playing with the previous match's rock picks still in place, because
+            // CanStartMatch is also true on Results and Choosing (both are "not Playing").
+            if (Input.GetKeyDown(startMatchKey))
+            {
+                switch (Phase)
+                {
+                    case MatchPhase.Lobby when CanStartMatch:
+                        StartMatch();
+                        break;
+                    case MatchPhase.Results:
+                        // Re-picking is the default before every match, not just the
+                        // first — see ReturnToLobby, which clears picks on the way in.
+                        ReturnToLobby();
+                        break;
+                    case MatchPhase.Choosing:
+                        ResumeAfterChoosing();
+                        break;
+                }
+            }
+
             if (Input.GetKeyDown(nextTurnKey) && Phase == MatchPhase.Playing) NextTurn();
+            if (Input.GetKeyDown(forceChooseKey) && Phase == MatchPhase.Playing) EnterChoosing();
         }
 
         // ------------------------------------------------------------------ roster
@@ -228,9 +282,46 @@ namespace Managers
                     EndMatch();
                     return;
                 }
+
+                if (reChooseEveryRounds > 0 && _round % reChooseEveryRounds == 0)
+                {
+                    EnterChoosing(advanceOnResume: true);
+                    return; // ResumeAfterChoosing calls StartTurn(_current + 1) itself
+                }
             }
 
             StartTurn(_current + 1);
+        }
+
+        /// <summary>
+        /// Pauses the match for a re-pick without touching scores or the round count —
+        /// that is the entire difference between this and ReturnToLobby, and why Choosing
+        /// is a separate phase rather than a reuse of Lobby.
+        /// </summary>
+        /// <param name="advanceOnResume">
+        /// True from the round-boundary caller in NextTurn, where _current is still the
+        /// player whose throw just ended the round and resuming must move past them. False
+        /// from the manual forceChooseKey, which can fire mid-round with a player still
+        /// waiting to throw — advancing there would skip them entirely rather than pause
+        /// and return them to their own turn.
+        /// </param>
+        public void EnterChoosing(bool advanceOnResume = false)
+        {
+            if (Phase != MatchPhase.Playing) return;
+
+            _resumeAdvances = advanceOnResume;
+            SetPhase(MatchPhase.Choosing);
+            SendTurnStates(); // ActivePlayer is now null — every phone is told nobody's up
+            Debug.Log($"[TurnManager] Pausing to re-pick stones before round {_round + 1}");
+        }
+
+        /// <summary>Continues after EnterChoosing, picking the turn rotation up exactly where it paused.</summary>
+        public void ResumeAfterChoosing()
+        {
+            if (Phase != MatchPhase.Choosing) return;
+
+            SetPhase(MatchPhase.Playing);
+            StartTurn(_resumeAdvances ? _current + 1 : _current);
         }
 
         private void EndMatch()
@@ -360,11 +451,18 @@ namespace Managers
         private void BroadcastSpectate()
         {
             var active = ActivePlayer;
+
+            // Choosing is sent as LOBBY on the wire — a phone's choose screen behaves
+            // identically whether this is the very first pick or a mid-match re-pick, and
+            // app.js already knows the LOBBY string. Keeping the distinction Unity-only
+            // means the phone side needed no changes when Choosing was introduced.
+            var wirePhase = Phase == MatchPhase.Choosing ? "LOBBY" : Phase.ToString().ToUpperInvariant();
+
             RelayClient.Instance?.Send(OutboundMessages.BuildSpectate(
                 active ?? string.Empty, active != null ? RockDisplayNameFor(active) : "Pebble",
                 _lastPlayer, _lastSkips, _lastDistance,
                 ScoreManager.Instance?.Scores,
-                Phase.ToString().ToUpperInvariant(), _round + 1, roundsPerMatch,
+                wirePhase, _round + 1, roundsPerMatch,
                 BuildPlayerRocks()));
         }
 

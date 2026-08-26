@@ -440,6 +440,38 @@ already built by this plan.
 
 ## Build log
 
+**2026-08-26 — Fixed: continuing to a new match skipped rock choosing. Added: a mid-match
+re-pick pause, on a configurable cadence or on demand.**
+
+Bug found after playing a full match: pressing the start key on the Results screen called
+`StartMatch()` directly, jumping straight from Results to Playing and never passing through
+Lobby — so `RockSelection`'s picks (and `ShoreRocks`'s shore) never got a chance to reset, and
+every player kept whatever rock they had in the previous match with no way to change it. Root
+cause was `CanStartMatch` (`Phase != Playing`) being true on both Lobby *and* Results, with one
+key handler treating them the same.
+
+Fixed by splitting `TurnManager.Update()`'s key handling per phase: Lobby still calls
+`StartMatch()`, but Results now calls `ReturnToLobby()` — so pressing to continue always
+re-opens the shore first, matching the plan's original intent that every match starts with a
+pick.
+
+While in there, added a genuine mid-match re-pick, for testing the choosing flow without
+playing a full match each time: a new `MatchPhase.Choosing`, distinct from `Lobby` specifically
+so entering it does **not** reset scores or the round count. `TurnManager.IsChoosingPhase`
+(`Lobby || Choosing`) is now the single gate `RockSelection` and `ShoreRocks` both check instead
+of `== Lobby` directly. Triggers:
+- **`reChooseEveryRounds`** (Inspector field on TurnManager, default 3) — pauses automatically
+  after every Nth round. 0 disables it, leaving only the fixed bug's between-match behaviour.
+- **`forceChooseKey`** (default `C`) — pauses immediately, any time during Playing, for testing
+  on demand. Not guarded against a rock mid-flight; it is a dev key.
+
+`BroadcastSpectate` sends `Choosing` to phones as the wire string `"LOBBY"` — a phone's choose
+screen behaves identically either way, so `app.js` needed no changes. `SfxDirector`'s
+match-start fanfare and `JoinScreen`'s full/compact toggle were deliberately **not** broadened
+to include Choosing: the fanfare should only play at a genuine match start, and re-showing the
+full join panel (QR code included) mid-match would only reproduce the QR-blocks-the-shore
+annoyance already flagged as minor and left alone.
+
 **2026-08-26 — Part 4 (wiring into play) built. Not yet verified in-editor.**
 `AimPreview` now resolves `Tuning`/`CurrentRock` from `RockSelection.TuningFor`/`For` on
 `TurnStartedEvent` (cached per turn, not per frame), sizes `_path` from
