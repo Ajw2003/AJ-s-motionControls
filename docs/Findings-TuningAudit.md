@@ -18,7 +18,8 @@ Three things, in order of how much they cost:
 2. **The numbers that most deserve to be derived are the ones nobody can hand-tune
    correctly** — `minSwingSpeed` / `maxSwingSpeed` in `controller/js/throw.js`.
    The comment there already says calibration should replace them per player.
-   It was never written.
+   It was never written. **These are fittable from the data already on the wire**
+   — see §3.0 for what capture does and does not currently support.
 3. **Genuine redundancy exists but it is small.** Two "best angle" fields, one
    triplicated speed fraction, one dead method, one dead subsystem. Most of the
    tuning surface is legitimately distinct.
@@ -240,15 +241,67 @@ The test applied to each: **does the phone actually measure this, or is it a
 choice about how the game should feel?** Only the first kind can be derived. A
 value that is a taste judgement does not become better by being fitted to data.
 
+### 3.0 How `power` works today, and what that means for capture
+
+`power` is a unitless 0..1 value, and that is a deliberate boundary rather than a
+unit choice. The phone measures something physical — hand speed in m/s. Unity
+needs a launch speed in world units. `power` is the contract between them, so
+neither side has to know the other's numbers.
+
+Phone side, `throw.js:186`:
+
+```js
+power = normalize01(swingSpeed, tuning.minSwingSpeed, tuning.maxSwingSpeed)  // 0.9, 6.5
+```
+
+`normalize01` (`sensors.js:172`) is `clamp((v - min) / (max - min), 0, 1)`.
+
+Unity side, `SkipPhysics.cs:113`:
+
+```csharp
+var speed = Mathf.Lerp(tuning.MinSpeed, tuning.MaxSpeed, power);  // 5, 45
+```
+
+**The 0..1 scale is not the problem and should be kept.** The problem is that
+`minSwingSpeed` / `maxSwingSpeed` are hardcoded and `normalize01` clamps. A player
+whose hardest swing peaks below 6.5 m/s can never reach `power = 1.0` — the top of
+the range is physically unreachable for them. A player who exceeds 6.5 m/s
+saturates early and loses all fine control above that point. The same applies at
+the 0.9 floor. That pair is a guess at a human body, which is exactly the kind of
+number that should be measured.
+
+**What can be fitted from data already on the wire.** `ThrowMessage`
+(`Messages.cs:150-152`) already carries `peakAccel`, `swingSpeed` and
+`sampleCount` alongside `power`, and `RelayDebugHud` is their only consumer.
+
+- `minSwingSpeed` / `maxSwingSpeed` — **fittable today, no wire change.** Every
+  throw reports its raw `swingSpeed` in m/s. Log a few hundred and take
+  percentiles.
+- `minValidPeakAccel` — **fittable today.** `peakAccel` is on the wire.
+- `maxSwingMs` — **needs a small addition.** Swing duration is not reported;
+  it is the gap between the peak sample and the stop sample inside
+  `ThrowController._onSample`. One extra descriptor field.
+- `swingAccel` / `stopAccel` — **not fittable from descriptors.** These are
+  per-sample thresholds tested against `|linear|` inside `_onSample`. The
+  descriptor carries only the maximum over the buffer (`peakAccel`), not the time
+  series. Re-fitting "what threshold should have fired here" needs the samples the
+  threshold was tested against, and those never leave the phone —
+  `RingBuffer.toArray()` (`sensors.js:273`) is consumed locally in `_fire` and
+  discarded.
+
+So capture is not blocked. It is staged: the highest-value setting in the project
+can be fitted from what already ships, and only the two detection thresholds need
+the raw buffer on the wire.
+
 ### Tier A — derive. The sensor already measures these; the constant is a guess at it.
 
-| Setting | File:line | Current | Derive from |
-|---|---|---|---|
-| `minSwingSpeed` / `maxSwingSpeed` | `throw.js:72-73` | 0.9 / 6.5 m/s | percentiles of that player's own `peakSwingSpeed`; population percentiles as the default |
-| `swingAccel` | `throw.js:50` | 14 m/s² | a fraction of the player's observed peak `\|linear\|`, not an absolute |
-| `stopAccel` | `throw.js:53` | 4 m/s² | same — relative to that player's swing, not absolute |
-| `minValidPeakAccel` | `throw.js:39` | 3 m/s² | population low percentile over real (non-fumble) gestures |
-| `maxSwingMs` | `throw.js:59` | 900 ms | high percentile of measured swing durations |
+| Setting | File:line | Current | Derive from | Capturable today? |
+|---|---|---|---|---|
+| `minSwingSpeed` / `maxSwingSpeed` | `throw.js:72-73` | 0.9 / 6.5 m/s | percentiles of that player's own `peakSwingSpeed`; population percentiles as the default | **yes** — `swingSpeed` is on the wire |
+| `minValidPeakAccel` | `throw.js:39` | 3 m/s² | population low percentile over real (non-fumble) gestures | **yes** — `peakAccel` is on the wire |
+| `maxSwingMs` | `throw.js:59` | 900 ms | high percentile of measured swing durations | one extra descriptor field |
+| `swingAccel` | `throw.js:50` | 14 m/s² | a fraction of the player's observed peak `\|linear\|`, not an absolute | no — needs the raw sample buffer |
+| `stopAccel` | `throw.js:53` | 4 m/s² | same — relative to that player's swing, not absolute | no — needs the raw sample buffer |
 
 `minSwingSpeed` / `maxSwingSpeed` are the highest-value pair in the project.
 They set the entire mapping from a human arm to `power ∈ [0,1]`, and throwing
