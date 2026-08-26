@@ -507,7 +507,39 @@ that rises with throw power. The `ambientSource` field already exists in the Aud
 
 Roughly ordered. The top few are where the gamefeel actually is.
 
-### 6.1 Aim arc colour by predicted quality — *highest payoff, ~30 min*
+### 6.1 Aim arc colour by predicted quality — *built 2026-08-25*
+
+> **Built.** `AimPreview.UpdateArcColour`, with every number in
+> [`AimFeedbackTuning`](../Assets/Scripts/Game/AimFeedbackTuning.cs) at
+> `Resources/AimFeedbackTuning.asset`. Two things came out of the build that the estimate did not
+> have in it. `PredictedSkips` is an **integer** off a live phone, so a hand held near a threshold
+> flips it several times a second and an un-smoothed tint strobes between two hues on a stone that
+> is not moving — it is smoothed at its own slower rate for that reason alone. And the ramp goes
+> through an explicit amber stop rather than red→green in one blend, because a two-stop blend
+> crosses a muddy brown at its midpoint that reads as a third state rather than as the middle
+> of one.
+>
+> **The material was the whole bug, and it predates this work.** The tint computed correctly from
+> the first build and nothing changed on screen, through a round of widening the tuning ranges to
+> chase it. `LineRenderer.startColor`/`endColor` reach a shader as **vertex colour and by no other
+> route**, and the arc was built with `PlaceholderArt.Create` — URP/Lit, whose vertex `Attributes`
+> struct declares `positionOS`, `normalOS`, `tangentOS` and three UV sets and **no `COLOR`
+> semantic at all**. It could not read them even in principle. So the arc had been plain white
+> since the shader chain was made URP-aware, *including the blue it was originally authored with*
+> — the colour feature was dead on arrival at a renderer that was already ignoring colour.
+>
+> Fixed with `PlaceholderArt.CreateArc`, which is `CreateTrail`'s material at `ArcQueue` — the
+> trail already had this exact problem solved and documented, three methods further down the same
+> file. Two knock-on effects: the arc is now **alpha-blended**, so `TailAlpha` takes effect for
+> the first time and the arc fades along its length as originally authored; and it is **unlit**,
+> which is an upgrade here rather than the compromise it is for the trail, because a lit arc
+> multiplies scene lighting into what is supposed to be a red/amber/green verdict.
+>
+> Diagnostic worth keeping: **the ghost worked and the arc did not, in the same commit, off the
+> same tuning asset.** That split was the whole answer — the ghost is driven by material colour
+> (`_BaseColor`, which URP/Lit does read) and the arc by vertex colour (which it does not). When
+> one half of a feature lands and the other is inert, compare how each half reaches the GPU
+> before touching the values.
 
 [`AimPreview`](../Assets/Scripts/Game/AimPreview.cs#L229) already computes `PredictedSkips` and
 `PredictedDistance` every frame and does nothing visual with them. Tint the `LineRenderer`
@@ -519,7 +551,20 @@ angle is arc *length*, and the angle-quality curve in
 mediocre throw looks broadly like a good one until it's in the water. Colour makes the gradient
 visible while there's still time to correct.
 
-### 6.2 Ghost rock charge glow — *~30 min*
+### 6.2 Ghost rock charge glow — *built 2026-08-25*
+
+> **Built.** `AimPreview.UpdateGhostCharge` — scale, base colour and emission, all off
+> `AimFeedbackTuning`. The one decision worth recording: it reads **raw `_curPower`**, not the
+> `drawPower` the arc uses. The arc floors its power at `previewPower` so a player holding still
+> still gets a usable guide; a ghost floored the same way sits permanently half-charged and never
+> shows the bottom of the range, which is the exact difference the glow exists to show. The pulse
+> amplitude is scaled by charge for the same reason — an unscaled pulse reads as an idle
+> animation, saying the same thing whether the player is doing anything or not.
+>
+> Emission needs **both** `_EmissionColor` and the `_EMISSION` keyword, and missing either is
+> silent; `PlaceholderArt.PrepareEmission` does both once at build time and reports whether the
+> resolved shader has the property at all, since the fallback chain can land on `Unlit/Color`
+> where it does not exist. Same silent-no-op family as the `_ZTest` dead end in §1.2.
 
 `AimPreview` smooths `_curPower` every frame ([line 141](../Assets/Scripts/Game/AimPreview.cs#L141))
 and only feeds it to arc length. Scale/emissive-pulse the ghost stone with it. Winding up should
@@ -695,6 +740,13 @@ the ladder and the impact-speed mapping are what's being tuned, not the samples.
 
 **M7 — Polish, in §6 order.** Arc colour → ghost glow → camera punch → popups → splash particles →
 haptics.
+
+**Status, 2026-08-25.** M1–M4 are built. M5 (music) and M6 (scheduling) are **paused by choice** —
+the sounds are being made by hand rather than generated, so the audio milestones wait on the
+person making them, not on code. M7 was started ahead of them because §6.1 and §6.2 need no
+clips: both are **built** (see their sections). Next unbuilt item in §6 order is **§6.3 camera
+punch**, which also needs no audio — but read the motion-sickness note in it before touching the
+camera.
 
 ---
 

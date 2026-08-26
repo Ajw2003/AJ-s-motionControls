@@ -56,6 +56,49 @@ namespace Game
         public const int ArcQueue = 3200;
 
         private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
+        private static readonly int EmissionColourId = Shader.PropertyToID("_EmissionColor");
+
+        /// <summary>
+        /// Turns emission on for a material and reports whether it took, so a caller can
+        /// stop driving a property that does not exist.
+        /// </summary>
+        /// <remarks>
+        /// Two steps because emission needs both, and missing either one is silent. The
+        /// property carries the colour; the _EMISSION keyword is what compiles the shader
+        /// variant that reads it. Set the colour without the keyword and the value lands
+        /// correctly on a material that renders as though it were black — which looks like
+        /// the colour being wrong rather than the variant being absent.
+        ///
+        /// The HasProperty check is not defensive padding. FindOpaqueShader's tail can
+        /// resolve Unlit/Color or Sprites/Default, and neither has _EmissionColor at all, so
+        /// on a machine that fell down that chain every emission write would be a no-op with
+        /// no error — the same failure SetWaterDepthWrite records losing a debugging round
+        /// to on the stone's _ZTest. Returning a bool lets the caller find that out once at
+        /// build time instead of writing into nothing every frame.
+        ///
+        /// GI flags are cleared because this is meant to be animated per frame. Left at the
+        /// default the value is treated as a baked lighting contribution, which it cannot be
+        /// when it changes sixty times a second.
+        /// </remarks>
+        public static bool PrepareEmission(Material material)
+        {
+            if (material == null || !material.HasProperty(EmissionColourId)) return false;
+
+            material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            material.SetColor(EmissionColourId, Color.black);
+            return true;
+        }
+
+        /// <summary>
+        /// The emissive colour on a material already through <see cref="PrepareEmission"/>.
+        /// Safe to call every frame — it is one property write and no keyword churn.
+        /// </summary>
+        public static void SetEmission(Material material, Color colour)
+        {
+            if (material == null) return;
+            material.SetColor(EmissionColourId, colour);
+        }
 
         /// <summary>
         /// Whether the water writes depth, and so whether it is able to hide anything
@@ -167,14 +210,49 @@ namespace Game
         /// Worth revisiting deliberately if the trail ever needs to receive light; not worth
         /// carrying untested for a ribbon that is meant to read as spray.
         /// </remarks>
-        public static Material CreateTrail()
+        public static Material CreateTrail() => CreateVertexColoured(TrailQueue, "trail");
+
+        /// <summary>
+        /// A transparent, vertex-coloured material for the aim arc's <see cref="LineRenderer"/>.
+        /// </summary>
+        /// <remarks>
+        /// The arc needs exactly what the trail needs, and for exactly the reason CreateTrail
+        /// states: LineRenderer.startColor and endColor reach a shader as VERTEX COLOUR and by
+        /// no other route, so a shader that does not read vertex colour discards them in
+        /// silence and draws the material's flat tint instead.
+        ///
+        /// This is not hypothetical. The arc was built with <see cref="Create"/> — which is
+        /// URP/Lit, whose vertex Attributes struct declares positionOS, normalOS, tangentOS
+        /// and three UV sets and NO COLOR semantic at all — so it could not read them even in
+        /// principle. The arc rendered plain white from the URP migration until 2026-08-25,
+        /// including the blue it was originally authored with, and the quality tint added in
+        /// Plan-SfxVfx.md section 6.1 computed correctly every frame and went nowhere. It
+        /// presented as "the colour feature does not work" rather than as "the material is
+        /// wrong", which is why it survived a round of widening the tuning ranges.
+        ///
+        /// Unlit is an improvement here rather than the compromise it is for the trail. The
+        /// arc is a red/amber/green readout of predicted quality, and a lit material would
+        /// multiply scene lighting into the verdict — the same angle would report a different
+        /// colour at a different time of day. Sprites/Default also carries ZWrite Off, which
+        /// agrees with what ArcQueue was already pinned for: the guide must never be hidden,
+        /// including by the water's depth-write window (section 1.2).
+        /// </remarks>
+        public static Material CreateArc() => CreateVertexColoured(ArcQueue, "aim arc");
+
+        /// <summary>
+        /// The shared body of <see cref="CreateTrail"/> and <see cref="CreateArc"/>: one
+        /// alpha-blended, vertex-colour-respecting material, pinned to a given queue.
+        /// </summary>
+        /// <param name="role">Named only so a failure says which renderer went dark.</param>
+        private static Material CreateVertexColoured(int renderQueue, string role)
         {
             var shader = Shader.Find("Sprites/Default")
                       ?? Shader.Find("Universal Render Pipeline/Particles/Unlit");
 
             if (shader == null)
             {
-                Debug.LogWarning("[PlaceholderArt] No trail shader resolved — trail will not draw.");
+                Debug.LogWarning($"[PlaceholderArt] No vertex-coloured shader resolved — " +
+                                 $"the {role} will not draw.");
                 return null;
             }
 
@@ -183,7 +261,7 @@ namespace Game
             return new Material(shader)
             {
                 color = Color.white,
-                renderQueue = TrailQueue,
+                renderQueue = renderQueue,
             };
         }
 

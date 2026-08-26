@@ -32,6 +32,10 @@ namespace Game
         [Header("Setup")]
         [Tooltip("Leave empty to use a runtime default.")]
         [SerializeField] private SkipTuning tuning;
+
+        [Tooltip("Arc colour and ghost charge numbers. Leave empty to use a runtime default.")]
+        [SerializeField] private AimFeedbackTuning feedback;
+
         [SerializeField] private Transform throwOrigin;
 
         [Tooltip("Spawn placeholder water and frame the camera. Scaffolding until the real lake exists.")]
@@ -63,6 +67,31 @@ namespace Game
         private RockLauncher _launcher;
         private LineRenderer _line;
         private Transform _ghost;
+
+        // Held rather than looked back off the renderers. Renderer.material INSTANCES on
+        // read, so fetching it per frame to tint it would leak a fresh material every
+        // frame — and these are written every frame now that the arc has a colour and the
+        // ghost has a charge.
+        private Material _lineMaterial;
+        private Material _ghostMaterial;
+
+        /// <summary>The ghost's authored scale, which the charge multiplies rather than replaces.</summary>
+        private Vector3 _ghostBaseScale = Vector3.one;
+
+        /// <summary>Whether the ghost's shader actually has an emission property to drive.</summary>
+        private bool _ghostEmissive;
+
+        /// <summary>
+        /// Smoothed 0..1 arc quality, and a request to skip the smoothing for one frame.
+        /// </summary>
+        /// <remarks>
+        /// The snap exists for the same reason the attitude snap in OnAim does: when the
+        /// active player changes, sweeping from the last player's verdict to the new one
+        /// draws a colour neither of them earned. It cannot be done in OnAim itself because
+        /// the new player's quality is not known until the next prediction runs.
+        /// </remarks>
+        private float _curQuality;
+        private bool _snapQuality = true;
 
         // Sized from the tuning in Awake rather than left at a literal: PredictSeconds /
         // FixedStep is about 1100 points, so a hardcoded 512 quietly grew and reallocated
@@ -111,6 +140,19 @@ namespace Game
                                  "running on code defaults, which cannot be tuned without a recompile.");
             }
 
+            // Same three steps for the same reason, and it matters more here rather than
+            // less: these are look numbers, and a look number that needs a recompile does
+            // not get tuned.
+            if (feedback == null) feedback = Resources.Load<AimFeedbackTuning>("AimFeedbackTuning");
+
+            if (feedback == null)
+            {
+                feedback = AimFeedbackTuning.CreateDefault();
+                Debug.LogWarning("[AimPreview] No AimFeedbackTuning at Resources/AimFeedbackTuning — " +
+                                 "arc colour and ghost charge are on code defaults, which cannot be " +
+                                 "tuned without a recompile.");
+            }
+
             _path = new List<Vector3>(tuning.MaxPredictSteps + 1);
 
             if (createPlaceholderScene) BuildPlaceholderScene();
@@ -122,6 +164,11 @@ namespace Game
 
         private void OnDestroy()
         {
+            // Before the unsubscribe, not after: the early return below is conditional and
+            // anything placed under it is skipped for a preview that never bound a client.
+            if (_lineMaterial != null) Destroy(_lineMaterial);
+            if (_ghostMaterial != null) Destroy(_ghostMaterial);
+
             if (_client == null) return;
             _client.AimReceived -= OnAim;
         }
@@ -183,9 +230,11 @@ namespace Game
                 _lastSeq = -1;
 
                 // Snap to the new player's pose rather than sweeping across from wherever
-                // the last one left the ghost.
+                // the last one left the ghost. The arc's verdict is snapped the same way,
+                // one frame later, once there is a prediction to snap it to.
                 _curPower = 0f;
                 _curAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
+                _snapQuality = true;
             }
 
             // Cheap ordering guard: TCP preserves order per socket, but a reconnect can
@@ -237,6 +286,42 @@ namespace Game
 
             _line.positionCount = _path.Count;
             _line.SetPositions(_pathBuffer);
+
+            UpdateArcColour();
+        }
+
+        /// <summary>
+        /// Red through amber to green by how many skips the solver just predicted.
+        /// </summary>
+        /// <remarks>
+        /// This is a readability fix rather than decoration. Arc LENGTH was the only signal
+        /// a bad angle gave, and the angle-quality curve in SkipPhysics is a smooth gradient
+        /// with no cliff in it — so a mediocre throw looks broadly like a good one right up
+        /// until it is in the water. Colour makes that gradient legible while there is still
+        /// time to correct.
+        ///
+        /// Tinting via startColor/endColor rather than the material, because the material is
+        /// shared with nothing but is drawn with a gradient the LineRenderer applies as
+        /// vertex colour — writing the material colour instead would multiply underneath and
+        /// leave two places that decide one hue.
+        /// </remarks>
+        private void UpdateArcColour()
+        {
+            var quality = feedback.QualityOf(PredictedSkips);
+
+            // Exponential, frame-rate independent, same shape as the attitude smoothing
+            // above — the rate is slower, and AimFeedbackTuning.ColourSmoothing says why.
+            _curQuality = _snapQuality
+                ? quality
+                : Mathf.Lerp(_curQuality, quality,
+                             1f - Mathf.Exp(-feedback.ColourSmoothing * Time.deltaTime));
+
+            _snapQuality = false;
+
+            var colour = feedback.ColourAt(_curQuality);
+
+            _line.startColor = colour;
+            _line.endColor = new Color(colour.r, colour.g, colour.b, feedback.TailAlpha);
         }
 
         private void UpdateGhost()
@@ -255,6 +340,51 @@ namespace Game
             // The thrown stone still spins, because once it leaves the hand there is no
             // phone left to track — see RockController.
             _ghost.rotation = _curAttitude;
+
+            UpdateGhostCharge();
+        }
+
+        /// <summary>
+        /// Swells and lights the ghost with how hard the phone is being swung.
+        /// </summary>
+        /// <remarks>
+        /// Winding up should look like winding up. _curPower was already smoothed every
+        /// frame and fed to arc length alone, which puts the only reading of effort at the
+        /// far end of the arc — several metres from where the player is looking, and mixed
+        /// in with the angle the arc is mainly there to teach.
+        ///
+        /// Raw _curPower, deliberately, and NOT the drawPower the arc uses. The arc floors
+        /// its power at previewPower so that holding still still shows a usable guide; a
+        /// ghost floored the same way would sit permanently half-charged and never show the
+        /// bottom of the range. The whole point here is the difference between still and
+        /// winding up, so it has to start from actually still.
+        /// </remarks>
+        private void UpdateGhostCharge()
+        {
+            if (!feedback.ChargeGlow) return;
+
+            var charge = Mathf.Clamp01(_curPower);
+
+            // Scaled by charge so a stone at rest is perfectly still. An unscaled pulse
+            // reads as an idle animation, which is the opposite of feedback: it says the
+            // same thing whether the player is doing anything or not.
+            var pulse = 1f + Mathf.Sin(Time.time * feedback.PulseHz * 2f * Mathf.PI)
+                             * feedback.PulseAmount * charge;
+
+            var scale = Mathf.Lerp(feedback.IdleScale, feedback.ChargedScale, charge) * pulse;
+            _ghost.localScale = _ghostBaseScale * scale;
+
+            if (_ghostMaterial == null) return;
+
+            _ghostMaterial.color = Color.Lerp(feedback.IdleColour, feedback.ChargedColour, charge);
+
+            if (!_ghostEmissive) return;
+
+            // Squared, so the glow stays out of the way through the early part of a swing
+            // and arrives near the top. Linear emission reads as the ghost being lit rather
+            // than as it charging, because the first small movement already visibly brightens
+            // it and there is nowhere left to escalate to.
+            PlaceholderArt.SetEmission(_ghostMaterial, feedback.ChargedEmission * (charge * charge));
         }
 
         // ---------------------------------------------------------------- scaffolding
@@ -271,15 +401,23 @@ namespace Game
             var go = new GameObject("AimArc");
             go.transform.SetParent(transform, false);
 
+            // CreateArc, not Create. Create is URP/Lit, which reads no vertex colour, and
+            // startColor/endColor are vertex colour and nothing else — see CreateArc's
+            // remarks. Every tint written below and in UpdateArcColour was discarded by the
+            // shader before this was changed.
+            _lineMaterial = PlaceholderArt.CreateArc();
+
             _line = go.AddComponent<LineRenderer>();
             _line.widthMultiplier = 0.12f;
             _line.numCapVertices = 4;
             _line.useWorldSpace = true;
-            _line.material = PlaceholderArt.Create(Color.white, PlaceholderArt.ArcQueue);
+            _line.material = _lineMaterial;
 
-            var colour = new Color(0.55f, 0.85f, 1f);
+            // Start colour only; UpdateArcColour owns both ends from the first prediction
+            // on. This is what shows for the frame before one exists.
+            var colour = feedback.ColourAt(0.5f);
             _line.startColor = colour;
-            _line.endColor = new Color(colour.r, colour.g, colour.b, 0.15f);
+            _line.endColor = new Color(colour.r, colour.g, colour.b, feedback.TailAlpha);
             _line.enabled = false;
         }
 
@@ -291,12 +429,22 @@ namespace Game
             var ghost = Instantiate(rock);
             ghost.name = "GhostRock";
             Destroy(ghost.GetComponent<Collider>());
-            var grey = Color.gray3;
-            ghost.GetComponent<MeshRenderer>().material =
-                PlaceholderArt.Create(grey, PlaceholderArt.StoneQueue);
+
+            _ghostMaterial = PlaceholderArt.Create(feedback.IdleColour, PlaceholderArt.StoneQueue);
+            ghost.GetComponent<MeshRenderer>().material = _ghostMaterial;
+
+            // Asked once at build time rather than tested per frame. The answer cannot
+            // change — it is a property of the shader that resolved — and PlaceholderArt
+            // records why a silent no-op on a missing property is worth ruling out early.
+            _ghostEmissive = PlaceholderArt.PrepareEmission(_ghostMaterial);
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
+
+            // AFTER the reparent, because SetParent(worldPositionStays: false) can rewrite
+            // localScale — capturing before it would bake the parent's scale into the base
+            // the charge multiplies, and the ghost would jump size on the first wind-up.
+            _ghostBaseScale = _ghost.localScale;
         }
 
         private void BuildPlaceholderScene()

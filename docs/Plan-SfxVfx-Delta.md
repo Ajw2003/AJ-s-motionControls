@@ -2,6 +2,13 @@
 
 Audit only. No source changed. Read alongside [`Plan-SfxVfx.md`](Plan-SfxVfx.md).
 
+> **Superseded as a status report, later on 2026-08-25.** This is a snapshot of the moment it was
+> written, and it is kept as one — do not read the tables below as current. Since then M1–M4 all
+> landed (AudioManager, the six events, core SFX, trails), placeholder clips were generated into
+> `Assets/Audio/`, and §6.1 and §6.2 were built. The *reasoning* here — the URP consequences, the
+> depth-write window, the queue argument — is all still live. Only the "nothing is built" tally is
+> out of date. `Plan-SfxVfx.md` §8 carries the current status.
+
 ## Headline: §1.1 is now wrong, and it was the plan's biggest constraint
 
 The plan was written against Built-in and says in bold **"Do not migrate to URP for this work."**
