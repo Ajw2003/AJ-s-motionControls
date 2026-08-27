@@ -44,11 +44,28 @@ namespace EventTypes.SkipEvents
         /// </remarks>
         public int PredictedSkips { get; }
 
-        public RockLaunchedEvent(Vector3 origin, float power, int predictedSkips)
+        /// <summary>
+        /// The face angle the bounce actually cared about, in degrees.
+        /// </summary>
+        /// <remarks>
+        /// Carried because the offline sweep in Verification/SkipCurve reads every rock at an
+        /// ideal face angle and players do not — the gap between the two is the whole reason
+        /// the Authored and Derived tuning sets need real throws to choose between them, and
+        /// Verification/RockTelemetry cannot record that gap without this number.
+        ///
+        /// Read off SkipState rather than recomputed from the attitude here: SkipPhysics
+        /// already ran the attitude through PhoneAttitude.FaceAngleDeg to build the launch, and
+        /// a second conversion at this call site would be a second thing that can disagree —
+        /// exactly what PhoneAttitude exists to prevent.
+        /// </remarks>
+        public float FaceAngleDeg { get; }
+
+        public RockLaunchedEvent(Vector3 origin, float power, int predictedSkips, float faceAngleDeg)
         {
             Origin = origin;
             Power = power;
             PredictedSkips = predictedSkips;
+            FaceAngleDeg = faceAngleDeg;
         }
     }
 }

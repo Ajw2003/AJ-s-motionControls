@@ -129,7 +129,8 @@ namespace Game
             // a value that is already recoverable, and a second copy can disagree.
             var power = Mathf.InverseLerp(tuning.MinSpeed, tuning.MaxSpeed, state.Velocity.magnitude);
 
-            EventManager.Instance?.Publish(new RockLaunchedEvent(_origin, power, totalSkips));
+            EventManager.Instance?.Publish(
+                new RockLaunchedEvent(_origin, power, totalSkips, state.FaceAngleDeg));
         }
 
         private void Update()

@@ -55,6 +55,19 @@ namespace Managers
             set => activeTuningSet = value;
         }
 
+        /// <summary>
+        /// The seed the current match's rocks were drawn from, or null when players picked
+        /// their own.
+        /// </summary>
+        /// <remarks>
+        /// Exposed rather than only logged so Verification/RockTelemetry can stamp it on every
+        /// throw: a random match that produced surprising numbers is only worth anything as
+        /// evidence if the exact draw can be reproduced, and a seed sitting in the Console
+        /// scrollback is not that. Null in pointed-pick matches, where there is no seed and
+        /// writing one would imply a draw that never happened.
+        /// </remarks>
+        public int? LastRandomSeed { get; private set; }
+
         protected override void Awake()
         {
             persistBetweenScenes = true;
@@ -89,6 +102,13 @@ namespace Managers
             if (e.To == MatchPhase.Playing && randomRocks)
             {
                 AssignRandomRocks();
+            }
+            else if (e.To == MatchPhase.Playing)
+            {
+                // Cleared, not left standing: a match played on pointed picks has no seed,
+                // and carrying the previous random match's one into the telemetry would
+                // label these throws as reproducible from a draw that never ran.
+                LastRandomSeed = null;
             }
             else if (TurnManager.IsChoosingPhase(e.To))
             {
@@ -140,8 +160,9 @@ namespace Managers
 
         /// <summary>
         /// Assigns every player in the match a fresh rock from a logged seed, so a
-        /// surprising match can be reproduced. The seed is only logged for now —
-        /// Part 6's RockTelemetry is what will actually record it per match.
+        /// surprising match can be reproduced. The seed is both logged and kept on
+        /// <see cref="LastRandomSeed"/>, where Verification/RockTelemetry stamps it onto
+        /// every throw it records.
         /// </summary>
         /// <remarks>
         /// Iterates <see cref="TurnManager.Players"/> — the roster — rather than
@@ -158,6 +179,7 @@ namespace Managers
         {
             var seed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             var rng = new System.Random(seed);
+            LastRandomSeed = seed;
 
             Debug.Log($"[RockSelection] Random rocks — seed {seed}");
 

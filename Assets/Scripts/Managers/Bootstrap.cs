@@ -34,6 +34,11 @@ namespace Managers
         [Tooltip("F4 host panel for Random rocks / Tuning set / Rounds per match.")]
         [SerializeField] private bool showMatchSettingsScreen = true;
 
+        [Tooltip("Append one row per throw to rock-throws.csv — rock, tuning set, power, face " +
+                 "angle, skips, distance. The real-throw half of the Authored/Derived " +
+                 "comparison; records only, changes nothing.")]
+        [SerializeField] private bool recordRockTelemetry = true;
+
         [Tooltip("On-screen relay/throw readout. M1 scaffolding; turn off for real play.")]
         [SerializeField] private bool showDebugHud = true;
 
@@ -116,6 +121,11 @@ namespace Managers
             // — it can read final state to decide what to play rather than racing it.
             if (enableAudio) CreateSfxDirector();
 
+            // After ScoreManager and TurnManager for the same delivery-order reason: by the
+            // time it hears a throw ending, the points are banked and the phase has settled,
+            // so the row it writes describes a finished throw rather than one mid-tally.
+            if (recordRockTelemetry) CreateRockTelemetry();
+
             if (showJoinScreen) CreateJoinScreen();
             if (showResultsScreen) CreateResultsScreen();
             if (showMatchSettingsScreen) CreateMatchSettingsScreen();
@@ -139,6 +149,21 @@ namespace Managers
             var director = new GameObject(nameof(Audio.SfxDirector));
             director.AddComponent<Audio.SfxDirector>();
             DontDestroyOnLoad(director);
+        }
+
+        /// <summary>
+        /// Persistent like the managers, and for a blunter reason than the screens: a
+        /// scene-local recorder would be destroyed and rebuilt on the Lobby-Game-Results
+        /// transitions, and every throw either side of a rebuild would be missing from the
+        /// corpus with nothing in the file to say so.
+        /// </summary>
+        private static void CreateRockTelemetry()
+        {
+            if (FindFirstObjectByType<Verification.RockTelemetry>() != null) return;
+
+            var recorder = new GameObject(nameof(Verification.RockTelemetry));
+            recorder.AddComponent<Verification.RockTelemetry>();
+            DontDestroyOnLoad(recorder);
         }
 
         private static void CreateJoinScreen()

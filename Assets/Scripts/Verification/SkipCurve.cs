@@ -16,14 +16,25 @@ namespace Verification
     /// how a bug that zeroed the bounce quality on every real throw survived a sweep that
     /// looked healthy.
     ///
-    /// So this drives <see cref="SkipPhysics"/> directly against the authored
-    /// Resources/SkipTuning asset. There is nothing to keep in sync, and no way for the
-    /// measured curve to disagree with the game.
+    /// So this drives <see cref="SkipPhysics"/> directly against the authored assets. There
+    /// is nothing to keep in sync, and no way for the measured curve to disagree with the
+    /// game.
     ///
     /// Read the output against these, which is what the numbers were chosen to hit:
     /// distance, skips and hop height all rising with power; a neutral face angle (0)
     /// scoring full quality; steady-state hops low enough to read as skipping rather than
     /// lobbing; and a full-power throw staying on the water.
+    ///
+    /// <b>Six rocks, two sets.</b> Now that the rock catalog exists, one curve is no longer
+    /// the whole story: every rock is swept against both its Authored and its Derived tuning,
+    /// and each gets the same per-tuning verdict it would have got on its own — a badly
+    /// authored rock fails loudly rather than averaging away. On top of that comes the check
+    /// the two sets exist for: whether the rocks are actually <i>distinguishable</i>, run once
+    /// per set so the report says outright which set separates better. See
+    /// <see cref="TuningSet"/> and docs/plans/rock-choosing-system.md Part 6.
+    ///
+    /// With no catalog (or an empty one) this falls back to the original single-curve report
+    /// against Resources/SkipTuning, which is what the game itself falls back to as well.
     /// </remarks>
     public static class SkipCurve
     {
@@ -32,6 +43,19 @@ namespace Verification
 
         private static readonly float[] Powers = { 0.1f, 0.2f, 0.35f, 0.5f, 0.65f, 0.8f, 1f };
         private static readonly float[] FaceAngles = { 0f, 5f, 10f, 15f, 20f, 30f, 45f, -15f, -30f };
+
+        private static readonly TuningSet[] Sets = { TuningSet.Authored, TuningSet.Derived };
+
+        /// <summary>The power the separation check is read at — a strong, ordinary throw.</summary>
+        private const float SeparationPower = 0.8f;
+
+        /// <summary>Across the rocks, skips at <see cref="SeparationPower"/> must span at least this.</summary>
+        private const int MinSkipSpread = 4;
+
+        /// <summary>Two rocks within this many skips AND <see cref="TooCloseMetres"/> are one rock.</summary>
+        private const int TooCloseSkips = 1;
+
+        private const float TooCloseMetres = 5f;
 
         /// <summary>One throw's shape, measured rather than derived.</summary>
         private struct Shape
@@ -44,16 +68,135 @@ namespace Verification
             public float SettledHopHeight;
         }
 
+        /// <summary>One rock's reading at <see cref="SeparationPower"/>, for the separation tables.</summary>
+        private struct Reading
+        {
+            public string Name;
+            public bool Measured;
+            public int Skips;
+            public float Distance;
+        }
+
         public static string Build()
         {
-            var tuning = Resources.Load<SkipTuning>("SkipTuning");
-            if (tuning == null)
+            var catalog = Resources.Load<RockCatalog>("RockCatalog");
+
+            if (catalog == null || catalog.IsEmpty)
             {
-                return "FAIL  no SkipTuning at Resources/SkipTuning — nothing to measure.\n";
+                var single = Resources.Load<SkipTuning>("SkipTuning");
+                if (single == null)
+                {
+                    return "FAIL  no RockCatalog at Resources/RockCatalog and no SkipTuning at " +
+                           "Resources/SkipTuning — nothing to measure.\n";
+                }
+
+                var lone = new StringBuilder();
+                lone.AppendLine("No usable catalog at Resources/RockCatalog — rock choosing is off, so");
+                lone.AppendLine("this is the single-tuning report against Resources/SkipTuning. Run");
+                lone.AppendLine("RockSkipping/Rocks/Build Catalog from FBX to measure the six rocks.");
+                lone.AppendLine();
+                lone.Append(ReportFor(single.name, single));
+                return lone.ToString();
             }
 
             var report = new StringBuilder();
-            report.AppendLine($"Skip curve for {tuning.name}");
+            report.AppendLine($"Skip curve — {catalog.Count} rocks x {Sets.Length} tuning sets, " +
+                              "driven through the real solver.");
+            report.AppendLine();
+
+            // A catalog that breaks the shared-field rule makes every number below
+            // incomparable: MaxSpeed differing by rock means power means a different thing per
+            // rock. Say so at the top rather than letting the tables imply otherwise.
+            var problems = catalog.Validate();
+            if (problems.Count > 0)
+            {
+                report.AppendLine("CATALOG PROBLEMS — the readings below are not comparable until these are fixed:");
+                foreach (var problem in problems) report.AppendLine($"  {problem}");
+                report.AppendLine();
+            }
+
+            var readings = new Dictionary<TuningSet, Reading[]>();
+            var perRockPassed = true;
+            var anySetSeparates = false;
+            var separationSummary = new StringBuilder();
+
+            foreach (var set in Sets)
+            {
+                report.AppendLine(Rule());
+                report.AppendLine(set.ToString().ToUpperInvariant());
+                report.AppendLine(Rule());
+                report.AppendLine();
+
+                var setReadings = new Reading[catalog.Count];
+
+                for (var i = 0; i < catalog.Count; i++)
+                {
+                    var rock = catalog.At(i);
+                    var name = rock != null ? rock.DisplayName : $"slot {i}";
+                    var tuning = rock != null ? rock.Tuning(set) : null;
+
+                    setReadings[i] = new Reading { Name = name, Measured = false };
+
+                    if (tuning == null)
+                    {
+                        report.AppendLine($"{name} — no {set} tuning, and no other set to fall back to.");
+                        report.AppendLine();
+                        perRockPassed = false;
+                        continue;
+                    }
+
+                    var label = $"{name} ({rock.Id}) — {set}: {tuning.name}";
+                    var body = ReportFor(label, tuning);
+                    report.Append(body);
+                    report.AppendLine();
+
+                    if (body.Contains("FAIL")) perRockPassed = false;
+
+                    var run = Measure(SeparationPower, tuning.BestFaceAngleDeg, tuning);
+                    setReadings[i] = new Reading
+                    {
+                        Name = name,
+                        Measured = true,
+                        Skips = run.Skips,
+                        Distance = run.Distance,
+                    };
+                }
+
+                readings[set] = setReadings;
+
+                var separated = Separation(set, setReadings, report);
+                anySetSeparates |= separated;
+                separationSummary.AppendLine(
+                    $"  {(separated ? "PASS" : "FAIL")}  {set} separates the rocks — " +
+                    $"{DescribeSpread(setReadings)}");
+                report.AppendLine();
+            }
+
+            report.AppendLine(Rule());
+            report.AppendLine("AUTHORED vs DERIVED");
+            report.AppendLine(Rule());
+            report.AppendLine();
+            report.Append(Comparison(readings));
+            report.AppendLine();
+
+            report.AppendLine("Separation, per set:");
+            report.Append(separationSummary);
+            report.AppendLine($"  {(perRockPassed ? "PASS" : "FAIL")}  every rock passes its own " +
+                              "verdict on both sets");
+            report.AppendLine();
+            report.AppendLine(perRockPassed && anySetSeparates ? "PASS" : "FAIL");
+            report.AppendLine(BetterSet(readings));
+
+            return report.ToString();
+        }
+
+        private static string Rule() => new('=', 70);
+
+        /// <summary>The original single-tuning report: both sweeps and the acceptance checks.</summary>
+        private static string ReportFor(string label, SkipTuning tuning)
+        {
+            var report = new StringBuilder();
+            report.AppendLine(label);
             report.AppendLine($"  speed {tuning.MinSpeed}..{tuning.MaxSpeed} m/s   " +
                               $"kept {tuning.MinRetention}..{tuning.MaxRetention}/bounce   " +
                               $"exit {tuning.OpeningHopAngleDeg}deg -> {tuning.SkipExitAngleDeg}deg " +
@@ -92,6 +235,163 @@ namespace Verification
             report.AppendLine();
             report.Append(Verdict(tuning));
             return report.ToString();
+        }
+
+        /// <summary>
+        /// Whether the rocks in one set read as different stones.
+        /// </summary>
+        /// <remarks>
+        /// This is the check the two sets exist to be judged by. Authored is expected to pass
+        /// — separating them is what a person sat down and did. Derived failing is a result,
+        /// not a blocker: it is the answer to "are mesh bounds enough", and it is only
+        /// discoverable by measuring.
+        ///
+        /// Each rock is read at its own BestFaceAngleDeg rather than at one shared angle, so
+        /// this compares stones each thrown well, which is the comparison a player makes.
+        /// </remarks>
+        private static bool Separation(TuningSet set, Reading[] readings, StringBuilder report)
+        {
+            report.AppendLine($"Separation, {set} — every rock at power {SeparationPower:F2}, " +
+                              "thrown at its own best angle:");
+            report.AppendLine();
+            report.AppendLine("  rock                skips   distance");
+
+            foreach (var reading in readings)
+            {
+                report.AppendLine(reading.Measured
+                    ? $"  {reading.Name,-18}  {reading.Skips,5}   {reading.Distance,7:F1} m"
+                    : $"  {reading.Name,-18}      -         -");
+            }
+
+            report.AppendLine();
+
+            var measured = new List<Reading>();
+            foreach (var reading in readings)
+            {
+                if (reading.Measured) measured.Add(reading);
+            }
+
+            if (measured.Count < 2)
+            {
+                report.AppendLine($"  FAIL  fewer than two {set} tunings could be measured.");
+                return false;
+            }
+
+            var minSkips = int.MaxValue;
+            var maxSkips = int.MinValue;
+            foreach (var reading in measured)
+            {
+                minSkips = Mathf.Min(minSkips, reading.Skips);
+                maxSkips = Mathf.Max(maxSkips, reading.Skips);
+            }
+
+            var spread = maxSkips - minSkips;
+            var spreadOk = spread >= MinSkipSpread;
+            report.AppendLine($"  {(spreadOk ? "PASS" : "FAIL")}  skip spread {spread} " +
+                              $"({minSkips}..{maxSkips}), needs {MinSkipSpread} or more");
+
+            var pairsOk = true;
+            for (var a = 0; a < measured.Count; a++)
+            {
+                for (var b = a + 1; b < measured.Count; b++)
+                {
+                    var skipGap = Mathf.Abs(measured[a].Skips - measured[b].Skips);
+                    var metreGap = Mathf.Abs(measured[a].Distance - measured[b].Distance);
+                    if (skipGap > TooCloseSkips || metreGap > TooCloseMetres) continue;
+
+                    pairsOk = false;
+                    report.AppendLine($"  FAIL  {measured[a].Name} and {measured[b].Name} are the " +
+                                      $"same rock — {skipGap} skip{(skipGap == 1 ? "" : "s")} and " +
+                                      $"{metreGap:F1} m apart");
+                }
+            }
+
+            if (pairsOk)
+            {
+                report.AppendLine($"  PASS  no two rocks within {TooCloseSkips} skip and " +
+                                  $"{TooCloseMetres:F0} m of each other");
+            }
+
+            return spreadOk && pairsOk;
+        }
+
+        /// <summary>The two sets side by side, which is the table the comparison is read off.</summary>
+        private static string Comparison(Dictionary<TuningSet, Reading[]> readings)
+        {
+            var table = new StringBuilder();
+            table.AppendLine($"Every rock at power {SeparationPower:F2}, each thrown at its own best angle.");
+            table.AppendLine("delta is derived minus authored, in skips.");
+            table.AppendLine();
+            table.AppendLine("                       authored               derived");
+            table.AppendLine("  rock                skips     dist        skips     dist     delta");
+
+            if (!readings.TryGetValue(TuningSet.Authored, out var authored) ||
+                !readings.TryGetValue(TuningSet.Derived, out var derived))
+            {
+                table.AppendLine("  (a set is missing — nothing to compare)");
+                return table.ToString();
+            }
+
+            var count = Mathf.Min(authored.Length, derived.Length);
+            for (var i = 0; i < count; i++)
+            {
+                var a = authored[i];
+                var d = derived[i];
+
+                var aCells = a.Measured ? $"{a.Skips,5}   {a.Distance,7:F1}" : $"{"-",5}   {"-",7}";
+                var dCells = d.Measured ? $"{d.Skips,5}   {d.Distance,7:F1}" : $"{"-",5}   {"-",7}";
+                var delta = a.Measured && d.Measured ? $"{d.Skips - a.Skips,5}" : $"{"-",5}";
+
+                table.AppendLine($"  {a.Name,-18}  {aCells}      {dCells}     {delta}");
+            }
+
+            return table.ToString();
+        }
+
+        /// <summary>Which set spreads the rocks further apart — the sentence the report exists for.</summary>
+        private static string BetterSet(Dictionary<TuningSet, Reading[]> readings)
+        {
+            if (!readings.TryGetValue(TuningSet.Authored, out var authored) ||
+                !readings.TryGetValue(TuningSet.Derived, out var derived))
+            {
+                return string.Empty;
+            }
+
+            var a = SkipSpread(authored);
+            var d = SkipSpread(derived);
+
+            if (a == d)
+            {
+                return $"  Authored and Derived spread the rocks equally ({a} skips). Neither is " +
+                       "the obvious keeper on the offline sweep — decide it on real throws " +
+                       "(rock-throws.csv).";
+            }
+
+            return a > d
+                ? $"  Authored separates better ({a} skips of spread against Derived's {d})."
+                : $"  Derived separates better ({d} skips of spread against Authored's {a}) — " +
+                  "mesh bounds alone are enough.";
+        }
+
+        private static int SkipSpread(Reading[] readings)
+        {
+            var min = int.MaxValue;
+            var max = int.MinValue;
+
+            foreach (var reading in readings)
+            {
+                if (!reading.Measured) continue;
+                min = Mathf.Min(min, reading.Skips);
+                max = Mathf.Max(max, reading.Skips);
+            }
+
+            return max == int.MinValue ? 0 : max - min;
+        }
+
+        private static string DescribeSpread(Reading[] readings)
+        {
+            var spread = SkipSpread(readings);
+            return $"{spread} skip{(spread == 1 ? "" : "s")} between the weakest and strongest rock";
         }
 
         /// <summary>

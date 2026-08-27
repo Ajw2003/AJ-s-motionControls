@@ -440,6 +440,63 @@ already built by this plan.
 
 ## Build log
 
+**2026-08-26 — Part 6 (the comparison) built. Not yet verified in-editor.**
+
+Both halves, per the plan text.
+
+**a. Offline — `Scripts/Verification/SkipCurve.cs`.** `Build()` now loads
+`Resources/RockCatalog` and loops **catalog × {Authored, Derived}**, running the existing power
+sweep, face-angle sweep and `Verdict()` per rock so a badly authored rock still fails on its
+own terms rather than averaging away. The single-tuning report survives verbatim as
+`ReportFor(label, tuning)` — nothing about the acceptance checks changed, they are just called
+twelve times instead of once. Added on top:
+
+- **A separation block per set** — every rock read at power 0.8 *at its own
+  `BestFaceAngleDeg`* (six stones each thrown well, which is the comparison a player makes),
+  then the plan's two checks: skip spread ≥ 4 across the set, and no two rocks within 1 skip
+  **and** 5 m of each other. A failing pair is named.
+- **An authored-vs-derived table** with a per-rock skips/distance delta, and a closing line
+  stating outright which set separates better — the sentence the whole two-set exercise
+  exists to produce.
+- **A catalog-validation banner.** `RockCatalog.Validate()` runs first and, if it reports
+  anything, the report says at the top that the numbers below are not comparable. A catalog
+  with a per-rock `MaxSpeed` makes power mean a different thing per rock, and the tables would
+  otherwise imply a comparison that isn't one.
+
+Overall verdict is `PASS` only when every rock passes its own verdict on both sets **and** at
+least one set separates. Derived failing separation is explicitly a result, not a blocker — it
+is the answer to "are mesh bounds enough". Output stays `skip-curve.txt` via the existing
+`ResultPath`, and with no catalog (or an empty one) it falls back to the original single-curve
+report against `Resources/SkipTuning`, which is what the game itself falls back to.
+
+**b. In play — `Scripts/Verification/RockTelemetry.cs` (new).** A persistent `MonoBehaviour`
+created by `Bootstrap` behind a new `recordRockTelemetry` toggle (default on), after
+`ScoreManager`/`TurnManager` so a throw is fully banked before its row is written. Subscribes
+to `RockLaunchedEvent` (power, face angle) and `ThrowCompletedEvent` (player, skips, distance),
+looks the rock and set up from `RockSelection`, and appends one row to `rock-throws.csv` beside
+`skip-curve.txt` — same `Application.dataPath`-parent resolution as `MatchSettingsStore`. The
+file is opened and closed per row, so a crashed session keeps every throw before it; a write
+failure logs a warning and never throws, because an exception out of an event handler would
+take the score and the turn rotation down with it. Purely an observer: turning it off changes
+no behaviour, only what is recorded.
+
+Two small upstream additions it needed, rather than re-deriving numbers at the recording site:
+
+- **`RockLaunchedEvent.FaceAngleDeg`** — the angle the bounce actually cared about, read off
+  `SkipState` in `RockController.Launch` where `SkipPhysics` had already run the attitude
+  through `PhoneAttitude.FaceAngleDeg`. Recomputing it in the recorder would have been a second
+  conversion that can disagree with the first, which is the thing `PhoneAttitude` exists to
+  prevent. `SfxDirector` is the only other subscriber and reads by property, so it was
+  unaffected.
+- **`RockSelection.LastRandomSeed`** (`int?`) — the seed `AssignRandomRocks` already drew and
+  logged, now kept so it can be stamped on each row; a seed in the Console scrollback cannot
+  reproduce a draw a week later. Null on pointed-pick matches, and explicitly cleared when a
+  match starts with Random rocks off, so a row never claims a draw that never ran.
+
+`rock-throws.csv` is deliberately **not** gitignored: unlike `match-settings.json` it is
+evidence rather than per-machine preference, and whether a given session's corpus is worth
+committing is a call to make per session.
+
 **2026-08-26 — Playtest fixes: random rocks fell back to the base rock after the first match;
 aim preview now logs why it drops a frame.** See
 [`rock-choosing-post-part5-fixes.md`](rock-choosing-post-part5-fixes.md) for the full
