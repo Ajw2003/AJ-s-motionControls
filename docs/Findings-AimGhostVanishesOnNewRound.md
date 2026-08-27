@@ -127,11 +127,10 @@ Both the ghost fix (option 1) and the phone-side advance (any connected phone) a
 **No relay change.** `relayToHost` stamps `playerId` and forwards anything
 ([relay/server.js:268](../relay/server.js#L268)); the routing is type-agnostic by design.
 
-**Verification status:** `controller/js/app.js` passes `node --check`. The C# is unverified —
-Unity holds the project lock, so there is no out-of-band compile (see `Assets/CLAUDE.md`).
-Check the Editor Console, then play a match through: throw, let it end, tap PLAY AGAIN on the
-phone, tap START MATCH, and confirm the ghost is up from the moment the turn starts rather than
-only after TAP TO AIM.
+**Verification status:** verified in play on 2026-08-26. `controller/js/app.js` passes
+`node --check`, the C# compiles clean in the Editor, and a full match was played through:
+throw, match end, PLAY AGAIN on the phone, START MATCH on the phone, with the ghost up from the
+moment the turn starts rather than only after TAP TO AIM.
 
 ## Related: advancing the match without a keyboard
 
