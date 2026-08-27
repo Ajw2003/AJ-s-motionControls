@@ -31,6 +31,9 @@ namespace Managers
         [Tooltip("Final standings when a match ends.")]
         [SerializeField] private bool showResultsScreen = true;
 
+        [Tooltip("F4 host panel for Random rocks / Tuning set / Rounds per match.")]
+        [SerializeField] private bool showMatchSettingsScreen = true;
+
         [Tooltip("On-screen relay/throw readout. M1 scaffolding; turn off for real play.")]
         [SerializeField] private bool showDebugHud = true;
 
@@ -101,6 +104,12 @@ namespace Managers
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;
 
+            // After both RockSelection and TurnManager, never earlier — its Awake applies the
+            // settings loaded from match-settings.json straight onto RockSelection.RandomRocks/
+            // ActiveTuningSet and TurnManager.RoundsPerMatch, which needs both instances to
+            // already exist. See docs/plans/rock-choosing-system.md Part 5.
+            _ = MatchSettings.Instance;
+
             // Last of the subscribers, deliberately. EventManager delivers in subscription
             // order, so creating this after ScoreManager and TurnManager means that by the
             // time it hears a throw ending, the points are banked and the phase has settled
@@ -109,6 +118,7 @@ namespace Managers
 
             if (showJoinScreen) CreateJoinScreen();
             if (showResultsScreen) CreateResultsScreen();
+            if (showMatchSettingsScreen) CreateMatchSettingsScreen();
             if (showDebugHud) CreateDebugHud();
             if (showAimPreview) CreateAimPreview();
         }
@@ -147,6 +157,15 @@ namespace Managers
 
             var screen = new GameObject("ResultsScreen");
             screen.AddComponent<Ui.ResultsScreen>();
+            DontDestroyOnLoad(screen);
+        }
+
+        private static void CreateMatchSettingsScreen()
+        {
+            if (FindFirstObjectByType<Ui.MatchSettingsScreen>() != null) return;
+
+            var screen = new GameObject("MatchSettingsScreen");
+            screen.AddComponent<Ui.MatchSettingsScreen>();
             DontDestroyOnLoad(screen);
         }
 

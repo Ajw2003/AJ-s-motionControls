@@ -440,6 +440,36 @@ already built by this plan.
 
 ## Build log
 
+**2026-08-26 — Part 5 (host settings panel) built. Not yet verified in-editor.**
+
+Deviates from the plan text in two ways, both requested explicitly rather than discovered
+mid-build:
+
+- **Persistence is a hand-editable `match-settings.json` beside the executable, not
+  PlayerPrefs.** Same reasoning and same file-resolution code (`Application.dataPath`'s
+  parent) as `Net.NetworkModeStore` — PlayerPrefs on Windows writes into the registry, which a
+  host can't inspect or edit. `Managers/MatchSettingsStore.cs` loads/saves a small
+  `JsonUtility`-serialized struct; `tuningSet` is stored as its enum *name*, not
+  `JsonUtility`'s default integer, so the file reads sensibly opened by hand. Every edit in the
+  panel writes through immediately — no separate "apply" step, and no data lost by leaving the
+  panel open. `match-settings.json` is gitignored next to `network-mode.txt`.
+- **Reachable from Lobby *and* Choosing, not just "before a match starts."** `MatchSettings.CanEdit`
+  is `Phase != Playing` (Lobby, Choosing, or Results), so F4 opens the panel both from the main
+  lobby and from the existing mid-match re-pick pause (`reChooseEveryRounds`/`forceChooseKey`)
+  with no new phase logic — it reuses the same "not Playing" condition those already gate on.
+
+Otherwise built per the plan text: `Managers/Setting.cs` has the generic
+`Setting`/`ToggleSetting`/`EnumSetting<T>`/`IntSetting` primitives, each wrapping a get/set pair
+onto an *existing* property rather than duplicating state — `RandomRocks`/`ActiveTuningSet` stay
+on `RockSelection` exactly as that class's own doc-remark asked for, and `TurnManager.RoundsPerMatch`
+gained a clamped setter. `Managers/MatchSettings.cs` (new singleton, created in `Bootstrap` after
+both `RockSelection` and `TurnManager` so it has something to apply the loaded JSON onto) owns
+the three-entry list. `Ui/MatchSettingsScreen.cs` is an OnGUI modal (F4, arrow-key navigation),
+following `JoinScreen`/`ResultsScreen`'s existing scale-based-style/panel-texture conventions.
+`JoinScreen` and `ResultsScreen` each gained the plan's one-line hint; `JoinScreen`'s start
+prompt is suppressed while the modal has focus (`MatchSettingsScreen.IsOpen`) so pressing Space
+in the panel can't also start a match out from under it.
+
 **2026-08-26 — Fixed: continuing to a new match skipped rock choosing. Added: a mid-match
 re-pick pause, on a configurable cadence or on demand.**
 

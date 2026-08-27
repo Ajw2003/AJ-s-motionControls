@@ -120,7 +120,18 @@ namespace Managers
                 : null;
 
         public IReadOnlyList<string> Players => _players;
-        public int RoundsPerMatch => roundsPerMatch;
+
+        /// <summary>
+        /// Settable so <see cref="MatchSettings"/> can drive it from the host panel — clamped
+        /// here rather than trusting the caller, since <see cref="IntSetting"/> already clamps
+        /// to the same range and a stale JSON file on disk should not be able to set an
+        /// out-of-range value either.
+        /// </summary>
+        public int RoundsPerMatch
+        {
+            get => roundsPerMatch;
+            set => roundsPerMatch = Mathf.Clamp(value, 1, 10);
+        }
 
         /// <summary>Zero-based index of the round in progress.</summary>
         public int CurrentRound => _round;

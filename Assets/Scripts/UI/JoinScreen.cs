@@ -442,7 +442,9 @@ namespace Ui
 
             // The match never starts on its own — somebody walking in mid-lobby should not
             // begin it for everyone else, so it waits for a deliberate press.
-            if (turns != null && turns.CanStartMatch)
+            // Suppressed while the settings modal has focus, so pressing Space there doesn't
+            // also start the match out from under the panel.
+            if (!MatchSettingsScreen.IsOpen && turns != null && turns.CanStartMatch)
             {
                 var previous = GUI.color;
                 GUI.color = new Color(0.6f, 1f, 0.7f);
@@ -450,12 +452,20 @@ namespace Ui
                                 $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")}", _status);
                 GUI.color = previous;
             }
-            else if (turns != null)
+            else if (turns != null && !MatchSettingsScreen.IsOpen)
             {
                 GUILayout.Label("Waiting for at least one player…", _hint);
             }
 
             GUILayout.FlexibleSpace();
+            if (turns != null)
+            {
+                var random = RockSelection.HasInstance && RockSelection.Instance.RandomRocks;
+                var tuning = RockSelection.HasInstance ? RockSelection.Instance.ActiveTuningSet.ToString() : "Authored";
+                GUILayout.Label($"Rocks: {(random ? "Random" : "Pointed")} · Tuning: {tuning} · " +
+                                $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")} — " +
+                                "Press F4 for match settings", _hint);
+            }
             GUILayout.Label($"{toggleKey} hides this screen", _hint);
         }
 

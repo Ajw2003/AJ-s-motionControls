@@ -57,6 +57,10 @@ relay-env.txt
 # own preference, not something one checkout should impose on everyone else's.
 network-mode.txt
 
+# Per-host match settings (Random rocks / Tuning set / Rounds per match), written by the
+# F4 host panel. Same reasoning as network-mode.txt.
+match-settings.json
+
 # Spike output. Records one machine's run, so it is evidence rather than source.
 deploy/spike/*.log
 
