@@ -14,15 +14,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Game.SkipTuning
   Gravity: 9.81
   WaterY: 0
-  MinSpeed: 5
-  MaxSpeed: 45
-  LaunchPitchDeg: 5
-  BestFaceAngleDeg: -5
+  MinSpeed: 1
+  MaxSpeed: 60
+  LaunchPitchDeg: 0
+  BestFaceAngleDeg: 0
   ToleranceDeg: 20
   MinRetention: 0.75
   MaxRetention: 0.95
   OptimalAngle: 0
-  MinSkipSpeed: 7
+  MinSkipSpeed: 5
   SkipExitAngleDeg: 5
   OpeningHopAngleDeg: 7
   OpeningHopSkips: 3

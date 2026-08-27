@@ -1,0 +1,17 @@
+mid round colors are same for dots on rock selection.
+
+make phone ui clearer and also by default reduce the qr code to the small right top docked after one player joined so they can see rock selection
+
+fix other clients seemingly having issues where the ui does not switch correctly or respond correctly to being pressed.
+
+change press to aim to press to calibrate 
+
+make stone choosing ui still display results from last round and current leaderboard standings once stone is selected and confirmed.
+
+make obvious when stone is selected and stop showing player cursor
+
+make it obvious how the calibration works and figure out walking the players through it for both stone throwing and rock choosing.
+
+make player selector color stick through matches and rounds as long as the session stays the same currently it seems to change.
+
+display metrics for last skip to all in a fun way before the next turn and have the leader board always be able to be visible or hidden easily phone side via ui button input
