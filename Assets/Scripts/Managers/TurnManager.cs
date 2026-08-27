@@ -67,6 +67,9 @@ namespace Managers
                  "rock mid-flight; it is a dev key, not something a player can reach.")]
         [SerializeField] private KeyCode forceChooseKey = KeyCode.C;
 
+        /// <summary>Bound lazily in BindRelay; null in a scene with no relay client.</summary>
+        private RelayClient _relay;
+
         private readonly List<string> _players = new();
         private readonly List<PlayerStanding> _standings = new();
         private int _current = -1;
@@ -168,30 +171,68 @@ namespace Managers
 
         private void Update()
         {
-            // Split by phase rather than one CanStartMatch check driving StartMatch
-            // unconditionally: that used to let a press from Results skip straight into
-            // Playing with the previous match's rock picks still in place, because
-            // CanStartMatch is also true on Results and Choosing (both are "not Playing").
-            if (Input.GetKeyDown(startMatchKey))
-            {
-                switch (Phase)
-                {
-                    case MatchPhase.Lobby when CanStartMatch:
-                        StartMatch();
-                        break;
-                    case MatchPhase.Results:
-                        // Re-picking is the default before every match, not just the
-                        // first — see ReturnToLobby, which clears picks on the way in.
-                        ReturnToLobby();
-                        break;
-                    case MatchPhase.Choosing:
-                        ResumeAfterChoosing();
-                        break;
-                }
-            }
+            BindRelay();
+
+            if (Input.GetKeyDown(startMatchKey)) Advance();
 
             if (Input.GetKeyDown(nextTurnKey) && Phase == MatchPhase.Playing) NextTurn();
             if (Input.GetKeyDown(forceChooseKey) && Phase == MatchPhase.Playing) EnterChoosing();
+        }
+
+        /// <summary>
+        /// Move the match on from wherever it is: start from the lobby, resume from a
+        /// re-pick, hand a finished match back to the lobby. The host's Space key and a
+        /// phone's ADVANCE both land here and nowhere else.
+        /// </summary>
+        /// <remarks>
+        /// Split by phase rather than one CanStartMatch check driving StartMatch
+        /// unconditionally: that used to let a press from Results skip straight into
+        /// Playing with the previous match's rock picks still in place, because
+        /// CanStartMatch is also true on Results and Choosing (both are "not Playing").
+        ///
+        /// Playing is deliberately absent from the switch. A phone that has not yet been
+        /// told the match started could otherwise send a stale ADVANCE into a live turn,
+        /// and there is nothing sensible for it to mean there.
+        /// </remarks>
+        public void Advance()
+        {
+            switch (Phase)
+            {
+                case MatchPhase.Lobby when CanStartMatch:
+                    StartMatch();
+                    break;
+                case MatchPhase.Results:
+                    // Re-picking is the default before every match, not just the
+                    // first — see ReturnToLobby, which clears picks on the way in.
+                    ReturnToLobby();
+                    break;
+                case MatchPhase.Choosing:
+                    ResumeAfterChoosing();
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Any connected phone may advance the match, which is what keeps a couch session
+        /// going without somebody walking back to the keyboard between matches.
+        /// </summary>
+        private void OnAdvanceRequested(AdvanceMessage message)
+        {
+            Debug.Log($"[TurnManager] {message.playerId} advanced from {Phase}");
+            Advance();
+        }
+
+        /// <summary>
+        /// Late-bound rather than subscribed in Awake. Bootstrap does create RelayClient
+        /// first, but HasInstance means a scene without one (a physics test bed, say) gets
+        /// a TurnManager that simply has no phones rather than one that conjures a socket.
+        /// </summary>
+        private void BindRelay()
+        {
+            if (_relay != null || !RelayClient.HasInstance) return;
+
+            _relay = RelayClient.Instance;
+            _relay.AdvanceReceived += OnAdvanceRequested;
         }
 
         // ------------------------------------------------------------------ roster
@@ -474,12 +515,16 @@ namespace Managers
                 _lastPlayer, _lastSkips, _lastDistance,
                 ScoreManager.Instance?.Scores,
                 wirePhase, _round + 1, roundsPerMatch,
-                BuildPlayerRocks()));
+                BuildPlayerRocks(),
+                Phase == MatchPhase.Choosing));
         }
 
         protected override void OnDestroy()
         {
             EventManager.Instance?.UnsubscribeFromAllEvents(this);
+
+            if (_relay != null) _relay.AdvanceReceived -= OnAdvanceRequested;
+
             base.OnDestroy();
         }
     }

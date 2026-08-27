@@ -28,7 +28,7 @@ Three independently-run pieces, only one of which lives under `Assets/`:
 | `../docs/` | Design docs, plans, findings — check dates/"Superseded" notes, this project changes hosting/physics decisions often |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
-sensor deltas (`AIM`, `THROW`, `PICK_ROCK`) and receive broadcast state (`SPECTATE`). There is
+sensor deltas (`AIM`, `THROW`, `PICK_ROCK`, `ADVANCE`) and receive broadcast state (`SPECTATE`). There is
 no Unity-to-Unity networking.
 
 ## Running and testing

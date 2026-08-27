@@ -19,6 +19,8 @@ const ui = {
   waitScreen: el('waitScreen'),
   throwScreen: el('throwScreen'),
   confirmBtn: el('confirmBtn'),
+  advanceBtn: el('advanceBtn'),
+  againBtn: el('againBtn'),
   recentreBtn: el('recentreBtn'),
   chooseRock: el('chooseRock'),
   joinError: el('joinError'),
@@ -83,7 +85,9 @@ function setStatus(text, kind = '') {
 // ---------------------------------------------------------------- gesture
 
 const thrower = new ThrowController(motion, {
-  onAim: (payload) => sendInput(payload),
+  // Through sendAim, not sendInput: the seq the TV orders frames by is stamped there,
+  // once, for every producer. See sendAim.
+  onAim: (payload) => sendAim(payload),
   onThrow: (payload) => {
     sendInput(payload);
     lastThrow = payload;
@@ -91,7 +95,16 @@ const thrower = new ThrowController(motion, {
       `Power ${(payload.power * 100).toFixed(0)}%` +
       (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
-  onStateChange: (state) => renderGripButton(state),
+  onStateChange: (state) => {
+    renderGripButton(state);
+
+    // Hand the AIM stream over rather than running both. Arming replaces the flat
+    // preview frames with ThrowController's own, which carry live spin and windup;
+    // standing down again (a second tap, a throw, a cancelled turn) hands it back so
+    // the ghost survives until TURN says the turn is over.
+    if (state === ThrowState.ARMED) stopPreviewAim();
+    else startTurnAim();
+  },
 });
 
 /**
@@ -107,42 +120,142 @@ function renderGripButton(state) {
   ui.gripBtn.textContent = armed ? 'SWING!' : 'TAP TO AIM';
 }
 
-// ---------------------------------------------------------------- lobby pointing
+// ---------------------------------------------------------------- aim streams
 
 /**
- * AIM streaming for the shore-pointing rock picker, deliberately independent of
- * ThrowController's arm/swing state machine rather than reusing `thrower.arm()`.
+ * One AIM sequence number for the whole phone, stamped on the way out.
+ *
+ * Three things produce AIM frames now — the lobby stream, the turn-idle stream and
+ * ThrowController while armed — and AimPreview drops any frame whose seq is not
+ * greater than the last one it accepted from that player. Counting separately per
+ * producer meant handing over mid-turn could go backwards: after ten seconds of
+ * lobby pointing the lobby counter is past 200 while ThrowController's is in single
+ * figures, so every armed frame was dropped until it climbed back past the lobby's,
+ * and the ghost stayed missing for the first several seconds of a turn.
+ *
+ * Stamped here rather than inside each producer so a fourth one cannot reintroduce
+ * the problem: `sendAim` is the only route onto the wire.
+ */
+let aimSeq = 0;
+
+function sendAim(payload) {
+  if (!payload) return;
+  sendInput({ ...payload, seq: ++aimSeq });
+}
+
+/**
+ * The cosmetic 20Hz AIM stream, deliberately independent of ThrowController's
+ * arm/swing state machine rather than reusing `thrower.arm()`.
  *
  * That independence is the whole safety property: ThrowController's release
  * detection (`_onSample` -> `_fire()`) only runs while `state === ARMED`, so a
- * lobby that never arms it can never fire a throw no matter how the phone is
- * swung while choosing a stone. Suppressing `_fire()` after the fact would have
- * meant trusting every future change to the swing detector to remember the lobby
- * exists; not arming it at all needs no such promise.
+ * stream that never arms it can never fire a throw no matter how the phone is
+ * swung. Suppressing `_fire()` after the fact would have meant trusting every
+ * future change to the swing detector to remember these streams exist; not arming
+ * it at all needs no such promise.
+ *
+ * Two callers, one timer: the lobby's shore-pointing picker, and a player whose turn
+ * has started but who has not tapped to arm yet. Sharing the timer is what stops the
+ * two ever running at once and double-feeding the TV.
  */
-let lobbyAimTimer = null;
-let lobbySeq = 0;
+let previewAimTimer = null;
 
-function startLobbyAim() {
-  if (lobbyAimTimer !== null) return; // idempotent — SPECTATE repeats while in LOBBY
+function startPreviewAim() {
+  if (previewAimTimer !== null) return; // idempotent — SPECTATE and TURN both repeat
 
-  // Never while armed, and never once TURN has told this phone it's genuinely mid-match.
-  // Both are redundant with the caller-side checks below, deliberately: this is the one
-  // place the lobby AIM timer actually starts, so gating it here means no future call site
-  // can accidentally start the shore-pointing stream on top of a live throw.
-  if (thrower.state === ThrowState.ARMED || myTurn) return;
+  // Never while armed: ThrowController is streaming its own frames then, with live
+  // spin and windup in them, and this one would interleave zeros.
+  if (thrower.state === ThrowState.ARMED) return;
 
   motion.calibrate();
-  lobbyAimTimer = setInterval(() => {
-    const payload = buildAimPayload(motion.latest, ++lobbySeq, 0, 0);
-    if (payload) sendInput(payload);
+  previewAimTimer = setInterval(() => {
+    sendAim(buildAimPayload(motion.latest, 0, 0, 0));
   }, 50); // 20Hz, matching ThrowController's aimHz default
 }
 
+function stopPreviewAim() {
+  if (previewAimTimer === null) return;
+  clearInterval(previewAimTimer);
+  previewAimTimer = null;
+}
+
+/**
+ * Shore-pointing, in the lobby and in a mid-match re-pick pause.
+ *
+ * The `myTurn` guard is here rather than only at the call sites, deliberately: this
+ * is the lobby's entry point, so gating it here means no future caller can start the
+ * shore-pointing stream on top of a live turn.
+ */
+function startLobbyAim() {
+  if (myTurn) return;
+  startPreviewAim();
+}
+
 function stopLobbyAim() {
-  if (lobbyAimTimer === null) return;
-  clearInterval(lobbyAimTimer);
-  lobbyAimTimer = null;
+  stopPreviewAim();
+}
+
+/**
+ * Keeps the TV's ghost stone alive between the moment a turn starts and the moment
+ * the player taps to arm.
+ *
+ * Without this the ghost vanishes half a second into every turn. The lobby stream is
+ * stopped by TURN, ThrowController's stream does not exist until `arm()`, and
+ * AimPreview hides the ghost after `staleAfterSeconds` with no frames — so a player
+ * looking up at the TV to line a shot up saw empty water until they tapped, which
+ * reads as the preview being broken. See docs/Findings-AimGhostVanishesOnNewRound.md.
+ *
+ * Not an auto-arm, and that distinction is the point: arming would hand the release
+ * detector a live phone before the player has looked up, and a swing at turn start
+ * would throw.
+ */
+function startTurnAim() {
+  if (!myTurn) return;
+  startPreviewAim();
+}
+
+// ---------------------------------------------------------------- advancing
+
+/**
+ * Move the match on from a phone: start it from the lobby, resume from a re-pick,
+ * begin the next one from final scores.
+ *
+ * The TV's Space key still does all three and remains the way to get the very first
+ * match going — this is what stops a couch session needing a keyboard between every
+ * match. TurnManager runs one switch for both, so they cannot disagree about where
+ * "on" is; the phone deliberately names no destination (see AdvanceMessage).
+ *
+ * Buttons are hidden until a SPECTATE says the current phase can be advanced, so
+ * neither one is ever offered mid-turn.
+ */
+function bindAdvance() {
+  for (const button of [ui.advanceBtn, ui.againBtn]) {
+    button.addEventListener('click', () => {
+      // Hidden immediately rather than on the reply. The phase change comes back as a
+      // SPECTATE a network round trip later, and a button left live through that gap
+      // invites a second press that lands in the next phase — from Results that is
+      // Lobby, and the second press would start the match before anyone has picked.
+      button.hidden = true;
+      sendInput({ type: 'ADVANCE' });
+    });
+  }
+}
+
+/**
+ * Show whichever advance button belongs to this phase, and label it for what it
+ * actually does.
+ *
+ * `choosing` is the only thing the phone knows about the mid-match re-pick pause —
+ * the wire phase for it is LOBBY, because a choose screen behaves identically either
+ * way (see TurnManager.BroadcastSpectate). It exists purely so this button does not
+ * offer to "start" a match that is already three rounds old.
+ */
+function renderAdvance(phase, message) {
+  const canChoose = phase === 'LOBBY';
+  ui.advanceBtn.hidden = !canChoose;
+  if (canChoose) ui.advanceBtn.textContent = message.choosing ? 'RESUME MATCH' : 'START MATCH';
+
+  ui.againBtn.hidden = phase !== 'RESULTS';
 }
 
 function bindChoose() {
@@ -184,6 +297,7 @@ function handleMessage(message) {
     case 'JOINED':
       myPlayerId = message.playerId;
       myTurn = false; // a fresh join/rejoin has no standing TURN yet — wait for one
+      stopPreviewAim(); // and no standing stream either; the next SPECTATE/TURN starts one
       setStatus(`Connected as ${myPlayerId}`, 'ok');
       showScreen('wait');
       motion.start();
@@ -211,8 +325,18 @@ function handleMessage(message) {
       if (message.yourTurn) {
         ui.throwResult.textContent = '';
         showScreen('throw');
+
+        // After myTurn is set, which startTurnAim gates on. This is what keeps the
+        // TV's ghost stone up from the instant the turn starts instead of only once
+        // the player taps to arm — see startTurnAim.
+        startTurnAim();
       } else {
         thrower.cancel();
+
+        // cancel() only stops ThrowController's own stream. The turn-idle one is this
+        // module's, and a phone left streaming into someone else's turn is exactly the
+        // frame AimPreview would have to reject.
+        stopPreviewAim();
         showScreen('wait');
       }
       break;
@@ -239,7 +363,9 @@ function handleMessage(message) {
     // swallows this while it still has a chance of getting back in.
     case 'ROOM_CLOSED':
       setStatus('Game ended', 'bad');
+      myTurn = false; // before cancel(), whose IDLE transition would otherwise re-start the stream
       thrower.cancel();
+      stopPreviewAim();
       peer?.close();
       showScreen('join');
       ui.joinBtn.disabled = false;
@@ -287,6 +413,9 @@ function renderSpectate(message) {
   // shore-pointing AIM timer underneath a turn the phone has already been told is live.
   if (phase === 'LOBBY' && myTurn) return;
 
+  // Before the LOBBY branch's early return, so the lobby gets its button too.
+  renderAdvance(phase, message);
+
   if (phase === 'LOBBY') {
     // SPECTATE repeats throughout the lobby (a player joining or leaving, for
     // instance) — showScreen/startLobbyAim are both idempotent, so re-entering
@@ -301,7 +430,11 @@ function renderSpectate(message) {
     return;
   }
 
-  stopLobbyAim();
+  // Not while this phone is the one aiming. SPECTATE is broadcast state and goes out on
+  // every turn start and throw completion, so an unconditional stop here killed the
+  // turn-idle stream a moment after TURN started it — and with it the TV's ghost. TURN
+  // is the personalised message, and it already stops the stream for everyone else.
+  if (!myTurn) stopPreviewAim();
 
   if (phase === 'RESULTS') {
     const winner = leader(message.scores);
@@ -471,6 +604,7 @@ function init() {
   ui.joinBtn.addEventListener('click', join);
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));
   bindChoose();
+  bindAdvance();
   bindGrip();
   renderGripButton(thrower.state); // see renderGripButton — nothing else paints the initial label
   tryLockPortrait();

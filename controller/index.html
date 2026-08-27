@@ -96,6 +96,11 @@
                   0 0 0 3px var(--good);
     }
 
+    /* Explicit and !important because `hidden` is only a UA rule of `display: none`,
+       which any later display declaration on a button quietly beats. The advance
+       buttons are hidden most of the time, so this has to be the rule that wins. */
+    [hidden] { display: none !important; }
+
     .error { color: var(--bad); font-weight: 600; min-height: 20px; text-align: center; }
 
     /* The throw that just finished. Empty most of the time, so it collapses rather
@@ -136,6 +141,11 @@
     <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
     <p id="chooseRock" class="last-throw"></p>
     <button id="confirmBtn">CONFIRM</button>
+    <!-- Advancing the match from a phone, so a couch session never has to go back to
+         the host's keyboard. Hidden until a SPECTATE says this phase can be advanced;
+         renderAdvance owns the label, because LOBBY on the wire covers both a fresh
+         lobby and a mid-match re-pick. -->
+    <button id="advanceBtn" class="link" hidden>START MATCH</button>
     <button id="recentreBtn" class="link">RE-CENTRE</button>
   </section>
 
@@ -144,6 +154,9 @@
     <h2 id="waitTitle">Waiting for your turn</h2>
     <p id="waitDetail">Watch the TV.</p>
     <p id="lastThrow" class="last-throw"></p>
+    <!-- The results-screen half of the same idea. Primary here rather than a .link:
+         on final scores it is the only thing left to do. -->
+    <button id="againBtn" hidden>PLAY AGAIN</button>
     <div id="scores" class="scores"></div>
   </section>
 

@@ -71,6 +71,9 @@ namespace Net
         /// <summary>A phone confirming its highlighted stone. See PickRockMessage.</summary>
         public event Action<PickRockMessage> PickRockReceived;
 
+        /// <summary>A phone asking the match to move on. See AdvanceMessage.</summary>
+        public event Action<AdvanceMessage> AdvanceReceived;
+
         public event Action<string> RoomCodeAssigned;
 
         /// <summary>
@@ -472,6 +475,14 @@ namespace Net
                     var picked = JsonUtility.FromJson<PickRockMessage>(json);
                     if (trustedPlayerId != null) picked.playerId = trustedPlayerId;
                     PickRockReceived?.Invoke(picked);
+                    break;
+                }
+
+                case MessageType.Advance:
+                {
+                    var advance = JsonUtility.FromJson<AdvanceMessage>(json);
+                    if (trustedPlayerId != null) advance.playerId = trustedPlayerId;
+                    AdvanceReceived?.Invoke(advance);
                     break;
                 }
 

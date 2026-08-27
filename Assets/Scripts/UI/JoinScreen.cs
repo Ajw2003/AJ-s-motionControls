@@ -448,7 +448,10 @@ namespace Ui
             {
                 var previous = GUI.color;
                 GUI.color = new Color(0.6f, 1f, 0.7f);
-                GUILayout.Label($"Press {turns.StartMatchKey} to start — " +
+                // Both routes named, because the phone one is the one that keeps a couch
+                // session going — nobody should have to walk back to the keyboard between
+                // matches. See TurnManager.Advance.
+                GUILayout.Label($"Press {turns.StartMatchKey} or tap START on a phone — " +
                                 $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")}", _status);
                 GUI.color = previous;
             }

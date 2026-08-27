@@ -24,6 +24,7 @@ namespace Net
         public const string Aim = "AIM";
         public const string Throw = "THROW";
         public const string PickRock = "PICK_ROCK";
+        public const string Advance = "ADVANCE";
         public const string Turn = "TURN";
         public const string Spectate = "SPECTATE";
         public const string Error = "ERROR";
@@ -135,6 +136,25 @@ namespace Net
         public string playerId;
     }
 
+    /// <summary>
+    /// A phone asking the match to move on — start from the lobby, resume from a re-pick,
+    /// or begin the next match from the results screen.
+    /// </summary>
+    /// <remarks>
+    /// Carries no target phase on purpose, exactly like PickRockMessage carries no rock id:
+    /// the TV owns the phase, so this only means "whatever the button on my screen said".
+    /// TurnManager runs the same switch for this as it does for the host's Space key, so the
+    /// keyboard and the phones cannot advance the match to different places.
+    ///
+    /// Any connected phone may send it. A couch game has no host player, and adding one
+    /// would need a rule for what happens when that particular phone drops.
+    /// </remarks>
+    [Serializable]
+    public class AdvanceMessage
+    {
+        public string playerId;
+    }
+
     /// <summary>The authoritative throw. Exactly one per gesture.</summary>
     [Serializable]
     public class ThrowMessage
@@ -196,12 +216,18 @@ namespace Net
         /// lobby can show what everyone has claimed — not just <paramref name="rockName"/>,
         /// which only ever names the active player's stone. Null is fine; the "rocks" object
         /// is simply empty, which is what a build without RockSelection running degrades to.</param>
+        /// <param name="choosing">True for a mid-match re-pick pause. Cosmetic only, and the
+        /// one thing the phone knows about MatchPhase.Choosing: the wire phase stays "LOBBY"
+        /// (see TurnManager.BroadcastSpectate) because a choose screen behaves identically
+        /// either way, but the advance button on it must not offer to "start" a match that
+        /// is already half played.</param>
         public static string BuildSpectate(
             string activePlayer, string rockName,
             string lastPlayer, int lastSkips, float lastDistance,
             IReadOnlyDictionary<string, int> scores,
             string phase = "PLAYING", int round = 1, int totalRounds = 1,
-            IEnumerable<(string PlayerId, string RockId, string RockName)> playerRocks = null)
+            IEnumerable<(string PlayerId, string RockId, string RockName)> playerRocks = null,
+            bool choosing = false)
         {
             var sb = new StringBuilder(288);
             sb.Append('{')
@@ -211,6 +237,7 @@ namespace Net
               .Append($"\"phase\":\"{Escape(phase)}\",")
               .Append($"\"round\":{round},")
               .Append($"\"totalRounds\":{totalRounds},")
+              .Append($"\"choosing\":{(choosing ? "true" : "false")},")
               .Append($"\"lastPlayer\":\"{Escape(lastPlayer)}\",")
               .Append($"\"lastSkips\":{lastSkips},")
               .Append($"\"lastDistance\":{lastDistance.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},")

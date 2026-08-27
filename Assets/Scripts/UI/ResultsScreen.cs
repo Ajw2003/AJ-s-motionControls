@@ -105,7 +105,7 @@ namespace Ui
             DrawStandings();
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label($"Press {_turns.StartMatchKey} to play again", _hint);
+            GUILayout.Label($"Press {_turns.StartMatchKey} — or tap PLAY AGAIN on a phone", _hint);
             GUILayout.Label("Press F4 for match settings", _hint);
             GUILayout.Label($"{toggleKey} hides this screen", _hint);
 
