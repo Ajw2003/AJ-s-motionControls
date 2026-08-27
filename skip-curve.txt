@@ -40,7 +40,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 30.0 m off a 24.1 m toss — a neutral throw goes 144.4 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 42.5 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.40 m
-  PASS  full power stays on the water — 249.8 m against roughly 260 m of lake
+  PASS  full power stays on the water — 249.8 m against 250 m of lake
 
 Slab (rock_02) — Authored: rock_02
   speed 5..45 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
@@ -78,7 +78,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 30.0 m off a 24.1 m toss — a neutral throw goes 144.4 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 42.5 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.40 m
-  PASS  full power stays on the water — 249.8 m against roughly 260 m of lake
+  PASS  full power stays on the water — 249.8 m against 250 m of lake
 
 Pebble (rock_03) — Authored: rock_03
   speed 5..45 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
@@ -116,7 +116,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 30.0 m off a 24.1 m toss — a neutral throw goes 144.4 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 42.5 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.40 m
-  PASS  full power stays on the water — 249.8 m against roughly 260 m of lake
+  PASS  full power stays on the water — 249.8 m against 250 m of lake
 
 Nugget (rock_04) — Authored: rock_04
   speed 5..45 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
@@ -154,7 +154,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 30.0 m off a 24.1 m toss — a neutral throw goes 144.4 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 42.5 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.40 m
-  PASS  full power stays on the water — 249.8 m against roughly 260 m of lake
+  PASS  full power stays on the water — 249.8 m against 250 m of lake
 
 Shard (rock_05) — Authored: rock_05
   speed 5..45 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
@@ -192,7 +192,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 30.0 m off a 24.1 m toss — a neutral throw goes 144.4 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 42.5 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.40 m
-  PASS  full power stays on the water — 249.8 m against roughly 260 m of lake
+  PASS  full power stays on the water — 249.8 m against 250 m of lake
 
 Boulder (rock_06) — Authored: rock_06
   speed 5..45 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
@@ -230,7 +230,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 30.0 m off a 24.1 m toss — a neutral throw goes 144.4 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 42.5 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.40 m
-  PASS  full power stays on the water — 249.8 m against roughly 260 m of lake
+  PASS  full power stays on the water — 249.8 m against 250 m of lake
 
 Separation, Authored — every rock at power 0.80, thrown at its own best angle:
 
@@ -299,7 +299,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 27.8 m off a 24.1 m toss — a neutral throw goes 127.5 m in 12 skips
   FAIL  the opening hop does not out-throw the launch arc — 57.0 m hop vs 35.6 m arc
   FAIL  a settled hop reads as skipping, not lobbing — 0.62 m
-  PASS  full power stays on the water — 207.1 m against roughly 260 m of lake
+  PASS  full power stays on the water — 207.1 m against 250 m of lake
 
 Slab (rock_02) — Derived: rock_02
   speed 5..45 m/s   kept 0.79..0.98/bounce   exit 5.6deg -> 3deg over 3 skips
@@ -337,7 +337,7 @@ FAIL
   PASS  a badly angled throw is punished — 2 skips, dead at 33.2 m off a 24.1 m toss — a neutral throw goes 156.2 m in 26 skips
   FAIL  the opening hop does not out-throw the launch arc — 36.7 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.19 m
-  FAIL  full power stays on the water — 292.8 m against roughly 260 m of lake
+  FAIL  full power stays on the water — 292.8 m against 250 m of lake
 
 Pebble (rock_03) — Derived: rock_03
   speed 5..45 m/s   kept 0.7690349..0.9642761/bounce   exit 6.57837deg -> 4.048254deg over 3 skips
@@ -375,7 +375,7 @@ FAIL
   PASS  a badly angled throw is punished — 2 skips, dead at 35.3 m off a 24.1 m toss — a neutral throw goes 150.1 m in 17 skips
   FAIL  the opening hop does not out-throw the launch arc — 41.4 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.30 m
-  FAIL  full power stays on the water — 267.3 m against roughly 260 m of lake
+  FAIL  full power stays on the water — 267.3 m against 250 m of lake
 
 Nugget (rock_04) — Derived: rock_04
   speed 5..45 m/s   kept 0.7007709..0.9130782/bounce   exit 9.764024deg -> 7.461454deg over 3 skips
@@ -413,7 +413,7 @@ FAIL
   PASS  a badly angled throw is punished — 1 skips, dead at 28.4 m off a 24.1 m toss — a neutral throw goes 137.7 m in 14 skips
   FAIL  the opening hop does not out-throw the launch arc — 53.6 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.59 m
-  PASS  full power stays on the water — 227.7 m against roughly 260 m of lake
+  PASS  full power stays on the water — 227.7 m against 250 m of lake
 
 Shard (rock_05) — Derived: rock_05
   speed 5..45 m/s   kept 0.7513934..0.951045/bounce   exit 7.401644deg -> 4.930333deg over 3 skips
@@ -451,7 +451,7 @@ FAIL
   PASS  a badly angled throw is punished — 2 skips, dead at 33.0 m off a 24.1 m toss — a neutral throw goes 148.9 m in 16 skips
   FAIL  the opening hop does not out-throw the launch arc — 45.3 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.39 m
-  FAIL  full power stays on the water — 257.9 m against roughly 260 m of lake
+  FAIL  full power stays on the water — 257.9 m against 250 m of lake
 
 Boulder (rock_06) — Derived: rock_06
   speed 5..45 m/s   kept 0.7595224..0.9571418/bounce   exit 7.022289deg -> 4.523881deg over 3 skips
@@ -489,7 +489,7 @@ FAIL
   PASS  a badly angled throw is punished — 2 skips, dead at 33.8 m off a 24.1 m toss — a neutral throw goes 149.1 m in 16 skips
   FAIL  the opening hop does not out-throw the launch arc — 43.6 m hop vs 35.6 m arc
   PASS  a settled hop reads as skipping, not lobbing — 0.35 m
-  FAIL  full power stays on the water — 262.5 m against roughly 260 m of lake
+  FAIL  full power stays on the water — 262.5 m against 250 m of lake
 
 Separation, Derived — every rock at power 0.80, thrown at its own best angle:
 

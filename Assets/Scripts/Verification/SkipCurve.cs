@@ -38,6 +38,16 @@ namespace Verification
     /// </remarks>
     public static class SkipCurve
     {
+        /// <summary>
+        /// How far the water runs before a throw would leave it, in metres. The check and the
+        /// message it prints both read this, because they used to disagree: the threshold was
+        /// 250 while the text said "roughly 260 m of lake", so a 257.9 m run was reported as a
+        /// failure against a number it was under. The lake itself is still placeholder art, so
+        /// this is a design target rather than a measurement of the scene — when a real lake
+        /// exists, this is the one place to reconcile it with.
+        /// </summary>
+        private const float PlayableLakeLength = 250f;
+
         public static string ResultPath =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", "skip-curve.txt"));
 
@@ -519,8 +529,8 @@ namespace Verification
                 hard.SettledHopHeight > 0f && hard.SettledHopHeight < 0.6f,
                 $"{hard.SettledHopHeight:F2} m");
 
-            Check("full power stays on the water", hard.Distance < 250f,
-                $"{hard.Distance:F1} m against roughly 260 m of lake");
+            Check("full power stays on the water", hard.Distance < PlayableLakeLength,
+                $"{hard.Distance:F1} m against {PlayableLakeLength:F0} m of lake");
 
             return $"{(passed ? "PASS" : "FAIL")}\n{lines}";
         }

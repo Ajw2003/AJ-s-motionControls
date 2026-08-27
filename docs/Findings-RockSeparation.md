@@ -68,12 +68,100 @@ and the threshold is. This predates Part 6 (the check and its message are unchan
 original single-curve version); it only became visible because twelve runs now straddle the
 gap.
 
+**Resolved 2026-08-27.** Kept the threshold at 250 m and made the message read the same value,
+rather than raising the threshold to 260 — raising it would have silently reclassified Shard's
+Derived run (257.9 m) as a pass, which is a tuning decision dressed up as a typo fix. Both now
+read `SkipCurve.PlayableLakeLength`, a single named constant. The lake is still placeholder art
+(a 10-unit Plane scaled by 200, per `AimPreview`), so 250 m remains a design target and that
+constant is the one place to reconcile it with a real lake later. Pass/fail on every existing
+row is unchanged; the reported number is now the one being tested against.
+
+## 5. The 250 m lake does not exist in the scene
+
+**2026-08-27.** Asked what the delta is between the verdict's lake and the water the game
+actually has. There is no relationship between the two.
+
+One water source in the project — `AimPreview.CreatePlaceholderWater`, `Scripts/Game/AimPreview.cs:561`:
+
+```csharp
+GameObject.CreatePrimitive(PrimitiveType.Plane)   // Unity's Plane is 10 x 10 units
+position   = (0, WaterY = 0, 60)
+localScale = (200, 1, 200)                        // -> 2000 x 2000 units = 2000 x 2000 m
+```
+
+The throw origin is `(0, 0, 0)` (`AimPreview.cs:487`), so the plane spans z = -940 to z = +1060.
+
+| | value |
+|---|---|
+| `SkipCurve.PlayableLakeLength` | 250 m |
+| Water ahead of the throw origin | **1060 m** |
+| Delta | **810 m unused** — the check is 4.2x tighter than the geometry |
+| Longest throw in the sweep (Slab, Derived) | 292.8 m = 27.6% of the water |
+| Authored at full power (all six) | 249.8 m = 23.6% of the water |
+
+**Nothing else binds before 1060 m either.** The two candidates both fail to:
+
+- **Fog** fades to the background between 120 m and 600 m, but it is measured from the camera,
+  and `RockLauncher.FollowActiveRock` chases the rock at `(x - 2, z - 3)` — about 3.6 m behind
+  it. The rock never fogs out; the shore behind it does.
+- **The 1000 m far clip** travels with the camera for the same reason.
+
+So the real failure mode at distance is not "leaves the lake", it is **"flies off the mesh at
+1060 m"**. `SkipPhysics` bounces against `WaterY`, a plane equation, not against the mesh — past
+z = 1060 a rock keeps skipping perfectly on water that is no longer drawn. That is the condition
+worth asserting, and no rock is remotely near it.
+
+Which makes the four Derived FAILs in §3 failures against a number nothing in the build
+enforces. Whether that is wrong depends on whether 250 m is meant as a *design* budget for how
+big the lake should eventually feel, which is a gameplay call, not something readable off the
+scene.
+
+## 6. Authored passes the water check by 0.2 m
+
+**2026-08-27**, from the re-run after the §4 fix. All six Authored rocks report:
+
+```
+PASS  full power stays on the water — 249.8 m against 250 m of lake
+```
+
+That is a margin of **0.2 m on 250, or 0.08%**. It is a pass in name only: the throw is sitting
+on the threshold, not clearing it.
+
+Two things make it worse than a single tight pass would be. First, per §1 the six Authored
+tunings are byte-identical apart from `m_Name` and `DisplayName`, so they do not fail
+independently — any change that adds a metre to the full-power distance flips **all six at
+once**, and the report goes from six PASS to six FAIL with no intermediate state to read as a
+warning. Second, per §5 the 250 m it is 0.2 m under is not a measurement of anything in the
+scene, so the precision here is spurious: the check is tight against a number that is itself
+arbitrary.
+
+Not a bug, and not urgent — but the Authored column of the water check currently carries no
+information. It will read PASS until it reads FAIL six times.
+
+## 7. The separation summary prints FAIL next to its passing half
+
+Same family as §4 — a verdict and its message drawn from different things.
+`Scripts/Verification/SkipCurve.cs:180` prints, for the Derived set:
+
+```
+FAIL  Derived separates the rocks — 14 skips between the weakest and strongest rock
+```
+
+The FAIL is correct. `Separation` returns `spreadOk && pairsOk` (`SkipCurve.cs:325`), and while
+the spread check passes at 14, the three pairwise checks in §2 fail. But the detail string comes
+from `DescribeSpread` (`SkipCurve.cs:401`), which reports **only the spread** — the half that
+passed. So the line states a failure and then justifies it with its own evidence for success.
+
+Read in isolation it is simply wrong; read against the per-set block a few lines above, where
+the pair failures are printed in full, it is merely redundant. The fix is either to fold the
+pair result into the detail, or to drop the summary line as duplicating the block above it.
+
 ## What to decide
 
 These are separate calls, in rough dependency order:
 
-1. **Fix the verdict threshold/message mismatch** (§4). Cheap, and until it is fixed every
-   distance failure near 250-260 m is unreadable.
+1. ~~**Fix the verdict threshold/message mismatch** (§4).~~ **Done** — see the resolution note
+   in §4.
 2. **Decide whether the opening-hop check is right** (§3). It fails universally, which usually
    means the check encodes an expectation the tuning never met rather than a regression. Either
    the baseline's opening hop needs to come down, or the check needs to say what it actually
@@ -81,7 +169,16 @@ These are separate calls, in rough dependency order:
 3. **Hand-tune the six Authored archetypes** (§1), or drop the Authored set and stop pretending
    the comparison exists. `Seed Authored Tunings` will not overwrite them, so editing the six
    `Assets/Rocks/Tuning/Authored/*.asset` files by hand is safe.
-4. **Decide whether Derived's middle cluster matters** (§2). Two clearly distinct rocks and
+4. **Decide what 250 m is for** (§5). Either raise `PlayableLakeLength` to the mesh's 1060 m —
+   which makes the check pass universally and effectively retires it — or keep 250 as a
+   deliberate design budget and have the message say so, rather than implying it measured
+   something. A third option: assert the condition that is actually real, that the rock stays on
+   the drawn mesh.
+5. **Make the separation summary line say what it means** (§7). Cheap and self-contained; same
+   class of bug as the one already fixed in §4.
+6. **Decide whether the Authored water margin matters** (§6). Probably falls out of §5 — if 250 m
+   moves, the 0.2 m margin stops being a question.
+7. **Decide whether Derived's middle cluster matters** (§2). Two clearly distinct rocks and
    four near-identical ones may be acceptable for a party game, or the derivation may need a
    fourth input beyond flatness/size/elongation.
 
