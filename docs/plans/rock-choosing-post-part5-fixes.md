@@ -116,6 +116,39 @@ private void LogRejectedAim(string reason)
 
 File: `Assets/Scripts/Game/AimPreview.cs`.
 
+**2026-08-26 update:** the user reproduced it and captured the Console around the failure — but
+the captured window was the Lobby transition (`"Back in the lobby"` → repeated `"phase is
+Lobby, not Playing"` → `"Match started"`), which is the shore-pointing AIM stream being
+*correctly* rejected, not evidence of the actual bug (that window wasn't shown). The user's
+independent live observation — un-arming and re-arming during their actual turn didn't bring
+the ghost back — pointed at a phone-side state issue rather than a Unity-side one, and asked for
+phone-side hardening directly rather than a further diagnostic round-trip.
+
+**What was actually hardened**, in `controller/js/app.js`: a real (if narrow) race existed
+between the lobby shore-pointer's AIM stream (`startLobbyAim`, gated only on SPECTATE's `phase`
+field) and the throw controller's own AIM stream (gated on the phone's local `ThrowState`).
+`TURN` and `SPECTATE` are both always-relay and therefore ordered relative to each other, so a
+stale LOBBY-phase SPECTATE arriving *after* `TURN{yourTurn:true}` isn't possible from the
+network — but the gap between that TURN landing (which shows the throw screen) and the player
+actually tapping to arm was still a window where `renderSpectate`'s existing
+`thrower.state === ARMED` guard doesn't apply yet (they're not armed until they tap), and if a
+SPECTATE happened to land in exactly that gap it could still call `showScreen('choose')` and
+`startLobbyAim()`, silently swapping the phone back to the choose screen and starting a second,
+competing AIM stream underneath a turn the phone already knew was live. Closed by:
+
+- A new `myTurn` flag, set only from `TURN` (the personalised, authoritative "is it my turn"
+  signal — unlike SPECTATE's broadcast `phase` field), reset on a fresh `JOINED`.
+- `renderSpectate` bails out of the whole LOBBY branch when `myTurn` is true — TURN always wins
+  over a stale-looking SPECTATE for screen selection.
+- `startLobbyAim()` itself now also refuses to start while armed *or* while `myTurn` — moved
+  into the one function that actually starts the timer, so no future call site can reintroduce
+  the race by skipping a caller-side check.
+
+This closes a real class of bug regardless of whether it was the *exact* mechanism behind the
+original report — if the ghost still fails to appear after this, the next repro's Console output
+(the `[AimPreview] Rejected AIM frame` diagnostic added above, captured *during the actual armed
+throw*, not the Lobby transition before it) is what will pin the remaining cause.
+
 ## Verification
 
 No out-of-band compile check — verify via the open Editor's Console per this repo's usual
@@ -126,6 +159,13 @@ workflow.
    `[RockSelection] Random rocks — seed …` log appears each time with subsequent
    `RockPickedEvent`s actually landing on non-default rocks.
 2. **Bug B**: play normally with the F1 `RelayDebugHud` open. Next time the ghost/arc fail to
-   appear, check the Console for a `[AimPreview] Rejected AIM frame — …` line — it will say
-   either "phase is X, not Playing" or "from 'A', active is 'B'", which tells us exactly which
-   guard is firing and against what value. Report that back for the actual fix.
+   appear, check the Console for a `[AimPreview] Rejected AIM frame — …` line **captured during
+   the actual armed throw**, not a Lobby transition — it will say either "phase is X, not
+   Playing" or "from 'A', active is 'B'", which tells us exactly which guard is firing and
+   against what value. Report that back if it still happens after the phone-side hardening below.
+3. **Phone-side hardening**: on a real phone, confirm the choose screen's shore-pointing AIM
+   still works normally in the lobby (nothing regressed there), and that tapping to arm right as
+   `TURN{yourTurn:true}` lands still shows "TAP TO AIM" → "SWING!" reliably. There's no
+   reproduction recipe for the exact race this closes (it depends on message timing), so this is
+   confirming no regression rather than confirming the original bug is gone — that confirmation
+   comes from bug-free play over a few sessions, or from the Console staying clean per point 2.

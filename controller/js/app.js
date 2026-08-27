@@ -48,6 +48,13 @@ let peer = null;
 let lastThrow = null;
 let myPlayerId = '';
 
+// The phone's own belief about whose turn it is, sourced only from TURN — the message
+// TurnManager sends personalised per-player and only while Phase is genuinely Playing (see
+// TurnManager.StartTurn/SendTurnStates). SPECTATE also carries a phase field, but it is
+// broadcast state, not personalised, and renderSpectate must never let a LOBBY-phase SPECTATE
+// override what TURN already told this specific phone — see renderSpectate and startLobbyAim.
+let myTurn = false;
+
 // ?direct=0 forces everything through the relay. Worth keeping: it is the only way to
 // compare the two transports on the same phone and network, and to reproduce a
 // relay-only session when a peer connection is suspected of misbehaving.
@@ -118,6 +125,13 @@ let lobbySeq = 0;
 
 function startLobbyAim() {
   if (lobbyAimTimer !== null) return; // idempotent — SPECTATE repeats while in LOBBY
+
+  // Never while armed, and never once TURN has told this phone it's genuinely mid-match.
+  // Both are redundant with the caller-side checks below, deliberately: this is the one
+  // place the lobby AIM timer actually starts, so gating it here means no future call site
+  // can accidentally start the shore-pointing stream on top of a live throw.
+  if (thrower.state === ThrowState.ARMED || myTurn) return;
+
   motion.calibrate();
   lobbyAimTimer = setInterval(() => {
     const payload = buildAimPayload(motion.latest, ++lobbySeq, 0, 0);
@@ -169,6 +183,7 @@ function handleMessage(message) {
   switch (message.type) {
     case 'JOINED':
       myPlayerId = message.playerId;
+      myTurn = false; // a fresh join/rejoin has no standing TURN yet — wait for one
       setStatus(`Connected as ${myPlayerId}`, 'ok');
       showScreen('wait');
       motion.start();
@@ -191,6 +206,7 @@ function handleMessage(message) {
       // for the next SPECTATE, so the phone is never streaming AIM into a turn it
       // no longer applies to.
       stopLobbyAim();
+      myTurn = message.yourTurn;
 
       if (message.yourTurn) {
         ui.throwResult.textContent = '';
@@ -263,6 +279,13 @@ function renderSpectate(message) {
   // Without the phase, every idle moment reads "Waiting for the next turn" — including
   // the lobby before anything has started and the results screen after it has ended.
   const phase = message.phase ?? 'PLAYING';
+
+  // TURN is the authoritative, personalised signal for "is it my turn" — SPECTATE's phase
+  // is broadcast state and must never override it. Without this, a LOBBY-phase SPECTATE
+  // landing in the gap between TURN saying yourTurn:true and the player actually tapping
+  // to arm would silently swap the phone back to the choose screen and restart the
+  // shore-pointing AIM timer underneath a turn the phone has already been told is live.
+  if (phase === 'LOBBY' && myTurn) return;
 
   if (phase === 'LOBBY') {
     // SPECTATE repeats throughout the lobby (a player joining or leaving, for
