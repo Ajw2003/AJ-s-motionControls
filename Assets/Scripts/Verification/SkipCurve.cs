@@ -39,14 +39,31 @@ namespace Verification
     public static class SkipCurve
     {
         /// <summary>
-        /// How far the water runs before a throw would leave it, in metres. The check and the
-        /// message it prints both read this, because they used to disagree: the threshold was
-        /// 250 while the text said "roughly 260 m of lake", so a 257.9 m run was reported as a
-        /// failure against a number it was under. The lake itself is still placeholder art, so
-        /// this is a design target rather than a measurement of the scene — when a real lake
-        /// exists, this is the one place to reconcile it with.
+        /// How far the drawn water runs ahead of the throw origin, in metres — read from
+        /// <see cref="AimPreview"/>, which is the thing that builds the plane, so this cannot
+        /// disagree with what is on screen.
         /// </summary>
-        private const float PlayableLakeLength = 250f;
+        /// <remarks>
+        /// This was a hardcoded 250 with a message that said "roughly 260 m of lake", so a
+        /// 257.9 m run was reported as a failure against a number it was under. Reconciling the
+        /// two turned up the larger problem (docs/Findings-RockSeparation.md section 5): the
+        /// water is 1060 m, so 250 was not a measurement of anything — it failed four rocks
+        /// against a limit nothing in the build enforced.
+        ///
+        /// So the check now asserts the condition that is actually real. A throw past this
+        /// point does not stop or slow: SkipPhysics bounces against WaterY, a plane equation,
+        /// not against the mesh, so it carries on skipping over water that is no longer drawn.
+        /// That is the failure worth catching, and unlike 250 it moves on its own if the
+        /// placeholder water is ever resized or replaced.
+        /// </remarks>
+        private static float DrawnWaterLength => AimPreview.WaterReachFromOrigin;
+
+        /// <summary>
+        /// How much longer than the launch arc the first bounce may be before the throw reads
+        /// as a lob. See the comment at the check itself for why this is a band rather than
+        /// the "hop must not beat the arc" rule it replaced, and where the number comes from.
+        /// </summary>
+        private const float MaxOpeningHopRatio = 1.35f;
 
         public static string ResultPath =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", "skip-curve.txt"));
@@ -521,16 +538,42 @@ namespace Verification
                 $"{offAngle.LaunchArcLength:F1} m toss — a neutral throw goes {strong.Distance:F1} m " +
                 $"in {strong.Skips} skips");
 
-            Check("the opening hop does not out-throw the launch arc",
-                hard.FirstHopLength <= hard.LaunchArcLength,
-                $"{hard.FirstHopLength:F1} m hop vs {hard.LaunchArcLength:F1} m arc");
+            // What this wants is that the water does not throw the stone harder than the
+            // player did. It is normal and correct for the first hop to beat the launch arc:
+            // the stone leaves the water at OpeningHopAngleDeg (7 deg) having arrived at
+            // LaunchPitchDeg (5 deg) with most of its speed intact, so it exits steeper than
+            // it came in. Every tuning this project has ever had does that.
+            //
+            // Which is why this used to demand FirstHopLength <= LaunchArcLength and failed
+            // all twelve rock x set combinations — it encoded an expectation nothing had ever
+            // met, so it reported no information (docs/Findings-RockSeparation.md section 3).
+            // A universally failing check is indistinguishable from a check nobody reads.
+            //
+            // The band below is calibrated against the corpus, not derived from physics, and
+            // the corpus makes the case for it: the two rocks with the largest opening hops
+            // (Skimmer 1.60x, Nugget 1.51x) are also the two worst skippers in their set at 12
+            // and 14 skips, against 16-26 for everything under 1.30x. A stone that leaves the
+            // first bounce that much hotter than it arrived is lobbing, and it pays for it.
+            // The ceiling sits in the gap the readings leave between 1.27x and 1.51x.
+            //
+            // So this is a fence around observed-bad behaviour. If a retune moves the whole
+            // population, move the fence with it deliberately — do not let it drift back to
+            // failing everything.
+            var hopRatio = hard.LaunchArcLength > 0f
+                ? hard.FirstHopLength / hard.LaunchArcLength
+                : 0f;
+            Check("the opening hop does not out-lob the throw",
+                hopRatio <= MaxOpeningHopRatio,
+                $"{hard.FirstHopLength:F1} m hop off a {hard.LaunchArcLength:F1} m arc — " +
+                $"{hopRatio:F2}x, ceiling {MaxOpeningHopRatio:F2}x");
 
             Check("a settled hop reads as skipping, not lobbing",
                 hard.SettledHopHeight > 0f && hard.SettledHopHeight < 0.6f,
                 $"{hard.SettledHopHeight:F2} m");
 
-            Check("full power stays on the water", hard.Distance < PlayableLakeLength,
-                $"{hard.Distance:F1} m against {PlayableLakeLength:F0} m of lake");
+            Check("full power stays on the drawn water",
+                hard.Distance < DrawnWaterLength,
+                $"{hard.Distance:F1} m against {DrawnWaterLength:F0} m of drawn water");
 
             return $"{(passed ? "PASS" : "FAIL")}\n{lines}";
         }

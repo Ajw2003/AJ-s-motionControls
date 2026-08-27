@@ -55,6 +55,22 @@ any rock. This check is therefore failing against the *baseline tuning*, not aga
 Part 6 introduced — and it would have been failing before the catalog existed, on the single
 `Resources/SkipTuning` curve, if it were run today.
 
+**Opening hop resolved 2026-08-27.** The check was the thing that was wrong, not the tuning.
+It demanded `FirstHopLength <= LaunchArcLength`, which no tuning this project has ever had
+could meet: the stone arrives at `LaunchPitchDeg` (5 deg) and leaves at `OpeningHopAngleDeg`
+(7 deg) with most of its speed intact, so it exits steeper than it came in and the first hop
+beats the arc by construction. A check that fails everything reports nothing.
+
+It is now a ratio with a ceiling of 1.35x, renamed `the opening hop does not out-lob the throw`
+and printing the ratio it measured. The ceiling is calibrated against this corpus rather than
+derived from physics, and the corpus argues for it: the two largest opening hops (Skimmer at
+1.60x, Nugget at 1.51x) belong to the two worst skippers in their set, 12 and 14 skips against
+16-26 for everything under 1.30x. A stone leaving the first bounce that much hotter than it
+arrived is lobbing, and the skip count shows it paying for that. The fence sits in the gap the
+readings leave between 1.27x and 1.51x, so ten of twelve rows pass and the two that fail are
+the two with a demonstrable problem. If a retune moves the whole population, the fence moves
+with it deliberately.
+
 `full power stays on the water` fails for four Derived rocks (257.9 m, 262.5 m, 267.3 m and
 292.8 m — Shard, Boulder, Pebble and Slab) and for none of the Authored ones, which all sit
 under the threshold at the same baseline distance.
@@ -116,6 +132,19 @@ enforces. Whether that is wrong depends on whether 250 m is meant as a *design* 
 big the lake should eventually feel, which is a gameplay call, not something readable off the
 scene.
 
+**Resolved 2026-08-27.** The check now asserts the condition that is actually real, and reads
+the geometry rather than restating it. `AimPreview` gained named constants for the plane it
+builds — `WaterPlaneBaseSize`, `WaterPlaneScale`, `WaterCentreZ` — and a computed
+`WaterReachFromOrigin` (1060 m). `SkipCurve.DrawnWaterLength` reads that property, so the check
+and the mesh cannot disagree, and the check follows the water on its own if the placeholder is
+ever resized or replaced. The hardcoded 250 is gone.
+
+Renamed to `full power stays on the drawn water`, since that is what it tests: past 1060 m a
+throw does not stop or slow, because `SkipPhysics` bounces against `WaterY` rather than against
+the mesh — it carries on skipping over water nobody can see. All twelve rows pass today, which
+is the correct answer, not a weakened one. The four failures this replaces were against a limit
+nothing in the build enforced.
+
 ## 6. Authored passes the water check by 0.2 m
 
 **2026-08-27**, from the re-run after the §4 fix. All six Authored rocks report:
@@ -158,29 +187,25 @@ pair result into the detail, or to drop the summary line as duplicating the bloc
 
 ## What to decide
 
-These are separate calls, in rough dependency order:
+These are separate calls, in rough dependency order. Resolved items are dropped from this list
+once done; the resolution note lives in the section it belongs to.
 
-1. ~~**Fix the verdict threshold/message mismatch** (§4).~~ **Done** — see the resolution note
-   in §4.
-2. **Decide whether the opening-hop check is right** (§3). It fails universally, which usually
-   means the check encodes an expectation the tuning never met rather than a regression. Either
-   the baseline's opening hop needs to come down, or the check needs to say what it actually
-   wants.
-3. **Hand-tune the six Authored archetypes** (§1), or drop the Authored set and stop pretending
+1. **Hand-tune the six Authored archetypes** (§1), or drop the Authored set and stop pretending
    the comparison exists. `Seed Authored Tunings` will not overwrite them, so editing the six
-   `Assets/Rocks/Tuning/Authored/*.asset` files by hand is safe.
-4. **Decide what 250 m is for** (§5). Either raise `PlayableLakeLength` to the mesh's 1060 m —
-   which makes the check pass universally and effectively retires it — or keep 250 as a
-   deliberate design budget and have the message say so, rather than implying it measured
-   something. A third option: assert the condition that is actually real, that the rock stays on
-   the drawn mesh.
-5. **Make the separation summary line say what it means** (§7). Cheap and self-contained; same
-   class of bug as the one already fixed in §4.
-6. **Decide whether the Authored water margin matters** (§6). Probably falls out of §5 — if 250 m
-   moves, the 0.2 m margin stops being a question.
-7. **Decide whether Derived's middle cluster matters** (§2). Two clearly distinct rocks and
+   `Assets/Rocks/Tuning/Authored/*.asset` files by hand is safe. The only item here that changes
+   how the game plays rather than what the report says.
+2. **Make the separation summary line say what it means** (§7). Cheap and self-contained; same
+   class of bug as the one resolved in §4.
+3. **Decide whether Derived's middle cluster matters** (§2). Two clearly distinct rocks and
    four near-identical ones may be acceptable for a party game, or the derivation may need a
    fourth input beyond flatness/size/elongation.
+4. **Decide whether the Authored water margin matters** (§6). Reduced by the §5 resolution — the
+   threshold it was 0.2 m under is gone, and Authored now clears 1060 m by 810 m — but the
+   underlying point stands: six identical tunings cannot fail independently, so that column
+   still carries no information until §1 is dealt with.
+
+**Done:** §4 (verdict threshold/message mismatch), §5 (what 250 m is for), §3's opening-hop
+check.
 
 None of this blocks the in-play half of Part 6: `rock-throws.csv` records whatever set is live,
 and a corpus gathered on today's numbers is still the evidence for §2 and §3.

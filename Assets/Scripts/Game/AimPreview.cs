@@ -556,12 +556,39 @@ namespace Game
             shore.AddComponent<ShoreRocks>().Bind(throwOrigin);
         }
 
+        /// <summary>
+        /// The placeholder water's geometry, named because more than one thing needs it.
+        /// <see cref="Verification.SkipCurve"/> asserts that a full-power throw stays on the
+        /// drawn mesh, and it can only do that honestly if it is reading the same numbers the
+        /// mesh is built from — it runs in the Editor without entering Play mode, so there is
+        /// no live plane for it to measure. Duplicating the values there instead would go
+        /// stale silently the first time the water changed size, which is exactly the failure
+        /// the check exists to catch.
+        /// </summary>
+        /// <remarks>
+        /// Unity's Plane primitive is 10 x 10 units before scaling, hence the base size — a
+        /// scale of 200 gives 2000 m across, not 200.
+        /// </remarks>
+        public const float WaterPlaneBaseSize = 10f;
+        public const float WaterPlaneScale = 200f;
+        public const float WaterCentreZ = 60f;
+
+        /// <summary>
+        /// How far the drawn water runs ahead of the throw origin, in metres. The origin is at
+        /// (0, 0, 0) — see CreateOrigin — so this is the centre offset plus the half extent.
+        /// Past this a throw is still skipping, because SkipPhysics bounces against WaterY (a
+        /// plane equation) rather than against the mesh, but it is doing it over water nobody
+        /// can see.
+        /// </summary>
+        public const float WaterReachFromOrigin =
+            WaterCentreZ + WaterPlaneBaseSize * WaterPlaneScale * 0.5f;
+
         private void BuildPlaceholderScene()
         {
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "PlaceholderWater";
-            water.transform.position = new Vector3(0f, tuning.WaterY, 60f);
-            water.transform.localScale = new Vector3(200f, 1f, 200f);
+            water.transform.position = new Vector3(0f, tuning.WaterY, WaterCentreZ);
+            water.transform.localScale = new Vector3(WaterPlaneScale, 1f, WaterPlaneScale);
             Destroy(water.GetComponent<Collider>());
 
             
