@@ -440,6 +440,21 @@ already built by this plan.
 
 ## Build log
 
+**2026-08-26 — Playtest fixes: random rocks fell back to the base rock after the first match;
+aim preview now logs why it drops a frame.** See
+[`rock-choosing-post-part5-fixes.md`](rock-choosing-post-part5-fixes.md) for the full
+diagnosis. Short version: `RockSelection.AssignRandomRocks` iterated `_picks.Keys`, which
+entering Lobby/Choosing clears and Random mode never refills (phone picks are refused while
+it's on) — so every match after the first assigned nobody and everyone silently kept the
+catalog's first rock. Fixed to iterate `TurnManager.Players` (the roster) instead. Separately,
+players reported the aim ghost/arc inconsistently failing to show while aiming even though the
+actual throw still fired correctly — reading the code ruled out mesh/rock-specificity, a stuck
+`IsFlying`, and a playerId-stamping mismatch between the direct/relay transports, leaving only
+`AimPreview.OnAim`'s two rejection guards (phase not Playing, playerId mismatch) as candidates,
+with no way to tell which from a static read. Added rate-limited diagnostic logging on both
+guards rather than guessing a behavioural fix; next repro's Console output will say which one is
+firing and against what value, and that's queued as a fast follow-up once it's known.
+
 **2026-08-26 — Part 5 (host settings panel) built. Not yet verified in-editor.**
 
 Deviates from the plan text in two ways, both requested explicitly rather than discovered

@@ -123,6 +123,9 @@ namespace Game
         private int _lastSeq = -1;
         private float _lastAimTime = -999f;
 
+        /// <summary>Rate-limits <see cref="LogRejectedAim"/> so a stuck rejection can't spam the Console.</summary>
+        private float _nextRejectLogTime;
+
         /// <summary>Where the phone is now, and where the ghost has smoothed to.</summary>
         private Quaternion _targetAttitude = Quaternion.identity;
         private Quaternion _curAttitude = Quaternion.identity;
@@ -287,10 +290,18 @@ namespace Game
             // phone through — latent until ShoreRocks started streaming AIM during
             // selection, at which point it would have yanked this ghost around a lobby it
             // has no business appearing in. See the plan's constraints section.
-            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing) return;
+            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing)
+            {
+                LogRejectedAim($"phase is {(TurnManager.HasInstance ? TurnManager.Instance.Phase.ToString() : "no TurnManager")}, not Playing");
+                return;
+            }
 
             var active = TurnManager.Instance.ActivePlayer;
-            if (aim.playerId != active) return;
+            if (aim.playerId != active)
+            {
+                LogRejectedAim($"from '{aim.playerId}', active is '{active}'");
+                return;
+            }
 
             if (aim.playerId != _lastAimPlayer)
             {
@@ -319,6 +330,19 @@ namespace Game
 
             _targetPower = Mathf.Clamp01(aim.power);
             _lastAimTime = Time.time;
+        }
+
+        /// <summary>
+        /// Diagnostic only — surfaces which of OnAim's two guards is dropping frames when
+        /// the ghost/arc unexpectedly fail to show, rather than that staying a mystery.
+        /// Rate-limited to once a second so a turn stuck on one reason can't flood the
+        /// Console.
+        /// </summary>
+        private void LogRejectedAim(string reason)
+        {
+            if (Time.time < _nextRejectLogTime) return;
+            _nextRejectLogTime = Time.time + 1f;
+            Debug.Log($"[AimPreview] Rejected AIM frame — {reason}");
         }
 
         private void UpdateArc()

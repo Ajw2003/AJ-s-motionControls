@@ -139,10 +139,21 @@ namespace Managers
         public SkipTuning TuningFor(string playerId) => For(playerId)?.Tuning(activeTuningSet);
 
         /// <summary>
-        /// Assigns every currently-picked player a fresh rock from a logged seed, so a
+        /// Assigns every player in the match a fresh rock from a logged seed, so a
         /// surprising match can be reproduced. The seed is only logged for now —
         /// Part 6's RockTelemetry is what will actually record it per match.
         /// </summary>
+        /// <remarks>
+        /// Iterates <see cref="TurnManager.Players"/> — the roster — rather than
+        /// <c>_picks.Keys</c>. Entering a choosing phase clears <c>_picks</c> (see
+        /// <see cref="OnMatchPhaseChanged"/>), and in Random mode nothing ever refills it
+        /// before this runs: phone picks are refused outright while <see cref="RandomRocks"/>
+        /// is on, and <see cref="OnPlayerJoined"/> only seeds an entry the first time a
+        /// player joins, not on every Lobby/Choosing re-entry. Iterating <c>_picks.Keys</c>
+        /// meant every match after the first assigned nobody, silently falling back to the
+        /// catalog's first rock for everyone — the roster survives exactly the resets that
+        /// empty <c>_picks</c>, so it is what this needs to iterate.
+        /// </remarks>
         private void AssignRandomRocks()
         {
             var seed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
@@ -150,7 +161,11 @@ namespace Managers
 
             Debug.Log($"[RockSelection] Random rocks — seed {seed}");
 
-            foreach (var player in new List<string>(_picks.Keys))
+            var players = TurnManager.HasInstance
+                ? TurnManager.Instance.Players
+                : (IReadOnlyList<string>)new List<string>(_picks.Keys);
+
+            foreach (var player in players)
             {
                 var index = rng.Next(_catalog.Count);
                 var rock = _catalog.At(index);
