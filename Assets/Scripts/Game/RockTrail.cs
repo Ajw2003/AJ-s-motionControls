@@ -71,11 +71,11 @@ namespace Game
         /// <remarks>
         /// A factory rather than inspector wiring, because the rock is instantiated at
         /// runtime from Resources and nothing here ever passes through the inspector — the
-        /// trap TrailTuning's remarks describe. The skip tuning is passed in rather than
+        /// trap TrailTuning's remarks describe. The skip constants are passed in rather than
         /// looked up so the speed thresholds come from the same asset the throw was
         /// simulated with; two lookups could disagree after a retune.
         /// </remarks>
-        public static RockTrail Attach(GameObject rock, SkipTuning skipTuning)
+        public static RockTrail Attach(GameObject rock, SkipConstants skipConstants)
         {
             if (rock == null) return null;
 
@@ -101,22 +101,22 @@ namespace Game
             go.transform.localRotation = FaceAlignedRotation;
 
             var self = go.AddComponent<RockTrail>();
-            self.Init(tuning, skipTuning, material, rock.GetComponent<RockController>());
+            self.Init(tuning, skipConstants, material, rock.GetComponent<RockController>());
 
             return self;
         }
 
-        private void Init(TrailTuning tuning, SkipTuning skipTuning, Material material, RockController rock)
+        private void Init(TrailTuning tuning, SkipConstants skipConstants, Material material, RockController rock)
         {
             _tuning = tuning;
             _rock = rock;
             _material = material;
             _trail = GetComponent<TrailRenderer>();
 
-            if (skipTuning != null)
+            if (skipConstants != null)
             {
-                _minSpeed = skipTuning.MaxSpeed * tuning.MinSpeedFraction;
-                _maxSpeed = skipTuning.MaxSpeed * tuning.MaxSpeedFraction;
+                _minSpeed = skipConstants.ReferenceSpeed * tuning.MinSpeedFraction;
+                _maxSpeed = skipConstants.ReferenceSpeed * tuning.MaxSpeedFraction;
             }
 
             var wake = tuning.Style == TrailTuning.TrailStyle.Wake;

@@ -54,6 +54,7 @@ namespace Game
             Mathf.Clamp(spinRate, -MaxVisualSpinDegPerSec, MaxVisualSpinDegPerSec);
 
         private SkipState _state;
+        private SkipConstants _constants;
         private SkipTuning _tuning;
         private string _playerId;
         private Vector3 _origin;
@@ -87,9 +88,10 @@ namespace Game
         /// </remarks>
         public float Speed => _state.Velocity.magnitude;
 
-        public void Launch(SkipState state, SkipTuning tuning, string playerId)
+        public void Launch(SkipState state, SkipConstants constants, SkipTuning tuning, string playerId)
         {
             _state = state;
+            _constants = constants;
             _tuning = tuning;
             _playerId = playerId;
             _origin = state.Position;
@@ -97,7 +99,7 @@ namespace Game
 
             // Derive spin decay per bounce based on predicted skips
             var path = new System.Collections.Generic.List<Vector3>();
-            var finalState = Game.SkipPhysics.Predict(state, tuning, path);
+            var finalState = Game.SkipPhysics.Predict(state, constants, tuning, path);
             int totalSkips = finalState.SkipCount;
             
             if (totalSkips > 0)
@@ -121,13 +123,13 @@ namespace Game
             // Last, so anything reacting to a launch finds the stone already placed,
             // oriented and flying rather than mid-construction.
             //
-            // Power is recovered from the launch speed rather than passed in. CreateLaunch
-            // builds the velocity from a unit horizontal heading, so its magnitude is
-            // exactly the speed it started from, and that speed is Lerp(MinSpeed, MaxSpeed,
-            // power) — inverting the lerp returns the original number with no error. Adding
-            // a power parameter here purely to re-publish it would create a second copy of
-            // a value that is already recoverable, and a second copy can disagree.
-            var power = Mathf.InverseLerp(tuning.MinSpeed, tuning.MaxSpeed, state.Velocity.magnitude);
+            // Recovered from the launch speed rather than passed in, and read as a fraction
+            // of ReferenceSpeed rather than of a per-rock MaxSpeed — there isn't one
+            // anymore. CreateLaunch builds the velocity from a unit horizontal heading, so
+            // its magnitude is exactly the speed it started from, with no error. Adding a
+            // parameter here purely to re-publish it would create a second copy of a value
+            // that is already recoverable, and a second copy can disagree.
+            var power = state.Velocity.magnitude / Mathf.Max(constants.ReferenceSpeed, 0.0001f);
 
             EventManager.Instance?.Publish(
                 new RockLaunchedEvent(_origin, power, totalSkips, state.FaceAngleDeg));
@@ -142,11 +144,11 @@ namespace Game
                 _accumulator += Time.deltaTime;
 
                 var guard = 0;
-                while (_accumulator >= _tuning.FixedStep && IsFlying && guard++ < 16)
+                while (_accumulator >= _constants.FixedStep && IsFlying && guard++ < 16)
                 {
-                    _accumulator -= _tuning.FixedStep;
+                    _accumulator -= _constants.FixedStep;
 
-                    var step = SkipPhysics.Step(_state, _tuning, _tuning.FixedStep);
+                    var step = SkipPhysics.Step(_state, _constants, _tuning, _constants.FixedStep);
                     _state = step.State;
 
                     if (step.Bounced)

@@ -17,15 +17,15 @@ namespace EventTypes.SkipEvents
         public Vector3 Origin { get; }
 
         /// <summary>
-        /// Throw strength, 0..1 — the same number the phone sent.
+        /// Throw strength, as a fraction of SkipConstants.ReferenceSpeed. Not clamped to
+        /// 0..1 — a very hard swing can exceed the reference.
         /// </summary>
         /// <remarks>
         /// Recovered from the launch speed rather than threaded down from the network
         /// message, and it is exact rather than approximate. CreateLaunch builds the
         /// velocity as heading * (speed * cos(pitch)) + up * (speed * sin(pitch)) with a
         /// unit horizontal heading, so its magnitude is the speed it started from with no
-        /// error, and that speed is Lerp(MinSpeed, MaxSpeed, power). Inverting the lerp
-        /// returns the original power.
+        /// error.
         ///
         /// Worth preferring over an extra parameter because power would otherwise have to
         /// be carried through Launch purely to be re-published, and a second copy of a

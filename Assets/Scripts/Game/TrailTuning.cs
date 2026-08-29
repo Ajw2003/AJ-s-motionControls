@@ -14,11 +14,12 @@ namespace Game
     /// AimPreview.Awake documents having already been caught by once, where "the whole game
     /// ran on C# field initializers and the numbers were only reachable by recompiling."
     ///
-    /// Speed-derived values are stored as FRACTIONS of SkipTuning.MaxSpeed rather than
-    /// absolutes. WaterRipples carries the note explaining why: its impact thresholds were
-    /// hardcoded at 4 and 25 against a MaxSpeed of 26, so raising the launch speed clamped
-    /// every impact to full strength and the ripple stopped responding to anything at all.
-    /// A trail tinted by absolute speed fails the same way and just as quietly.
+    /// Speed-derived values are stored as FRACTIONS of SkipConstants.ReferenceSpeed rather
+    /// than absolutes. WaterRipples carries the note explaining why: its impact thresholds
+    /// were hardcoded at 4 and 25 against a fixed MaxSpeed of 26, so raising the launch
+    /// speed clamped every impact to full strength and the ripple stopped responding to
+    /// anything at all. A trail tinted by absolute speed fails the same way and just as
+    /// quietly.
     /// </remarks>
     [CreateAssetMenu(menuName = "RockSkipping/Trail Tuning", fileName = "TrailTuning")]
     public class TrailTuning : ScriptableObject
@@ -81,7 +82,7 @@ namespace Game
                  "visibly dims. Multiplies into Colour rather than replacing it.")]
         public bool ColourBySpeed = true;
 
-        [Tooltip("Slowest and fastest tint points, as fractions of SkipTuning.MaxSpeed. " +
+        [Tooltip("Slowest and fastest tint points, as fractions of SkipConstants.ReferenceSpeed. " +
                  "Fractions rather than absolute speeds on purpose — see the remarks above.")]
         [Range(0f, 1f)] public float MinSpeedFraction = 0.15f;
         [Range(0f, 1f)] public float MaxSpeedFraction = 0.96f;

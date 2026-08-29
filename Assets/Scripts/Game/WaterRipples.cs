@@ -26,10 +26,10 @@ namespace Game
         [SerializeField] private float rippleSpeed = 6f;
 
         [Header("Impact response")]
-        [Tooltip("Faintest and strongest ring, as fractions of SkipTuning.MaxSpeed. Derived " +
-                 "rather than absolute because these were hardcoded at 4 and 25 against a " +
-                 "MaxSpeed of 26 — raise the launch speed and every impact clamps to full " +
-                 "strength, so the ripple stops responding to anything at all.")]
+        [Tooltip("Faintest and strongest ring, as fractions of SkipConstants.ReferenceSpeed. " +
+                 "Derived rather than absolute because these were hardcoded at 4 and 25 " +
+                 "against a fixed MaxSpeed of 26 — raise the launch speed and every impact " +
+                 "clamps to full strength, so the ripple stops responding to anything at all.")]
         [Range(0f, 1f)] [SerializeField] private float minImpactSpeedFraction = 0.15f;
         [Range(0f, 1f)] [SerializeField] private float maxImpactSpeedFraction = 0.96f;
 
@@ -62,7 +62,7 @@ namespace Game
         /// builder already has it, and Awake runs once — this reference is good for the
         /// whole session.
         /// </summary>
-        public void Bind(Material waterMaterial, SkipTuning tuning)
+        public void Bind(Material waterMaterial, SkipConstants constants)
         {
             _material = waterMaterial;
 
@@ -74,10 +74,10 @@ namespace Game
             // why the render queue could never have done this job.
             SetDepthWriting(false);
 
-            if (tuning != null)
+            if (constants != null)
             {
-                _minImpactSpeed = tuning.MaxSpeed * minImpactSpeedFraction;
-                _maxImpactSpeed = tuning.MaxSpeed * maxImpactSpeedFraction;
+                _minImpactSpeed = constants.ReferenceSpeed * minImpactSpeedFraction;
+                _maxImpactSpeed = constants.ReferenceSpeed * maxImpactSpeedFraction;
             }
 
             PushTuning();

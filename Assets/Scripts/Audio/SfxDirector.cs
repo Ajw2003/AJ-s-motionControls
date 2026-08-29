@@ -25,7 +25,7 @@ namespace Audio
     public class SfxDirector : MonoBehaviour
     {
         [Header("Skip response")]
-        [Tooltip("Quietest and loudest skip, as fractions of SkipTuning.MaxSpeed.")]
+        [Tooltip("Quietest and loudest skip, as fractions of SkipConstants.ReferenceSpeed.")]
         [Range(0f, 1f)] [SerializeField] private float minImpactSpeedFraction = 0.15f;
         [Range(0f, 1f)] [SerializeField] private float maxImpactSpeedFraction = 0.96f;
 
@@ -50,16 +50,14 @@ namespace Audio
 
         private void Awake()
         {
-            // Fractions of MaxSpeed, never absolute speeds. WaterRipples carries the note
-            // explaining why: its thresholds were hardcoded at 4 and 25 against a MaxSpeed
-            // of 26, so raising the launch speed clamped every impact to full strength and
-            // the ripple stopped responding to anything. Skip volume fails the same way.
-            var tuning = Resources.Load<SkipTuning>("SkipTuning");
-            if (tuning != null)
-            {
-                _minImpactSpeed = tuning.MaxSpeed * minImpactSpeedFraction;
-                _maxImpactSpeed = tuning.MaxSpeed * maxImpactSpeedFraction;
-            }
+            // Fractions of ReferenceSpeed, never absolute speeds. WaterRipples carries the
+            // note explaining why: its thresholds were hardcoded at 4 and 25 against a fixed
+            // MaxSpeed of 26, so raising the launch speed clamped every impact to full
+            // strength and the ripple stopped responding to anything. Skip volume fails the
+            // same way.
+            var constants = SkipConstants.LoadOrWarn();
+            _minImpactSpeed = constants.ReferenceSpeed * minImpactSpeedFraction;
+            _maxImpactSpeed = constants.ReferenceSpeed * maxImpactSpeedFraction;
 
             var events = EventManager.Instance;
             if (events == null) return;
@@ -83,7 +81,7 @@ namespace Audio
 
         private void OnLaunched(RockLaunchedEvent e)
         {
-            Play(SoundId.ThrowRelease, e.Origin, intensity: Mathf.Lerp(0.5f, 1f, e.Power));
+            Play(SoundId.ThrowRelease, e.Origin, intensity: Mathf.Lerp(0.5f, 1f, Mathf.Clamp01(e.Power)));
         }
 
         /// <summary>
