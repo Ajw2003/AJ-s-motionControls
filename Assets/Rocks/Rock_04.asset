@@ -19,5 +19,4 @@ MonoBehaviour:
   LocalScale: {x: 0.6922814, y: 0.35998634, z: 0.6922814}
   MeshRotation: {x: 0, y: 0, z: 0}
   Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
-  AuthoredTuning: {fileID: 11400000, guid: b2011d9eb44d5ea4b9576aa898419fd1, type: 2}
-  DerivedTuning: {fileID: 11400000, guid: fa620801580684d4cb22837fe19f6599, type: 2}
+  Tuning: {fileID: 11400000, guid: 1a3374adfa26e0866a63ba88b4bfa181, type: 2}
