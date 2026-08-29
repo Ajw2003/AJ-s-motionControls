@@ -12,21 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 15b885944806006408cdb932ac9379de, type: 3}
   m_Name: SkipTuning
   m_EditorClassIdentifier: Assembly-CSharp::Game.SkipTuning
-  Gravity: 9.81
-  WaterY: 0
-  MinSpeed: 5
-  MaxSpeed: 45
-  LaunchPitchDeg: 5
-  BestFaceAngleDeg: -5
-  ToleranceDeg: 20
-  MinRetention: 0.75
-  MaxRetention: 0.95
-  OptimalAngle: 0
-  MinSkipSpeed: 7
-  SkipExitAngleDeg: 5
-  OpeningHopAngleDeg: 7
-  OpeningHopSkips: 3
-  Restitution: 0.3
-  FixedStep: 0.005
-  PredictSeconds: 60
+  SpinMultiplier: 1
+  VerticalMultiplier: 1
+  HorizontalMultiplier: 1
   DisplayName: Pebble
