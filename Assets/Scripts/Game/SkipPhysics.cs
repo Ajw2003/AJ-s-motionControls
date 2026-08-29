@@ -16,32 +16,39 @@ namespace Game
         public Quaternion Attitude;
 
         /// <summary>
-        /// Face angle in degrees above horizontal. The variable that decides a bounce,
-        /// derived from <see cref="Attitude"/> at launch so the thing the player sees and
-        /// the thing the water reacts to cannot drift apart.
+        /// The stone's face normal at launch, in world space — <see cref="PhoneAttitude.FaceNormal"/>
+        /// of <see cref="Attitude"/>. Roll's two effects on a bounce (lift scaled by
+        /// cos(roll), lift deflected sideways) both fall out of this one rotated vector, so
+        /// Step reads it directly rather than decomposing and recomposing pitch/roll
+        /// scalars — see the plan's remarks on the old three-angle bug.
+        /// </summary>
+        public Vector3 FaceNormal;
+
+        /// <summary>
+        /// Where the stone was aimed at launch, flattened to the water plane. The velocity
+        /// starts aligned with this; over a run, roll's sideways lift can push the velocity
+        /// away from it, which is the sideslip the yaw forgiveness band judges.
+        /// </summary>
+        public Vector3 HeadingDir;
+
+        /// <summary>
+        /// Face angle in degrees above horizontal, straight off the phone's tilt at launch
+        /// — the toss angle AND the attack angle the bounce judges are the same number, on
+        /// purpose. See PhoneAttitude.FaceAngleDeg and the plan's "no hidden neutral-pose
+        /// offset" section.
         /// </summary>
         public float FaceAngleDeg;
 
+        /// <summary>Bank at launch, degrees. See PhoneAttitude.RollDeg.</summary>
+        public float RollDeg;
+
         /// <summary>
         /// How fast the wrist was turning about the phone's screen normal at release,
-        /// deg/s, signed. Visual only — it turns the stone on screen and has no effect
-        /// whatsoever on where it goes.
+        /// deg/s, signed. Mostly visual — it turns the stone on screen — but it also widens
+        /// every forgiveness band (see SkipConstants.SpinToleranceScale): spin buys
+        /// tolerance and nothing else.
         /// </summary>
         public float Spin;
-
-        /// <summary>
-        /// How hard this was thrown, 0..1. Set at launch and never changed — it is a
-        /// property of the throw, not of the stone's current state.
-        /// </summary>
-        /// <remarks>
-        /// The single driver of distance. It sets launch speed, how much speed survives
-        /// each bounce, and how high the hops are, so a hard throw goes further, skips
-        /// more times, and skips higher — all from one number the player controls with
-        /// one thing they can feel.
-        /// </remarks>
-        public float Power;
-
-        public float DynamicSpeedRetention;
 
         public int SkipCount;
         public bool Sunk;
@@ -71,9 +78,42 @@ namespace Game
     /// player merely aimed. RockController inspects the returned SkipStep and publishes
     /// — and only when driving a real throw. Audio, VFX and camera shake follow the
     /// same rule: observable effects belong to the caller, never in here.
+    ///
+    /// The model: the throw drives, the rock modulates. Speed comes straight from the
+    /// phone's swing (SkipConstants.SpeedScale converts hand m/s to stone m/s); energy
+    /// loss per bounce falls out of how steeply the stone hits and how far its face is
+    /// from level, not from an authored retention constant; and each rock only scales
+    /// that geometry with three bounded multipliers. See
+    /// docs/plans/Plan-ThrowDrivenSkipModel.md for the full reasoning.
     /// </remarks>
     public static class SkipPhysics
     {
+        /// <summary>
+        /// The empirically optimal attack angle for a skipping stone (Clanet, Hersen &amp;
+        /// Bocquet, 2004). A statement about what skipping IS, not a per-rock or global
+        /// knob — nobody ever needed to dial it, only how forgiving missing it is
+        /// (SkipConstants.ForgivenessPitchDeg).
+        /// </summary>
+        private const float OptimalAttackDeg = 20f;
+
+        /// <summary>How fast quality falls away on the steep side of the optimum — plowing in
+        /// is the abrupt failure mode, so this is a tight window.</summary>
+        private const float SteepFalloffDeg = 22f;
+
+        /// <summary>How fast quality fades on the shallow side — a weak-lift skim is the
+        /// gradual, survivable failure mode, so this is a wide window.</summary>
+        private const float ShallowFalloffDeg = 55f;
+
+        /// <summary>How fast quality fades outside the roll forgiveness band.</summary>
+        private const float RollFalloffDeg = 35f;
+
+        /// <summary>How fast quality fades outside the yaw (sideslip) forgiveness band.</summary>
+        private const float YawFalloffDeg = 40f;
+
+        /// <summary>Past this bank the leading edge digs in — the stone catches and sinks,
+        /// exactly like a real over-rolled stone does.</summary>
+        private const float MaxRollDeg = 80f;
+
         /// <summary>
         /// Steeper than this and the stone plows in instead of skipping. A constant
         /// rather than a tuning field: it is a statement about what skipping *is*, and
@@ -82,69 +122,88 @@ namespace Game
         private const float MaxIncidenceDeg = 45f;
 
         /// <summary>
-        /// Leave the water slower than this, vertically, and the stone did not skip — it
-        /// went in.
+        /// The real exit angle a healthy skipping stone leaves the water at — 2-6 degrees.
+        /// Applied to the horizontal speed that survives the bounce, so it never has to be
+        /// corrected for the loss the way an authored pre-loss angle would.
         /// </summary>
-        /// <remarks>
-        /// This is a guard against grinding, not the thing that ends a run. A badly angled
-        /// throw gets no lift, but Restitution still mirrors a fraction of its descent, so
-        /// without this it grinds along the waterline in ever-smaller hops and racks up a
-        /// dozen of them before MinSkipSpeed catches it — which at ten points a skip made a
-        /// bad throw score like a good one.
-        ///
-        /// Deliberately far below what a healthy bounce produces. It was 0.6, sized against
-        /// a 33 degree exit; at the shallow angles a stone actually skips at, a 0.6 m/s rise
-        /// needs nearly 7 m/s of horizontal, so it silently became the real skip limit and
-        /// cut every run short well before MinSkipSpeed. Ending a run is MinSkipSpeed's job.
-        /// </remarks>
+        private const float ExitAngleDeg = 5f;
+
+        /// <summary>
+        /// Energy a bounce keeps even with zero lift quality — the physical minimum for a
+        /// stone slapping the surface rather than a free parameter. Not zero: at zero the
+        /// stone grinds along the waterline in meaningless skips before the speed floor
+        /// below catches it.
+        /// </summary>
+        private const float MinimalRestitution = 0.25f;
+
+        /// <summary>Below this speed the stone stops skipping and sinks, regardless of angle.</summary>
+        private const float MinSkipSpeed = 2.5f;
+
+        /// <summary>
+        /// Leave the water slower than this, vertically, and the stone did not skip — it
+        /// went in. A guard against grinding, not the thing that ends a run — see MinSkipSpeed.
+        /// </summary>
         private const float MinExitRiseSpeed = 0.3f;
 
-        /// <summary>Build the initial state from a throw descriptor.</summary>
-        /// <param name="attitude">The phone's rotation, already in Unity space — see PhoneAttitude.</param>
-        public static SkipState CreateLaunch(
-            Vector3 origin, float power, Quaternion attitude, float spinRate, SkipTuning tuning)
-        {
-            power = Mathf.Clamp01(power);
+        /// <summary>
+        /// A forgiveness band widened by spin, deg per deg/s of measured wrist spin — see
+        /// SkipConstants.SpinToleranceScale. A band authored at 0 stays off regardless of
+        /// spin: spin buys tolerance, it does not turn tolerance on where none was authored.
+        /// </summary>
+        private static float EffectiveBand(float authoredBandDeg, float spinRate, float spinToleranceScale) =>
+            authoredBandDeg <= 0f ? 0f : authoredBandDeg + Mathf.Abs(spinRate) * spinToleranceScale;
 
-            // Speed comes from power and nothing else. There used to be a timing-quality
-            // multiplier here that could cut it to 40%, keyed off how fast the phone
-            // stopped — which punished hard throws, because a hard swing takes longer to
-            // stop. See SkipTuning's remarks.
-            var speed = Mathf.Lerp(tuning.MinSpeed, tuning.MaxSpeed, power);
+        /// <summary>0..1 quality from how far a measured value sits outside its forgiveness
+        /// band, fading to 0 over falloffDeg once past it.</summary>
+        private static float BandQuality(float errorDeg, float effectiveBandDeg, float falloffDeg)
+        {
+            var excess = Mathf.Max(0f, Mathf.Abs(errorDeg) - effectiveBandDeg);
+            return Mathf.Clamp01(1f - excess / Mathf.Max(falloffDeg, 0.0001f));
+        }
+
+        /// <summary>Build the initial state from a throw descriptor.</summary>
+        /// <param name="origin">Where the throw starts.</param>
+        /// <param name="swingSpeed">Raw wrist speed off the phone, m/s — not normalised.</param>
+        /// <param name="attitude">The phone's rotation, already in Unity space — see PhoneAttitude.</param>
+        /// <param name="spinRate">Raw wrist spin off the phone, deg/s, signed.</param>
+        public static SkipState CreateLaunch(
+            Vector3 origin, float swingSpeed, Quaternion attitude, float spinRate,
+            SkipConstants constants, SkipTuning tuning)
+        {
+            // Raw pass-through: the only conversion left is hand m/s to stone m/s. No
+            // normalisation, no power curve — a harder swing is simply a faster stone.
+            var speed = Mathf.Max(0f, swingSpeed) * constants.SpeedScale;
 
             // Where the stone is pointing IS where it goes. Both read off the same
             // rotation the mesh is drawn with, so the throw can never disagree with the
             // stone the player watched themselves aim.
             var heading = PhoneAttitude.HeadingDirection(attitude);
 
-            var pitch = tuning.LaunchPitchDeg * Mathf.Deg2Rad;
+            // The phone's own tilt IS the toss angle — no separate LaunchPitchDeg, and no
+            // hidden neutral-pose offset. A phone held flat throws flat.
+            var pitchDeg = PhoneAttitude.FaceAngleDeg(attitude);
+            var pitch = pitchDeg * Mathf.Deg2Rad;
             var velocity = heading * (speed * Mathf.Cos(pitch)) + Vector3.up * (speed * Mathf.Sin(pitch));
-
-            float throwAngle = PhoneAttitude.FaceAngleDeg(attitude);
-            float angleFactor = 1.0f - Mathf.Clamp01(Mathf.Abs(throwAngle - tuning.OptimalAngle) / Mathf.Max(tuning.ToleranceDeg, 0.0001f));
-            float powerFactor = speed / tuning.MaxSpeed;
-            float dynamicSpeedRetention = tuning.MinRetention + (tuning.MaxRetention - tuning.MinRetention) * (angleFactor * 0.6f + powerFactor * 0.4f);
 
             return new SkipState
             {
                 Position = origin,
                 Velocity = velocity,
                 Attitude = attitude,
-                FaceAngleDeg = throwAngle,
-                // Signed. Which way the wrist turned is not something the bounce cares
-                // about — spin has no effect on the path at all — but it is exactly what
-                // the player watches, so throwing it away would make every stone turn the
-                // same way regardless of what they did.
-                Spin = spinRate,
-                Power = power,
-                DynamicSpeedRetention = dynamicSpeedRetention,
+                FaceNormal = PhoneAttitude.FaceNormal(attitude),
+                HeadingDir = heading,
+                FaceAngleDeg = pitchDeg,
+                RollDeg = PhoneAttitude.RollDeg(attitude),
+                // Signed. Which way the wrist turned is mostly visual, but it also widens
+                // every forgiveness band — see EffectiveBand.
+                Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.5f, 1.5f),
                 SkipCount = 0,
                 Sunk = false,
             };
         }
 
         /// <summary>Advance one fixed step. Pure — see the class remarks.</summary>
-        public static SkipStep Step(in SkipState state, SkipTuning tuning, float dt)
+        public static SkipStep Step(in SkipState state, SkipConstants constants, SkipTuning tuning, float dt)
         {
             var next = state;
             var result = new SkipStep();
@@ -155,28 +214,31 @@ namespace Game
                 return result;
             }
 
-            next.Velocity += Vector3.down * (tuning.Gravity * dt);
+            next.Velocity += Vector3.down * (constants.Gravity * dt);
             next.Position += next.Velocity * dt;
 
-            var crossedSurface = next.Position.y <= tuning.WaterY && next.Velocity.y < 0f;
+            var crossedSurface = next.Position.y <= constants.WaterY && next.Velocity.y < 0f;
             if (!crossedSurface)
             {
                 result.State = next;
                 return result;
             }
 
-            next.Position.y = tuning.WaterY;
+            next.Position.y = constants.WaterY;
 
             var speed = next.Velocity.magnitude;
             result.ImpactSpeed = speed;
 
             // How steeply it is coming in, measured against the water plane.
             var horizontal = new Vector3(next.Velocity.x, 0f, next.Velocity.z);
-            var incidenceDeg = horizontal.sqrMagnitude > 0.0001f
+            var horizontalSpeed = horizontal.magnitude;
+            var incidenceDeg = horizontalSpeed > 0.0001f
                 ? Vector3.Angle(next.Velocity, horizontal)
                 : 90f;
 
-            if (speed < tuning.MinSkipSpeed || incidenceDeg > MaxIncidenceDeg)
+            // Bank far enough and the leading edge digs in — the same normal that gives a
+            // level stone its lift is what says an over-rolled one catches and sinks.
+            if (speed < MinSkipSpeed || incidenceDeg > MaxIncidenceDeg || Mathf.Abs(next.RollDeg) > MaxRollDeg)
             {
                 next.Sunk = true;
                 next.Velocity = Vector3.zero;
@@ -185,53 +247,53 @@ namespace Game
                 return result;
             }
 
-            // Angle is a gradient, not a cliff. A stone outside tolerance scores quality 0,
-            // which costs it all its lift and leaves it on Restitution alone — it slaps
-            // along and dies within a hop or two. There is no separate sink-on-bad-angle
-            // branch, because that put a step in the middle of the skill curve: one degree
-            // separated a nine-skip throw from zero, on a gesture that fires the instant
-            // the wrist has pitched over.
-            //
-            // Measured against BestFaceAngleDeg, which defaults to 0 — a phone held as it
-            // was at the tap is a good throw. This line used to compare against a separate
-            // OptimalAngleDeg of 20 while FaceAngleDeg read 0 for a neutral phone, so
-            // every throw anyone could actually make scored quality 0, lost all its lift,
-            // and slapped along on Restitution alone. That was the "rocks barely skip" bug,
-            // and it is why raising Restitution appeared to help: with lift gone it was the
-            // only bounce term left, and it has no power in it to scale with.
-            var angleError = Mathf.Abs(next.FaceAngleDeg - tuning.BestFaceAngleDeg);
-            var quality = 1f - Mathf.Clamp01(angleError / Mathf.Max(tuning.ToleranceDeg, 0.0001f));
+            // Three axes, three bands, three qualities, multiplied together. Each is a
+            // gradient, not a cliff — see BandQuality — and past the pitch band the falloff
+            // is asymmetric: too shallow fades gradually (a survivable skim), too steep
+            // collapses fast (an abrupt plow-in). That asymmetry is the whole reason pitch
+            // has two falloff constants instead of one.
+            var pitchError = next.FaceAngleDeg - OptimalAttackDeg;
+            var pitchBand = EffectiveBand(constants.ForgivenessPitchDeg, next.Spin, constants.SpinToleranceScale);
+            var pitchFalloff = pitchError >= 0f ? SteepFalloffDeg : ShallowFalloffDeg;
+            var pitchQuality = BandQuality(pitchError, pitchBand, pitchFalloff);
+
+            var rollBand = EffectiveBand(constants.ForgivenessRollDeg, next.Spin, constants.SpinToleranceScale);
+            var rollQuality = BandQuality(next.RollDeg, rollBand, RollFalloffDeg);
+
+            // Sideslip: how far the velocity has drifted from where the stone was aimed.
+            // Zero at launch by construction (CreateLaunch builds velocity straight off
+            // heading); a banked run curves and this is what starts costing it.
+            var yawErrorDeg = horizontalSpeed > 0.0001f
+                ? Vector3.Angle(horizontal, next.HeadingDir)
+                : 0f;
+            var yawBand = EffectiveBand(constants.ForgivenessYawDeg, next.Spin, constants.SpinToleranceScale);
+            var yawQuality = BandQuality(yawErrorDeg, yawBand, YawFalloffDeg);
+
+            var quality = pitchQuality * rollQuality * yawQuality;
+
+            // Energy loss falls out of geometry: how steeply it hit, and how far off the
+            // face was from a good bounce. No authored retention constant — the rock only
+            // scales the result via HorizontalMultiplier.
+            var incidenceFactor = Mathf.Clamp01(incidenceDeg / MaxIncidenceDeg);
+            var lossFraction = constants.WaterLossCoefficient * Mathf.Lerp(incidenceFactor, 1f, 1f - quality);
+            var speedKept = Mathf.Clamp01(1f - lossFraction) * Mathf.Clamp(tuning.HorizontalMultiplier, 0.5f, 1.5f);
 
             var velocity = next.Velocity;
-
-            // DynamicSpeedRetention calculated at launch replaces SpeedKeptHard/Soft.
-            var speedKept = next.DynamicSpeedRetention;
-
-            // Speed loss first, so the lift below is computed against the horizontal the
-            // stone actually leaves with. The other order made SkipExitAngleDeg a lie: the
-            // true exit angle was atan(tan(x) / speedKept), and it moved whenever that did.
             velocity.x *= speedKept;
             velocity.z *= speedKept;
 
-            // Water doesn't just mirror the stone — the face planes off the surface and
-            // kicks it out steeper than it came in.
-            //
-            // The angle falls from the opening pop to the settled one over the first few
-            // skips, which is what gives a throw a visible start and then a long shrinking
-            // run. Nothing about the energy changes: the speed loss above already happened,
-            // so this only redirects what is left.
-            var settle = Mathf.Clamp01(next.SkipCount / Mathf.Max(tuning.OpeningHopSkips, 1f));
-            var exitAngle = Mathf.Lerp(tuning.OpeningHopAngleDeg, tuning.SkipExitAngleDeg, settle);
+            // Roll's two effects, both from the one rotated face normal: lift falls off
+            // with bank (cos), and what remains is deflected sideways (sin), so a banked
+            // throw curves. Not decomposed pitch/roll scalars recomposed later — see the
+            // FaceNormal remarks on SkipState.
+            var rollRad = next.RollDeg * Mathf.Deg2Rad;
+            var rollLiftScale = Mathf.Cos(rollRad);
 
-            // Scaled by quality alone. There used to be a power term here as well, on the
-            // theory that a hard throw should hop higher — but hop size already goes as
-            // speed², so a hard throw's hops are enormously bigger without it. All it
-            // actually did was give power a second, hidden route to the bounce, which is
-            // what made the response to throw strength hard to read.
             var exitHorizontal = new Vector3(velocity.x, 0f, velocity.z).magnitude;
-            var liftY = exitHorizontal * Mathf.Tan(exitAngle * Mathf.Deg2Rad) * quality;
+            var liftY = exitHorizontal * Mathf.Tan(ExitAngleDeg * Mathf.Deg2Rad) * quality * rollLiftScale
+                        * Mathf.Clamp(tuning.VerticalMultiplier, 0.5f, 1.5f);
 
-            var rise = Mathf.Max(-velocity.y * tuning.Restitution, liftY);
+            var rise = Mathf.Max(-velocity.y * MinimalRestitution, liftY);
             if (rise < MinExitRiseSpeed)
             {
                 next.Sunk = true;
@@ -240,6 +302,12 @@ namespace Game
                 result.State = next;
                 return result;
             }
+
+            // The lateral deflection: what lift there is gets pushed sideways by sin(roll),
+            // banking the whole reaction force the way a real edge-tilted face does.
+            var lateralDir = Vector3.Cross(Vector3.up, next.HeadingDir).normalized;
+            var lateralKick = liftY * Mathf.Sin(rollRad);
+            velocity += lateralDir * lateralKick;
 
             velocity.y = rise;
 
@@ -257,16 +325,16 @@ namespace Game
         /// </summary>
         /// <param name="path">Filled with world positions. Cleared first; reuse the list to avoid per-frame garbage.</param>
         /// <returns>The final state, so callers can read SkipCount and distance.</returns>
-        public static SkipState Predict(SkipState start, SkipTuning tuning, List<Vector3> path)
+        public static SkipState Predict(SkipState start, SkipConstants constants, SkipTuning tuning, List<Vector3> path)
         {
             path.Clear();
             path.Add(start.Position);
 
             var state = start;
 
-            for (var i = 0; i < tuning.MaxPredictSteps; i++)
+            for (var i = 0; i < constants.MaxPredictSteps; i++)
             {
-                var step = Step(state, tuning, tuning.FixedStep);
+                var step = Step(state, constants, tuning, constants.FixedStep);
                 state = step.State;
                 path.Add(state.Position);
 
