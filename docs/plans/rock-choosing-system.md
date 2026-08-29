@@ -319,6 +319,12 @@ margins.
 
 ## Part 6 — The comparison, with real data
 
+> **Superseded 2026-08-29** by `docs/plans/Plan-ThrowDrivenSkipModel.md`. The Authored/Derived
+> A/B comparison this Part specifies has been removed entirely — rock character is now three
+> explicit, bounded multipliers per rock (`SpinMultiplier`, `VerticalMultiplier`,
+> `HorizontalMultiplier`), so there are no longer two sides to compare. `SkipCurve.cs` and
+> `RockTelemetry.cs` were rewritten accordingly rather than extended as described below.
+
 Two mechanisms, because the offline sweep and real players measure different things.
 
 ### a. Offline — extend [`Verification/SkipCurve.cs`](Scripts/Verification/SkipCurve.cs)

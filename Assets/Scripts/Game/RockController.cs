@@ -123,16 +123,13 @@ namespace Game
             // Last, so anything reacting to a launch finds the stone already placed,
             // oriented and flying rather than mid-construction.
             //
-            // Recovered from the launch speed rather than passed in, and read as a fraction
-            // of ReferenceSpeed rather than of a per-rock MaxSpeed — there isn't one
-            // anymore. CreateLaunch builds the velocity from a unit horizontal heading, so
-            // its magnitude is exactly the speed it started from, with no error. Adding a
-            // parameter here purely to re-publish it would create a second copy of a value
-            // that is already recoverable, and a second copy can disagree.
+            // Both recovered from the launch velocity rather than passed in — see
+            // RockLaunchedEvent.SwingSpeed for why that is exact, not approximate.
+            var swingSpeed = state.Velocity.magnitude / Mathf.Max(constants.SpeedScale, 0.0001f);
             var power = state.Velocity.magnitude / Mathf.Max(constants.ReferenceSpeed, 0.0001f);
 
-            EventManager.Instance?.Publish(
-                new RockLaunchedEvent(_origin, power, totalSkips, state.FaceAngleDeg));
+            EventManager.Instance?.Publish(new RockLaunchedEvent(
+                _origin, swingSpeed, power, totalSkips, state.FaceAngleDeg, state.RollDeg, state.Spin));
         }
 
         private void Update()

@@ -1,5 +1,13 @@
 # Findings — the first catalog-wide skip curve
 
+> **Superseded 2026-08-29** by `docs/plans/Plan-ThrowDrivenSkipModel.md`. The Authored/Derived
+> A/B apparatus these findings are about no longer exists — there is one tuning per rock now,
+> three bounded multipliers, and nothing left to compare. §1, §2 and §6 below describe that
+> apparatus directly and are voided outright. §7's summary line was already a known bug
+> (`docs/plans/Plan-ThrowDrivenSkipModel.md` deprecation notes) and is retired unfixed along with
+> the code it summarised. Kept for history — this is what motivated the rewrite, not a live
+> reference.
+
 **2026-08-26.** First run of the Part 6 sweep (`RockSkipping/Verify/Print Skip Curve`, now
 looping catalog × both tuning sets). Source data: `skip-curve.txt` at the repo root, 531 lines.
 

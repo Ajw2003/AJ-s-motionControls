@@ -17,20 +17,22 @@ namespace EventTypes.SkipEvents
         public Vector3 Origin { get; }
 
         /// <summary>
-        /// Throw strength, as a fraction of SkipConstants.ReferenceSpeed. Not clamped to
-        /// 0..1 — a very hard swing can exceed the reference.
+        /// Raw swing speed, m/s — recovered from the launch velocity's magnitude divided
+        /// by SkipConstants.SpeedScale, which is exact: CreateLaunch builds the velocity
+        /// from a unit horizontal heading times (swingSpeed * SpeedScale), so inverting
+        /// that recovers the original number with no error. Worth preferring over an
+        /// extra parameter because it would otherwise have to be carried through Launch
+        /// purely to be re-published — a second copy of a value that is already
+        /// recoverable, and a second copy can disagree.
         /// </summary>
-        /// <remarks>
-        /// Recovered from the launch speed rather than threaded down from the network
-        /// message, and it is exact rather than approximate. CreateLaunch builds the
-        /// velocity as heading * (speed * cos(pitch)) + up * (speed * sin(pitch)) with a
-        /// unit horizontal heading, so its magnitude is the speed it started from with no
-        /// error.
-        ///
-        /// Worth preferring over an extra parameter because power would otherwise have to
-        /// be carried through Launch purely to be re-published, and a second copy of a
-        /// value is a second thing that can disagree.
-        /// </remarks>
+        public float SwingSpeed { get; }
+
+        /// <summary>
+        /// Throw strength as a fraction of SkipConstants.ReferenceSpeed. Not clamped to
+        /// 0..1 — a very hard swing can exceed the reference. Kept alongside SwingSpeed
+        /// because presentation code (SfxDirector) wants a 0..1-ish intensity, not a raw
+        /// speed with no natural scale.
+        /// </summary>
         public float Power { get; }
 
         /// <summary>
@@ -44,28 +46,29 @@ namespace EventTypes.SkipEvents
         /// </remarks>
         public int PredictedSkips { get; }
 
-        /// <summary>
-        /// The face angle the bounce actually cared about, in degrees.
-        /// </summary>
-        /// <remarks>
-        /// Carried because the offline sweep in Verification/SkipCurve reads every rock at an
-        /// ideal face angle and players do not — the gap between the two is the whole reason
-        /// the Authored and Derived tuning sets need real throws to choose between them, and
-        /// Verification/RockTelemetry cannot record that gap without this number.
-        ///
-        /// Read off SkipState rather than recomputed from the attitude here: SkipPhysics
-        /// already ran the attitude through PhoneAttitude.FaceAngleDeg to build the launch, and
-        /// a second conversion at this call site would be a second thing that can disagree —
-        /// exactly what PhoneAttitude exists to prevent.
-        /// </remarks>
+        /// <summary>Face angle at launch, degrees above horizontal — PhoneAttitude.FaceAngleDeg.</summary>
         public float FaceAngleDeg { get; }
 
-        public RockLaunchedEvent(Vector3 origin, float power, int predictedSkips, float faceAngleDeg)
+        /// <summary>Bank at launch, degrees — PhoneAttitude.RollDeg.</summary>
+        public float RollDeg { get; }
+
+        /// <summary>
+        /// Wrist spin at launch, deg/s, signed, after SkipTuning.SpinMultiplier — the same
+        /// rate the stone is actually drawn turning at.
+        /// </summary>
+        public float SpinRate { get; }
+
+        public RockLaunchedEvent(
+            Vector3 origin, float swingSpeed, float power, int predictedSkips,
+            float faceAngleDeg, float rollDeg, float spinRate)
         {
             Origin = origin;
+            SwingSpeed = swingSpeed;
             Power = power;
             PredictedSkips = predictedSkips;
             FaceAngleDeg = faceAngleDeg;
+            RollDeg = rollDeg;
+            SpinRate = spinRate;
         }
     }
 }
