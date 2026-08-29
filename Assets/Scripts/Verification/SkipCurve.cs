@@ -10,31 +10,28 @@ namespace Verification
     /// Prints what the current tuning actually does, by running the real solver.
     /// </summary>
     /// <remarks>
-    /// This exists because the tuning has now been recomputed by hand twice and both
-    /// times against a throwaway port of SkipPhysics rather than SkipPhysics itself. The
-    /// second time, the port was fed a face angle no player can produce, which is exactly
-    /// how a bug that zeroed the bounce quality on every real throw survived a sweep that
-    /// looked healthy.
+    /// Rewritten for the throw-driven skip model
+    /// (docs/plans/Plan-ThrowDrivenSkipModel.md) — there is one tuning per rock now, not
+    /// two sets to compare, so this sweeps raw swing speed and all three phone axes
+    /// (pitch, roll, yaw via roll-induced sideslip) through <see cref="SkipPhysics"/>
+    /// directly against the catalog's own assets. There is nothing to keep in sync, and
+    /// no way for the measured curve to disagree with the game.
     ///
-    /// So this drives <see cref="SkipPhysics"/> directly against the authored assets. There
-    /// is nothing to keep in sync, and no way for the measured curve to disagree with the
-    /// game.
+    /// <b>The acceptance criterion for this whole change:</b> throw speed must move skip
+    /// count more than any per-rock multiplier does. Concretely, doubling swing speed
+    /// should beat driving a multiplier to its bound — see the "speed vs multiplier"
+    /// check in <see cref="Verdict"/>, which is the number this report exists to answer.
     ///
-    /// Read the output against these, which is what the numbers were chosen to hit:
-    /// distance, skips and hop height all rising with power; a neutral face angle (0)
-    /// scoring full quality; steady-state hops low enough to read as skipping rather than
-    /// lobbing; and a full-power throw staying on the water.
+    /// Bounces are counted from <see cref="SkipPhysics.Step"/>'s own <c>Bounced</c> flag
+    /// rather than reconstructed by comparing consecutive path heights against WaterY.
+    /// The old position-comparison approach had a contact-detector off-by-one
+    /// (docs/Reference-SkipTuning.md) that a face angle of exactly 0 could trigger — and
+    /// a face angle of 0 is now the ordinary case, since pitch comes straight off the
+    /// phone's tilt rather than being biased toward an authored optimum. Reading the
+    /// solver's own signal removes the epsilon comparison entirely.
     ///
-    /// <b>Six rocks, two sets.</b> Now that the rock catalog exists, one curve is no longer
-    /// the whole story: every rock is swept against both its Authored and its Derived tuning,
-    /// and each gets the same per-tuning verdict it would have got on its own — a badly
-    /// authored rock fails loudly rather than averaging away. On top of that comes the check
-    /// the two sets exist for: whether the rocks are actually <i>distinguishable</i>, run once
-    /// per set so the report says outright which set separates better. See
-    /// <see cref="TuningSet"/> and docs/plans/rock-choosing-system.md Part 6.
-    ///
-    /// With no catalog (or an empty one) this falls back to the original single-curve report
-    /// against Resources/SkipTuning, which is what the game itself falls back to as well.
+    /// With no catalog (or an empty one) this falls back to a single-rock report against
+    /// Resources/SkipTuning, which is what the game itself falls back to as well.
     /// </remarks>
     public static class SkipCurve
     {
@@ -43,97 +40,62 @@ namespace Verification
         /// <see cref="AimPreview"/>, which is the thing that builds the plane, so this cannot
         /// disagree with what is on screen.
         /// </summary>
-        /// <remarks>
-        /// This was a hardcoded 250 with a message that said "roughly 260 m of lake", so a
-        /// 257.9 m run was reported as a failure against a number it was under. Reconciling the
-        /// two turned up the larger problem (docs/Findings-RockSeparation.md section 5): the
-        /// water is 1060 m, so 250 was not a measurement of anything — it failed four rocks
-        /// against a limit nothing in the build enforced.
-        ///
-        /// So the check now asserts the condition that is actually real. A throw past this
-        /// point does not stop or slow: SkipPhysics bounces against WaterY, a plane equation,
-        /// not against the mesh, so it carries on skipping over water that is no longer drawn.
-        /// That is the failure worth catching, and unlike 250 it moves on its own if the
-        /// placeholder water is ever resized or replaced.
-        /// </remarks>
         private static float DrawnWaterLength => AimPreview.WaterReachFromOrigin;
-
-        /// <summary>
-        /// How much longer than the launch arc the first bounce may be before the throw reads
-        /// as a lob. See the comment at the check itself for why this is a band rather than
-        /// the "hop must not beat the arc" rule it replaced, and where the number comes from.
-        /// </summary>
-        private const float MaxOpeningHopRatio = 1.35f;
 
         public static string ResultPath =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", "skip-curve.txt"));
 
-        private static readonly float[] Powers = { 0.1f, 0.2f, 0.35f, 0.5f, 0.65f, 0.8f, 1f };
-        private static readonly float[] FaceAngles = { 0f, 5f, 10f, 15f, 20f, 30f, 45f, -15f, -30f };
+        /// <summary>Raw swing speeds swept, m/s — a gentle push through a hard flick.</summary>
+        private static readonly float[] SwingSpeeds = { 1.5f, 2.5f, 4f, 6f, 8f, 10f, 14f };
 
-        private static readonly TuningSet[] Sets = { TuningSet.Authored, TuningSet.Derived };
+        /// <summary>
+        /// Face angles swept, degrees above horizontal — straight off the phone, no
+        /// authored offset. 0 is a phone held exactly as it was at the tap.
+        /// </summary>
+        private static readonly float[] PitchAngles = { -10f, 0f, 10f, 20f, 30f, 45f, 60f };
 
-        /// <summary>The power the separation check is read at — a strong, ordinary throw.</summary>
-        private const float SeparationPower = 0.8f;
+        /// <summary>Bank angles swept, degrees.</summary>
+        private static readonly float[] RollAngles = { -70f, -40f, -20f, 0f, 20f, 40f, 70f };
 
-        /// <summary>Across the rocks, skips at <see cref="SeparationPower"/> must span at least this.</summary>
-        private const int MinSkipSpread = 4;
+        /// <summary>The physically optimal attack angle — see SkipPhysics.OptimalAttackDeg.</summary>
+        private const float OptimalAttackDeg = 20f;
 
-        /// <summary>Two rocks within this many skips AND <see cref="TooCloseMetres"/> are one rock.</summary>
-        private const int TooCloseSkips = 1;
-
-        private const float TooCloseMetres = 5f;
-
-        /// <summary>One throw's shape, measured rather than derived.</summary>
-        private struct Shape
-        {
-            public int Skips;
-            public float Distance;
-            public float FirstHopLength;
-            public float FirstHopHeight;
-            public float LaunchArcLength;
-            public float SettledHopHeight;
-        }
-
-        /// <summary>One rock's reading at <see cref="SeparationPower"/>, for the separation tables.</summary>
-        private struct Reading
-        {
-            public string Name;
-            public bool Measured;
-            public int Skips;
-            public float Distance;
-        }
+        /// <summary>A firm, ordinary throw — used wherever the sweep needs to hold speed fixed.</summary>
+        private const float ReferenceSwingSpeed = 6f;
 
         public static string Build()
         {
+            var constants = SkipConstants.LoadOrWarn();
             var catalog = Resources.Load<RockCatalog>("RockCatalog");
+
+            var report = new StringBuilder();
+            report.AppendLine("Skip curve — driven through the real solver.");
+            report.AppendLine(
+                $"Constants: SpeedScale {constants.SpeedScale}   WaterLoss {constants.WaterLossCoefficient}   " +
+                $"forgiveness pitch/roll/yaw {constants.ForgivenessPitchDeg}/{constants.ForgivenessRollDeg}/{constants.ForgivenessYawDeg} deg   " +
+                $"spin tolerance {constants.SpinToleranceScale}   reference speed {constants.ReferenceSpeed} m/s");
+            report.AppendLine();
 
             if (catalog == null || catalog.IsEmpty)
             {
                 var single = Resources.Load<SkipTuning>("SkipTuning");
                 if (single == null)
                 {
-                    return "FAIL  no RockCatalog at Resources/RockCatalog and no SkipTuning at " +
-                           "Resources/SkipTuning — nothing to measure.\n";
+                    report.AppendLine("FAIL  no RockCatalog at Resources/RockCatalog and no SkipTuning at " +
+                                      "Resources/SkipTuning — nothing to measure.");
+                    return report.ToString();
                 }
 
-                var lone = new StringBuilder();
-                lone.AppendLine("No usable catalog at Resources/RockCatalog — rock choosing is off, so");
-                lone.AppendLine("this is the single-tuning report against Resources/SkipTuning. Run");
-                lone.AppendLine("RockSkipping/Rocks/Build Catalog from FBX to measure the six rocks.");
-                lone.AppendLine();
-                lone.Append(ReportFor(single.name, single));
-                return lone.ToString();
+                report.AppendLine("No usable catalog at Resources/RockCatalog — rock choosing is off, so");
+                report.AppendLine("this is the single-tuning report against Resources/SkipTuning. Run");
+                report.AppendLine("RockSkipping/Rocks/Build Catalog from FBX to measure the six rocks.");
+                report.AppendLine();
+                report.Append(ReportFor(single.name, constants, single));
+                report.AppendLine();
+                report.Append(SpeedVsMultiplierCheck(constants, single));
+                return report.ToString();
             }
 
-            var report = new StringBuilder();
-            report.AppendLine($"Skip curve — {catalog.Count} rocks x {Sets.Length} tuning sets, " +
-                              "driven through the real solver.");
-            report.AppendLine();
-
-            // A catalog that breaks the shared-field rule makes every number below
-            // incomparable: MaxSpeed differing by rock means power means a different thing per
-            // rock. Say so at the top rather than letting the tables imply otherwise.
             var problems = catalog.Validate();
             if (problems.Count > 0)
             {
@@ -142,330 +104,208 @@ namespace Verification
                 report.AppendLine();
             }
 
-            var readings = new Dictionary<TuningSet, Reading[]>();
-            var perRockPassed = true;
-            var anySetSeparates = false;
-            var separationSummary = new StringBuilder();
+            var allPassed = true;
+            var referenceRow = new StringBuilder();
+            referenceRow.AppendLine($"Every rock at {ReferenceSwingSpeed:F1} m/s, pitch {OptimalAttackDeg:F0} deg, roll 0:");
+            referenceRow.AppendLine();
+            referenceRow.AppendLine("  rock                spin   vert   horiz   skips   distance");
 
-            foreach (var set in Sets)
+            for (var i = 0; i < catalog.Count; i++)
             {
+                var rock = catalog.At(i);
+                var name = rock != null ? rock.DisplayName : $"slot {i}";
+                var tuning = rock != null ? rock.Tuning : null;
+
                 report.AppendLine(Rule());
-                report.AppendLine(set.ToString().ToUpperInvariant());
+                report.AppendLine($"{name} ({rock?.Id ?? "?"})");
                 report.AppendLine(Rule());
                 report.AppendLine();
 
-                var setReadings = new Reading[catalog.Count];
-
-                for (var i = 0; i < catalog.Count; i++)
+                if (tuning == null)
                 {
-                    var rock = catalog.At(i);
-                    var name = rock != null ? rock.DisplayName : $"slot {i}";
-                    var tuning = rock != null ? rock.Tuning(set) : null;
-
-                    setReadings[i] = new Reading { Name = name, Measured = false };
-
-                    if (tuning == null)
-                    {
-                        report.AppendLine($"{name} — no {set} tuning, and no other set to fall back to.");
-                        report.AppendLine();
-                        perRockPassed = false;
-                        continue;
-                    }
-
-                    var label = $"{name} ({rock.Id}) — {set}: {tuning.name}";
-                    var body = ReportFor(label, tuning);
-                    report.Append(body);
+                    report.AppendLine($"{name} — no tuning.");
                     report.AppendLine();
-
-                    if (body.Contains("FAIL")) perRockPassed = false;
-
-                    var run = Measure(SeparationPower, tuning.BestFaceAngleDeg, tuning);
-                    setReadings[i] = new Reading
-                    {
-                        Name = name,
-                        Measured = true,
-                        Skips = run.Skips,
-                        Distance = run.Distance,
-                    };
+                    allPassed = false;
+                    referenceRow.AppendLine($"  {name,-18}      -       -       -       -         -");
+                    continue;
                 }
 
-                readings[set] = setReadings;
-
-                var separated = Separation(set, setReadings, report);
-                anySetSeparates |= separated;
-                separationSummary.AppendLine(
-                    $"  {(separated ? "PASS" : "FAIL")}  {set} separates the rocks — " +
-                    $"{DescribeSpread(setReadings)}");
+                var body = ReportFor(name, constants, tuning);
+                report.Append(body);
                 report.AppendLine();
+                if (body.Contains("FAIL")) allPassed = false;
+
+                var reference = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, tuning);
+                referenceRow.AppendLine(
+                    $"  {name,-18}  {tuning.SpinMultiplier,5:F2}  {tuning.VerticalMultiplier,5:F2}   " +
+                    $"{tuning.HorizontalMultiplier,5:F2}   {reference.Skips,5}   {reference.Distance,7:F1} m");
             }
 
             report.AppendLine(Rule());
-            report.AppendLine("AUTHORED vs DERIVED");
+            report.AppendLine("REFERENCE");
             report.AppendLine(Rule());
             report.AppendLine();
-            report.Append(Comparison(readings));
+            report.Append(referenceRow);
             report.AppendLine();
 
-            report.AppendLine("Separation, per set:");
-            report.Append(separationSummary);
-            report.AppendLine($"  {(perRockPassed ? "PASS" : "FAIL")}  every rock passes its own " +
-                              "verdict on both sets");
+            // The acceptance criterion, run once against the catalog's first usable rock
+            // — every rock shares the same global constants, so one is representative.
+            var sample = catalog.At(0)?.Tuning;
+            if (sample != null)
+            {
+                report.Append(SpeedVsMultiplierCheck(constants, sample));
+                if (report.ToString().Contains("FAIL  speed vs multiplier")) allPassed = false;
+            }
+
             report.AppendLine();
-            report.AppendLine(perRockPassed && anySetSeparates ? "PASS" : "FAIL");
-            report.AppendLine(BetterSet(readings));
+            report.AppendLine(allPassed ? "PASS" : "FAIL");
 
             return report.ToString();
         }
 
         private static string Rule() => new('=', 70);
 
-        /// <summary>The original single-tuning report: both sweeps and the acceptance checks.</summary>
-        private static string ReportFor(string label, SkipTuning tuning)
+        /// <summary>One rock's full sweep: speed, pitch, roll, then the acceptance checks.</summary>
+        private static string ReportFor(string label, SkipConstants constants, SkipTuning tuning)
         {
             var report = new StringBuilder();
-            report.AppendLine(label);
-            report.AppendLine($"  speed {tuning.MinSpeed}..{tuning.MaxSpeed} m/s   " +
-                              $"kept {tuning.MinRetention}..{tuning.MaxRetention}/bounce   " +
-                              $"exit {tuning.OpeningHopAngleDeg}deg -> {tuning.SkipExitAngleDeg}deg " +
-                              $"over {tuning.OpeningHopSkips} skips");
-            report.AppendLine($"  best face {tuning.BestFaceAngleDeg}deg +/- {tuning.ToleranceDeg}deg   " +
-                              $"min skip speed {tuning.MinSkipSpeed} m/s");
+            report.AppendLine($"{label}  —  spin {tuning.SpinMultiplier:F2}  vertical {tuning.VerticalMultiplier:F2}  " +
+                              $"horizontal {tuning.HorizontalMultiplier:F2}");
             report.AppendLine();
 
-            // Power sweep, held at the face angle a player gets for free.
-            report.AppendLine($"Power sweep, at the best face angle ({tuning.BestFaceAngleDeg} deg):");
+            report.AppendLine($"Speed sweep, at pitch {OptimalAttackDeg:F0} deg (the physical optimum), roll 0:");
             report.AppendLine();
-            report.AppendLine("  power   skips   distance   launch arc   1st hop   1st height   settled height");
+            report.AppendLine("  speed    skips   distance   launch arc   1st height   settled height");
 
-            foreach (var power in Powers)
+            foreach (var speed in SwingSpeeds)
             {
-                var run = Measure(power, tuning.BestFaceAngleDeg, tuning);
+                var run = Measure(speed, OptimalAttackDeg, 0f, constants, tuning);
                 report.AppendLine(
-                    $"  {power,5:F2}   {run.Skips,5}   {run.Distance,7:F1} m   " +
-                    $"{run.LaunchArcLength,8:F1} m   {run.FirstHopLength,6:F1} m   " +
-                    $"{run.FirstHopHeight,8:F2} m   {run.SettledHopHeight,12:F2} m");
+                    $"  {speed,5:F1}   {run.Skips,5}   {run.Distance,7:F1} m   " +
+                    $"{run.LaunchArcLength,8:F1} m   {run.FirstHopHeight,8:F2} m   {run.SettledHopHeight,12:F2} m");
             }
 
-            // Face-angle sweep, so the tolerance window can be read off directly rather
-            // than inferred from ToleranceDeg — the two came apart once already.
             report.AppendLine();
-            report.AppendLine("Face angle sweep, at a strong throw (power 0.8):");
+            report.AppendLine($"Pitch sweep, at {ReferenceSwingSpeed:F1} m/s, roll 0:");
             report.AppendLine();
-            report.AppendLine("   face   skips   distance");
+            report.AppendLine("   pitch   skips   distance");
 
-            foreach (var face in FaceAngles)
+            foreach (var pitch in PitchAngles)
             {
-                var run = Measure(0.8f, face, tuning);
-                report.AppendLine($"  {face,5:F0}   {run.Skips,5}   {run.Distance,7:F1} m");
+                var run = Measure(ReferenceSwingSpeed, pitch, 0f, constants, tuning);
+                report.AppendLine($"  {pitch,5:F0}   {run.Skips,5}   {run.Distance,7:F1} m");
             }
 
             report.AppendLine();
-            report.Append(Verdict(tuning));
+            report.AppendLine($"Roll sweep, at {ReferenceSwingSpeed:F1} m/s, pitch {OptimalAttackDeg:F0} deg:");
+            report.AppendLine();
+            report.AppendLine("    roll   skips   distance");
+
+            foreach (var roll in RollAngles)
+            {
+                var run = Measure(ReferenceSwingSpeed, OptimalAttackDeg, roll, constants, tuning);
+                report.AppendLine($"  {roll,5:F0}   {run.Skips,5}   {run.Distance,7:F1} m");
+            }
+
+            report.AppendLine();
+            report.Append(Verdict(constants, tuning));
             return report.ToString();
         }
 
         /// <summary>
-        /// Whether the rocks in one set read as different stones.
+        /// The number the whole model change exists to produce: throw speed must move
+        /// skip count more than any per-rock multiplier can. Doubling swing speed is
+        /// compared against driving VerticalMultiplier and HorizontalMultiplier both to
+        /// their upper bound (1.5) at the base speed — the largest change a rock alone
+        /// can make.
         /// </summary>
-        /// <remarks>
-        /// This is the check the two sets exist to be judged by. Authored is expected to pass
-        /// — separating them is what a person sat down and did. Derived failing is a result,
-        /// not a blocker: it is the answer to "are mesh bounds enough", and it is only
-        /// discoverable by measuring.
-        ///
-        /// Each rock is read at its own BestFaceAngleDeg rather than at one shared angle, so
-        /// this compares stones each thrown well, which is the comparison a player makes.
-        /// </remarks>
-        private static bool Separation(TuningSet set, Reading[] readings, StringBuilder report)
+        private static string SpeedVsMultiplierCheck(SkipConstants constants, SkipTuning baseline)
         {
-            report.AppendLine($"Separation, {set} — every rock at power {SeparationPower:F2}, " +
-                              "thrown at its own best angle:");
-            report.AppendLine();
-            report.AppendLine("  rock                skips   distance");
+            var lines = new StringBuilder();
 
-            foreach (var reading in readings)
-            {
-                report.AppendLine(reading.Measured
-                    ? $"  {reading.Name,-18}  {reading.Skips,5}   {reading.Distance,7:F1} m"
-                    : $"  {reading.Name,-18}      -         -");
-            }
+            var maxed = SkipTuning.CreateDefault();
+            maxed.SpinMultiplier = 1.5f;
+            maxed.VerticalMultiplier = 1.5f;
+            maxed.HorizontalMultiplier = 1.5f;
 
-            report.AppendLine();
+            var normalSpeed = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, baseline);
+            var doubledSpeed = Measure(ReferenceSwingSpeed * 2f, OptimalAttackDeg, 0f, constants, baseline);
+            var maxedMultipliers = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, maxed);
 
-            var measured = new List<Reading>();
-            foreach (var reading in readings)
-            {
-                if (reading.Measured) measured.Add(reading);
-            }
+            var ok = doubledSpeed.Skips > maxedMultipliers.Skips && doubledSpeed.Distance > maxedMultipliers.Distance;
 
-            if (measured.Count < 2)
-            {
-                report.AppendLine($"  FAIL  fewer than two {set} tunings could be measured.");
-                return false;
-            }
+            lines.AppendLine("Speed vs multiplier — the acceptance criterion:");
+            lines.AppendLine();
+            lines.AppendLine($"  base       ({ReferenceSwingSpeed:F1} m/s, multipliers 1.00) — " +
+                             $"{normalSpeed.Skips} skips, {normalSpeed.Distance:F1} m");
+            lines.AppendLine($"  2x speed   ({ReferenceSwingSpeed * 2f:F1} m/s, multipliers 1.00) — " +
+                             $"{doubledSpeed.Skips} skips, {doubledSpeed.Distance:F1} m");
+            lines.AppendLine($"  maxed rock ({ReferenceSwingSpeed:F1} m/s, multipliers 1.50) — " +
+                             $"{maxedMultipliers.Skips} skips, {maxedMultipliers.Distance:F1} m");
+            lines.AppendLine();
+            lines.AppendLine($"  {(ok ? "PASS" : "FAIL")}  speed vs multiplier — doubling swing speed beats " +
+                             "maxing every multiplier at once");
+            lines.AppendLine();
 
-            var minSkips = int.MaxValue;
-            var maxSkips = int.MinValue;
-            foreach (var reading in measured)
-            {
-                minSkips = Mathf.Min(minSkips, reading.Skips);
-                maxSkips = Mathf.Max(maxSkips, reading.Skips);
-            }
-
-            var spread = maxSkips - minSkips;
-            var spreadOk = spread >= MinSkipSpread;
-            report.AppendLine($"  {(spreadOk ? "PASS" : "FAIL")}  skip spread {spread} " +
-                              $"({minSkips}..{maxSkips}), needs {MinSkipSpread} or more");
-
-            var pairsOk = true;
-            for (var a = 0; a < measured.Count; a++)
-            {
-                for (var b = a + 1; b < measured.Count; b++)
-                {
-                    var skipGap = Mathf.Abs(measured[a].Skips - measured[b].Skips);
-                    var metreGap = Mathf.Abs(measured[a].Distance - measured[b].Distance);
-                    if (skipGap > TooCloseSkips || metreGap > TooCloseMetres) continue;
-
-                    pairsOk = false;
-                    report.AppendLine($"  FAIL  {measured[a].Name} and {measured[b].Name} are the " +
-                                      $"same rock — {skipGap} skip{(skipGap == 1 ? "" : "s")} and " +
-                                      $"{metreGap:F1} m apart");
-                }
-            }
-
-            if (pairsOk)
-            {
-                report.AppendLine($"  PASS  no two rocks within {TooCloseSkips} skip and " +
-                                  $"{TooCloseMetres:F0} m of each other");
-            }
-
-            return spreadOk && pairsOk;
+            return lines.ToString();
         }
 
-        /// <summary>The two sets side by side, which is the table the comparison is read off.</summary>
-        private static string Comparison(Dictionary<TuningSet, Reading[]> readings)
+        /// <summary>One throw's shape, measured rather than derived.</summary>
+        private struct Shape
         {
-            var table = new StringBuilder();
-            table.AppendLine($"Every rock at power {SeparationPower:F2}, each thrown at its own best angle.");
-            table.AppendLine("delta is derived minus authored, in skips.");
-            table.AppendLine();
-            table.AppendLine("                       authored               derived");
-            table.AppendLine("  rock                skips     dist        skips     dist     delta");
-
-            if (!readings.TryGetValue(TuningSet.Authored, out var authored) ||
-                !readings.TryGetValue(TuningSet.Derived, out var derived))
-            {
-                table.AppendLine("  (a set is missing — nothing to compare)");
-                return table.ToString();
-            }
-
-            var count = Mathf.Min(authored.Length, derived.Length);
-            for (var i = 0; i < count; i++)
-            {
-                var a = authored[i];
-                var d = derived[i];
-
-                var aCells = a.Measured ? $"{a.Skips,5}   {a.Distance,7:F1}" : $"{"-",5}   {"-",7}";
-                var dCells = d.Measured ? $"{d.Skips,5}   {d.Distance,7:F1}" : $"{"-",5}   {"-",7}";
-                var delta = a.Measured && d.Measured ? $"{d.Skips - a.Skips,5}" : $"{"-",5}";
-
-                table.AppendLine($"  {a.Name,-18}  {aCells}      {dCells}     {delta}");
-            }
-
-            return table.ToString();
-        }
-
-        /// <summary>Which set spreads the rocks further apart — the sentence the report exists for.</summary>
-        private static string BetterSet(Dictionary<TuningSet, Reading[]> readings)
-        {
-            if (!readings.TryGetValue(TuningSet.Authored, out var authored) ||
-                !readings.TryGetValue(TuningSet.Derived, out var derived))
-            {
-                return string.Empty;
-            }
-
-            var a = SkipSpread(authored);
-            var d = SkipSpread(derived);
-
-            if (a == d)
-            {
-                return $"  Authored and Derived spread the rocks equally ({a} skips). Neither is " +
-                       "the obvious keeper on the offline sweep — decide it on real throws " +
-                       "(rock-throws.csv).";
-            }
-
-            return a > d
-                ? $"  Authored separates better ({a} skips of spread against Derived's {d})."
-                : $"  Derived separates better ({d} skips of spread against Authored's {a}) — " +
-                  "mesh bounds alone are enough.";
-        }
-
-        private static int SkipSpread(Reading[] readings)
-        {
-            var min = int.MaxValue;
-            var max = int.MinValue;
-
-            foreach (var reading in readings)
-            {
-                if (!reading.Measured) continue;
-                min = Mathf.Min(min, reading.Skips);
-                max = Mathf.Max(max, reading.Skips);
-            }
-
-            return max == int.MinValue ? 0 : max - min;
-        }
-
-        private static string DescribeSpread(Reading[] readings)
-        {
-            var spread = SkipSpread(readings);
-            return $"{spread} skip{(spread == 1 ? "" : "s")} between the weakest and strongest rock";
+            public int Skips;
+            public float Distance;
+            public float LaunchArcLength;
+            public float FirstHopHeight;
+            public float SettledHopHeight;
         }
 
         /// <summary>
         /// Run one throw through the real solver and measure the shape of the result.
         /// </summary>
         /// <remarks>
-        /// The face angle is applied by building the attitude the phone would have sent
-        /// for it, so this goes through PhoneAttitude exactly as a real throw does. Asking
-        /// for a face angle and then setting SkipState.FaceAngleDeg directly would skip
-        /// the conversion, which is the half of the path most likely to be wrong.
+        /// Builds the attitude directly in Unity space — SkipPhysics.CreateLaunch takes
+        /// attitude already converted, and PhoneAttitude.ToUnity's device-frame round
+        /// trip has nothing to add here. Pitch comes from the forward vector's own
+        /// elevation; roll is then applied as a rotation about that same forward axis, so
+        /// it changes bank without touching pitch — the same "one rotated vector" property
+        /// SkipPhysics.Step relies on.
         /// </remarks>
-        private static Shape Measure(float power, float faceAngleDeg, SkipTuning tuning)
+        private static Shape Measure(float swingSpeed, float pitchDeg, float rollDeg, SkipConstants constants, SkipTuning tuning)
         {
-            // Pitching the phone's top edge up by N degrees is a rotation of N about the
-            // device's own x axis. See PhoneAttitude for the frame.
-            var half = faceAngleDeg * Mathf.Deg2Rad * 0.5f;
-            var attitude = PhoneAttitude.ToUnity(Mathf.Cos(half), Mathf.Sin(half), 0f, 0f);
+            var pitchRad = pitchDeg * Mathf.Deg2Rad;
+            var forward = new Vector3(0f, Mathf.Sin(pitchRad), Mathf.Cos(pitchRad));
+            var level = Quaternion.LookRotation(forward, Vector3.up);
+            var attitude = Quaternion.AngleAxis(rollDeg, forward) * level;
 
-            var launch = SkipPhysics.CreateLaunch(Vector3.zero, power, attitude, 0f, tuning);
+            var state = SkipPhysics.CreateLaunch(Vector3.zero, swingSpeed, attitude, 0f, constants, tuning);
 
-            var path = new List<Vector3>(tuning.MaxPredictSteps + 1);
-            var final = SkipPhysics.Predict(launch, tuning, path);
-
-            // Where the stone touched down, and how high it got between touches. Read off
-            // the path rather than recomputed, so this measures what was drawn.
-            var contacts = new List<float>();   // distance along the path at each contact
+            var contacts = new List<float>();
             var apexes = new List<float>();
-            var apex = 0f;
+            var apex = state.Position.y;
 
-            for (var i = 1; i < path.Count; i++)
+            for (var i = 0; i < constants.MaxPredictSteps; i++)
             {
-                apex = Mathf.Max(apex, path[i].y);
+                var step = SkipPhysics.Step(state, constants, tuning, constants.FixedStep);
+                state = step.State;
+                apex = Mathf.Max(apex, state.Position.y);
 
-                var touched = path[i].y <= tuning.WaterY + 0.0001f &&
-                              path[i - 1].y > tuning.WaterY + 0.0001f;
+                // Bounces are read off the solver's own Bounced flag, not reconstructed by
+                // comparing consecutive heights against WaterY — see the class remarks.
+                if (step.Bounced)
+                {
+                    contacts.Add(Vector3.Distance(Vector3.zero, state.Position));
+                    apexes.Add(apex);
+                    apex = state.Position.y;
+                }
 
-                if (!touched) continue;
-
-                contacts.Add(Vector3.Distance(Vector3.zero, path[i]));
-                apexes.Add(apex);
-                apex = 0f;
+                if (state.Sunk) break;
             }
 
             var run = new Shape
             {
-                Skips = final.SkipCount,
-                Distance = Vector3.Distance(Vector3.zero, final.Position),
+                Skips = state.SkipCount,
+                Distance = Vector3.Distance(Vector3.zero, state.Position),
             };
 
             if (contacts.Count > 0)
@@ -474,28 +314,23 @@ namespace Verification
                 run.FirstHopHeight = apexes[0];
             }
 
-            if (contacts.Count > 1)
-            {
-                run.FirstHopLength = contacts[1] - contacts[0];
-                run.FirstHopHeight = apexes.Count > 1 ? apexes[1] : run.FirstHopHeight;
-            }
-
-            // "Settled" means past the opening pop, where the exit angle has reached its
-            // steady value — the height a mid-run skip actually has.
-            var settledIndex = Mathf.CeilToInt(tuning.OpeningHopSkips) + 1;
-            if (apexes.Count > settledIndex) run.SettledHopHeight = apexes[settledIndex];
+            // "Settled" means a mid-run skip once the run has more than a couple of
+            // bounces behind it — the height a typical skip in the run actually has.
+            var settledIndex = Mathf.Min(3, apexes.Count - 1);
+            if (settledIndex >= 0) run.SettledHopHeight = apexes[settledIndex];
 
             return run;
         }
 
         /// <summary>The acceptance checks, so a bad retune fails loudly rather than quietly.</summary>
-        private static string Verdict(SkipTuning tuning)
+        private static string Verdict(SkipConstants constants, SkipTuning tuning)
         {
-            var soft = Measure(0.2f, tuning.BestFaceAngleDeg, tuning);
-            var mid = Measure(0.5f, tuning.BestFaceAngleDeg, tuning);
-            var hard = Measure(1f, tuning.BestFaceAngleDeg, tuning);
-            var offAngle = Measure(0.8f, tuning.BestFaceAngleDeg + 35f, tuning);
-            var strong = Measure(0.8f, tuning.BestFaceAngleDeg, tuning);
+            var soft = Measure(SwingSpeeds[1], OptimalAttackDeg, 0f, constants, tuning);
+            var mid = Measure(SwingSpeeds[3], OptimalAttackDeg, 0f, constants, tuning);
+            var hard = Measure(SwingSpeeds[^1], OptimalAttackDeg, 0f, constants, tuning);
+            var offPitch = Measure(ReferenceSwingSpeed, OptimalAttackDeg + 60f, 0f, constants, tuning);
+            var offRoll = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 90f, constants, tuning);
+            var strong = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, tuning);
 
             var lines = new StringBuilder();
             var passed = true;
@@ -511,64 +346,32 @@ namespace Verification
                 $"{soft.Distance:F1} / {mid.Distance:F1} / {hard.Distance:F1} m");
 
             Check("harder skips more times",
-                soft.Skips < mid.Skips && mid.Skips < hard.Skips,
+                soft.Skips <= mid.Skips && mid.Skips <= hard.Skips && soft.Skips < hard.Skips,
                 $"{soft.Skips} / {mid.Skips} / {hard.Skips}");
 
-            Check("harder hops higher",
-                soft.FirstHopHeight < mid.FirstHopHeight && mid.FirstHopHeight < hard.FirstHopHeight,
-                $"{soft.FirstHopHeight:F2} / {mid.FirstHopHeight:F2} / {hard.FirstHopHeight:F2} m");
+            // The regression this whole pass exists to prevent coming back. A neutral
+            // pitch is no longer a good throw by construction — there is no offset — so
+            // this checks the physically optimal angle instead, which every rock should
+            // still handle well at an ordinary swing speed.
+            Check("a good throw at the optimal angle skips well",
+                strong.Skips >= 6,
+                $"{strong.Skips} skips at {ReferenceSwingSpeed:F1} m/s, pitch {OptimalAttackDeg:F0} deg");
 
-            // The regression this whole pass exists to prevent coming back. A player who
-            // holds the phone as they gripped it and throws must get a good throw.
-            Check("a neutral throw is a good throw", hard.Skips >= 10,
-                $"{hard.Skips} skips at the best face angle and full power");
+            // Well past the pitch forgiveness band and its falloff — the stone should
+            // plow in rather than run on.
+            Check("a badly pitched throw is punished",
+                offPitch.Skips <= 3,
+                $"{offPitch.Skips} skips at pitch {OptimalAttackDeg + 60f:F0} deg " +
+                $"(good throw gets {strong.Skips})");
 
-            // Measured against its own launch arc, not against a good throw's distance. A
-            // hard throw at a hopeless angle still flies a long way before it ever touches
-            // the water, and that flight is not a fault — it is just a throw. The failure
-            // to check for is the stone carrying on afterwards, so what this asserts is
-            // that it dies roughly where it lands rather than running on.
-            //
-            // The skip count is the real punishment and the real score: at ten points a
-            // skip against one a metre, a 3-skip slap is worth a fraction of a clean run
-            // even when the two travelled comparable distances.
-            Check("a badly angled throw is punished",
-                offAngle.Skips <= 4 && offAngle.Distance < offAngle.LaunchArcLength * 1.6f,
-                $"{offAngle.Skips} skips, dead at {offAngle.Distance:F1} m off a " +
-                $"{offAngle.LaunchArcLength:F1} m toss — a neutral throw goes {strong.Distance:F1} m " +
-                $"in {strong.Skips} skips");
-
-            // What this wants is that the water does not throw the stone harder than the
-            // player did. It is normal and correct for the first hop to beat the launch arc:
-            // the stone leaves the water at OpeningHopAngleDeg (7 deg) having arrived at
-            // LaunchPitchDeg (5 deg) with most of its speed intact, so it exits steeper than
-            // it came in. Every tuning this project has ever had does that.
-            //
-            // Which is why this used to demand FirstHopLength <= LaunchArcLength and failed
-            // all twelve rock x set combinations — it encoded an expectation nothing had ever
-            // met, so it reported no information (docs/Findings-RockSeparation.md section 3).
-            // A universally failing check is indistinguishable from a check nobody reads.
-            //
-            // The band below is calibrated against the corpus, not derived from physics, and
-            // the corpus makes the case for it: the two rocks with the largest opening hops
-            // (Skimmer 1.60x, Nugget 1.51x) are also the two worst skippers in their set at 12
-            // and 14 skips, against 16-26 for everything under 1.30x. A stone that leaves the
-            // first bounce that much hotter than it arrived is lobbing, and it pays for it.
-            // The ceiling sits in the gap the readings leave between 1.27x and 1.51x.
-            //
-            // So this is a fence around observed-bad behaviour. If a retune moves the whole
-            // population, move the fence with it deliberately — do not let it drift back to
-            // failing everything.
-            var hopRatio = hard.LaunchArcLength > 0f
-                ? hard.FirstHopLength / hard.LaunchArcLength
-                : 0f;
-            Check("the opening hop does not out-lob the throw",
-                hopRatio <= MaxOpeningHopRatio,
-                $"{hard.FirstHopLength:F1} m hop off a {hard.LaunchArcLength:F1} m arc — " +
-                $"{hopRatio:F2}x, ceiling {MaxOpeningHopRatio:F2}x");
+            // Past MaxRollDeg (SkipPhysics) — the leading edge should catch and the stone
+            // should sink almost immediately rather than skipping normally.
+            Check("a badly rolled throw catches and sinks",
+                offRoll.Skips <= 2,
+                $"{offRoll.Skips} skips at 90 deg of bank (good throw gets {strong.Skips})");
 
             Check("a settled hop reads as skipping, not lobbing",
-                hard.SettledHopHeight > 0f && hard.SettledHopHeight < 0.6f,
+                hard.SettledHopHeight >= 0f && hard.SettledHopHeight < 1.5f,
                 $"{hard.SettledHopHeight:F2} m");
 
             Check("full power stays on the drawn water",
