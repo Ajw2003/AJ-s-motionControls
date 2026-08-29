@@ -14,9 +14,10 @@ namespace Game
     /// A rock is a mesh AND a tuning, and the pairing is the whole feature. A flat stone
     /// that skips exactly like a chunky one is a reskin, not a choice.
     ///
-    /// <b>Two tunings, not one.</b> See <see cref="TuningSet"/> — the authored and derived
-    /// sets are being compared against each other with real match data, so a definition
-    /// carries both and the live set is decided at runtime.
+    /// One tuning, not two. There used to be an Authored/Derived pair compared against
+    /// each other with real match data — see docs/Findings-RockSeparation.md and
+    /// docs/plans/Plan-ThrowDrivenSkipModel.md for why that A/B apparatus is gone: rock
+    /// character is now three explicit multipliers, and there is nothing left to compare.
     ///
     /// Built and maintained by Editor/RockCatalogBuilder. Hand edits to
     /// <see cref="DisplayName"/>, <see cref="Blurb"/> and <see cref="Tint"/> survive a
@@ -65,34 +66,11 @@ namespace Game
         public Color Tint = new(0.45f, 0.43f, 0.43f);
 
         [Header("Physics")]
-        [Tooltip("Hand-tuned archetype. Authored/Rock_0N.asset.")]
-        public SkipTuning AuthoredTuning;
-
-        [Tooltip("Generated from this mesh's bounds. Derived/Rock_0N.asset — overwritten " +
-                 "every time the generator runs, so do not hand-edit it.")]
-        public SkipTuning DerivedTuning;
-
-        /// <summary>
-        /// The tuning for a given set, falling back to whichever one exists.
-        /// </summary>
-        /// <remarks>
-        /// The fallback is deliberate and it is not defensive padding: the two sets are
-        /// built by separate menu items, so there is a real window during setup where a rock
-        /// has one and not the other. Returning null there would take the whole throw path
-        /// down over a half-finished import, when the honest answer — "use the tuning this
-        /// rock does have" — is right there.
-        ///
-        /// Null only when the rock has neither, which the catalog validates against.
-        /// </remarks>
-        public SkipTuning Tuning(TuningSet set)
-        {
-            var wanted = set == TuningSet.Derived ? DerivedTuning : AuthoredTuning;
-            if (wanted != null) return wanted;
-
-            return set == TuningSet.Derived ? AuthoredTuning : DerivedTuning;
-        }
+        [Tooltip("Three bounded multipliers over the geometry-driven bounce. " +
+                 "Assets/Rocks/Tuning/Rock_0N.asset.")]
+        public SkipTuning Tuning;
 
         /// <summary>Whether this rock can actually be played.</summary>
-        public bool IsUsable => Mesh != null && (AuthoredTuning != null || DerivedTuning != null);
+        public bool IsUsable => Mesh != null && Tuning != null;
     }
 }

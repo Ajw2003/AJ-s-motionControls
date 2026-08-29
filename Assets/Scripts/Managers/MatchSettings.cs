@@ -29,7 +29,6 @@ namespace Managers
             if (RockSelection.HasInstance)
             {
                 RockSelection.Instance.RandomRocks = loaded.RandomRocks;
-                RockSelection.Instance.ActiveTuningSet = loaded.TuningSet;
             }
             if (TurnManager.HasInstance)
             {
@@ -48,16 +47,6 @@ namespace Managers
                 set: value =>
                 {
                     if (RockSelection.HasInstance) RockSelection.Instance.RandomRocks = value;
-                    Save();
-                }));
-
-            All.Add(new EnumSetting<TuningSet>(
-                "tuningSet", "Tuning set",
-                "Authored (hand-tuned) or Derived (from mesh bounds) — the comparison switch.",
-                get: () => RockSelection.HasInstance ? RockSelection.Instance.ActiveTuningSet : TuningSet.Authored,
-                set: value =>
-                {
-                    if (RockSelection.HasInstance) RockSelection.Instance.ActiveTuningSet = value;
                     Save();
                 }));
 
@@ -86,10 +75,9 @@ namespace Managers
         private void Save()
         {
             var randomRocks = RockSelection.HasInstance && RockSelection.Instance.RandomRocks;
-            var tuningSet = RockSelection.HasInstance ? RockSelection.Instance.ActiveTuningSet : TuningSet.Authored;
             var roundsPerMatch = TurnManager.HasInstance ? TurnManager.Instance.RoundsPerMatch : 5;
 
-            MatchSettingsStore.Save(randomRocks, tuningSet, roundsPerMatch);
+            MatchSettingsStore.Save(randomRocks, roundsPerMatch);
         }
     }
 }

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 using UnityEngine;
 
 namespace Game
@@ -56,69 +55,16 @@ namespace Game
         }
 
         /// <summary>
-        /// The longest prediction any rock in the catalog can produce.
-        /// </summary>
-        /// <remarks>
-        /// AimPreview sizes its path buffer from this rather than from one tuning's
-        /// MaxPredictSteps. Sizing it from a single rock would be an allocation waiting to
-        /// happen: the buffer would grow the first time a player picked a stone with a longer
-        /// PredictSeconds, and that reallocation lands mid-aim on exactly the throws people
-        /// care most about. The buffer is a few thousand Vector3s — sizing it for the worst
-        /// case once costs nothing worth measuring.
-        /// </remarks>
-        public int MaxPredictSteps
-        {
-            get
-            {
-                var steps = 1;
-                if (IsEmpty) return steps;
-
-                foreach (var rock in Rocks)
-                {
-                    if (rock == null) continue;
-
-                    foreach (var set in new[] { TuningSet.Authored, TuningSet.Derived })
-                    {
-                        var tuning = rock.Tuning(set);
-                        if (tuning != null) steps = Mathf.Max(steps, tuning.MaxPredictSteps);
-                    }
-                }
-                return steps;
-            }
-        }
-
-        /// <summary>
-        /// Why the launch speed range has to be the same for every rock.
-        /// </summary>
-        /// <remarks>
-        /// WaterRipples.Bind, SfxDirector.Awake and RockTrail all express their thresholds as
-        /// FRACTIONS of SkipTuning.MaxSpeed, and two of the three read the global
-        /// Resources/SkipTuning once at startup and never look again. Let MaxSpeed vary per
-        /// rock and those normalisers are quietly wrong for five rocks out of six — which is
-        /// the exact failure WaterRipples already carries a note about, from when its
-        /// thresholds were hardcoded at 4 and 25 against a MaxSpeed of 26 and every impact
-        /// clamped to full strength.
-        ///
-        /// It also protects the rule SkipTuning states at the top: power is the only driver of
-        /// distance. If rocks differed in top speed then "how hard did I throw" would mean a
-        /// different thing per rock, and a player could not carry a sense of effort from one
-        /// stone to the next.
-        ///
-        /// So rock character comes from retention, the angle window, exit angle, restitution,
-        /// minimum skip speed and the opening hop — never from the speed range.
-        /// </remarks>
-        public static readonly string[] SharedFieldNames =
-            { "Gravity", "WaterY", "MinSpeed", "MaxSpeed", "FixedStep" };
-
-        /// <summary>
-        /// Checks the catalog is playable and that every tuning agrees on the shared fields.
+        /// Checks the catalog is playable: every slot filled, every rock has a mesh, an id
+        /// and a tuning, and no id repeats.
         /// </summary>
         /// <returns>Empty when the catalog is sound; one line per problem otherwise.</returns>
         /// <remarks>
-        /// Public and runtime-callable rather than living in the editor tool, so the same
-        /// rule is enforced by the thing that writes the assets AND readable by anything that
-        /// loads them. A rule enforced only at author time is a rule that a hand-edited asset
-        /// walks straight through.
+        /// Used to also enforce that every rock's tuning agreed on shared fields like
+        /// MaxSpeed and Gravity — see docs/plans/Plan-ThrowDrivenSkipModel.md. Those fields
+        /// are not per-rock anymore; they live once, globally, on SkipConstants, so
+        /// disagreement between rocks is no longer representable and there is nothing left
+        /// to check there.
         /// </remarks>
         public List<string> Validate()
         {
@@ -130,8 +76,6 @@ namespace Game
                 return problems;
             }
 
-            SkipTuning reference = null;
-            string referenceLabel = null;
             var seenIds = new HashSet<string>();
 
             foreach (var rock in Rocks)
@@ -144,58 +88,10 @@ namespace Game
 
                 if (rock.Mesh == null) problems.Add($"{rock.name}: no mesh.");
                 if (!seenIds.Add(rock.Id)) problems.Add($"{rock.name}: duplicate Id '{rock.Id}'.");
-
-                if (rock.AuthoredTuning == null && rock.DerivedTuning == null)
-                {
-                    problems.Add($"{rock.name}: no tuning in either set.");
-                    continue;
-                }
-
-                foreach (var set in new[] { TuningSet.Authored, TuningSet.Derived })
-                {
-                    var tuning = set == TuningSet.Derived ? rock.DerivedTuning : rock.AuthoredTuning;
-                    if (tuning == null) continue;
-
-                    var label = $"{rock.name} ({set})";
-
-                    if (reference == null)
-                    {
-                        reference = tuning;
-                        referenceLabel = label;
-                        continue;
-                    }
-
-                    var mismatch = DescribeSharedFieldMismatch(reference, tuning);
-                    if (mismatch != null)
-                    {
-                        problems.Add($"{label} disagrees with {referenceLabel} on {mismatch}. " +
-                                     "See RockCatalog.SharedFieldNames for why these must match.");
-                    }
-                }
+                if (rock.Tuning == null) problems.Add($"{rock.name}: no tuning.");
             }
 
             return problems;
-        }
-
-        /// <summary>The first shared field the two tunings disagree on, or null if they agree.</summary>
-        private static string DescribeSharedFieldMismatch(SkipTuning a, SkipTuning b)
-        {
-            var differences = new StringBuilder();
-
-            void Compare(string field, float left, float right)
-            {
-                if (Mathf.Approximately(left, right)) return;
-                if (differences.Length > 0) differences.Append(", ");
-                differences.Append($"{field} ({right} vs {left})");
-            }
-
-            Compare("Gravity", a.Gravity, b.Gravity);
-            Compare("WaterY", a.WaterY, b.WaterY);
-            Compare("MinSpeed", a.MinSpeed, b.MinSpeed);
-            Compare("MaxSpeed", a.MaxSpeed, b.MaxSpeed);
-            Compare("FixedStep", a.FixedStep, b.FixedStep);
-
-            return differences.Length > 0 ? differences.ToString() : null;
         }
 
         /// <summary>

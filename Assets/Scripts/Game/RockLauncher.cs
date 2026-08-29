@@ -93,6 +93,7 @@ namespace Game
             // player just aimed with and the stone that actually flies can never land on
             // different rocks for the same turn — see AimPreview.OnTurnStarted.
             var tuning = _preview.Tuning;
+            var constants = _preview.Constants;
             var rock = _preview.CurrentRock;
 
             // No negations. The phone's rotation becomes a Unity rotation exactly once, in
@@ -101,10 +102,10 @@ namespace Game
             var attitude = PhoneAttitude.ToUnity(message.qw, message.qx, message.qy, message.qz);
 
             var launch = SkipPhysics.CreateLaunch(
-                _preview.ThrowOrigin.position, message.power, attitude, message.spinRate, tuning);
+                _preview.ThrowOrigin.position, message.power, attitude, message.spinRate, constants, tuning);
 
-            _active = CreateRockObject(rock, tuning);
-            _active.Launch(launch, tuning, message.playerId);
+            _active = CreateRockObject(rock, constants);
+            _active.Launch(launch, constants, tuning, message.playerId);
         }
 
         private void FollowActiveRock()
@@ -150,7 +151,7 @@ namespace Game
         /// every yaw, so a box was chosen so the stone shows its own rotation from every
         /// angle. RockCatalogBuilder's meshes carry that concern themselves now.
         /// </remarks>
-        private static RockController CreateRockObject(RockDefinition rock, SkipTuning tuning)
+        private static RockController CreateRockObject(RockDefinition rock, SkipConstants constants)
         {
             var prefab = Resources.Load<GameObject>("RockObject");
             var go = Instantiate(prefab);
@@ -171,10 +172,10 @@ namespace Game
             var controller = go.AddComponent<RockController>();
 
             // After the controller, because the trail reads IsFlying and Speed off it. The
-            // same tuning the throw is about to be simulated with is handed over so the
+            // same constants the throw is about to be simulated with are handed over so the
             // trail's speed thresholds cannot drift from the launch speed they scale
             // against — see TrailTuning's remarks on why they are fractions.
-            RockTrail.Attach(go, tuning);
+            RockTrail.Attach(go, constants);
 
             return controller;
         }

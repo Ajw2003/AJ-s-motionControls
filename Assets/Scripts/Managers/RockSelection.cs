@@ -13,12 +13,12 @@ namespace Managers
     /// the telemetry row) reads through here rather than re-deriving a pick.
     /// </summary>
     /// <remarks>
-    /// <b>Random rocks / active tuning set live here, not on a MatchSettings singleton.</b>
-    /// The rock-choosing plan (docs/plans/rock-choosing-system.md, Part 5) designs a
-    /// generic settings-list panel that would own both — but that panel doesn't exist
-    /// yet, and this class cannot function without somewhere to read them from. They sit
-    /// here as plain fields until Part 5 lands; that panel should read/write these
-    /// properties rather than duplicate the state in a second place.
+    /// <b>Random rocks lives here, not on a MatchSettings singleton.</b> The rock-choosing
+    /// plan (docs/plans/rock-choosing-system.md, Part 5) designs a generic settings-list
+    /// panel that would own it — but that panel doesn't exist yet, and this class cannot
+    /// function without somewhere to read it from. It sits here as a plain field until
+    /// Part 5 lands; that panel should read/write this property rather than duplicate the
+    /// state in a second place.
     ///
     /// <b>PICK_ROCK carries no rock id</b> (see Messages.cs) — a tap means "confirm
     /// whatever is highlighted", and only the shore layout (<see cref="Game.ShoreRocks"/>)
@@ -37,9 +37,6 @@ namespace Managers
                  "their pointed pick. Phone picks are ignored while this is on.")]
         [SerializeField] private bool randomRocks;
 
-        [Tooltip("Which of a rock's two tunings — Authored or Derived — decides how it plays.")]
-        [SerializeField] private TuningSet activeTuningSet = TuningSet.Authored;
-
         private RockCatalog _catalog;
         private readonly Dictionary<string, string> _picks = new();
 
@@ -47,12 +44,6 @@ namespace Managers
         {
             get => randomRocks;
             set => randomRocks = value;
-        }
-
-        public TuningSet ActiveTuningSet
-        {
-            get => activeTuningSet;
-            set => activeTuningSet = value;
         }
 
         /// <summary>
@@ -156,7 +147,7 @@ namespace Managers
             return _catalog.At(0);
         }
 
-        public SkipTuning TuningFor(string playerId) => For(playerId)?.Tuning(activeTuningSet);
+        public SkipTuning TuningFor(string playerId) => For(playerId)?.Tuning;
 
         /// <summary>
         /// Assigns every player in the match a fresh rock from a logged seed, so a

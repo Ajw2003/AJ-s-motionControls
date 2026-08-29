@@ -110,9 +110,9 @@ namespace Managers
             _ = TurnManager.Instance;
 
             // After both RockSelection and TurnManager, never earlier — its Awake applies the
-            // settings loaded from match-settings.json straight onto RockSelection.RandomRocks/
-            // ActiveTuningSet and TurnManager.RoundsPerMatch, which needs both instances to
-            // already exist. See docs/plans/rock-choosing-system.md Part 5.
+            // settings loaded from match-settings.json straight onto RockSelection.RandomRocks
+            // and TurnManager.RoundsPerMatch, which needs both instances to already exist. See
+            // docs/plans/rock-choosing-system.md Part 5.
             _ = MatchSettings.Instance;
 
             // Last of the subscribers, deliberately. EventManager delivers in subscription

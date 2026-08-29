@@ -19,11 +19,12 @@ namespace EditorTools
     /// step that silently stops being done.
     ///
     /// <b>Idempotent.</b> Re-running refreshes the mesh reference and the scale, and leaves
-    /// DisplayName, Blurb, Tint and both tuning references alone. Same contract as
+    /// DisplayName, Blurb, Tint and the tuning reference alone. Same contract as
     /// AudioBankBuilder: regeneration is safe, and losing hand tuning to it would make the
     /// tool something you avoid running.
     ///
-    /// Tunings are not touched here — see RockTuningGenerator.
+    /// Tuning is not touched here — see docs/plans/Plan-ThrowDrivenSkipModel.md step 8:
+    /// with the generator gone, each rock's SkipTuning asset is authored by hand.
     /// </remarks>
     public static class RockCatalogBuilder
     {
@@ -274,8 +275,8 @@ namespace EditorTools
             var problems = catalog.Validate();
             if (problems.Count == 0)
             {
-                Debug.Log("[RockCatalogBuilder] Catalog validates — every tuning agrees on " +
-                          string.Join(", ", RockCatalog.SharedFieldNames) + ".");
+                Debug.Log("[RockCatalogBuilder] Catalog validates — every rock has a mesh, " +
+                          "an id and a tuning.");
                 return;
             }
 

@@ -464,8 +464,7 @@ namespace Ui
             if (turns != null)
             {
                 var random = RockSelection.HasInstance && RockSelection.Instance.RandomRocks;
-                var tuning = RockSelection.HasInstance ? RockSelection.Instance.ActiveTuningSet.ToString() : "Authored";
-                GUILayout.Label($"Rocks: {(random ? "Random" : "Pointed")} · Tuning: {tuning} · " +
+                GUILayout.Label($"Rocks: {(random ? "Random" : "Pointed")} · " +
                                 $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")} — " +
                                 "Press F4 for match settings", _hint);
             }

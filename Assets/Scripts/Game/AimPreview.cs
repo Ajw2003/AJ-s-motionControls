@@ -35,6 +35,9 @@ namespace Game
         [Tooltip("Leave empty to use a runtime default.")]
         [SerializeField] private SkipTuning tuning;
 
+        [Tooltip("Global simulation/forgiveness constants. Leave empty to use a runtime default.")]
+        [SerializeField] private SkipConstants constants;
+
         [Tooltip("Arc colour and ghost charge numbers. Leave empty to use a runtime default.")]
         [SerializeField] private AimFeedbackTuning feedback;
 
@@ -69,6 +72,9 @@ namespace Game
         /// stays there if RockSelection or the catalog cannot resolve one — see OnTurnStarted.
         /// </summary>
         public SkipTuning Tuning => tuning;
+
+        /// <summary>Global simulation/forgiveness constants — see the class field.</summary>
+        public SkipConstants Constants => constants;
 
         /// <summary>
         /// The active player's rock, alongside <see cref="Tuning"/> — RockLauncher reads
@@ -159,6 +165,8 @@ namespace Game
                                  "running on code defaults, which cannot be tuned without a recompile.");
             }
 
+            if (constants == null) constants = SkipConstants.LoadOrWarn();
+
             // Same three steps for the same reason, and it matters more here rather than
             // less: these are look numbers, and a look number that needs a recompile does
             // not get tuned.
@@ -172,10 +180,9 @@ namespace Game
                                  "tuned without a recompile.");
             }
 
-            // Sized from the whole catalog's longest prediction, not this one tuning's —
-            // a player picking a stone with a longer PredictSeconds must not be the thing
-            // that grows this buffer mid-aim. See RockCatalog.MaxPredictSteps.
-            _path = new List<Vector3>(RockCatalog.LoadOrWarn().MaxPredictSteps + 1);
+            // PredictSeconds is global now — every rock predicts the same horizon — so this
+            // sizes once from SkipConstants rather than from the whole catalog's longest.
+            _path = new List<Vector3>(constants.MaxPredictSteps + 1);
 
             if (createPlaceholderScene) BuildPlaceholderScene();
             if (throwOrigin == null) throwOrigin = CreateOrigin();
@@ -360,12 +367,12 @@ namespace Game
             // hard anyone threw. That was the 13-skip ceiling.
             var drawPower = Mathf.Max(previewPower, _curPower);
 
-            // Zero spin: it is visual only and has no effect whatsoever on the path, so
-            // feeding the arc a spin rate would imply it mattered.
+            // Zero spin: real spin is measured at throw release, not while aiming, and
+            // feeding the arc one anyway would move it before a throw actually happened.
             var launch = SkipPhysics.CreateLaunch(
-                throwOrigin.position, drawPower, _curAttitude, 0f, tuning);
+                throwOrigin.position, drawPower, _curAttitude, 0f, constants, tuning);
 
-            var final = SkipPhysics.Predict(launch, tuning, _path);
+            var final = SkipPhysics.Predict(launch, constants, tuning, _path);
 
             PredictedSkips = final.SkipCount;
             PredictedDistance = Vector3.Distance(throwOrigin.position, final.Position);
@@ -587,7 +594,7 @@ namespace Game
         {
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "PlaceholderWater";
-            water.transform.position = new Vector3(0f, tuning.WaterY, WaterCentreZ);
+            water.transform.position = new Vector3(0f, constants.WaterY, WaterCentreZ);
             water.transform.localScale = new Vector3(WaterPlaneScale, 1f, WaterPlaneScale);
             Destroy(water.GetComponent<Collider>());
 
@@ -601,7 +608,7 @@ namespace Game
 
             // Handed the material directly rather than looked up — this method is the only
             // thing that ever holds the water, and it drops the reference on exit.
-            water.AddComponent<WaterRipples>().Bind(waterMaterial, tuning);
+            water.AddComponent<WaterRipples>().Bind(waterMaterial, constants);
 
             // Parented like the arc and the ghost so it survives with this component,
             // which Bootstrap marks DontDestroyOnLoad. Left at the scene root it was
