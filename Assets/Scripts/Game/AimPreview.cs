@@ -47,9 +47,10 @@ namespace Game
         [SerializeField] private bool createPlaceholderScene = true;
 
         [Header("Feel")]
-        [Tooltip("Floor on the power the arc is drawn at, for a player holding still to " +
-                 "aim. Winding up raises it above this; it is never drawn below it.")]
-        [Range(0f, 1f)] [SerializeField] private float previewPower = 0.45f;
+        [Tooltip("Floor on the raw swing speed (m/s) the arc is drawn at, for a player " +
+                 "holding still to aim. Winding up raises it above this; it is never drawn " +
+                 "below it.")]
+        [SerializeField] private float previewSwingSpeed = 2f;
 
         [Tooltip("How long the ghost takes to catch up to a new aim frame. This is the " +
                  "20Hz-to-smooth conversion; it is not meant to lag perceptibly.")]
@@ -137,17 +138,15 @@ namespace Game
         private Quaternion _curAttitude = Quaternion.identity;
 
         /// <summary>
-        /// How hard the phone is being swung right now, 0..1, and the smoothed value the
-        /// arc is drawn at.
+        /// Raw swing speed off the phone right now, m/s, and the smoothed value the arc is
+        /// drawn at.
         /// </summary>
         /// <remarks>
-        /// The same quantity the throw sends, normalised the same way — see the live
-        /// tracker in ThrowController. An earlier version sent a separate `windup` derived
-        /// from peak acceleration while the throw derived power from swing speed, so the
-        /// arc and the stone were driven by two different notions of "how hard" and
-        /// disagreed by construction.
+        /// The same raw quantity the throw sends — see ThrowMessage.swingSpeed and
+        /// SkipPhysics.CreateLaunch. No normalisation on either end: the phone measures a
+        /// real speed and Unity converts it once, via SkipConstants.SpeedScale.
         /// </remarks>
-        private float _targetPower, _curPower;
+        private float _targetSwingSpeed, _curSwingSpeed;
 
         private void Awake()
         {
@@ -258,8 +257,8 @@ namespace Game
             _curAttitude = Quaternion.Slerp(
                 _curAttitude, _targetAttitude, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
 
-            _curPower = Mathf.Lerp(
-                _curPower, _targetPower, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
+            _curSwingSpeed = Mathf.Lerp(
+                _curSwingSpeed, _targetSwingSpeed, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
 
             // Nothing to predict while a stone is already in the air, and leaving the arc
             // up through the throw means the line the player was aiming with is still
@@ -318,7 +317,7 @@ namespace Game
                 // Snap to the new player's pose rather than sweeping across from wherever
                 // the last one left the ghost. The arc's verdict is snapped the same way,
                 // one frame later, once there is a prediction to snap it to.
-                _curPower = 0f;
+                _curSwingSpeed = 0f;
                 _curAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
                 _snapQuality = true;
             }
@@ -335,7 +334,10 @@ namespace Game
             // tracking live orientation is what agrees with the stone.
             _targetAttitude = PhoneAttitude.ToUnity(aim.qw, aim.qx, aim.qy, aim.qz);
 
-            _targetPower = Mathf.Clamp01(aim.power);
+            // Raw swing speed, not a normalised power — the phone sends the same quantity
+            // ThrowMessage does, and this is the only place it is converted (via
+            // SkipConstants.SpeedScale, inside SkipPhysics.CreateLaunch).
+            _targetSwingSpeed = Mathf.Max(0f, aim.swingSpeed);
             _lastAimTime = Time.time;
         }
 
@@ -356,7 +358,7 @@ namespace Game
         {
             // Drawn at how hard the phone is being swung right now, floored at the nominal.
             //
-            // The floor is what makes this usable. Real power is genuinely unknowable
+            // The floor is what makes this usable. Real speed is genuinely unknowable
             // before release, so a player holding still to line a shot up reads as zero
             // effort — and an arc that collapses to a two-metre dribble every time they
             // stop moving is not an aiming guide. So the arc shows at least a nominal
@@ -365,12 +367,12 @@ namespace Game
             // It used to be pinned at the nominal outright, which made the HUD's
             // "predicted N skips over M m" mathematically incapable of responding to how
             // hard anyone threw. That was the 13-skip ceiling.
-            var drawPower = Mathf.Max(previewPower, _curPower);
+            var drawSwingSpeed = Mathf.Max(previewSwingSpeed, _curSwingSpeed);
 
             // Zero spin: real spin is measured at throw release, not while aiming, and
             // feeding the arc one anyway would move it before a throw actually happened.
             var launch = SkipPhysics.CreateLaunch(
-                throwOrigin.position, drawPower, _curAttitude, 0f, constants, tuning);
+                throwOrigin.position, drawSwingSpeed, _curAttitude, 0f, constants, tuning);
 
             var final = SkipPhysics.Predict(launch, constants, tuning, _path);
 
@@ -447,22 +449,25 @@ namespace Game
         /// Swells and lights the ghost with how hard the phone is being swung.
         /// </summary>
         /// <remarks>
-        /// Winding up should look like winding up. _curPower was already smoothed every
-        /// frame and fed to arc length alone, which puts the only reading of effort at the
-        /// far end of the arc — several metres from where the player is looking, and mixed
-        /// in with the angle the arc is mainly there to teach.
+        /// Winding up should look like winding up. _curSwingSpeed was already smoothed
+        /// every frame and fed to arc length alone, which puts the only reading of effort
+        /// at the far end of the arc — several metres from where the player is looking,
+        /// and mixed in with the angle the arc is mainly there to teach.
         ///
-        /// Raw _curPower, deliberately, and NOT the drawPower the arc uses. The arc floors
-        /// its power at previewPower so that holding still still shows a usable guide; a
-        /// ghost floored the same way would sit permanently half-charged and never show the
-        /// bottom of the range. The whole point here is the difference between still and
-        /// winding up, so it has to start from actually still.
+        /// Raw _curSwingSpeed, deliberately, and NOT the drawSwingSpeed the arc uses. The
+        /// arc floors its speed at previewSwingSpeed so that holding still still shows a
+        /// usable guide; a ghost floored the same way would sit permanently half-charged
+        /// and never show the bottom of the range. The whole point here is the difference
+        /// between still and winding up, so it has to start from actually still.
+        ///
+        /// Normalised against ReferenceSpeed purely for this visual — the physics reads
+        /// _curSwingSpeed raw, this is the only place it needs a 0..1 fraction.
         /// </remarks>
         private void UpdateGhostCharge()
         {
             if (!feedback.ChargeGlow) return;
 
-            var charge = Mathf.Clamp01(_curPower);
+            var charge = Mathf.Clamp01(_curSwingSpeed / Mathf.Max(constants.ReferenceSpeed, 0.0001f));
 
             // Scaled by charge so a stone at rest is perfectly still. An unscaled pulse
             // reads as an idle animation, which is the opposite of feedback: it says the

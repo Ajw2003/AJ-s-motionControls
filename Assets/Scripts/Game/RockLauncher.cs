@@ -102,7 +102,7 @@ namespace Game
             var attitude = PhoneAttitude.ToUnity(message.qw, message.qx, message.qy, message.qz);
 
             var launch = SkipPhysics.CreateLaunch(
-                _preview.ThrowOrigin.position, message.power, attitude, message.spinRate, constants, tuning);
+                _preview.ThrowOrigin.position, message.swingSpeed, attitude, message.spinRate, constants, tuning);
 
             _active = CreateRockObject(rock, constants);
             _active.Launch(launch, constants, tuning, message.playerId);

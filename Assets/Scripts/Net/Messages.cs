@@ -110,19 +110,21 @@ namespace Net
         public float spinRate;
 
         /// <summary>
-        /// How hard the phone is being swung right now, 0..1.
+        /// How fast the phone is being swung right now, raw m/s — the same quantity
+        /// ThrowMessage.swingSpeed carries, just sampled mid-swing instead of at release.
+        /// See ThrowController.windup.
         /// </summary>
         /// <remarks>
-        /// The same quantity and the same normalisation as ThrowMessage.power, just
-        /// sampled mid-swing instead of at release — see ThrowController.windup. That
-        /// matters: the previous version of this field was derived from peak acceleration
-        /// while the throw's power came from swing speed, so the arc and the stone were
-        /// driven by two different notions of "how hard" and disagreed by construction.
+        /// Not normalised. An earlier version sent a 0..1 `power` here, derived the same
+        /// way ThrowMessage.power was — but that meant two lossy conversions of the same
+        /// swing had to agree, on both the phone and in Unity, or the arc and the stone
+        /// would disagree by construction. Sending the raw measurement once and converting
+        /// it once, in Unity (SkipConstants.SpeedScale), removes the second chance to drift.
         ///
         /// Only ever an estimate, because the swing has not finished yet. AimPreview
         /// floors it at a nominal so a player holding still to aim still sees an arc.
         /// </remarks>
-        public float power;
+        public float swingSpeed;
     }
 
     /// <summary>

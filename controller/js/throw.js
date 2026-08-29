@@ -341,7 +341,7 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
  * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
  * this instant's spin, which keeps the function usable on its own and honest either way.
  */
-export function buildAimPayload(sample, seq, spinRate, power = 0) {
+export function buildAimPayload(sample, seq, spinRate, power = 0, swingSpeed = 0) {
   if (!sample) return null;
   return {
     type: 'AIM',
@@ -353,6 +353,11 @@ export function buildAimPayload(sample, seq, spinRate, power = 0) {
     // own `power` uses — see ThrowController.windup. The TV draws the arc at this, so
     // winding up visibly extends it.
     power,
+
+    // Raw m/s, the same live measurement `power` above is normalised from — see
+    // ThrowController._windSpeed. Unity reads this one now; `power` rides along only
+    // until every caller of the old normalised field is gone.
+    swingSpeed,
   };
 }
 
@@ -429,7 +434,8 @@ export class ThrowController {
     this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {
-      const payload = buildAimPayload(this.motion.latest, ++this.seq, this._spin, this.windup);
+      const payload = buildAimPayload(
+        this.motion.latest, ++this.seq, this._spin, this.windup, this._windSpeed);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
 

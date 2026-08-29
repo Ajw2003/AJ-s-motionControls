@@ -623,6 +623,12 @@ console.log('\nbuildAimPayload');
   check('carries the supplied envelope in preference to the instant',
     near(buildAimPayload(spinning, 1, 320).spinRate, 320));
   check('a still phone reports no spin', buildAimPayload(makeSample(0, 20), 1).spinRate === 0);
+
+  // Raw swing speed rides alongside the normalised power field — Unity reads this one
+  // now (see AimPreview.OnAim), power stays only until every caller of it is gone.
+  check('carries raw swing speed, not just normalised power',
+    buildAimPayload(makeSample(0, 20), 1, 0, 0.5, 3.2).swingSpeed === 3.2);
+  check('defaults swing speed to zero', buildAimPayload(makeSample(0, 20), 1).swingSpeed === 0);
 }
 
 // ------------------------------------------------------------- spin envelope
@@ -948,6 +954,9 @@ console.log('\nThrowController: live windup on the aim stream');
     check('the aim frame carries the windup as power',
       frames.length > 0 && frames[0].power > 0.4,
       frames.length ? `${frames[0].power.toFixed(3)}` : 'no frames');
+    check('the aim frame also carries the raw swing speed behind it',
+      frames.length > 0 && frames[0].swingSpeed > 0,
+      frames.length ? `${frames[0].swingSpeed.toFixed(3)}` : 'no frames');
     c.cancel();
   }
 }
