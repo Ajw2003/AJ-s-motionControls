@@ -96,5 +96,40 @@ namespace Game
             var forward = attitude * Vector3.forward;
             return Mathf.Asin(Mathf.Clamp(forward.y, -1f, 1f)) * Mathf.Rad2Deg;
         }
+
+        /// <summary>
+        /// Bank of a rotated stone about its own forward axis, in degrees. Positive rolls
+        /// one way, negative the other; the sign convention lives here, not at call sites.
+        /// </summary>
+        /// <remarks>
+        /// Computed against a "level" reference frame for the current heading/pitch — the
+        /// right vector perpendicular to both world up and the stone's forward, and the up
+        /// vector completing that level frame — rather than by decomposing Euler angles,
+        /// which is the exact failure mode this file exists to avoid.
+        /// </remarks>
+        public static float RollDeg(Quaternion attitude)
+        {
+            var forward = attitude * Vector3.forward;
+            var up = attitude * Vector3.up;
+
+            var levelRight = Vector3.Cross(Vector3.up, forward);
+            if (levelRight.sqrMagnitude < 0.0001f)
+            {
+                // Forward is (near) vertical; roll has no well-defined level reference.
+                return 0f;
+            }
+            levelRight.Normalize();
+            var levelUp = Vector3.Cross(forward, levelRight).normalized;
+
+            return Vector3.SignedAngle(levelUp, up, forward);
+        }
+
+        /// <summary>
+        /// The stone's face normal (the flat underside's outward direction) in world
+        /// space. At the neutral pose this is straight up. Roll, pitch and yaw all show up
+        /// here as one rotated vector, which is what the bounce should read rather than
+        /// decomposed angles it would have to recompose.
+        /// </summary>
+        public static Vector3 FaceNormal(Quaternion attitude) => attitude * Vector3.up;
     }
 }
