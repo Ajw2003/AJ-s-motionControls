@@ -24,8 +24,9 @@ namespace Game
     /// Skip counts are stored as ABSOLUTE counts rather than fractions of anything, and that
     /// is not an oversight of the fractions rule TrailTuning documents. That rule exists
     /// because a threshold in metres-per-second silently stops meaning anything when
-    /// MaxSpeed is retuned. A skip count has no such scale behind it — six skips is six
-    /// skips at any launch speed, and it is the number a player counts out loud.
+    /// SkipConstants.ReferenceSpeed is retuned. A skip count has no such scale behind it —
+    /// six skips is six skips at any launch speed, and it is the number a player counts
+    /// out loud.
     /// </remarks>
     [CreateAssetMenu(menuName = "RockSkipping/Aim Feedback Tuning", fileName = "AimFeedbackTuning")]
     public class AimFeedbackTuning : ScriptableObject
