@@ -486,20 +486,10 @@ console.log('\ncomputeThrowDescriptor');
   for (let i = 0; i <= 10; i++) perfect.push(makeSample(i * 10, i * 3));
   const d = computeThrowDescriptor(perfect);
 
-  check('peak accel is found', near(d.peakAccel, 30));
-  check('swing speed is reported alongside it', d.swingSpeed > 0, d.swingSpeed.toFixed(3));
-  check('power maps swing speed onto 0..1',
-    near(d.power, (d.swingSpeed - ThrowTuning.minSwingSpeed) /
-                  (ThrowTuning.maxSwingSpeed - ThrowTuning.minSwingSpeed), 1e-9),
-    d.power.toFixed(3));
+  check('swing speed is reported, raw m/s', d.swingSpeed > 0, d.swingSpeed.toFixed(3));
+  check('nothing normalises it — no power field on the wire any more', d.power === undefined);
 
-  // The other metric stays available and correct — see ThrowTuning.powerMetric.
-  const byPeak = computeThrowDescriptor(perfect, { ...ThrowTuning, powerMetric: 'peakAccel' });
-  check('peakAccel remains selectable',
-    near(byPeak.power, (30 - ThrowTuning.minPeakAccel) / (ThrowTuning.maxPeakAccel - ThrowTuning.minPeakAccel), 1e-9),
-    byPeak.power.toFixed(3));
-
-  // Nothing scales power down for a slow stop any more. There used to be a
+  // Nothing scales speed down for a slow stop any more. There used to be a
   // timingQuality here cutting launch speed by up to 60% based on how long the phone
   // took to settle after its peak — but a hard swing takes longer to settle, so the
   // penalty fell hardest on the throws that deserved it least. Effort now decides
@@ -507,8 +497,8 @@ console.log('\ncomputeThrowDescriptor');
   const late = [...perfect];
   for (let i = 1; i <= 25; i++) late.push(makeSample(100 + i * 10, 1));
   const dLate = computeThrowDescriptor(late);
-  check('a trailing stop does not weaken the throw', near(dLate.power, d.power),
-    `${dLate.power.toFixed(3)} vs ${d.power.toFixed(3)}`);
+  check('a trailing stop does not weaken the throw', near(dLate.swingSpeed, d.swingSpeed),
+    `${dLate.swingSpeed.toFixed(3)} vs ${d.swingSpeed.toFixed(3)}`);
   check('timing is not a wire field any more', dLate.timingQuality === undefined);
 
   // Ramp to `peakAccel` over `steps` samples, then release.
@@ -521,22 +511,19 @@ console.log('\ncomputeThrowDescriptor');
 
   const harder = computeThrowDescriptor(swing(36));
   const softer = computeThrowDescriptor(swing(14)); // ~2.5x less effort
-  check('a much softer throw measures much softer', softer.power < harder.power * 0.55,
-    `${softer.power.toFixed(3)} vs ${harder.power.toFixed(3)}`);
+  check('a much softer throw measures much softer',
+    softer.swingSpeed < harder.swingSpeed * 0.55,
+    `${softer.swingSpeed.toFixed(3)} vs ${harder.swingSpeed.toFixed(3)}`);
 
-  // The property that actually motivated the change of metric, and the one peak
-  // acceleration is blind to: a short sharp jerk and a long powerful pull reach the
-  // same peak, but the pull puts far more speed into the stone. Peak reports them as
-  // the same throw. Velocity, being the integral, does not.
+  // The property that actually motivated using swing speed over peak acceleration: a
+  // short sharp jerk and a long powerful pull reach the same peak, but the pull puts
+  // far more speed into the stone. Peak acceleration reports them as the same throw.
+  // Velocity, being the integral, does not.
   const jerk = computeThrowDescriptor(swing(30, 10));   // 100ms
   const pull = computeThrowDescriptor(swing(30, 25));   // 250ms, same peak
-  check('a jerk and a pull peak identically', near(jerk.peakAccel, pull.peakAccel),
-    `${jerk.peakAccel} vs ${pull.peakAccel}`);
-  check('peak accel cannot tell them apart',
-    near(normalize01(jerk.peakAccel, ThrowTuning.minPeakAccel, ThrowTuning.maxPeakAccel),
-         normalize01(pull.peakAccel, ThrowTuning.minPeakAccel, ThrowTuning.maxPeakAccel)));
-  check('swing speed does', pull.power > jerk.power * 1.5,
-    `jerk ${jerk.power.toFixed(3)} vs pull ${pull.power.toFixed(3)}`);
+  check('swing speed tells a jerk and a pull apart even though they peak identically',
+    pull.swingSpeed > jerk.swingSpeed * 1.5,
+    `jerk ${jerk.swingSpeed.toFixed(3)} vs pull ${pull.swingSpeed.toFixed(3)}`);
 
   // A limp gesture should not register as a throw at all.
   const fumble = [makeSample(0, 1), makeSample(10, 2), makeSample(20, 1)];
@@ -565,7 +552,8 @@ console.log('\ncomputeThrowDescriptor');
   const dSwung = computeThrowDescriptor(swung);
   check('attitude comes from the stop, raw',
     sameRotation({ w: dSwung.qw, x: dSwung.qx, y: dSwung.qy, z: dSwung.qz }, aboutY(110)));
-  check('power still comes from the peak', near(dSwung.peakAccel, 30));
+  check('swing speed is measured from the swing, not the stop sample', dSwung.swingSpeed > 0,
+    dSwung.swingSpeed.toFixed(3));
 
   // Only the twist about the screen normal counts, and it keeps its sign — see
   // screenSpinRate. The arm-swing components alongside it are not spin.
@@ -624,11 +612,12 @@ console.log('\nbuildAimPayload');
     near(buildAimPayload(spinning, 1, 320).spinRate, 320));
   check('a still phone reports no spin', buildAimPayload(makeSample(0, 20), 1).spinRate === 0);
 
-  // Raw swing speed rides alongside the normalised power field — Unity reads this one
-  // now (see AimPreview.OnAim), power stays only until every caller of it is gone.
-  check('carries raw swing speed, not just normalised power',
-    buildAimPayload(makeSample(0, 20), 1, 0, 0.5, 3.2).swingSpeed === 3.2);
+  // Raw swing speed, not a normalised power — Unity reads this one (see
+  // AimPreview.OnAim), and there is no power field left to disagree with it.
+  check('carries raw swing speed',
+    buildAimPayload(makeSample(0, 20), 1, 0, 3.2).swingSpeed === 3.2);
   check('defaults swing speed to zero', buildAimPayload(makeSample(0, 20), 1).swingSpeed === 0);
+  check('no normalised power field on the wire', buildAimPayload(makeSample(0, 20), 1).power === undefined);
 }
 
 // ------------------------------------------------------------- spin envelope
@@ -698,11 +687,13 @@ console.log('\ncomputeSimulatedThrowDescriptor');
   const brief = computeSimulatedThrowDescriptor(0, mid);
   const long = computeSimulatedThrowDescriptor(5000, mid);
 
-  check('a brief tap gives minimum power', near(brief.power, SimulatedThrow.minPower));
-  check('a long hold saturates at maximum power', near(long.power, SimulatedThrow.maxPower));
-  check('hold duration scales power in between',
-    computeSimulatedThrowDescriptor(600, mid).power > brief.power &&
-    computeSimulatedThrowDescriptor(600, mid).power < long.power);
+  check('a brief tap gives minimum swing speed',
+    near(brief.swingSpeed, SimulatedThrow.minSwingSpeed));
+  check('a long hold saturates at maximum swing speed',
+    near(long.swingSpeed, SimulatedThrow.maxSwingSpeed));
+  check('hold duration scales swing speed in between',
+    computeSimulatedThrowDescriptor(600, mid).swingSpeed > brief.swingSpeed &&
+    computeSimulatedThrowDescriptor(600, mid).swingSpeed < long.swingSpeed);
 
   check('centred randomness gives a dead-straight throw',
     sameRotation({ w: brief.qw, x: brief.qx, y: brief.qy, z: brief.qz }, IDENTITY));
@@ -721,7 +712,7 @@ console.log('\ncomputeSimulatedThrowDescriptor');
 
   check('is flagged as simulated', brief.simulated === true);
   check('reports zero samples, which is the tell on the TV readout',
-    brief.sampleCount === 0 && brief.peakAccel === 0);
+    brief.sampleCount === 0);
 }
 
 // ------------------------------------------------- release() fallback selection
@@ -896,19 +887,18 @@ console.log('\nThrowController: live windup on the aim stream');
     const motion = makeMotion();
     const c = new ThrowController(motion, { aimHz: 1000 });
     c.arm();
-    check('a phone held still reports no windup', c.windup === 0, `${c.windup}`);
+    check('a phone held still reports no windup', c._windSpeed === 0, `${c._windSpeed}`);
 
-    // Accelerate for 200ms at 20 m/s^2, which is about 4 m/s of hand speed — a firm
-    // swing. maxSwingSpeed is 6.5, so this should land high but not saturated.
+    // Accelerate for 200ms at 20 m/s^2, which is about 4 m/s of hand speed — a firm swing.
     for (let i = 1; i <= 10; i++) motion.onSample(makeSample(i * 20, 20));
-    check('swinging raises the windup', c.windup > 0.4 && c.windup < 1,
-      `${c.windup.toFixed(3)}`);
+    check('swinging raises the windup, raw m/s', c._windSpeed > 1,
+      `${c._windSpeed.toFixed(3)}`);
     c.cancel();
   }
 
   // The property that matters most: the live estimate and the release descriptor are
-  // the same quantity on the same scale. They used to be peak-acceleration and
-  // swing-speed respectively, so the arc and the stone could not agree by construction.
+  // the same raw quantity, not two different normalisations of it — so the arc and
+  // the stone cannot disagree by construction.
   {
     const motion = makeMotion();
     const c = new ThrowController(motion, { aimHz: 1000 });
@@ -918,10 +908,10 @@ console.log('\nThrowController: live windup on the aim stream');
     for (let i = 1; i <= 10; i++) swing.push(makeSample(i * 20, 20));
     for (const sample of swing) motion.onSample(sample);
 
-    const live = c.windup;
-    const released = computeThrowDescriptor(swing).power;
-    check('live windup is on the same scale as the throw\'s power',
-      Math.abs(live - released) < 0.12,
+    const live = c._windSpeed;
+    const released = computeThrowDescriptor(swing).swingSpeed;
+    check('live windup is on the same scale as the throw\'s swing speed',
+      Math.abs(live - released) < 0.5,
       `live ${live.toFixed(3)} vs released ${released.toFixed(3)}`);
     c.cancel();
   }
@@ -934,8 +924,8 @@ console.log('\nThrowController: live windup on the aim stream');
     const c = new ThrowController(motion, { aimHz: 1000 });
     c.arm();
     for (let i = 1; i <= 60; i++) motion.onSample(makeSample(i * 20, 1));
-    check('a long calm hold does not accumulate phantom windup', c.windup < 0.05,
-      `${c.windup.toFixed(4)}`);
+    check('a long calm hold does not accumulate phantom windup', c._windSpeed < 0.05,
+      `${c._windSpeed.toFixed(4)}`);
     c.cancel();
   }
 
@@ -951,11 +941,8 @@ console.log('\nThrowController: live windup on the aim stream');
       motion.onSample(sample);
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
-    check('the aim frame carries the windup as power',
-      frames.length > 0 && frames[0].power > 0.4,
-      frames.length ? `${frames[0].power.toFixed(3)}` : 'no frames');
-    check('the aim frame also carries the raw swing speed behind it',
-      frames.length > 0 && frames[0].swingSpeed > 0,
+    check('the aim frame carries the raw swing speed, not a normalised power',
+      frames.length > 0 && frames[0].swingSpeed > 0 && frames[0].power === undefined,
       frames.length ? `${frames[0].swingSpeed.toFixed(3)}` : 'no frames');
     c.cancel();
   }

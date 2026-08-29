@@ -162,7 +162,7 @@ namespace Net
                                 $"face {Game.PhoneAttitude.FaceAngleDeg(attitude),6:F1}°   " +
                                 $"heading {Game.PhoneAttitude.HeadingDeg(attitude),6:F1}°   " +
                                 $"spin {_latestAim.spinRate,5:F0}   " +
-                                $"windup {_latestAim.power:F2}");
+                                $"windup {_latestAim.swingSpeed:F2} m/s");
             }
             else
             {
@@ -189,16 +189,14 @@ namespace Net
             {
                 foreach (var t in _throws)
                 {
-                    GUILayout.Label($"  pow {t.power:F2}  face {FaceAngleOf(t),5:F0}°  " +
-                                    $"spin {t.spinRate,5:F0}  spd {t.swingSpeed:F2}  peak {t.peakAccel:F1}");
+                    GUILayout.Label($"  face {FaceAngleOf(t),5:F0}°  " +
+                                    $"spin {t.spinRate,5:F0}  spd {t.swingSpeed:F2}");
                 }
 
                 GUILayout.Space(6);
                 GUILayout.Label("<b>Repeatability</b> (spread across the above; want under 10%)",
                                 rich);
-                GUILayout.Label($"  power {Spread(_throws.Select(t => t.power))}   " +
-                                $"speed {Spread(_throws.Select(t => t.swingSpeed))}   " +
-                                $"peak {Spread(_throws.Select(t => t.peakAccel))}   " +
+                GUILayout.Label($"  speed {Spread(_throws.Select(t => t.swingSpeed))}   " +
                                 $"face {Spread(_throws.Select(FaceAngleOf))}");
             }
 

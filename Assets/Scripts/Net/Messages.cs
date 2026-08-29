@@ -127,6 +127,7 @@ namespace Net
         public float swingSpeed;
     }
 
+
     /// <summary>
     /// A phone confirming its highlighted stone. Carries no rock id on purpose — the TV
     /// owns the shore layout and therefore the highlight; the tap only means "confirm
@@ -164,10 +165,11 @@ namespace Net
         public string playerId;
 
         /// <summary>
-        /// How hard it was thrown, 0..1. The only thing that decides how far the stone
-        /// goes, how many times it skips and how high it hops.
+        /// Raw wrist speed at release, m/s. Not normalised — the only conversion left is
+        /// SkipConstants.SpeedScale, inside SkipPhysics.CreateLaunch. The only thing that
+        /// decides how far the stone goes, how many times it skips and how high it hops.
         /// </summary>
-        public float power;
+        public float swingSpeed;
 
         /// <summary>Attitude at release, in the phone's frame. See AimMessage.qw.</summary>
         public float qw = 1f;
@@ -176,18 +178,10 @@ namespace Net
         /// <summary>Wrist spin at release, deg/s. Visual only.</summary>
         public float spinRate;
 
-        // Diagnostics from the phone — useful on the debug HUD while tuning. Both power
-        // metrics ride along regardless of which one produced `power`, so a calibration
-        // swing measures them side by side. peakAccel is the raw peak in m/s^2;
-        // swingSpeed is the integrated hand speed in m/s, which is what `power` is
-        // derived from by default. See ThrowTuning.powerMetric on the phone.
-        public float peakAccel;
-        public float swingSpeed;
         public int sampleCount;
 
         public override string ToString() =>
-            $"{playerId}: pow {power:F2} spin {spinRate:F0} " +
-            $"(speed {swingSpeed:F2} m/s, peak {peakAccel:F1} m/s², {sampleCount} samples)";
+            $"{playerId}: speed {swingSpeed:F2} m/s spin {spinRate:F0} ({sampleCount} samples)";
     }
 
     public static class OutboundMessages

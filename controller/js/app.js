@@ -6,7 +6,7 @@
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
-import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
+import { ThrowController, ThrowState, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { PeerLink, Transport } from './peer.js';
 
@@ -92,7 +92,7 @@ const thrower = new ThrowController(motion, {
     sendInput(payload);
     lastThrow = payload;
     ui.throwResult.textContent =
-      `Power ${(payload.power * 100).toFixed(0)}%` +
+      `Speed ${payload.swingSpeed.toFixed(2)} m/s` +
       (payload.simulated ? ' · simulated (no motion sensors)' : '');
   },
   onStateChange: (state) => {
@@ -566,7 +566,7 @@ function updateDebug() {
   if (!ui.debug.classList.contains('visible')) return;
   const s = motion.latest;
   ui.debug.textContent = [
-    `state    ${thrower.state}   seq ${thrower.seq}   windup ${thrower.windup.toFixed(2)}`,
+    `state    ${thrower.state}   seq ${thrower.seq}   windup ${thrower._windSpeed.toFixed(2)} m/s`,
     `socket   ${connection?.status ?? 'not connected'}`,
     `input    ${peer ? peer.transport : 'relay'}${PEER_ENABLED ? '' : '  (?direct=0)'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
@@ -585,14 +585,9 @@ function updateDebug() {
     // and 'exact' are clean, 'filter' still has the rotation artefact in it.
     s ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}` : '',
     lastThrow
-      ? `throw  pow ${lastThrow.power.toFixed(2)}  spin ${lastThrow.spinRate.toFixed(0)}  ` +
+      ? `throw  speed ${lastThrow.swingSpeed.toFixed(2)} m/s  spin ${lastThrow.spinRate.toFixed(0)}  ` +
         `q ${lastThrow.qw.toFixed(2)} ${lastThrow.qx.toFixed(2)} ${lastThrow.qy.toFixed(2)} ${lastThrow.qz.toFixed(2)}`
       : 'no throw yet',
-    // Both metrics, so light/medium/hard swings can be compared directly. If these
-    // three do not separate, the metric is wrong — see ThrowTuning.powerMetric.
-    lastThrow
-      ? `metric speed ${(lastThrow.swingSpeed ?? 0).toFixed(2)} m/s   peak ${lastThrow.peakAccel.toFixed(1)} m/s²   using ${ThrowTuning.powerMetric}`
-      : '',
   ].join('\n');
 }
 

@@ -30,11 +30,6 @@ function attitudeFields(q) {
 }
 
 export const ThrowTuning = {
-  // Peak linear acceleration, m/s^2, mapped onto power 0..1. A gentle underarm
-  // toss sits near the low end; a hard swing saturates the high end.
-  minPeakAccel: 6,
-  maxPeakAccel: 35,
-
   // Below this peak, treat the gesture as a fumble rather than a throw — stops a
   // pocket bump or a shaky hand registering as a real attempt.
   minValidPeakAccel: 3,
@@ -59,19 +54,6 @@ export const ThrowTuning = {
   // leaving the player armed forever.
   maxSwingMs: 900,
 
-  // --- power ---------------------------------------------------------------
-  // Which measurement becomes `power`. 'swingSpeed' integrates acceleration into a
-  // hand speed; 'peakAccel' is the original peak magnitude. Both are always computed
-  // and both cross the wire, so this is a one-word switch and the loser stays
-  // available — see peakSwingSpeed for why the default changed.
-  powerMetric: 'swingSpeed',
-
-  // Hand speed at power 0 and power 1, m/s. Starting estimates only: calibration
-  // replaces them per player, because throwing strength varies far more between
-  // people than any single pair of constants can cover.
-  minSwingSpeed: 0.9,
-  maxSwingSpeed: 6.5,
-
   // --- spin ----------------------------------------------------------------
   // How long a spin peak is held before it has decayed away. Spin is peaky: a
   // wrist flick is over in about 100ms, so a 20Hz aim frame samples it up to 50ms
@@ -94,8 +76,11 @@ export const ThrowTuning = {
 export const SimulatedThrow = {
   minHoldMs: 150,
   maxHoldMs: 1200,
-  minPower: 0.2,
-  maxPower: 0.95,
+
+  // Raw m/s, standing in for a real swing measurement — a hold longer than
+  // minHoldMs synthesizes a harder "throw" between these two.
+  minSwingSpeed: 1.5,
+  maxSwingSpeed: 6,
 
   // Identity attitude is a flat stone facing forward, which SkipTuning treats as a good
   // throw — the ~20 degrees the water wants is applied inside the bounce, not to the
@@ -128,18 +113,13 @@ export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
     0);
 
   return {
-    power: SimulatedThrow.minPower + charge * (SimulatedThrow.maxPower - SimulatedThrow.minPower),
+    swingSpeed: SimulatedThrow.minSwingSpeed +
+      charge * (SimulatedThrow.maxSwingSpeed - SimulatedThrow.minSwingSpeed),
     ...attitudeFields(attitude),
     spinRate: SimulatedThrow.spinRate,
 
-    // No gesture happened, so neither power metric has a real reading. Zero rather
-    // than a plausible-looking number, so a simulated throw can never be mistaken for
-    // measured data during calibration.
-    swingSpeed: 0,
-
     // Zero samples is the tell. A real gesture always has some, so the TV debug
     // readout distinguishes a simulated throw from a genuine one at a glance.
-    peakAccel: 0,
     sampleCount: 0,
     simulated: true,
   };
@@ -181,16 +161,17 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
   if (peak.power < tuning.minValidPeakAccel) return null;
 
   const swingSpeed = peakSwingSpeed(samples, tuning);
-  const power = tuning.powerMetric === 'peakAccel'
-    ? normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel)
-    : normalize01(swingSpeed, tuning.minSwingSpeed, tuning.maxSwingSpeed);
 
   return {
-    // The only thing that decides how far the stone goes. There used to be a
-    // timingQuality alongside this, scaling launch speed by how fast the phone came to
-    // rest after its peak — but a hard swing takes longer to stop, so it landed
-    // hardest on the throws it should have rewarded. Effort and result now agree.
-    power,
+    // Raw m/s. The only thing that decides how far the stone goes — Unity converts
+    // it once, via SkipConstants.SpeedScale. There used to be a normalised `power`
+    // here and a timingQuality alongside it, scaling launch speed by how fast the
+    // phone came to rest after its peak — but a hard swing takes longer to stop, so
+    // it landed hardest on the throws it should have rewarded, and the extra
+    // normalisation was a second lossy conversion of the same measurement Unity was
+    // about to convert again. Effort and result now agree, and there is only one
+    // conversion left, on the Unity side.
+    swingSpeed,
 
     // Unclamped, deliberately. Throwing backwards, sideways or straight up is a
     // legitimate thing to attempt, and clamping quietly rewrote what the player did
@@ -205,12 +186,6 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
     // arrived as roughly zero and the stone never visibly span.
     spinRate: spinRate ?? peakSpinEnvelope(samples, tuning),
 
-    // Diagnostics — useful on the TV debug readout while tuning, ignored by physics.
-    // Both power metrics ride along whichever one is selected, so a calibration swing
-    // measures them side by side and the choice can be made on data rather than
-    // argument. See ThrowTuning.powerMetric.
-    peakAccel: peak.power,
-    swingSpeed,
     sampleCount: samples.length,
   };
 }
@@ -341,7 +316,7 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
  * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
  * this instant's spin, which keeps the function usable on its own and honest either way.
  */
-export function buildAimPayload(sample, seq, spinRate, power = 0, swingSpeed = 0) {
+export function buildAimPayload(sample, seq, spinRate, swingSpeed = 0) {
   if (!sample) return null;
   return {
     type: 'AIM',
@@ -349,14 +324,9 @@ export function buildAimPayload(sample, seq, spinRate, power = 0, swingSpeed = 0
     ...attitudeFields(sample.attitude),
     spinRate: spinRate ?? screenSpinRate(sample.rotationRate),
 
-    // How hard the phone is being swung right now, on exactly the scale the throw's
-    // own `power` uses — see ThrowController.windup. The TV draws the arc at this, so
-    // winding up visibly extends it.
-    power,
-
-    // Raw m/s, the same live measurement `power` above is normalised from — see
-    // ThrowController._windSpeed. Unity reads this one now; `power` rides along only
-    // until every caller of the old normalised field is gone.
+    // Raw m/s — how fast the phone is being swung right now, unnormalised. See
+    // ThrowController._windSpeed. The TV draws the arc at this, so winding up
+    // visibly extends it.
     swingSpeed,
   };
 }
@@ -435,7 +405,7 @@ export class ThrowController {
 
     this._timer = setInterval(() => {
       const payload = buildAimPayload(
-        this.motion.latest, ++this.seq, this._spin, this.windup, this._windSpeed);
+        this.motion.latest, ++this.seq, this._spin, this._windSpeed);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
 
@@ -477,23 +447,6 @@ export class ThrowController {
     this._windVelocity = { x: 0, y: 0, z: 0 };
     this._windSpeed = 0;
     this._setState(ThrowState.IDLE);
-  }
-
-  /**
-   * How hard the phone is being swung right now, 0..1.
-   *
-   * The live counterpart of peakSwingSpeed, and deliberately the same method: integrate
-   * gravity-free acceleration from the last calm sample, hold the running peak, and
-   * normalise through the SAME minSwingSpeed/maxSwingSpeed the release descriptor uses.
-   * That last part is the whole point. The old aim frame carried a `windup` derived from
-   * peak acceleration while the throw derived power from swing speed, so the arc and the
-   * stone were driven by two different normalisations of "how hard" and could not agree.
-   *
-   * It can only ever be an estimate — the swing has not finished, so its peak has not
-   * happened. The preview floors it at a nominal for that reason; see AimPreview.
-   */
-  get windup() {
-    return normalize01(this._windSpeed, this.tuning.minSwingSpeed, this.tuning.maxSwingSpeed);
   }
 
   _trackWindup(sample, dtMs) {
