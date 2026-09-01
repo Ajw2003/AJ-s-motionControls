@@ -169,7 +169,7 @@ not authored clips checked in as assets.
 
 - **Docs drift fast and say so.** Several docs (`PLAN.md` especially) contain explicit
   "Superseded — see X" callouts where a later decision reversed an earlier one (e.g. hosted
-  relay → local-PC relay; URP → built-in render pipeline). Read the callout, not just the
+  relay → local-PC relay; built-in render pipeline → URP). Read the callout, not just the
   original text, and check `docs/` for a more recent doc on the same topic before acting on an
   older one.
 - **`[SerializeField]` defaults are dead on components built via `AddComponent`.** Several
@@ -181,5 +181,11 @@ not authored clips checked in as assets.
   (`SkipTuning`, `RockCatalog`, `RockObject.prefab`, …). New per-rock or per-asset data goes
   under `Assets/Rocks/` (or a similarly named folder) and is pulled in as a normal asset
   reference from something that *is* in `Resources/`, not added to `Resources/` itself.
+- **The project renders through URP** (`com.unity.render-pipelines.universal` 17.3, every quality
+  level in `ProjectSettings/QualitySettings.asset` points at `Resources/RockSkippingUrp.asset`).
+  A Built-in surface shader renders **magenta** here. New shaders must be URP, checked in under
+  `Assets/Resources/`, and loaded with `Resources.Load<Shader>` rather than `Shader.Find` — see the
+  remarks in `Scripts/Game/PlaceholderArt.cs`, which is also the single material factory everything
+  should go through.
 - **`mesh.vertices` is unavailable** on the rock meshes (`RocksRemeshed.fbx.meta` sets
   `isReadable: 0`) — use `mesh.bounds`/`mesh.vertexCount` for any mesh-derived logic.
