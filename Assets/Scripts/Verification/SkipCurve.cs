@@ -428,7 +428,7 @@ namespace Verification
                 $"{offPitch.Skips} skips at pitch {OptimalAttackDeg + 60f:F0} deg " +
                 $"(good throw gets {strong.Skips})");
 
-            // Past MaxRollDeg (SkipPhysics) — the leading edge should catch and the stone
+            // Past SkipConstants.MaxRollDeg — the leading edge should catch and the stone
             // should sink almost immediately rather than skipping normally.
             Check("a badly rolled throw catches and sinks",
                 offRoll.Skips <= 2,

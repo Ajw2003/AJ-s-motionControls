@@ -120,30 +120,12 @@ namespace Game
         /// </summary>
         private const float OptimalAttackDeg = 20f;
 
-        /// <summary>How fast quality falls away on the steep side of the optimum — plowing in
-        /// is the abrupt failure mode, so this is a tight window.</summary>
-        private const float SteepFalloffDeg = 22f;
-
-        /// <summary>How fast quality fades on the shallow side — a weak-lift skim is the
-        /// gradual, survivable failure mode, so this is a wide window.</summary>
-        private const float ShallowFalloffDeg = 55f;
-
-        /// <summary>How fast quality fades outside the roll forgiveness band.</summary>
-        private const float RollFalloffDeg = 35f;
-
-        /// <summary>How fast quality fades outside the yaw (sideslip) forgiveness band.</summary>
-        private const float YawFalloffDeg = 40f;
-
-        /// <summary>Past this bank the leading edge digs in — the stone catches and sinks,
-        /// exactly like a real over-rolled stone does.</summary>
-        private const float MaxRollDeg = 80f;
-
-        /// <summary>
-        /// Steeper than this and the stone plows in instead of skipping. A constant
-        /// rather than a tuning field: it is a statement about what skipping *is*, and
-        /// nobody ever needed to dial it.
-        /// </summary>
-        private const float MaxIncidenceDeg = 45f;
+        // The falloff and hard-limit thresholds that used to live here as private consts are
+        // now fields on SkipConstants (RollFalloffDeg, MaxRollDeg, PitchSteepFalloffDeg,
+        // PitchShallowFalloffDeg, YawFalloffDeg, MaxIncidenceDeg). They decide what counts as
+        // a flat-out failed throw, which is a feel question that has to be answerable without
+        // a recompile. OptimalAttackDeg stays a const below: it is a fact about skipping, not
+        // a preference.
 
         /// <summary>
         /// How much harder a bad bounce is than a clean one. Multiplies the energy loss at
@@ -269,8 +251,8 @@ namespace Game
 
             // Bank far enough and the leading edge digs in — the same normal that gives a
             // level stone its lift is what says an over-rolled one catches and sinks.
-            if (speed < MinSkipSpeed || incidenceDeg > MaxIncidenceDeg
-                || Mathf.Abs(next.RollDeg) + next.WanderDeg > MaxRollDeg)
+            if (speed < MinSkipSpeed || incidenceDeg > constants.MaxIncidenceDeg
+                || Mathf.Abs(next.RollDeg) + next.WanderDeg > constants.MaxRollDeg)
             {
                 next.Sunk = true;
                 next.Velocity = Vector3.zero;
@@ -290,11 +272,11 @@ namespace Game
             // bounce by bounce instead of repeating one frozen launch pose forever.
             var pitchError = next.FaceAngleDeg - OptimalAttackDeg;
             var pitchBand = EffectiveBand(constants.ForgivenessPitchDeg, next.Spin, constants.SpinToleranceScale);
-            var pitchFalloff = pitchError >= 0f ? SteepFalloffDeg : ShallowFalloffDeg;
+            var pitchFalloff = pitchError >= 0f ? constants.PitchSteepFalloffDeg : constants.PitchShallowFalloffDeg;
             var pitchQuality = BandQuality(Mathf.Abs(pitchError) + next.WanderDeg, pitchBand, pitchFalloff);
 
             var rollBand = EffectiveBand(constants.ForgivenessRollDeg, next.Spin, constants.SpinToleranceScale);
-            var rollQuality = BandQuality(Mathf.Abs(next.RollDeg) + next.WanderDeg, rollBand, RollFalloffDeg);
+            var rollQuality = BandQuality(Mathf.Abs(next.RollDeg) + next.WanderDeg, rollBand, constants.RollFalloffDeg);
 
             // Sideslip: how far the velocity has drifted from where the stone was aimed.
             // Zero at launch by construction (CreateLaunch builds velocity straight off
@@ -303,7 +285,7 @@ namespace Game
                 ? Vector3.Angle(horizontal, next.HeadingDir)
                 : 0f;
             var yawBand = EffectiveBand(constants.ForgivenessYawDeg, next.Spin, constants.SpinToleranceScale);
-            var yawQuality = BandQuality(yawErrorDeg, yawBand, YawFalloffDeg);
+            var yawQuality = BandQuality(yawErrorDeg, yawBand, constants.YawFalloffDeg);
 
             var quality = pitchQuality * rollQuality * yawQuality;
 
@@ -317,7 +299,7 @@ namespace Game
             // floored at MinLoss > 0, and the split preserves magnitude exactly
             // (vy^2 + vh^2 = speedAfter^2), so outgoing speed is ALWAYS strictly less than
             // incoming speed — whatever quality, roll, or the rock's multipliers do.
-            var incidenceFactor = Mathf.Clamp01(incidenceDeg / MaxIncidenceDeg);
+            var incidenceFactor = Mathf.Clamp01(incidenceDeg / constants.MaxIncidenceDeg);
             var lossShape = Mathf.Lerp(1f, WorstQualityLossScale, 1f - quality)
                             * Mathf.Lerp(ShallowIncidenceLossScale, SteepIncidenceLossScale, incidenceFactor)
                             * Mathf.Clamp(tuning.HorizontalMultiplier, 0.95f, 1.05f);

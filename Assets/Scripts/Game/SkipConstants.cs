@@ -73,6 +73,36 @@ namespace Game
                  "thing that runs out first, or EnergyLoss silently stops being the dial.")]
         [Range(0.5f, 1f)] public float SpinRetention = 0.99f;
 
+        [Header("Failure — how fast a bad throw stops being a throw")]
+        // These were private consts in SkipPhysics. They are the dials that decide what
+        // counts as a flat-out fail, so they belong where they can be tuned by feel rather
+        // than by recompile. Values here are the originals — exposing them changed nothing.
+        [Tooltip("How fast quality dies once bank is past ForgivenessRollDeg, in degrees. " +
+                 "SMALLER = harsher. Quality hits 0 at (ForgivenessRollDeg + spin bonus + this), " +
+                 "so with the defaults a stone is still skipping at 50 deg of bank. Real stones " +
+                 "catch an edge and stop well before that.")]
+        public float RollFalloffDeg = 35f;
+
+        [Tooltip("Bank past this and the leading edge digs in — instant sink, no bounce. The " +
+                 "hard backstop behind RollFalloffDeg. At the default 80 a stone banked 79 deg " +
+                 "still bounces, which is the main reason badly rolled throws survive.")]
+        public float MaxRollDeg = 80f;
+
+        [Tooltip("How fast quality dies past the pitch band on the STEEP side (nose up). Tight, " +
+                 "because plowing in is an abrupt failure.")]
+        public float PitchSteepFalloffDeg = 22f;
+
+        [Tooltip("How fast quality dies past the pitch band on the SHALLOW side (nose down). " +
+                 "Wide, because a weak skim is a gradual, survivable failure.")]
+        public float PitchShallowFalloffDeg = 55f;
+
+        [Tooltip("How fast quality dies past the yaw (sideslip) band.")]
+        public float YawFalloffDeg = 40f;
+
+        [Tooltip("Arrive at the water steeper than this and the stone plows in and stops, " +
+                 "regardless of how it was held.")]
+        public float MaxIncidenceDeg = 45f;
+
         [Header("Forgiveness")]
         [Tooltip("Nose up/down (PhoneAttitude.FaceAngleDeg). Error inside this band counts " +
                  "as zero; only the excess outside it costs quality. 0 disables forgiveness " +
