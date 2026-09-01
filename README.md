@@ -18,6 +18,7 @@ what currently exists.
 | `docs/` | Project documentation and plans |
 | `docs/PLAN.md` | Full design and implementation plan |
 | `docs/HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
+| `docs/Reference-Constants.md` | Every magic number, hidden constant and serialized field, and which of them must agree across Unity/phone/relay |
 
 ## Status
 
