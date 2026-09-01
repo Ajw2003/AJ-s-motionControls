@@ -71,7 +71,7 @@ namespace Verification
             var report = new StringBuilder();
             report.AppendLine("Skip curve — driven through the real solver.");
             report.AppendLine(
-                $"Constants: SpeedScale {constants.SpeedScale}   WaterLoss {constants.WaterLossCoefficient}   " +
+                $"Constants: SpeedScale {constants.SpeedScale}   EnergyLoss {constants.EnergyLoss}   " +
                 $"forgiveness pitch/roll/yaw {constants.ForgivenessPitchDeg}/{constants.ForgivenessRollDeg}/{constants.ForgivenessYawDeg} deg   " +
                 $"spin tolerance {constants.SpinToleranceScale}   reference speed {constants.ReferenceSpeed} m/s");
             report.AppendLine();

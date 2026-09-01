@@ -43,12 +43,27 @@ namespace Game
         public float RollDeg;
 
         /// <summary>
-        /// How fast the wrist was turning about the phone's screen normal at release,
-        /// deg/s, signed. Mostly visual — it turns the stone on screen — but it also widens
-        /// every forgiveness band (see SkipConstants.SpinToleranceScale): spin buys
-        /// tolerance and nothing else.
+        /// How fast the wrist was turning about the phone's screen normal, deg/s, signed.
+        /// Turns the stone on screen, widens every forgiveness band (see
+        /// SkipConstants.SpinToleranceScale), and — the real work — holds the stone's
+        /// attack angle through each impact. Decays every bounce by
+        /// SkipConstants.SpinRetention, so stability always runs out eventually.
         /// </summary>
         public float Spin;
+
+        /// <summary>
+        /// Accumulated attitude drift, degrees. A real stone skips because spin holds its
+        /// face steady through the slap; without spin it tumbles, the attack angle
+        /// randomises and the run dies in a bounce or two. This is that: every bounce adds
+        /// drift in proportion to how UNstabilised the stone is, and the total is charged
+        /// against the pitch and roll errors, so quality decays over a run at a rate spin
+        /// controls.
+        ///
+        /// It is also what stops attitude being frozen at launch. Before this existed,
+        /// quality was computed once from the release pose and never changed, so nothing
+        /// about a run ever degraded.
+        /// </summary>
+        public float WanderDeg;
 
         public int SkipCount;
         public bool Sunk;
@@ -85,6 +100,15 @@ namespace Game
     /// from level, not from an authored retention constant; and each rock only scales
     /// that geometry with three bounded multipliers. See
     /// docs/plans/Plan-ThrowDrivenSkipModel.md for the full reasoning.
+    ///
+    /// A bounce is ONE ENERGY BUDGET: it takes a loss, then splits what survives between
+    /// forward and upward motion. It never synthesises lift out of horizontal speed. That
+    /// distinction is load-bearing — the earlier version did synthesise it, and stones
+    /// gained energy every bounce and skipped for minutes on end. Because the loss is
+    /// floored at SkipConstants.MinLoss and the split preserves magnitude exactly,
+    /// outgoing speed is always strictly less than incoming speed, no matter what any
+    /// tuning field is set to. Keep it that way: any future change here should be checked
+    /// against that one invariant first. See docs/plans/Plan-SkipEnergyInvariant.md.
     /// </remarks>
     public static class SkipPhysics
     {
@@ -122,19 +146,24 @@ namespace Game
         private const float MaxIncidenceDeg = 45f;
 
         /// <summary>
-        /// The real exit angle a healthy skipping stone leaves the water at — 2-6 degrees.
-        /// Applied to the horizontal speed that survives the bounce, so it never has to be
-        /// corrected for the loss the way an authored pre-loss angle would.
+        /// How much harder a bad bounce is than a clean one. Multiplies the energy loss at
+        /// quality 0; quality 1 pays the authored EnergyLoss unmodified.
         /// </summary>
-        private const float ExitAngleDeg = 5f;
+        private const float WorstQualityLossScale = 2.5f;
 
-        /// <summary>
-        /// Energy a bounce keeps even with zero lift quality — the physical minimum for a
-        /// stone slapping the surface rather than a free parameter. Not zero: at zero the
-        /// stone grinds along the waterline in meaningless skips before the speed floor
-        /// below catches it.
-        /// </summary>
-        private const float MinimalRestitution = 0.25f;
+        /// <summary>Energy-loss scaling at glancing incidence and at the steepest survivable
+        /// incidence. A steeper arrival slaps harder and costs more.</summary>
+        private const float ShallowIncidenceLossScale = 0.8f;
+        private const float SteepIncidenceLossScale = 1.6f;
+
+        /// <summary>Hard ceiling on the share of surviving energy that can go upward. Well
+        /// below 1 — a bounce that sent everything vertical would stop dead in the air.</summary>
+        private const float MaxLiftShare = 0.5f;
+
+        /// <summary>How sharply bank steers the stone, radians of heading change per unit
+        /// sin(roll). A rotation of the horizontal velocity, never an addition to it — see
+        /// the energy remarks in Step.</summary>
+        private const float RollSteerRad = 0.05f;
 
         /// <summary>Below this speed the stone stops skipping and sinks, regardless of angle.</summary>
         private const float MinSkipSpeed = 2.5f;
@@ -195,8 +224,10 @@ namespace Game
                 FaceAngleDeg = pitchDeg,
                 RollDeg = PhoneAttitude.RollDeg(attitude),
                 // Signed. Which way the wrist turned is mostly visual, but it also widens
-                // every forgiveness band — see EffectiveBand.
-                Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.5f, 1.5f),
+                // every forgiveness band (see EffectiveBand) and, above all, stabilises the
+                // stone against tumbling — see SkipState.WanderDeg.
+                Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.8f, 1.2f),
+                WanderDeg = 0f,
                 SkipCount = 0,
                 Sunk = false,
             };
@@ -238,7 +269,8 @@ namespace Game
 
             // Bank far enough and the leading edge digs in — the same normal that gives a
             // level stone its lift is what says an over-rolled one catches and sinks.
-            if (speed < MinSkipSpeed || incidenceDeg > MaxIncidenceDeg || Mathf.Abs(next.RollDeg) > MaxRollDeg)
+            if (speed < MinSkipSpeed || incidenceDeg > MaxIncidenceDeg
+                || Mathf.Abs(next.RollDeg) + next.WanderDeg > MaxRollDeg)
             {
                 next.Sunk = true;
                 next.Velocity = Vector3.zero;
@@ -252,13 +284,17 @@ namespace Game
             // is asymmetric: too shallow fades gradually (a survivable skim), too steep
             // collapses fast (an abrupt plow-in). That asymmetry is the whole reason pitch
             // has two falloff constants instead of one.
+            //
+            // WanderDeg is charged against pitch and roll here: it is the tumble a stone
+            // picks up when spin is not holding it steady, so a poorly spun run degrades
+            // bounce by bounce instead of repeating one frozen launch pose forever.
             var pitchError = next.FaceAngleDeg - OptimalAttackDeg;
             var pitchBand = EffectiveBand(constants.ForgivenessPitchDeg, next.Spin, constants.SpinToleranceScale);
             var pitchFalloff = pitchError >= 0f ? SteepFalloffDeg : ShallowFalloffDeg;
-            var pitchQuality = BandQuality(pitchError, pitchBand, pitchFalloff);
+            var pitchQuality = BandQuality(Mathf.Abs(pitchError) + next.WanderDeg, pitchBand, pitchFalloff);
 
             var rollBand = EffectiveBand(constants.ForgivenessRollDeg, next.Spin, constants.SpinToleranceScale);
-            var rollQuality = BandQuality(next.RollDeg, rollBand, RollFalloffDeg);
+            var rollQuality = BandQuality(Mathf.Abs(next.RollDeg) + next.WanderDeg, rollBand, RollFalloffDeg);
 
             // Sideslip: how far the velocity has drifted from where the stone was aimed.
             // Zero at launch by construction (CreateLaunch builds velocity straight off
@@ -271,29 +307,32 @@ namespace Game
 
             var quality = pitchQuality * rollQuality * yawQuality;
 
-            // Energy loss falls out of geometry: how steeply it hit, and how far off the
-            // face was from a good bounce. No authored retention constant — the rock only
-            // scales the result via HorizontalMultiplier.
+            // ── ONE ENERGY BUDGET ────────────────────────────────────────────────────────
+            // Take the loss first, then split what SURVIVES between forward and upward.
+            // Lift is a share of the post-loss budget, never a quantity synthesised from
+            // horizontal speed — that was the bug this model replaces, where a stone
+            // arriving with vy ~ 0 left with vy = 0.09 * vh and runs never ended.
+            //
+            // The invariant, and it is structural rather than tuned: lossFraction is
+            // floored at MinLoss > 0, and the split preserves magnitude exactly
+            // (vy^2 + vh^2 = speedAfter^2), so outgoing speed is ALWAYS strictly less than
+            // incoming speed — whatever quality, roll, or the rock's multipliers do.
             var incidenceFactor = Mathf.Clamp01(incidenceDeg / MaxIncidenceDeg);
-            var lossFraction = constants.WaterLossCoefficient * Mathf.Lerp(incidenceFactor, 1f, 1f - quality);
-            var speedKept = Mathf.Clamp01(1f - lossFraction) * Mathf.Clamp(tuning.HorizontalMultiplier, 0.5f, 1.5f);
+            var lossShape = Mathf.Lerp(1f, WorstQualityLossScale, 1f - quality)
+                            * Mathf.Lerp(ShallowIncidenceLossScale, SteepIncidenceLossScale, incidenceFactor)
+                            * Mathf.Clamp(tuning.HorizontalMultiplier, 0.9f, 1.1f);
+            var lossFraction = Mathf.Clamp(constants.EnergyLoss * lossShape, constants.MinLoss, 0.95f);
 
-            var velocity = next.Velocity;
-            velocity.x *= speedKept;
-            velocity.z *= speedKept;
+            var speedAfter = speed * Mathf.Sqrt(1f - lossFraction);
 
-            // Roll's two effects, both from the one rotated face normal: lift falls off
-            // with bank (cos), and what remains is deflected sideways (sin), so a banked
-            // throw curves. Not decomposed pitch/roll scalars recomposed later — see the
-            // FaceNormal remarks on SkipState.
+            // Roll scales the lift down (a stone on its edge planes less) via the same
+            // rotated face normal the mesh is drawn with — see SkipState.FaceNormal.
             var rollRad = next.RollDeg * Mathf.Deg2Rad;
-            var rollLiftScale = Mathf.Cos(rollRad);
+            var liftShare = Mathf.Clamp(
+                constants.LiftShare * quality * Mathf.Cos(rollRad) * Mathf.Clamp(tuning.VerticalMultiplier, 0.7f, 1.3f),
+                0f, MaxLiftShare);
 
-            var exitHorizontal = new Vector3(velocity.x, 0f, velocity.z).magnitude;
-            var liftY = exitHorizontal * Mathf.Tan(ExitAngleDeg * Mathf.Deg2Rad) * quality * rollLiftScale
-                        * Mathf.Clamp(tuning.VerticalMultiplier, 0.5f, 1.5f);
-
-            var rise = Mathf.Max(-velocity.y * MinimalRestitution, liftY);
+            var rise = speedAfter * Mathf.Sqrt(liftShare);
             if (rise < MinExitRiseSpeed)
             {
                 next.Sunk = true;
@@ -303,15 +342,23 @@ namespace Game
                 return result;
             }
 
-            // The lateral deflection: what lift there is gets pushed sideways by sin(roll),
-            // banking the whole reaction force the way a real edge-tilted face does.
-            var lateralDir = Vector3.Cross(Vector3.up, next.HeadingDir).normalized;
-            var lateralKick = liftY * Mathf.Sin(rollRad);
-            velocity += lateralDir * lateralKick;
+            // Bank steers by ROTATING the surviving horizontal velocity, not by adding a
+            // lateral kick to it. Same visible curve, but a rotation cannot change the
+            // vector's magnitude, so it cannot smuggle energy in the way the old additive
+            // kick did.
+            var exitHorizontalSpeed = speedAfter * Mathf.Sqrt(1f - liftShare);
+            var heading = horizontalSpeed > 0.0001f ? horizontal / horizontalSpeed : next.HeadingDir;
+            var steered = Quaternion.AngleAxis(
+                Mathf.Sin(rollRad) * RollSteerRad * Mathf.Rad2Deg, Vector3.up) * heading;
 
-            velocity.y = rise;
+            next.Velocity = steered * exitHorizontalSpeed + Vector3.up * rise;
 
-            next.Velocity = velocity;
+            // Spin holds the stone steady; what spin does not cover accumulates as tumble,
+            // and spin itself bleeds off — so stability always runs out and the run ends.
+            var stability = Mathf.Clamp01(Mathf.Abs(next.Spin) / Mathf.Max(constants.SpinForStability, 0.0001f));
+            next.WanderDeg += (1f - stability) * constants.WanderPerBounce;
+            next.Spin *= constants.SpinRetention;
+
             next.SkipCount++;
 
             result.Bounced = true;
