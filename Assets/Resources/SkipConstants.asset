@@ -15,7 +15,12 @@ MonoBehaviour:
   Gravity: 9.81
   WaterY: 0
   SpeedScale: 1.2
-  WaterLossCoefficient: 0.18
+  EnergyLoss: 0.17
+  LiftShare: 0.03
+  MinLoss: 0.05
+  SpinForStability: 400
+  WanderPerBounce: 3
+  SpinRetention: 0.97
   ForgivenessPitchDeg: 12
   ForgivenessRollDeg: 15
   ForgivenessYawDeg: 10

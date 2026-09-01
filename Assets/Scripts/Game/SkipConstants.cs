@@ -26,10 +26,46 @@ namespace Game
         public float SpeedScale = 1f;
 
         [Header("Bounce")]
-        [Tooltip("How lossy the water is, 0..1. The only authored knob behind how much " +
-                 "speed a bounce keeps — the rest falls out of incidence and face-vs-velocity " +
-                 "geometry inside SkipPhysics.Step.")]
-        [Range(0f, 1f)] public float WaterLossCoefficient = 0.18f;
+        [Tooltip("Fraction of kinetic energy the water takes on every bounce — THE one dial " +
+                 "for how many skips a good throw gets.\n\n" +
+                 "The bounce takes this loss first, then splits what survives between forward " +
+                 "and upward motion, so outgoing speed is always less than incoming speed and " +
+                 "a run can never run away.\n\n" +
+                 "Approximate skips for a clean throw:\n" +
+                 "    skips ~= ln(MinSkipSpeed / launchSpeed) / (0.5 * ln(1 - EnergyLoss))\n\n" +
+                 "That is an upper bound — a wobbly (low-spin) throw ends sooner. At the " +
+                 "default 0.17 a 30 m/s swing gives ~25 skips. Raise it for shorter runs, " +
+                 "lower it for longer: 0.10 ~= 30 skips, 0.25 ~= 19.")]
+        [Range(0.02f, 0.6f)] public float EnergyLoss = 0.17f;
+
+        [Tooltip("Share of the energy surviving a bounce that gets redirected upward into the " +
+                 "next hop, before quality/roll/rock scaling. Sets the shape of the arc, not " +
+                 "the length of the run — it is a split of a fixed budget, so raising it buys " +
+                 "higher hops at the cost of forward carry. ~0.03 is a 10-degree exit angle.")]
+        [Range(0.005f, 0.2f)] public float LiftShare = 0.030f;
+
+        [Tooltip("Floor under the per-bounce energy loss, whatever quality and the rock's " +
+                 "multiplier work out to. This is the guarantee that every run ends: energy " +
+                 "strictly falls every bounce, so the stone always reaches MinSkipSpeed " +
+                 "eventually. Do not set to 0.")]
+        [Range(0.01f, 0.3f)] public float MinLoss = 0.05f;
+
+        [Header("Gyroscopic stability")]
+        [Tooltip("Wrist spin, deg/s, at which the stone is fully stabilised. Spin holds a real " +
+                 "stone's attack angle through each impact — below this the stone starts to " +
+                 "tumble (see WanderPerBounce) and the run dies early. Measured phone throws " +
+                 "sit around 200-450 deg/s.")]
+        public float SpinForStability = 400f;
+
+        [Tooltip("Degrees of attitude drift added per bounce when the stone has NO spin, scaled " +
+                 "down to zero at SpinForStability. Drift is added to the pitch and roll errors, " +
+                 "so quality decays over a run and an unspun stone tumbles out in a couple of " +
+                 "bounces — which is exactly what an unspun stone does.")]
+        public float WanderPerBounce = 3f;
+
+        [Tooltip("Fraction of its spin the stone keeps per bounce. Below 1 so even a " +
+                 "well-spun stone eventually loses stability and the run ends on its own.")]
+        [Range(0.5f, 1f)] public float SpinRetention = 0.97f;
 
         [Header("Forgiveness")]
         [Tooltip("Nose up/down (PhoneAttitude.FaceAngleDeg). Error inside this band counts " +
