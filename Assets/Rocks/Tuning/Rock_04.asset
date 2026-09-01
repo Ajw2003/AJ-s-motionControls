@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 15b885944806006408cdb932ac9379de, type: 3}
   m_Name: Rock_04
   m_EditorClassIdentifier: Assembly-CSharp::Game.SkipTuning
-  SpinMultiplier: 0.9
-  VerticalMultiplier: 1.2
-  HorizontalMultiplier: 0.8
+  SpinMultiplier: 1
+  VerticalMultiplier: 1
+  HorizontalMultiplier: 1
   DisplayName: Nugget

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 15b885944806006408cdb932ac9379de, type: 3}
   m_Name: Rock_06
   m_EditorClassIdentifier: Assembly-CSharp::Game.SkipTuning
-  SpinMultiplier: 0.85
-  VerticalMultiplier: 0.75
-  HorizontalMultiplier: 1.15
+  SpinMultiplier: 1
+  VerticalMultiplier: 1
+  HorizontalMultiplier: 1
   DisplayName: Boulder
