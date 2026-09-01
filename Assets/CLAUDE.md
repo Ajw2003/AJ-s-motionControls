@@ -28,8 +28,8 @@ Three independently-run pieces, only one of which lives under `Assets/`:
 | `../docs/` | Design docs, plans, findings — check dates/"Superseded" notes, this project changes hosting/physics decisions often |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
-sensor deltas (`AIM`, `THROW`, `PICK_ROCK`, `ADVANCE`) and receive broadcast state (`SPECTATE`). There is
-no Unity-to-Unity networking.
+sensor deltas (`AIM`, `THROW`, `PICK_ROCK`, `PICK_COLOUR`, `ADVANCE`) and receive broadcast
+state (`SPECTATE`). There is no Unity-to-Unity networking.
 
 ## Running and testing
 
@@ -62,10 +62,9 @@ and `Assets/Scripts/Editor/*`):
 | Menu item | What it does |
 |---|---|
 | `RockSkipping/Verify/Run Event System Verification` | Proves pub/sub survives scene loads; writes `verification-result.txt` at repo root. Headless: see [`../README.md`](../README.md) "Verifying the Unity event system" for the exact `-batchmode` invocation (note: no `-quit`, it enters Play mode). |
-| `RockSkipping/Verify/Print Skip Curve` | Runs `SkipPhysics` power/angle sweeps per rock × tuning set, writes `skip-curve.txt` at repo root — the acceptance check for "is this rock's tuning any good". |
+| `RockSkipping/Verify/Print Skip Curve` | Runs `SkipPhysics` speed/angle/roll sweeps per rock, writes `skip-curve.txt` at repo root — the acceptance check for "is this tuning any good", including the energy invariant every run must satisfy. |
 | `RockSkipping/Rocks/Build Catalog from FBX` | Regenerates `Assets/Rocks/Rock_0N.asset` + `Resources/RockCatalog.asset` from `Resources/Fbx/RocksRemeshed.fbx`. Idempotent — preserves hand-edited display names/tints/tuning refs. |
-| `RockSkipping/Rocks/Seed Authored Tunings` / `Generate Derived Tunings` | Write `Assets/Rocks/Tuning/{Authored,Derived}/<Id>.asset` from the baseline `Resources/SkipTuning.asset`. Authored only writes files that don't exist yet; Derived always overwrites. |
-| `RockSkipping/Rocks/Validate Catalog` | Refuses (and names the offender) if a rock's tuning varies a catalog-wide field — see Tuning rules below. |
+| `RockSkipping/Rocks/Validate Catalog` | Names any rock with no mesh, no tuning, or an id another rock already uses. |
 | `RockSkipping/Rebuild Audio Bank` (+ `(reset tuning)`) | Regenerates `Assets/Scripts/Audio/AudioBank`-driven procedural SFX. |
 | `RockSkipping/Setup/Create Scenes And Build Settings`, `Regenerate Solution And Project Files` | One-time/CI-adjacent project scaffolding. |
 
@@ -139,15 +138,25 @@ driving a *real* throw does that (`RockController`/`RockLauncher`), because the 
 
 ### Rock catalog and tuning (`Assets/Rocks/`, `Scripts/Game/RockDefinition.cs`, `RockCatalog.cs`)
 
-Six rock meshes (`Resources/Fbx/RocksRemeshed.fbx`), each with its own `RockDefinition` asset
-carrying two `SkipTuning` variants — **Authored** (hand-tuned archetype) and **Derived**
-(computed from mesh bounds: flatness/size/elongation) — switchable per-match via
-`MatchSettings.TuningSet` for A/B comparison. **Hard constraint, enforced by
-`RockCatalogBuilder`'s validator:** `Gravity`, `WaterY`, `MinSpeed`, `MaxSpeed`, `FixedStep`
-must be identical across all six rocks in both tuning sets — several systems
-(`WaterRipples`, `SfxDirector`) normalize thresholds against the *global* `MaxSpeed` read once
-at startup, and per-rock variance there would silently desync those. Rock character comes from
-`MinRetention`/`MaxRetention`, angle/tolerance fields, `MinSkipSpeed`, `Restitution` instead.
+Six rock meshes (`Resources/Fbx/RocksRemeshed.fbx`), each with a `RockDefinition` asset holding
+one `SkipTuning` reference (`Assets/Rocks/Tuning/<Id>.asset`, a flat folder).
+
+**A rock owns three numbers and nothing else** — `SpinMultiplier`, `VerticalMultiplier`,
+`HorizontalMultiplier`, all narrowly bounded. Everything that is not a property of one rock
+lives on the single `Resources/SkipConstants.asset`: gravity, water height, the speed scale,
+`EnergyLoss`, the forgiveness bands, `ReferenceSpeed`, the fixed step. That split is the
+constraint — **a global belongs in `SkipConstants`, never on a rock** — and it is structural
+rather than validator-enforced, because a rock has no field to disagree with. Presentation
+(`WaterRipples`, `SfxDirector`, `RockTrail`) normalizes against `SkipConstants.ReferenceSpeed`,
+which is the one speed every such system must agree on.
+
+The **Authored/Derived tuning-set split is gone** (`../docs/plans/Plan-ThrowDrivenSkipModel.md`),
+along with `MatchSettings.TuningSet` and the per-rock `MinSpeed`/`MaxSpeed`/`MinRetention`/
+`MaxRetention`/`Restitution` fields; a stale `tuningSet` key in an old `match-settings.json`
+parses harmlessly and is dropped on the next save. `../docs/Reference-SkipTuning.md` is the
+field-by-field reference, and `../docs/Reference-Constants.md` indexes every constant in the
+project including the ones outside physics.
+
 Full data-flow, wire format, and the shore-pointing selection UI are in
 [`../docs/plans/rock-choosing-system.md`](../docs/plans/rock-choosing-system.md) — this is the
 plan the current `RockChoosing` branch implements; check its "Build log" section for

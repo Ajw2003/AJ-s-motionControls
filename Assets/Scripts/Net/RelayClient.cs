@@ -42,9 +42,12 @@ namespace Net
         /// </summary>
         private const string OverrideFileName = "relay-url.txt";
 
-        [Tooltip("The service every host connects out to. Override per-machine with a " +
-                 "relay-url.txt beside the executable rather than editing this.")]
-        [SerializeField] private string relayUrl = "wss://rockskipping-relay.fly.dev";
+        [Tooltip("Last-resort address, used only when there is no relay-url.txt AND " +
+                 "LocalServices produced no derived address — i.e. when local hosting did " +
+                 "not come up. Points at a relay on this machine, matching " +
+                 "LocalServices.relayPort. Override per-machine with a relay-url.txt " +
+                 "beside the executable rather than editing this.")]
+        [SerializeField] private string relayUrl = "ws://localhost:3000";
 
         [SerializeField] private bool verboseLogging;
 
@@ -70,6 +73,9 @@ namespace Net
 
         /// <summary>A phone confirming its highlighted stone. See PickRockMessage.</summary>
         public event Action<PickRockMessage> PickRockReceived;
+
+        /// <summary>A phone choosing the colour it is drawn in. See PickColourMessage.</summary>
+        public event Action<PickColourMessage> PickColourReceived;
 
         /// <summary>A phone asking the match to move on. See AdvanceMessage.</summary>
         public event Action<AdvanceMessage> AdvanceReceived;
@@ -212,6 +218,18 @@ namespace Net
             }
             else
             {
+                // Reaching here means local hosting did not come up: no relay-url.txt was
+                // written and LocalServices never derived an address. Said out loud
+                // because the fallback still connects on the host's own machine, so the
+                // game looks fine right up until a phone — which cannot resolve
+                // localhost — tries to join.
+                //
+                // The default used to be a hosted relay on Fly.io. That deployment was
+                // deliberately torn down (docs/DOCUMENTATION_AUDIT.md) and this silently
+                // pointed at a dead name for months.
+                Debug.LogWarning($"[RelayClient] No {OverrideFileName} and no derived address — " +
+                                 $"falling back to {relayUrl}. Phones cannot reach this; run " +
+                                 "deploy/local-https.ps1 to host properly.");
                 RelayUrl = relayUrl;
             }
 
@@ -475,6 +493,14 @@ namespace Net
                     var picked = JsonUtility.FromJson<PickRockMessage>(json);
                     if (trustedPlayerId != null) picked.playerId = trustedPlayerId;
                     PickRockReceived?.Invoke(picked);
+                    break;
+                }
+
+                case MessageType.PickColour:
+                {
+                    var colour = JsonUtility.FromJson<PickColourMessage>(json);
+                    if (trustedPlayerId != null) colour.playerId = trustedPlayerId;
+                    PickColourReceived?.Invoke(colour);
                     break;
                 }
 

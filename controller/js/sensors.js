@@ -177,6 +177,20 @@ export function normalize01(value, min, max) {
 export const GRAVITY_MS2 = 9.80665;
 
 /**
+ * Longest gap between two samples that is still worth integrating across, in ms.
+ *
+ * At 60Hz samples land ~17ms apart. A gap this long means the browser stopped
+ * delivering events — the phone was backgrounded, the screen locked, the tab was
+ * throttled — and the motion during it was never measured. Integrating velocity or
+ * attitude across that invents a swing out of a pause, which reads as a throw the
+ * player never made.
+ *
+ * Not to be confused with ThrowTuning.spinEnvelopeTauMs, which is also 250 and means
+ * something entirely unrelated.
+ */
+export const MAX_SAMPLE_GAP_MS = 250;
+
+/**
  * The gravity component an accelerometer reads, in device coordinates, for a device
  * at the given attitude.
  *
@@ -228,7 +242,7 @@ export class GravityFilter {
       // Time-based, so the response no longer depends on how fast the device reports.
       const dtMs = tMs === null || this.lastT === null
         ? 1000 / SAMPLE_HZ
-        : Math.min(Math.max(tMs - this.lastT, 0), 250);
+        : Math.min(Math.max(tMs - this.lastT, 0), MAX_SAMPLE_GAP_MS);
       const k = Math.exp(-dtMs / this.tauMs);
 
       this.gravity.x = k * this.gravity.x + (1 - k) * accel.x;
@@ -490,7 +504,7 @@ export class MotionSource {
 
     // Negative dt means clocks disagreed; a long gap means the phone was backgrounded
     // and integrating across it would fling the aim somewhere arbitrary.
-    if (!rate || dt <= 0 || dt > 0.25) return;
+    if (!rate || dt <= 0 || dt > MAX_SAMPLE_GAP_MS / 1000) return;
 
     const step = quaternionFromRotationVector(
       (rate.beta ?? 0) * DEG2RAD * dt,

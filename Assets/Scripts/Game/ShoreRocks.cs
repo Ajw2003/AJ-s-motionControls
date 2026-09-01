@@ -82,6 +82,7 @@ namespace Game
 
             EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnPlayerLeft);
             EventManager.Instance?.Subscribe<MatchPhaseChangedEvent>(this, OnMatchPhaseChanged);
+            EventManager.Instance?.Subscribe<PlayerColourChangedEvent>(this, OnPlayerColourChanged);
         }
 
         /// <summary>
@@ -238,7 +239,7 @@ namespace Game
             if (!_pointers.TryGetValue(aim.playerId, out var pointer))
             {
                 pointer = new Pointer { TargetYawDeg = yaw, SmoothedYawDeg = yaw };
-                pointer.Marker = CreateMarker(aim.playerId, _pointers.Count);
+                pointer.Marker = CreateMarker(aim.playerId);
                 _pointers[aim.playerId] = pointer;
             }
 
@@ -266,7 +267,7 @@ namespace Game
             if (pointer == null)
             {
                 pointer = new Pointer { HighlightIndex = index, TargetYawDeg = _stones[index].CenterYawDeg, SmoothedYawDeg = _stones[index].CenterYawDeg };
-                pointer.Marker = CreateMarker(message.playerId, _pointers.Count);
+                pointer.Marker = CreateMarker(message.playerId);
                 _pointers[message.playerId] = pointer;
             }
 
@@ -275,6 +276,27 @@ namespace Game
         }
 
         private void OnPlayerLeft(PlayerLeftEvent e) => RemovePointer(e.PlayerId);
+
+        /// <summary>
+        /// Re-tints a dot already on screen, so a colour picked mid-lobby lands immediately
+        /// rather than at the next phase change. A player with no marker yet needs nothing —
+        /// CreateMarker reads the colour when it builds one.
+        /// </summary>
+        private void OnPlayerColourChanged(PlayerColourChangedEvent e)
+        {
+            if (!_pointers.TryGetValue(e.PlayerId, out var pointer) || pointer.Marker == null) return;
+
+            var renderer = pointer.Marker.GetComponent<MeshRenderer>();
+            if (renderer != null && renderer.material != null) renderer.material.color = e.Colour;
+        }
+
+        /// <summary>
+        /// The colour this player owns, or the shore's own highlight colour when the colour
+        /// manager is not running — the same "degrade to the old look" tolerance the rocks
+        /// map in BuildSpectate has.
+        /// </summary>
+        private Color ColourFor(string playerId) =>
+            PlayerColours.HasInstance ? PlayerColours.Instance.For(playerId) : _tuning.HighlightColour;
 
         private void OnMatchPhaseChanged(MatchPhaseChangedEvent e)
         {
@@ -326,10 +348,15 @@ namespace Game
                 var stone = _stones[i];
                 var index = i;
 
-                var confirmedHere = _pointers.Values.Any(p => p.Confirmed && p.ConfirmedIndex == index);
+                // Whose stone this is, if anyone's — kept rather than a bool so the stone
+                // can be tinted toward that player's own colour. This is the first thing
+                // outside the pointer dots to read a player colour, and the hook the rest
+                // of the rock-colouring work is meant to build on.
+                var owner = _pointers.FirstOrDefault(p => p.Value.Confirmed && p.Value.ConfirmedIndex == index).Key;
+                var confirmedHere = owner != null;
                 var highlightedHere = !confirmedHere && _pointers.Values.Any(p => p.HighlightIndex == index);
 
-                stone.Material.color = confirmedHere ? _tuning.ConfirmedColour
+                stone.Material.color = confirmedHere ? ConfirmedColourFor(owner, stone.BaseColour)
                     : highlightedHere ? _tuning.HighlightColour
                     : stone.BaseColour;
 
@@ -339,22 +366,40 @@ namespace Game
 
         // ------------------------------------------------------------------ pointer markers
 
-        private static readonly Color[] PointerPalette =
+        /// <summary>
+        /// A player's dot, in the colour that player owns.
+        /// </summary>
+        /// <remarks>
+        /// This used to take an ordinal — <c>_pointers.Count</c> at the call site — and mix
+        /// it into a hash of the player id to index a palette held here. Every phase change
+        /// clears <c>_pointers</c> (see OnMatchPhaseChanged), so that ordinal was really
+        /// "how many other people had aimed before you, this round": a player's colour moved
+        /// between rounds, and hash-plus-ordinal collided freely inside eight slots. Colour
+        /// is now owned by Managers.PlayerColours, keyed by identity alone, and the palette
+        /// itself lives on the PlayerColourPalette asset where it can be edited.
+        /// </remarks>
+        /// <summary>
+        /// A claimed stone, pulled part-way toward its owner's colour rather than painted
+        /// flat in it: enough to answer "whose is that" across a room, not so much that the
+        /// stone stops looking like stone. The blend is authored on PlayerColourPalette.
+        /// </summary>
+        private Color ConfirmedColourFor(string playerId, Color baseColour)
         {
-            new(0.95f, 0.35f, 0.35f), new(0.35f, 0.75f, 0.95f), new(0.95f, 0.85f, 0.35f),
-            new(0.55f, 0.9f, 0.55f), new(0.85f, 0.5f, 0.95f), new(0.95f, 0.6f, 0.3f),
-            new(0.6f, 0.8f, 0.9f), new(0.9f, 0.9f, 0.9f),
-        };
+            if (!PlayerColours.HasInstance) return _tuning.ConfirmedColour;
 
-        private Transform CreateMarker(string playerId, int ordinal)
+            var palette = PlayerColours.Instance.Palette;
+            if (palette == null) return _tuning.ConfirmedColour;
+
+            return Color.Lerp(baseColour, PlayerColours.Instance.For(playerId), palette.ConfirmedBlend);
+        }
+
+        private Transform CreateMarker(string playerId)
         {
             var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             marker.name = $"Pointer_{playerId}";
             Destroy(marker.GetComponent<Collider>());
 
-            var material = PlaceholderArt.Create(
-                PointerPalette[Mathf.Abs(playerId.GetHashCode() + ordinal) % PointerPalette.Length],
-                PlaceholderArt.StoneQueue);
+            var material = PlaceholderArt.Create(ColourFor(playerId), PlaceholderArt.StoneQueue);
             marker.GetComponent<MeshRenderer>().material = material;
 
             marker.transform.SetParent(transform, false);

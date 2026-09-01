@@ -24,6 +24,7 @@ namespace Net
         public const string Aim = "AIM";
         public const string Throw = "THROW";
         public const string PickRock = "PICK_ROCK";
+        public const string PickColour = "PICK_COLOUR";
         public const string Advance = "ADVANCE";
         public const string Turn = "TURN";
         public const string Spectate = "SPECTATE";
@@ -140,6 +141,30 @@ namespace Net
     }
 
     /// <summary>
+    /// A phone choosing the colour it is drawn in.
+    /// </summary>
+    /// <remarks>
+    /// Unlike PickRockMessage this DOES carry its payload, because the TV cannot know what
+    /// a player wants: a rock pick means "confirm the highlight the TV is already showing",
+    /// but a colour comes off a picker the phone owns and the TV never sees.
+    ///
+    /// Sent as "#rrggbb" rather than three floats. That is what &lt;input type="color"&gt;
+    /// produces natively and what CSS consumes on the way back, so the phone never converts
+    /// and there is no float formatting to get wrong across a culture. Parsed with
+    /// ColorUtility.TryParseHtmlString; an unparseable string is dropped, exactly as
+    /// PickRockMessage's unknown rock id is.
+    ///
+    /// A request, not an instruction — Managers.PlayerColours decides what the player
+    /// actually gets, and the settled colour comes back in the next SPECTATE.
+    /// </remarks>
+    [Serializable]
+    public class PickColourMessage
+    {
+        public string playerId;
+        public string colour;
+    }
+
+    /// <summary>
     /// A phone asking the match to move on — start from the lobby, resume from a re-pick,
     /// or begin the next match from the results screen.
     /// </summary>
@@ -212,6 +237,15 @@ namespace Net
         /// lobby can show what everyone has claimed — not just <paramref name="rockName"/>,
         /// which only ever names the active player's stone. Null is fine; the "rocks" object
         /// is simply empty, which is what a build without RockSelection running degrades to.</param>
+        /// <param name="playerColours">Every player's settled colour, as "#rrggbb", so a phone
+        /// can paint its own accent to match its dot on the TV and tell the other players
+        /// apart in the scores. Null is fine; the "colours" object is simply empty, which is
+        /// what a build without PlayerColours running degrades to — the same tolerance
+        /// <paramref name="playerRocks"/> has.</param>
+        /// <param name="palette">The quick-pick swatches the phone's colour picker offers.
+        /// Sent rather than duplicated in the controller so the palette is authored in one
+        /// place — the PlayerColourPalette asset — and a phone needs no rebuild when it
+        /// changes. Null leaves the picker on its custom-colour input alone.</param>
         /// <param name="choosing">True for a mid-match re-pick pause. Cosmetic only, and the
         /// one thing the phone knows about MatchPhase.Choosing: the wire phase stays "LOBBY"
         /// (see TurnManager.BroadcastSpectate) because a choose screen behaves identically
@@ -223,7 +257,9 @@ namespace Net
             IReadOnlyDictionary<string, int> scores,
             string phase = "PLAYING", int round = 1, int totalRounds = 1,
             IEnumerable<(string PlayerId, string RockId, string RockName)> playerRocks = null,
-            bool choosing = false)
+            bool choosing = false,
+            IEnumerable<KeyValuePair<string, UnityEngine.Color>> playerColours = null,
+            IEnumerable<UnityEngine.Color> palette = null)
         {
             var sb = new StringBuilder(288);
             sb.Append('{')
@@ -264,7 +300,33 @@ namespace Net
                 }
             }
 
-            return sb.Append("}}").ToString();
+            sb.Append("},\"colours\":{");
+
+            if (playerColours != null)
+            {
+                var first = true;
+                foreach (var pair in playerColours)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append($"\"{Escape(pair.Key)}\":\"#{UnityEngine.ColorUtility.ToHtmlStringRGB(pair.Value)}\"");
+                    first = false;
+                }
+            }
+
+            sb.Append("},\"palette\":[");
+
+            if (palette != null)
+            {
+                var first = true;
+                foreach (var colour in palette)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append($"\"#{UnityEngine.ColorUtility.ToHtmlStringRGB(colour)}\"");
+                    first = false;
+                }
+            }
+
+            return sb.Append("]}").ToString();
         }
 
         /// <summary>Minimal JSON string escaping — player names are user-supplied.</summary>

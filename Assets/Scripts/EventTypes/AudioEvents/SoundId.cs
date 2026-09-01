@@ -18,7 +18,11 @@ namespace EventTypes.AudioEvents
         /// <summary>A stone touching the water and coming back off it.</summary>
         Skip,
 
-        /// <summary>Layered on top of Skip at 5, 10, 15 — a run turning into an event.</summary>
+        /// <summary>
+        /// Layered on top of Skip at the milestone counts — a run turning into an event.
+        /// Which counts those are is SfxDirector.milestones; naming them here too just gave
+        /// the two somewhere to disagree, and they did.
+        /// </summary>
         SkipMilestone,
 
         /// <summary>A run that ended naturally. The stone goes under.</summary>

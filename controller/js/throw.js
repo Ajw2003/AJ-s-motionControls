@@ -11,7 +11,9 @@
  * wrong" moment. Keep it: nothing in AIM may feed the simulation.
  */
 
-import { normalize01, screenSpinRate, quaternionFromRotationVector } from './sensors.js';
+import {
+  normalize01, screenSpinRate, quaternionFromRotationVector, MAX_SAMPLE_GAP_MS,
+} from './sensors.js';
 
 /** Identity — the phone as it was held at the tap. A flat stone facing forward. */
 const IDENTITY_ATTITUDE = { w: 1, x: 0, y: 0, z: 0 };
@@ -244,7 +246,7 @@ export function peakSwingSpeed(samples, tuning = ThrowTuning) {
     if (i > peakIdx && samples[i].power <= tuning.stopAccel) break;
 
     const dtMs = samples[i].t - samples[i - 1].t;
-    if (!(dtMs > 0) || dtMs > 250) continue;
+    if (!(dtMs > 0) || dtMs > MAX_SAMPLE_GAP_MS) continue;
 
     const a = samples[i].linear;
     if (!a) continue;
@@ -456,7 +458,7 @@ export class ThrowController {
     // than from the top of the buffer.
     if (sample.power <= this.tuning.stopAccel) {
       this._windVelocity = { x: 0, y: 0, z: 0 };
-    } else if (dtMs > 0 && dtMs <= 250 && sample.linear) {
+    } else if (dtMs > 0 && dtMs <= MAX_SAMPLE_GAP_MS && sample.linear) {
       const dt = dtMs / 1000;
       this._windVelocity = {
         x: this._windVelocity.x + sample.linear.x * dt,

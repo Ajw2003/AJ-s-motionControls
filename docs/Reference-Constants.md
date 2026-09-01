@@ -128,13 +128,29 @@ Defaults for reference:
   `StickyMarginDeg` 3, `PointerSmoothing` 12, `PointerStaleSeconds` 1.5,
   `HighlightScale` 1.12, `HighlightColour`, `ConfirmedColour`.
 
+### `Assets/Scripts/Game/PlayerColourPalette.cs` — player colours
+
+`Resources/PlayerColourPalette.asset`, an authored asset on the `SkipConstants` pattern.
+Owns the eight default swatches plus the rules the host applies to a colour a phone picks
+for itself:
+
+| field | value | what it does |
+|---|---|---|
+| `Swatches` | 8 colours | Handed out furthest-from-everyone-first as players join, and sent to phones as the picker's quick-picks. |
+| `MinSeparation` | 0.08 | How far apart two connected players' colours must be in HSV. A closer pick is rotated in hue, not refused. Set below the palette's own closest pair (yellow/orange, 0.094) so every swatch is a legal pick; a higher value would rotate a player off the swatch they just tapped. 0 disables. |
+| `MinValue` | 0.45 | Brightness floor — below it a dot reads as a hole in the water. |
+| `MinSaturation` | 0.25 | Saturation floor, gentle so white stays a legitimate choice. |
+| `ConfirmedBlend` | 0.65 | How far a claimed stone is pulled toward its owner's colour. The pointed-at-but-unclaimed stone stays on `RockSelectTuning.HighlightColour` — a highlight belongs to whoever is pointing, not to a player. |
+
+These are read by `Managers.PlayerColours`, which is the only source of truth for a player's
+colour. This replaced a `static readonly Color[8]` in `ShoreRocks` indexed by
+`hash(playerId) + <pointers alive when this one was created>` — an ordinal that reset on every
+phase change, so colours moved between rounds and collided freely. Both `notes.txt` colour
+complaints were that one expression.
+
 ### `Assets/Scripts/Game/ShoreRocks.cs`
 
-`PointerPalette` — a hardcoded `static readonly Color[8]` assigned **by join ordinal**. This
-is the source of the player-colour instability noted in `notes.txt` ("player selector colour
-should stick through matches and rounds"): the colour is a function of position in the list,
-not of player identity, so any re-index recolours everyone. Also hardcoded here: label rect
-`(-80, -20, 160, 24)` and the blurb/tick text colours.
+Hardcoded here: label rect `(-80, -20, 160, 24)` and the blurb/tick text colours.
 
 ---
 
@@ -149,7 +165,7 @@ not of player identity, so any re-index recolours everyone. Also hardcoded here:
 | `GRAVITY_MS2` | 9.80665 | Standard gravity, for converting reported acceleration. |
 | `gravityK` default | 0.8 | Low-pass constant for the gravity estimate. Overridable per-session from the URL (`?gravityK=0.92`) so it can be dialled in on a real device — `app.js` reads it into `GRAVITY_K`. |
 | `GravityFilter` `tauMs` | 75 | Constructor default; values <1 are reinterpreted as a per-sample coefficient. |
-| dt clamp | 250 ms | A sample gap longer than this is discarded rather than integrated. Appears three times: `sensors.js` (twice, incl. a 0.25 s gyro-integration guard) and `throw.js` (twice). Not named. |
+| `MAX_SAMPLE_GAP_MS` | 250 | Longest gap still worth integrating across. A longer one means the browser stopped delivering events (backgrounded, screen locked, tab throttled) and the motion was never measured — integrating across it invents a swing out of a pause. Exported from `sensors.js` and used at all four sites; it used to be a bare literal in each, three lines from an unrelated `spinEnvelopeTauMs: 250`. |
 
 ### Throw gesture — `throw.js` (`ThrowTuning`)
 
@@ -237,7 +253,7 @@ with no Newtonsoft dependency — which also forces public fields rather than pr
 removing one is not loud.
 
 `MessageType` string constants: `CREATE_ROOM`, `ROOM_CREATED`, `PLAYER_JOINED`,
-`PLAYER_LEFT`, `AIM`, `THROW`, `PICK_ROCK`, `ADVANCE`, `TURN`, `SPECTATE`, `ERROR`, and the
+`PLAYER_LEFT`, `AIM`, `THROW`, `PICK_ROCK`, `PICK_COLOUR`, `ADVANCE`, `TURN`, `SPECTATE`, `ERROR`, and the
 signalling trio `RTC_OFFER`, `RTC_ANSWER`, `RTC_ICE`. The relay routes the RTC three without
 understanding them — player→host stamped with `playerId`, host→player via `targetPlayerId` —
 which is why adding peer connections needed no relay change.
@@ -251,6 +267,7 @@ which is why adding peer connections needed no relay change.
 | `ErrorMessage` | `code`, `message` |
 | `AimMessage` | `playerId`, `seq`, `qw`/`qx`/`qy`/`qz`, `spinRate`, `swingSpeed` |
 | `PickRockMessage` | `playerId` only |
+| `PickColourMessage` | `playerId`, `colour` as `"#rrggbb"` — the format `<input type="color">` produces and CSS consumes, so the phone never converts and no float formatting can cross a culture. Unlike `PICK_ROCK` it carries its payload: the TV owns the shore highlight, but it cannot know what colour a player wants. A request, not an instruction — `PlayerColours.Pick` decides what they get. |
 | `AdvanceMessage` | `playerId` only |
 | `ThrowMessage` | `playerId`, `swingSpeed`, `qw`/`qx`/`qy`/`qz`, `spinRate`, `sampleCount` |
 
@@ -273,7 +290,11 @@ dictionary:
 
 - `BuildTurn` → `{type, targetPlayerId, yourTurn}`.
 - `BuildSpectate` → `{type, activePlayer, rockName, phase, round, totalRounds, choosing,
-  lastPlayer, lastSkips, lastDistance, scores:{playerId:int}, rocks:{playerId:{rockId, rockName}}}`.
+  lastPlayer, lastSkips, lastDistance, scores:{playerId:int}, rocks:{playerId:{rockId, rockName}},
+  colours:{playerId:"#rrggbb"}, palette:["#rrggbb", …]}`. `colours` is every player's settled
+  colour, so a phone can paint its own accent and tell the others apart in the scores;
+  `palette` is the picker's quick-picks, sent rather than duplicated in the controller so the
+  swatches are authored in one place.
   `phase` is `LOBBY` / `PLAYING` / `RESULTS`; a mid-match re-pick reports `LOBBY` with
   `choosing:true`. `lastPlayer` is named separately from `activePlayer` because the turn has
   already advanced by the time this goes out. Sent on state changes only, **never on a timer**
@@ -462,31 +483,39 @@ which is exactly the kind-2 trap in §"How to read this").
 
 ## 9. Gaps — constants with no rationale recorded anywhere
 
-Carry-over work for a later pass; none of these are broken today.
+Carry-over work; none of these are broken today.
 
-1. **`RelayClient.relayUrl` defaults to `wss://rockskipping-relay.fly.dev`** — a host that was
-   deliberately torn down (`docs/DOCUMENTATION_AUDIT.md`). Harmless in practice because
-   `relay-url.txt` overrides it, but a build shipped without that file points at nothing.
-2. **The 250 ms sample-gap clamp** appears four times across `sensors.js` and `throw.js`,
-   unnamed, with no comment on where 250 came from.
-3. **`AimPreview` placeholder-scene literals** (fog, clip plane, colours, line width) —
+1. **`AimPreview` placeholder-scene literals** (fog, clip plane, colours, line width) —
    uncommented, and expected to be superseded by an authored lake scene.
-4. **`ShoreRocks.PointerPalette` is indexed by ordinal**, which is the likely cause of the
-   colour instability in `notes.txt`. Documented here as a finding, not fixed.
-5. **`AudioManager.voiceCount` 12** — no note on how the number was chosen or what happens on
+2. **`AudioManager.voiceCount` 12** — no note on how the number was chosen or what happens on
    voice starvation.
-6. **`SfxDirector.milestones` `{5,10,15,20}`** vs the `SoundId.SkipMilestone` doc comment,
-   which says "5, 10, 15". The code has a fourth entry the comment does not.
-7. **`AudioBank.Entry.StepCap` 14** and `SemitonesPerStep` — no recorded reasoning for 14.
-8. **`RockSelectTuning.ShoreRadius` 6 / `FanDegrees` 38** — geometry with no note on the
+3. **`AudioBank.Entry.StepCap` 14** and `SemitonesPerStep` — no recorded reasoning for 14.
+4. **`RockSelectTuning.ShoreRadius` 6 / `FanDegrees` 38** — geometry with no note on the
    camera framing they were chosen against.
-9. **`AudioBankBuilder.ClipFolder` points at `Assets/Audio`, which does not exist in the
-   repo** — the folder is gitignored or not yet authored, so the builder finds nothing.
-   (`RockCatalogBuilder`'s paths all resolve.)
-10. **`Assets/CLAUDE.md` still documents retired constants** as a hard constraint: per-rock
-   `MinSpeed`/`MaxSpeed`, `MinRetention`/`MaxRetention`, `Restitution`, and the
-   Authored/Derived tuning-set split. None of those fields exist any more — global values
-   moved to `SkipConstants` and the tuning set was removed
-   (`docs/plans/Plan-ThrowDrivenSkipModel.md`; the dead `tuningSet` key in §5.3 is its
-   last trace). The *rule* it states still holds, just against `ReferenceSpeed` rather than
-   `MaxSpeed`.
+5. **`RockLauncher.cs:201` still tints a thrown stone from `RockDefinition.Tint`**, not from
+   the throwing player's colour. Deliberate for now — colouring the in-flight stone is a
+   readability decision against the water, not a bug — and the API it would need
+   (`PlayerColours.For` plus `PlaceholderArt.Create`) is in place either way.
+
+### Closed by the fixes in this pass
+
+- ~~`RelayClient.relayUrl` pointed at the torn-down Fly.io host~~ — now defaults to
+  `ws://localhost:3000`, matching `LocalServices.relayPort`, and the last-resort branch logs
+  a warning saying phones cannot reach it.
+- ~~The 250 ms sample-gap clamp was an unnamed literal in four places~~ — now
+  `sensors.js`'s exported `MAX_SAMPLE_GAP_MS`.
+- ~~`ShoreRocks.PointerPalette` indexed by ordinal~~ — colours now belong to
+  `Managers.PlayerColours`, keyed by player identity, picked on the phone, with the palette
+  on `Resources/PlayerColourPalette.asset`.
+- ~~`SoundId.SkipMilestone` said "5, 10, 15" against a `{5,10,15,20}` array~~ — the comment
+  now points at `SfxDirector.milestones` instead of restating it.
+- ~~`Assets/CLAUDE.md` documented retired per-rock constants and two removed menu items~~ —
+  its rock-tuning section and menu table now describe the current model.
+
+### Not a gap after all
+
+`AudioBankBuilder.ClipFolder` → `Assets/Audio`. I recorded this as a missing folder; it is
+**generated by design**. `tools/audio/generate-sfx.js` writes there by default, `.gitignore`
+lists every file it produces, and `AudioBankBuilder.Build` already fails with "run
+`node tools/audio/generate-sfx.js` from the repo root first". Run that before the Rebuild
+Audio Bank menu item on a fresh clone.

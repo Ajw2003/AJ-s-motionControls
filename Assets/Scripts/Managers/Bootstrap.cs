@@ -105,6 +105,12 @@ namespace Managers
             // (Part 3's ShoreRocks needs one) can assume the instance already exists.
             _ = RockSelection.Instance;
 
+            // Before TurnManager for the same reason RockSelection is: the broadcast path
+            // asks it for every player's colour. After RelayClient because it subscribes
+            // to PickColourReceived directly — a PICK_COLOUR carries its own payload, so
+            // unlike PICK_ROCK there is no highlight owner to resolve it first.
+            _ = PlayerColours.Instance;
+
             // After RelayClient so it can subscribe before any phone joins, and after
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;

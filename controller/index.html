@@ -112,6 +112,29 @@
     .score-row { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--surface); border-radius: 10px; font-size: 15px; }
     .score-row.active { border-left: 4px solid var(--accent); }
 
+    /* Colour picker. Swatch targets are 44px, the smallest thing a thumb hits
+       reliably on a phone — the same reason the throw button is as large as it is. */
+    .colour-picker { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+    .colour-label { color: var(--muted); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .colour-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .colour-swatch {
+      width: 44px; height: 44px; border-radius: 50%; padding: 0;
+      border: 3px solid transparent; box-shadow: none; cursor: pointer;
+    }
+    /* The ring, not a tick: a checkmark over an arbitrary colour is unreadable on
+       roughly half the palette. */
+    .colour-swatch.selected { border-color: var(--text); }
+    .colour-custom { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+    .colour-custom input[type="color"] {
+      width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
+      background: none; cursor: pointer;
+    }
+
+    /* Every player's colour beside their name in the scores, so the dots on the TV
+       and the names on the phone agree about who is who. */
+    .score-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+    .score-row .name { display: flex; align-items: center; gap: 8px; }
+
     #debug {
       flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 11px;
       color: var(--muted); background: rgba(0,0,0,0.35); padding: 8px 12px;
@@ -141,6 +164,20 @@
     <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
     <p id="chooseRock" class="last-throw"></p>
     <button id="confirmBtn">CONFIRM</button>
+
+    <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
+         duplicated here so there is one palette in the project, editable on the
+         PlayerColourPalette asset. The native picker is deliberate: it is the OS colour
+         wheel on both platforms, needs no library, and this page is served from a local
+         relay with nowhere to load one from. -->
+    <div id="colourPicker" class="colour-picker" hidden>
+      <span class="colour-label">Your colour</span>
+      <div id="colourSwatches" class="colour-swatches"></div>
+      <label class="colour-custom">
+        <span>Custom</span>
+        <input id="colourInput" type="color" value="#ffffff">
+      </label>
+    </div>
     <!-- Advancing the match from a phone, so a couch session never has to go back to
          the host's keyboard. Hidden until a SPECTATE says this phase can be advanced;
          renderAdvance owns the label, because LOBBY on the wire covers both a fresh

@@ -32,6 +32,9 @@ const ui = {
   waitDetail: el('waitDetail'),
   lastThrow: el('lastThrow'),
   scores: el('scores'),
+  colourPicker: el('colourPicker'),
+  colourSwatches: el('colourSwatches'),
+  colourInput: el('colourInput'),
   throwResult: el('throwResult'),
   debug: el('debug'),
   debugToggle: el('debugToggle'),
@@ -261,6 +264,75 @@ function renderAdvance(phase, message) {
 function bindChoose() {
   ui.confirmBtn.addEventListener('click', () => sendInput({ type: 'PICK_ROCK' }));
   ui.recentreBtn.addEventListener('click', () => motion.calibrate());
+  bindColour();
+}
+
+// ---------------------------------------------------------------- colour picking
+
+// The colour this phone last asked for. Not the same thing as the colour it HAS: the
+// host may nudge a pick that is too dark or too close to another player (see
+// PlayerColours.Pick), and what comes back in SPECTATE is the truth. Kept only so the
+// swatch row can show a selection before the round trip completes.
+let requestedColour = null;
+
+// The colour SPECTATE last said is ours, so re-rendering the swatches on every
+// broadcast does not fight a picker the player is mid-drag on.
+let myColour = null;
+
+function pickColour(colour) {
+  requestedColour = colour;
+  applyMyColour(colour);
+  sendInput({ type: 'PICK_COLOUR', colour });
+}
+
+function bindColour() {
+  // 'input' rather than 'change' so dragging around the OS colour wheel previews live.
+  // Cheap: PICK_COLOUR is tiny, it is not on the throw path, and the relay's rate limit
+  // is 60/s against an AIM stream that only runs at 20.
+  ui.colourInput.addEventListener('input', () => pickColour(ui.colourInput.value));
+}
+
+/** Paints this phone's own accent, so the player sees their colour on their device. */
+function applyMyColour(colour) {
+  if (!colour) return;
+  document.documentElement.style.setProperty('--accent', colour);
+  ui.colourInput.value = colour;
+
+  for (const swatch of ui.colourSwatches.children) {
+    swatch.classList.toggle('selected', swatch.dataset.colour === colour.toLowerCase());
+  }
+}
+
+/**
+ * Rebuilds the swatch row from the host's palette.
+ *
+ * The palette comes down the wire rather than being duplicated here: it is authored on
+ * the PlayerColourPalette asset, and a second copy in this file would be the third place
+ * player colours live. Idempotent — SPECTATE repeats constantly, so this returns early
+ * unless the palette actually changed.
+ */
+let renderedPalette = '';
+
+function renderSwatches(palette) {
+  if (!Array.isArray(palette) || palette.length === 0) return;
+
+  const key = palette.join(',');
+  if (key === renderedPalette) return;
+  renderedPalette = key;
+
+  ui.colourSwatches.replaceChildren();
+  for (const colour of palette) {
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'colour-swatch';
+    swatch.dataset.colour = String(colour).toLowerCase();
+    swatch.style.background = colour;
+    swatch.setAttribute('aria-label', `Colour ${colour}`);
+    swatch.addEventListener('click', () => pickColour(colour));
+    ui.colourSwatches.appendChild(swatch);
+  }
+
+  applyMyColour(myColour ?? requestedColour);
 }
 
 function bindGrip() {
@@ -416,12 +488,24 @@ function renderSpectate(message) {
   // Before the LOBBY branch's early return, so the lobby gets its button too.
   renderAdvance(phase, message);
 
+  // Likewise before the early return: the picker lives on the choose screen, and the
+  // colour the host settled on is what this phone should be showing — not the one it
+  // asked for, which PlayerColours may have nudged for legibility or to keep two
+  // players apart.
+  renderSwatches(message.palette);
+  const settled = message.colours?.[myPlayerId];
+  if (settled && settled !== myColour) {
+    myColour = settled;
+    applyMyColour(settled);
+  }
+
   if (phase === 'LOBBY') {
     // SPECTATE repeats throughout the lobby (a player joining or leaving, for
     // instance) — showScreen/startLobbyAim are both idempotent, so re-entering
     // this branch on every one of those pings is harmless.
     showScreen('choose');
     startLobbyAim();
+    ui.colourPicker.hidden = false;
 
     // Only present once ShoreRocks has resolved a highlight for this phone and
     // TurnManager has broadcast it — blank until then, which the CSS collapses.
@@ -435,6 +519,10 @@ function renderSpectate(message) {
   // turn-idle stream a moment after TURN started it — and with it the TV's ghost. TURN
   // is the personalised message, and it already stops the stream for everyone else.
   if (!myTurn) stopPreviewAim();
+
+  // Off the choose screen the picker has nowhere to be — a mid-throw colour change is
+  // allowed by the host but there is no screen real estate for it here.
+  ui.colourPicker.hidden = true;
 
   if (phase === 'RESULTS') {
     const winner = leader(message.scores);
@@ -471,7 +559,23 @@ function renderSpectate(message) {
     // let a name like <H1>OWNED</H1> render as markup on everyone else's screen, held
     // back from worse only by the 16-character cap in sanitizePlayerId.
     const name = document.createElement('span');
-    name.textContent = player;
+    name.className = 'name';
+
+    // Their colour, matching their dot on the TV. A span with a background, never
+    // interpolated markup — the colour string is host-generated, but the name beside
+    // it is not, and keeping both on the textContent path means neither can ever
+    // become markup.
+    const colour = message.colours?.[player];
+    if (colour) {
+      const dot = document.createElement('span');
+      dot.className = 'score-dot';
+      dot.style.background = colour;
+      name.appendChild(dot);
+    }
+
+    const label = document.createElement('span');
+    label.textContent = player;
+    name.appendChild(label);
 
     const points = document.createElement('span');
     points.textContent = score;

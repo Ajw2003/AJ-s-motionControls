@@ -516,7 +516,9 @@ namespace Managers
                 ScoreManager.Instance?.Scores,
                 wirePhase, _round + 1, roundsPerMatch,
                 BuildPlayerRocks(),
-                Phase == MatchPhase.Choosing));
+                Phase == MatchPhase.Choosing,
+                PlayerColours.HasInstance ? PlayerColours.Instance.All : null,
+                PlayerColours.HasInstance ? PlayerColours.Instance.Palette?.Swatches : null));
         }
 
         protected override void OnDestroy()
