@@ -123,22 +123,27 @@ Spin drives skip count at swing 30 / pitch 20:
 |---|---|---|---|---|---|
 | skips | 11 | 13 | 15 | 23 | 25 |
 
-`EnergyLoss` calibration — **0.17 is the default**:
+`EnergyLoss` calibration — **0.20 is the shipped default** (measured at SpinRetention 0.99):
 
-| `EnergyLoss` | swing 10 | 20 | 30 | 40 |
-|---|---|---|---|---|
-| 0.14 | 22 | 26 | 27 | 28 |
-| **0.17** | **18** | **24** | **25** | **26** |
-| 0.20 | 15 | 21 | 23 | 25 |
-| 0.25 | 12 | 17 | 19 | 21 |
+| `EnergyLoss` | skips at a 30 m/s swing |
+|---|---|
+| 0.17 | 29 |
+| **0.20** | **25 (shipped)** |
+| 0.23 | 21 |
+| 0.26 | 18 |
 
-Acceptance criterion holds: base 21 skips, 2× speed 25, maxed rock 23 — **speed wins**.
+**`SpinRetention` had to move too, 0.97 -> 0.99.** At 0.97 spin bled out fast enough that tumble,
+not energy, capped every run: skip count saturated near 30 regardless of throw speed, so doubling
+the swing stopped buying skips and the best rock beat it. That is `EnergyLoss` quietly ceasing to
+be the dial, and it is recorded in the `SpinRetention` tooltip as a trap.
+
+Acceptance criterion holds: base 25 skips / 257 m, 2x speed 31 / 1042 m, best rock 25 / 288 m — **speed wins**.
 
 ## Multiplier ranges must narrow
 
 Skip count goes as `1 / ln(speed factor)` — hyperbolic, the same trap the throw-driven plan was
 written to kill. At the current `[0.5, 1.5]` clamp a rock beats doubling your throw speed. New
-clamps: **Horizontal `[0.9, 1.1]`, Vertical `[0.7, 1.3]`, Spin `[0.8, 1.2]`**.
+clamps: **Horizontal `[0.95, 1.05]`, Vertical `[0.7, 1.3]`, Spin `[0.8, 1.2]`**.
 
 ## Rocks ship neutral — no authored character yet
 
@@ -152,7 +157,7 @@ guessed at.
 
 | File | Change |
 |---|---|
-| `Assets/Scripts/Game/SkipConstants.cs` | `WaterLossCoefficient` → **`EnergyLoss`** (default `0.17`); add `LiftShare`, `SpinForStability`, `WanderPerBounce`, `SpinRetention`, `MinLoss`. Full tooltips. |
+| `Assets/Scripts/Game/SkipConstants.cs` | `WaterLossCoefficient` -> **`EnergyLoss`** (default `0.20`); add `LiftShare`, `SpinForStability`, `WanderPerBounce`, `SpinRetention`, `MinLoss`. Full tooltips. |
 | `Assets/Resources/SkipConstants.asset` | Rename the serialized key, set new defaults. |
 | `Assets/Scripts/Game/SkipPhysics.cs` | The energy-budget bounce; roll as rotation; wander/stability. `SkipState` gains `WanderDeg` and a decaying `Spin`. Delete `ExitAngleDeg`, `MinimalRestitution`. **`Step` stays pure.** |
 | `Assets/Scripts/Game/SkipTuning.cs` | Tooltips on all three multipliers; narrowed `[Range]`s. |
