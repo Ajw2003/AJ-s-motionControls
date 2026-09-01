@@ -38,14 +38,6 @@ namespace EventTypes.SkipEvents
         /// <summary>
         /// How many skips the solver expects this throw to get.
         /// </summary>
-        /// <remarks>
-        /// A prediction, not a result — the run really can end early, and anything keying
-        /// off this must treat it as a hint. Free to carry: Launch already runs Predict to
-        /// derive the per-bounce spin decay, so this reads a number that was computed
-        /// anyway rather than simulating the throw a second time.
-        /// </remarks>
-        public int PredictedSkips { get; }
-
         /// <summary>Face angle at launch, degrees above horizontal — PhoneAttitude.FaceAngleDeg.</summary>
         public float FaceAngleDeg { get; }
 
@@ -59,13 +51,12 @@ namespace EventTypes.SkipEvents
         public float SpinRate { get; }
 
         public RockLaunchedEvent(
-            Vector3 origin, float swingSpeed, float power, int predictedSkips,
+            Vector3 origin, float swingSpeed, float power,
             float faceAngleDeg, float rollDeg, float spinRate)
         {
             Origin = origin;
             SwingSpeed = swingSpeed;
             Power = power;
-            PredictedSkips = predictedSkips;
             FaceAngleDeg = faceAngleDeg;
             RollDeg = rollDeg;
             SpinRate = spinRate;

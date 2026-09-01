@@ -17,18 +17,29 @@ namespace Game
     /// </remarks>
     public class RockController : MonoBehaviour
     {
-        [Tooltip("Fraction of spin remaining by the final skip (0..1)")]
-        [SerializeField] private float targetFinalSpinRetention = 0.001f;
+        [Tooltip("How long the stone keeps turning once it is under, in seconds. A water-drag " +
+                 "time constant, not a target — spin is otherwise entirely the solver's " +
+                 "(SkipConstants.SpinRetention), so this is the only visual-only spin number left.")]
+        [SerializeField] private float underwaterSpinDamping = 0.8f;
 
         [SerializeField] private float despawnDelay = 2.5f;
 
         [Header("Sink")]
-        [Tooltip("How long the stone takes to slip under once the run has ended.")]
-        [SerializeField] private float sinkDuration = 0.6f;
+        [Tooltip("How long the stone takes to slip under after a HARD arrival — it is going " +
+                 "fast, so it goes quickly.")]
+        [SerializeField] private float fastSinkDuration = 0.45f;
 
-        [Tooltip("How far it travels down. Only needs to be far enough to be out of sight — " +
-                 "the water occludes it well before it gets there.")]
-        [SerializeField] private float sinkDepth = 1.5f;
+        [Tooltip("How long it takes after a run simply ends — no momentum left, so it settles " +
+                 "rather than knifing, and needs longer on screen to read as settling instead " +
+                 "of vanishing.")]
+        [SerializeField] private float slowSinkDuration = 1f;
+
+        [Tooltip("How far a hard arrival drives under. Only needs to beat the point where the " +
+                 "water occludes it.")]
+        [SerializeField] private float fastSinkDepth = 2.2f;
+
+        [Tooltip("How far a spent stone slips under.")]
+        [SerializeField] private float slowSinkDepth = 0.9f;
 
         [Tooltip("Beat held after the stone is under, before the turn is allowed to move on. " +
                  "This is the difference between a throw that ENDED and a throw that glitched: " +
@@ -73,7 +84,12 @@ namespace Game
         /// </summary>
         private float _spinAngle;
         private float _spinRate;
-        private float _perBounceSpinRetention = 1.0f;
+
+        /// <summary>
+        /// How fast the stone was travelling when it went in, m/s. Shapes the sink: a hard
+        /// arrival drives deep and quickly, a spent one settles shallow and slowly.
+        /// </summary>
+        private float _sinkImpactSpeed;
 
         /// <summary>
         /// True from the moment the run ends until the settle beat is over. The camera
@@ -121,21 +137,23 @@ namespace Game
             _tuning = tuning;
             _playerId = playerId;
             _origin = state.Position;
-            _spinRate = (state.Spin);
-
-            // Derive spin decay per bounce based on predicted skips
-            var path = new System.Collections.Generic.List<Vector3>();
-            var finalState = Game.SkipPhysics.Predict(state, constants, tuning, path);
-            int totalSkips = finalState.SkipCount;
-            
-            if (totalSkips > 0)
-            {
-                _perBounceSpinRetention = Mathf.Pow(targetFinalSpinRetention, 1.0f / totalSkips);
-            }
-            else
-            {
-                _perBounceSpinRetention = 1.0f;
-            }
+            // Seeded from the solver's own spin, and from here on the solver keeps it.
+            //
+            // This used to run a full SkipPhysics.Predict of the entire throw purely to
+            // learn the skip count, then back-solve a per-bounce decay that would land spin
+            // on an authored 0.001 exactly as the run ended. Nothing about that was
+            // physical: the stone's spin was not decaying BECAUSE of anything, it was being
+            // driven to a predetermined value on a predetermined schedule. It also made the
+            // ending look wrong in a way that depended on the skip count — a throw that
+            // scored zero kept every degree of its spin (the divide-by-zero branch returned
+            // retention 1.0) and knifed under beautifully, while a good throw arrived with
+            // 0.1% of its spin and sat there like a deleted object.
+            //
+            // SkipPhysics already decays spin honestly, by SkipConstants.SpinRetention per
+            // bounce, because spin is load-bearing there: it is the gyroscopic stability
+            // holding the stone's attack angle. Reading that is free, correct, and means
+            // what the player sees is the same number the bounce is judged on.
+            _spinRate = state.Spin;
 
             // In case a previous sink was interrupted — by a despawn landing mid-descent,
             // or a match reset — rather than trusting the last one to have tidied up.
@@ -160,7 +178,7 @@ namespace Game
             var power = state.Velocity.magnitude / Mathf.Max(constants.ReferenceSpeed, 0.0001f);
 
             EventManager.Instance?.Publish(new RockLaunchedEvent(
-                _origin, swingSpeed, power, totalSkips, state.FaceAngleDeg, state.RollDeg, state.Spin));
+                _origin, swingSpeed, power, state.FaceAngleDeg, state.RollDeg, state.Spin));
         }
 
         private void Update()
@@ -181,8 +199,10 @@ namespace Game
 
                     if (step.Bounced)
                     {
-                        // Lose spin on contact with the water
-                        _spinRate *= _perBounceSpinRetention;
+                        // Spin comes off the solver, which already lost some to the water on
+                        // this bounce (SkipConstants.SpinRetention). No second, visual-only
+                        // decay on top — one spin, physically derived, drawn as it is.
+                        _spinRate = _state.Spin;
 
                         // _state is already step.State, and SkipPhysics clamps a bounce to
                         // the water plane, so this position is exactly the contact point.
@@ -199,6 +219,7 @@ namespace Game
                         EventManager.Instance?.Publish(
                             new RockSunkEvent(_state.Position, step.ImpactSpeed, _state.SkipCount));
 
+                        _sinkImpactSpeed = step.ImpactSpeed;
                         Finish();
                         break;
                     }
@@ -232,11 +253,17 @@ namespace Game
 
             if (!IsFlying)
             {
-                // Coast to a stop smoothly over ~0.8 seconds while underwater
-                _spinRate *= Mathf.Exp(-Time.deltaTime / 0.8f);
+                // Water drag once it is under. The only visual-only spin constant left, and
+                // it is a drag time constant rather than a target: the stone slows because
+                // it is in water, not so that it will have stopped by some particular moment.
+                _spinRate *= Mathf.Exp(-Time.deltaTime / underwaterSpinDamping);
             }
 
-            _spinAngle += _spinRate * Time.deltaTime;
+            // Clamped here rather than at the source, so the physics keeps the real rate and
+            // only the DRAWING is limited. Past MaxVisualSpinDegPerSec a flat stone aliases
+            // into a wagon-wheel that appears to turn backwards. This clamp existed but was
+            // never actually applied to the angle — the raw rate was being integrated.
+            _spinAngle += VisualSpin(_spinRate) * Time.deltaTime;
 
             // Attitude on the left, spin on the right: the stone turns about its own face
             // normal, the way a skipping stone does, rather than about the world's up.
@@ -268,7 +295,7 @@ namespace Game
         ///
         /// Destroy is scheduled AFTER the publish rather than alongside Finish. It used to
         /// be set at Finish time on the reasoning that despawnDelay comfortably outlasts
-        /// sinkDuration; that stops being true the moment someone lengthens the settle, and
+        /// the sink; that stops being true the moment someone lengthens the settle, and
         /// the failure mode is the object dying before it publishes, which strands the match
         /// on a turn that never ends. Publishing first makes that unrepresentable.
         /// </remarks>
@@ -328,17 +355,25 @@ namespace Game
             var water = FindFirstObjectByType<WaterRipples>();
             if (water != null) water.SetDepthWriting(true);
 
+            // Shaped by how hard it arrived, because the two endings are genuinely different
+            // events and looked wrong sharing one shape. A stone that plows in still has all
+            // its speed and should be driven deep and fast; a stone whose run simply expired
+            // has none, and hurrying it under is what made a good throw end by vanishing.
+            var hardness = Mathf.Clamp01(_sinkImpactSpeed / Mathf.Max(_constants.ReferenceSpeed, 0.0001f));
+            var duration = Mathf.Lerp(slowSinkDuration, fastSinkDuration, hardness);
+            var depth = Mathf.Lerp(slowSinkDepth, fastSinkDepth, hardness);
+
             var start = transform.position;
-            var end = start + Vector3.down * sinkDepth;
+            var end = start + Vector3.down * depth;
 
             var elapsed = 0f;
-            while (elapsed < sinkDuration)
+            while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
 
                 // Cubic ease-out: it drops away quickly and then slows, the way a stone
                 // losing the last of its momentum into water does. Linear reads as a lift.
-                var t = Mathf.Clamp01(elapsed / Mathf.Max(sinkDuration, 0.0001f));
+                var t = Mathf.Clamp01(elapsed / Mathf.Max(duration, 0.0001f));
                 transform.position = Vector3.Lerp(start, end, 1f - Mathf.Pow(1f - t, 3f));
 
                 yield return null;
