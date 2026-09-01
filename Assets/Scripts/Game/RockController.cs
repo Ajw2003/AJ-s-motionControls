@@ -88,6 +88,13 @@ namespace Game
         /// <summary>Guards ThrowCompletedEvent to exactly one publish. See PublishCompleted.</summary>
         private bool _completed;
 
+        /// <summary>
+        /// The stone's own renderer, switched off the moment it is under. Cached rather
+        /// than fetched in the coroutine so the lookup cannot fail late. Deliberately just
+        /// this one — the trail is a separate renderer and is still fading out.
+        /// </summary>
+        private MeshRenderer _renderer;
+
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
         public float Distance => Vector3.Distance(_origin, _state.Position);
@@ -134,6 +141,11 @@ namespace Game
             // or a match reset — rather than trusting the last one to have tidied up.
             var water = FindFirstObjectByType<WaterRipples>();
             if (water != null) water.SetDepthWriting(false);
+
+            // Cached for the sink to switch off. Re-enabled here as well as cached, so a
+            // pooled or re-launched stone cannot inherit the hidden state of the last one.
+            _renderer = GetComponent<MeshRenderer>();
+            if (_renderer != null) _renderer.enabled = true;
 
             transform.position = state.Position;
             transform.rotation = state.Attitude;
@@ -332,8 +344,20 @@ namespace Game
                 yield return null;
             }
 
-            // Handed back before this object is destroyed. Left on, the next throw's stone
-            // would be cut by the surface again — and the cause would be a coroutine that
+            // Gone the instant it is under, and BEFORE depth writing is handed back. The
+            // stone is not destroyed here — the settle beat and ThrowCompletedEvent still
+            // have to run, and they run on this object's coroutine — so it is hidden
+            // instead and torn down later.
+            //
+            // The order is the bug. The only thing concealing a sunk stone is the water
+            // writing depth; switch that off with the stone still alive 1.5 m down and it
+            // reappears, whole, hanging under the surface. It did that before too, but the
+            // camera had already left, so nobody watched it happen. Holding the shot on
+            // the sink put it on screen.
+            if (_renderer != null) _renderer.enabled = false;
+
+            // Handed back only once nothing is left to conceal. Left on, the next throw's
+            // stone would be cut by the surface — and the cause would be a coroutine that
             // finished on a rock that no longer exists, which is a miserable thing to find.
             if (water != null) water.SetDepthWriting(false);
         }
