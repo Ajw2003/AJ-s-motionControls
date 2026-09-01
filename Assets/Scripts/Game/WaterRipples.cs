@@ -94,6 +94,10 @@ namespace Game
         private void Awake()
         {
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, OnSkipOccurred);
+
+            // The impact that ENDS a run used to be the only one that left no ring on the
+            // water, which is precisely backwards: it is the one the player is looking at.
+            EventManager.Instance?.Subscribe<RockSunkEvent>(this, OnRockSunk);
         }
 
         private void OnDestroy()
@@ -103,7 +107,17 @@ namespace Game
             EventManager.Instance?.UnsubscribeFromAllEvents(this);
         }
 
-        private void OnSkipOccurred(SkipOccurredEvent e)
+        private void OnSkipOccurred(SkipOccurredEvent e) => AddRipple(e.Position, e.Speed);
+
+        /// <summary>
+        /// The final contact. Rung at full strength regardless of how slowly the stone
+        /// arrived — a run usually ends at walking pace, so speed-scaling this the way a
+        /// skip is scaled would produce the faintest ring of the whole throw for the one
+        /// moment that needs to read as an ending.
+        /// </summary>
+        private void OnRockSunk(RockSunkEvent e) => AddRipple(e.Position, _maxImpactSpeed);
+
+        private void AddRipple(Vector3 position, float speed)
         {
             // Oldest out first once full, so a long run of skips keeps the newest rings
             // rather than refusing new ones.
@@ -111,9 +125,9 @@ namespace Game
 
             _ripples.Add(new Ripple
             {
-                Origin = new Vector2(e.Position.x, e.Position.z),
+                Origin = new Vector2(position.x, position.z),
                 StartTime = Time.time,
-                Strength = Mathf.InverseLerp(_minImpactSpeed, _maxImpactSpeed, e.Speed),
+                Strength = Mathf.InverseLerp(_minImpactSpeed, _maxImpactSpeed, speed),
             });
         }
 

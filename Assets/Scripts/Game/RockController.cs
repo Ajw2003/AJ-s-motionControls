@@ -30,6 +30,12 @@ namespace Game
                  "the water occludes it well before it gets there.")]
         [SerializeField] private float sinkDepth = 1.5f;
 
+        [Tooltip("Beat held after the stone is under, before the turn is allowed to move on. " +
+                 "This is the difference between a throw that ENDED and a throw that glitched: " +
+                 "without it the score banks and the next player is up ~16 ms after the stone " +
+                 "touches the water, on top of the sink it is supposed to be reacting to.")]
+        [SerializeField] private float settleHold = 1.2f;
+
         /// <summary>
         /// Ceiling on how fast the stone is drawn turning, in deg/s. Shared with the aim
         /// ghost so the two cannot spin differently.
@@ -68,6 +74,19 @@ namespace Game
         private float _spinAngle;
         private float _spinRate;
         private float _perBounceSpinRetention = 1.0f;
+
+        /// <summary>
+        /// True from the moment the run ends until the settle beat is over. The camera
+        /// follows on <see cref="IsFlying"/> OR this, so it stays with the stone through
+        /// the descent instead of leaving on the frame it stops moving.
+        /// </summary>
+        public bool IsSinking { get; private set; }
+
+        /// <summary>Set once the run has ended, whether or not the settle has finished.</summary>
+        private bool _finished;
+
+        /// <summary>Guards ThrowCompletedEvent to exactly one publish. See PublishCompleted.</summary>
+        private bool _completed;
 
         public bool IsFlying { get; private set; }
         public int SkipCount => _state.SkipCount;
@@ -197,20 +216,62 @@ namespace Game
         private void Finish()
         {
             IsFlying = false;
-
-            EventManager.Instance?.Publish(
-                new ThrowCompletedEvent(_playerId, _state.SkipCount, Distance));
+            IsSinking = true;
+            _finished = true;
 
             Debug.Log($"[Rock] {_playerId}: {_state.SkipCount} skips over {Distance:F1} m");
 
-            // Scheduled here rather than at the end of the sink, so the object's lifetime
-            // stays decoupled from the effect. despawnDelay comfortably outlasts
-            // sinkDuration, and anything hanging off ThrowCompletedEvent still gets its
-            // full window whether the sink runs, is retuned, or is switched off entirely.
-            Destroy(gameObject, despawnDelay);
-
-            StartCoroutine(SinkRoutine());
+            StartCoroutine(SettleRoutine());
         }
+
+        /// <summary>
+        /// Sink, hold, then let the match move on.
+        /// </summary>
+        /// <remarks>
+        /// The ordering here is the whole fix for "a failed throw reads as a glitch".
+        /// ThrowCompletedEvent banks the score and rotates the turn synchronously
+        /// (TurnManager.OnThrowCompleted), so publishing it on the sinking step — which is
+        /// what used to happen — meant the next player was up before the stone had drawn a
+        /// single frame of its descent.
+        ///
+        /// Destroy is scheduled AFTER the publish rather than alongside Finish. It used to
+        /// be set at Finish time on the reasoning that despawnDelay comfortably outlasts
+        /// sinkDuration; that stops being true the moment someone lengthens the settle, and
+        /// the failure mode is the object dying before it publishes, which strands the match
+        /// on a turn that never ends. Publishing first makes that unrepresentable.
+        /// </remarks>
+        private IEnumerator SettleRoutine()
+        {
+            yield return SinkRoutine();
+
+            if (settleHold > 0f) yield return new WaitForSeconds(settleHold);
+
+            IsSinking = false;
+            PublishCompleted();
+
+            Destroy(gameObject, despawnDelay);
+        }
+
+        /// <summary>
+        /// Publishes ThrowCompletedEvent exactly once.
+        /// </summary>
+        /// <remarks>
+        /// Called from the settle routine normally, and from OnDestroy as a backstop: a rock
+        /// that finished its run but was destroyed mid-settle (scene change, match reset)
+        /// would otherwise leave TurnManager waiting for a turn that can never complete.
+        /// Gated on _finished so a rock destroyed while still FLYING stays silent — that is
+        /// a teardown, not a throw, and publishing there would advance the turn spuriously.
+        /// </remarks>
+        private void PublishCompleted()
+        {
+            if (_completed || !_finished) return;
+            _completed = true;
+
+            EventManager.Instance?.Publish(
+                new ThrowCompletedEvent(_playerId, _state.SkipCount, Distance));
+        }
+
+        private void OnDestroy() => PublishCompleted();
 
         /// <summary>
         /// Drops the stone under the surface once its run is over.

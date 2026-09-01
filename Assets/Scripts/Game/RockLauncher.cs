@@ -26,6 +26,12 @@ namespace Game
         private Quaternion _cameraHomeRotation;
         private Vector3 _cameraVelocity;
 
+        /// <summary>
+        /// Latched when the camera starts heading home, so <see cref="_cameraVelocity"/> is
+        /// cleared exactly once at the handover rather than every frame of the return.
+        /// </summary>
+        private bool _returningHome = true;
+
         public RockController ActiveRock => _active;
 
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
@@ -33,10 +39,13 @@ namespace Game
         private void Update()
         {
             EnsureBound();
-            if (_active != null)
-            {
-                FollowActiveRock();
-            }
+
+            // Unconditional, where this used to be gated on _active != null. The rock is
+            // destroyed at the end of its despawn delay, and that used to cut the camera's
+            // return off wherever it had got to — leaving the shot subtly wrong until the
+            // next throw yanked it away. FollowActiveRock handles a null rock by heading
+            // home, so letting it run every frame is what actually finishes the move.
+            FollowActiveRock();
         }
 
         private void OnDestroy()
@@ -112,8 +121,14 @@ namespace Game
         {
             if (_camera == null) return;
 
-            if (_active != null && _active.IsFlying)
+            // IsSinking as well as IsFlying, deliberately. Gating on IsFlying alone meant
+            // the camera turned for home on the exact frame the stone stopped moving — so
+            // the sink it exists to show played entirely off-frame, and a failed throw read
+            // as the screen glitching rather than as a stone going under.
+            if (_active != null && (_active.IsFlying || _active.IsSinking))
             {
+                _returningHome = false;
+
                 // Trail behind the rock on X and Z, but lock Y to the camera's home height
                 var target = new Vector3(
                     _active.transform.position.x - 2f, 
@@ -134,8 +149,26 @@ namespace Game
                 return;
             }
 
-            _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
-            _camera.transform.rotation = Quaternion.Slerp(_camera.transform.rotation, _cameraHomeRotation, Time.deltaTime * 3f);
+            // The chase leaves _cameraVelocity holding the full follow speed — tens of m/s
+            // down +Z on a long throw. Feeding that into the return as its initial velocity
+            // carried the camera FORWARD before it doubled back: the "jerk". Zeroing it once
+            // on the handover is the whole fix, and it must be once rather than every frame
+            // or SmoothDamp can never build up a return.
+            if (!_returningHome)
+            {
+                _returningHome = true;
+                _cameraVelocity = Vector3.zero;
+            }
+
+            _camera.transform.position = Vector3.SmoothDamp(
+                _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
+
+            // Matched to the position curve rather than a raw Time.deltaTime * k slerp,
+            // which is framerate-dependent and settles on a different schedule — the camera
+            // used to arrive facing the wrong way for a moment after it had stopped moving.
+            _camera.transform.rotation = Quaternion.Slerp(
+                _camera.transform.rotation, _cameraHomeRotation,
+                1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(cameraFollowSmoothing * 2f, 0.0001f)));
         }
 
         /// <summary>
