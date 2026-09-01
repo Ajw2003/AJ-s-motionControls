@@ -195,7 +195,27 @@ namespace Game
                 // Only while flying, deliberately. Once the run is over this stops writing
                 // position at all, which is what leaves the transform free for a sink
                 // coroutine to own without Update fighting it back every frame.
-                transform.position = _state.Position;
+                //
+                // Drawn BETWEEN simulation steps, not on them. The solver advances in fixed
+                // increments but frames do not land on those boundaries, so writing the raw
+                // solver position pins the stone to the step rate: at FixedStep 0.02 that is
+                // 50 position updates a second against a 60-144 Hz display, which reads as
+                // stutter however good the trajectory is. _accumulator is exactly the time
+                // already elapsed past the last step, so carrying the stone forward by it
+                // puts the stone where it actually is at draw time.
+                //
+                // This is why smoothness should not be bought by shrinking FixedStep: that
+                // costs the aim preview 4x the work (MaxPredictSteps = PredictSeconds /
+                // FixedStep) for a problem that is not in the physics.
+                var render = _state.Position + _state.Velocity * _accumulator;
+
+                // Never draw it under the surface between steps. The extrapolation is a
+                // straight line but the real path bounces, so on the frames either side of a
+                // contact the line would dip through the water and the stone would flicker
+                // below it.
+                if (render.y < _constants.WaterY) render.y = _constants.WaterY;
+
+                transform.position = render;
             }
 
             if (!IsFlying)
