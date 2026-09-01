@@ -50,7 +50,7 @@ namespace Game
                  "1 / ln(speed kept), which is hyperbolic, so a wide range here would let the " +
                  "rock outweigh how hard the player actually threw — the exact failure the " +
                  "throw-driven model was written to remove. 1.0 is neutral.")]
-        [Range(0.9f, 1.1f)] public float HorizontalMultiplier = 1f;
+        [Range(0.95f, 1.05f)] public float HorizontalMultiplier = 1f;
 
         [Header("Presentation")]
         [Tooltip("Shown on the phones as the rock currently in play. A label, not a knob.")]

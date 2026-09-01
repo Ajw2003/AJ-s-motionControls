@@ -320,7 +320,7 @@ namespace Game
             var incidenceFactor = Mathf.Clamp01(incidenceDeg / MaxIncidenceDeg);
             var lossShape = Mathf.Lerp(1f, WorstQualityLossScale, 1f - quality)
                             * Mathf.Lerp(ShallowIncidenceLossScale, SteepIncidenceLossScale, incidenceFactor)
-                            * Mathf.Clamp(tuning.HorizontalMultiplier, 0.9f, 1.1f);
+                            * Mathf.Clamp(tuning.HorizontalMultiplier, 0.95f, 1.05f);
             var lossFraction = Mathf.Clamp(constants.EnergyLoss * lossShape, constants.MinLoss, 0.95f);
 
             var speedAfter = speed * Mathf.Sqrt(1f - lossFraction);

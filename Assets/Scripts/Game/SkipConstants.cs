@@ -33,10 +33,12 @@ namespace Game
                  "a run can never run away.\n\n" +
                  "Approximate skips for a clean throw:\n" +
                  "    skips ~= ln(MinSkipSpeed / launchSpeed) / (0.5 * ln(1 - EnergyLoss))\n\n" +
-                 "That is an upper bound — a wobbly (low-spin) throw ends sooner. At the " +
-                 "default 0.17 a 30 m/s swing gives ~25 skips. Raise it for shorter runs, " +
-                 "lower it for longer: 0.10 ~= 30 skips, 0.25 ~= 19.")]
-        [Range(0.02f, 0.6f)] public float EnergyLoss = 0.17f;
+                 "That is an upper bound — a wobbly (low-spin) throw ends sooner, because " +
+                 "tumble ends a run before the energy budget does.\n\n" +
+                 "Measured against a 30 m/s swing at the optimal angle: 0.17 ~= 29 skips, " +
+                 "0.20 ~= 25 (the default), 0.23 ~= 21, 0.26 ~= 18. Raise it for shorter runs, " +
+                 "lower it for longer.")]
+        [Range(0.02f, 0.6f)] public float EnergyLoss = 0.20f;
 
         [Tooltip("Share of the energy surviving a bounce that gets redirected upward into the " +
                  "next hop, before quality/roll/rock scaling. Sets the shape of the arc, not " +
@@ -64,8 +66,12 @@ namespace Game
         public float WanderPerBounce = 3f;
 
         [Tooltip("Fraction of its spin the stone keeps per bounce. Below 1 so even a " +
-                 "well-spun stone eventually loses stability and the run ends on its own.")]
-        [Range(0.5f, 1f)] public float SpinRetention = 0.97f;
+                 "well-spun stone eventually loses stability and starts to tumble.\n\n" +
+                 "Lower than ~0.98 and this, rather than EnergyLoss, becomes what ends every " +
+                 "run: spin bleeds out, tumble caps the skip count, and throwing twice as hard " +
+                 "stops buying more skips. Keep it high enough that the energy budget is the " +
+                 "thing that runs out first, or EnergyLoss silently stops being the dial.")]
+        [Range(0.5f, 1f)] public float SpinRetention = 0.99f;
 
         [Header("Forgiveness")]
         [Tooltip("Nose up/down (PhoneAttitude.FaceAngleDeg). Error inside this band counts " +

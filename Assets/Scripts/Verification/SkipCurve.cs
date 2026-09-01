@@ -45,8 +45,13 @@ namespace Verification
         public static string ResultPath =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", "skip-curve.txt"));
 
-        /// <summary>Raw swing speeds swept, m/s — a gentle push through a hard flick.</summary>
-        private static readonly float[] SwingSpeeds = { 1.5f, 2.5f, 4f, 6f, 8f, 10f, 14f };
+        /// <summary>
+        /// Raw swing speeds swept, m/s — a gentle push through a hard flick. Grounded in
+        /// telemetry rather than guessed: real logged throws (rock-throws.csv) run from
+        /// about 10 to 52 m/s at the wrist, so a sweep topping out at 14 was measuring only
+        /// the bottom of the range players actually produce.
+        /// </summary>
+        private static readonly float[] SwingSpeeds = { 3f, 8f, 15f, 25f, 35f, 45f, 55f };
 
         /// <summary>
         /// Face angles swept, degrees above horizontal — straight off the phone, no
@@ -60,8 +65,32 @@ namespace Verification
         /// <summary>The physically optimal attack angle — see SkipPhysics.OptimalAttackDeg.</summary>
         private const float OptimalAttackDeg = 20f;
 
-        /// <summary>A firm, ordinary throw — used wherever the sweep needs to hold speed fixed.</summary>
-        private const float ReferenceSwingSpeed = 6f;
+        /// <summary>A firm, ordinary throw — used wherever the sweep needs to hold speed fixed.
+        /// Near the median of the logged throws.</summary>
+        private const float ReferenceSwingSpeed = 30f;
+
+        /// <summary>
+        /// Wrist spin for a representative throw, deg/s. Spin is no longer cosmetic — it is
+        /// the gyroscopic stability holding the stone's attack angle through each impact
+        /// (SkipConstants.SpinForStability), so sweeping at spin 0 would measure a tumbling
+        /// stone and report every rock as far worse than it plays. Logged throws sit around
+        /// 200-900 deg/s.
+        /// </summary>
+        private const float ReferenceSpinRate = 400f;
+
+        /// <summary>
+        /// How long a verification throw is allowed to run before it counts as never having
+        /// sunk, in seconds. Deliberately far longer than the aim preview's horizon
+        /// (SkipConstants.PredictSeconds): the preview only has to draw an arc, but this
+        /// report has to be able to NOTICE a run that does not end. Measuring against the
+        /// preview's budget is exactly how a solver that never terminated once passed here.
+        /// </summary>
+        private const float TerminationBudgetSeconds = 120f;
+
+        /// <summary>The band a reference throw's skip count must land in for the game to
+        /// feel like skipping rather than either plopping or running away.</summary>
+        private const int MinGoodSkips = 15;
+        private const int MaxGoodSkips = 30;
 
         public static string Build()
         {
@@ -215,18 +244,21 @@ namespace Verification
         /// <summary>
         /// The number the whole model change exists to produce: throw speed must move
         /// skip count more than any per-rock multiplier can. Doubling swing speed is
-        /// compared against driving VerticalMultiplier and HorizontalMultiplier both to
-        /// their upper bound (1.5) at the base speed — the largest change a rock alone
-        /// can make.
+        /// compared against the best rock the tuning ranges can express at the base speed
+        /// — the largest change a rock alone can make.
         /// </summary>
         private static string SpeedVsMultiplierCheck(SkipConstants constants, SkipTuning baseline)
         {
             var lines = new StringBuilder();
 
+            // "Strongest" means best FOR SKIPPING, which is NOT every field at its ceiling:
+            // HorizontalMultiplier scales energy LOSS, so the strongest rock has it at its
+            // floor. Setting it to the maximum would build a deliberately draggy rock and
+            // let this check pass trivially.
             var maxed = SkipTuning.CreateDefault();
-            maxed.SpinMultiplier = 1.5f;
-            maxed.VerticalMultiplier = 1.5f;
-            maxed.HorizontalMultiplier = 1.5f;
+            maxed.SpinMultiplier = 1.2f;
+            maxed.VerticalMultiplier = 1.3f;
+            maxed.HorizontalMultiplier = 0.95f;
 
             var normalSpeed = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, baseline);
             var doubledSpeed = Measure(ReferenceSwingSpeed * 2f, OptimalAttackDeg, 0f, constants, baseline);
@@ -240,11 +272,11 @@ namespace Verification
                              $"{normalSpeed.Skips} skips, {normalSpeed.Distance:F1} m");
             lines.AppendLine($"  2x speed   ({ReferenceSwingSpeed * 2f:F1} m/s, multipliers 1.00) — " +
                              $"{doubledSpeed.Skips} skips, {doubledSpeed.Distance:F1} m");
-            lines.AppendLine($"  maxed rock ({ReferenceSwingSpeed:F1} m/s, multipliers 1.50) — " +
+            lines.AppendLine($"  best rock  ({ReferenceSwingSpeed:F1} m/s, spin 1.20 / vertical 1.30 / horizontal 0.95) — " +
                              $"{maxedMultipliers.Skips} skips, {maxedMultipliers.Distance:F1} m");
             lines.AppendLine();
             lines.AppendLine($"  {(ok ? "PASS" : "FAIL")}  speed vs multiplier — doubling swing speed beats " +
-                             "maxing every multiplier at once");
+                             "the best rock the tuning ranges can express");
             lines.AppendLine();
 
             return lines.ToString();
@@ -258,6 +290,14 @@ namespace Verification
             public float LaunchArcLength;
             public float FirstHopHeight;
             public float SettledHopHeight;
+
+            /// <summary>
+            /// Whether the stone actually sank inside the budget. A run that does not
+            /// terminate is not a slow run, it is a broken solver — and it is the thing this
+            /// report previously could not see, because it stopped counting at the preview's
+            /// horizon and reported whatever number it had reached.
+            /// </summary>
+            public bool Terminated;
         }
 
         /// <summary>
@@ -271,20 +311,22 @@ namespace Verification
         /// it changes bank without touching pitch — the same "one rotated vector" property
         /// SkipPhysics.Step relies on.
         /// </remarks>
-        private static Shape Measure(float swingSpeed, float pitchDeg, float rollDeg, SkipConstants constants, SkipTuning tuning)
+        private static Shape Measure(float swingSpeed, float pitchDeg, float rollDeg, SkipConstants constants,
+            SkipTuning tuning, float spinRate = ReferenceSpinRate)
         {
             var pitchRad = pitchDeg * Mathf.Deg2Rad;
             var forward = new Vector3(0f, Mathf.Sin(pitchRad), Mathf.Cos(pitchRad));
             var level = Quaternion.LookRotation(forward, Vector3.up);
             var attitude = Quaternion.AngleAxis(rollDeg, forward) * level;
 
-            var state = SkipPhysics.CreateLaunch(Vector3.zero, swingSpeed, attitude, 0f, constants, tuning);
+            var state = SkipPhysics.CreateLaunch(Vector3.zero, swingSpeed, attitude, spinRate, constants, tuning);
 
             var contacts = new List<float>();
             var apexes = new List<float>();
             var apex = state.Position.y;
 
-            for (var i = 0; i < constants.MaxPredictSteps; i++)
+            var budget = Mathf.CeilToInt(TerminationBudgetSeconds / Mathf.Max(constants.FixedStep, 0.0001f));
+            for (var i = 0; i < budget; i++)
             {
                 var step = SkipPhysics.Step(state, constants, tuning, constants.FixedStep);
                 state = step.State;
@@ -306,6 +348,7 @@ namespace Verification
             {
                 Skips = state.SkipCount,
                 Distance = Vector3.Distance(Vector3.zero, state.Position),
+                Terminated = state.Sunk,
             };
 
             if (contacts.Count > 0)
@@ -340,6 +383,27 @@ namespace Verification
                 if (!ok) passed = false;
                 lines.AppendLine($"  {(ok ? "PASS" : "FAIL")}  {label} — {detail}");
             }
+
+            // The check that did not exist when the solver shipped a bounce that created
+            // energy. Every throw here must actually SINK inside TerminationBudgetSeconds.
+            // A run that does not end is not a long run, it is a broken solver, and the old
+            // report could not tell the difference because it stopped counting at the aim
+            // preview's horizon and printed whatever number it had reached by then.
+            var everyRunEnds = soft.Terminated && mid.Terminated && hard.Terminated
+                               && offPitch.Terminated && offRoll.Terminated && strong.Terminated;
+            Check("every throw sinks — no runaway",
+                everyRunEnds,
+                everyRunEnds
+                    ? $"all runs ended inside {TerminationBudgetSeconds:F0} s"
+                    : $"a run was STILL FLYING after {TerminationBudgetSeconds:F0} s — the bounce is " +
+                      "returning more energy than it received");
+
+            // Skip count has to be an absolute number, not just bigger than the last one.
+            // Purely relative checks are how 130-skip runs passed review.
+            Check("a good throw lands in the intended skip band",
+                strong.Skips >= MinGoodSkips && strong.Skips <= MaxGoodSkips,
+                $"{strong.Skips} skips at {ReferenceSwingSpeed:F0} m/s " +
+                $"(want {MinGoodSkips}-{MaxGoodSkips}; tune SkipConstants.EnergyLoss)");
 
             Check("harder goes further",
                 soft.Distance < mid.Distance && mid.Distance < hard.Distance,
