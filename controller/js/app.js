@@ -34,6 +34,8 @@ const ui = {
   scores: el('scores'),
   colourPicker: el('colourPicker'),
   colourSwatches: el('colourSwatches'),
+  colourDefaultBtn: el('colourDefaultBtn'),
+  colourDefaultDot: el('colourDefaultDot'),
   colourInput: el('colourInput'),
   throwResult: el('throwResult'),
   debug: el('debug'),
@@ -290,6 +292,20 @@ function bindColour() {
   // Cheap: PICK_COLOUR is tiny, it is not on the throw path, and the relay's rate limit
   // is 60/s against an AIM stream that only runs at 20.
   ui.colourInput.addEventListener('input', () => pickColour(ui.colourInput.value));
+
+  ui.colourDefaultBtn.addEventListener('click', () => setSwatchesOpen(ui.colourSwatches.hidden));
+}
+
+/**
+ * Opens or closes the palette sub-menu.
+ *
+ * One function so the row's visibility and the button's ring can never disagree —
+ * aria-expanded is what the CSS keys the ring off, so a stray `hidden` assignment
+ * elsewhere would leave a closed menu wearing an open button.
+ */
+function setSwatchesOpen(open) {
+  ui.colourSwatches.hidden = !open;
+  ui.colourDefaultBtn.setAttribute('aria-expanded', String(open));
 }
 
 /** Paints this phone's own accent, so the player sees their colour on their device. */
@@ -328,11 +344,27 @@ function renderSwatches(palette) {
     swatch.dataset.colour = String(colour).toLowerCase();
     swatch.style.background = colour;
     swatch.setAttribute('aria-label', `Colour ${colour}`);
-    swatch.addEventListener('click', () => pickColour(colour));
+    // Closing on the pick, not on pickColour itself: the OS wheel fires pickColour on
+    // every frame of a drag, and a menu that shut mid-drag would be its own bug.
+    swatch.addEventListener('click', () => {
+      pickColour(colour);
+      setSwatchesOpen(false);
+    });
     ui.colourSwatches.appendChild(swatch);
   }
 
+  // The Default button previews what is behind it — a slice per palette colour, so it
+  // reads as "the presets" rather than as a second copy of the Custom swatch.
+  ui.colourDefaultDot.style.background = paletteGradient(palette);
+
   applyMyColour(myColour ?? requestedColour);
+}
+
+/** Equal conic slices, one per palette colour, as a CSS background value. */
+function paletteGradient(palette) {
+  const slice = 360 / palette.length;
+  const stops = palette.map((colour, i) => `${colour} ${i * slice}deg ${(i + 1) * slice}deg`);
+  return `conic-gradient(${stops.join(', ')})`;
 }
 
 function bindGrip() {
@@ -521,8 +553,11 @@ function renderSpectate(message) {
   if (!myTurn) stopPreviewAim();
 
   // Off the choose screen the picker has nowhere to be — a mid-throw colour change is
-  // allowed by the host but there is no screen real estate for it here.
+  // allowed by the host but there is no screen real estate for it here. Collapsed as
+  // well as hidden, so a mid-match re-pick opens on the compact two-button row rather
+  // than restoring a sub-menu left open several minutes ago.
   ui.colourPicker.hidden = true;
+  setSwatchesOpen(false);
 
   if (phase === 'RESULTS') {
     const winner = leader(message.scores);

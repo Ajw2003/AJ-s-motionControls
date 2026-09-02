@@ -124,11 +124,36 @@
     /* The ring, not a tick: a checkmark over an arbitrary colour is unreadable on
        roughly half the palette. */
     .colour-swatch.selected { border-color: var(--text); }
-    .colour-custom { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
-    .colour-custom input[type="color"] {
-      width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
-      background: none; cursor: pointer;
+
+    /* The two ways in, side by side and the same weight, so neither reads as the
+       main one. Both are the same 44px circle as a swatch. */
+    .colour-modes { display: flex; gap: 24px; justify-content: center; }
+    /* font: inherit as well as the colour reset — the generic `button` rule above is
+       700-weight uppercase, and Default is a peer of the Custom <label>, not a CTA. */
+    .colour-mode {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      background: none; box-shadow: none; padding: 0; border: none;
+      color: var(--muted); font: inherit; font-size: 13px; font-weight: 400;
+      text-transform: none; cursor: pointer;
     }
+    .colour-mode-dot {
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 3px solid transparent; overflow: hidden; flex: 0 0 auto;
+    }
+    /* Same ring as a selected swatch, borrowed for "this sub-menu is open" — one
+       visual idiom for "you are here" rather than two. */
+    .colour-mode[aria-expanded="true"] .colour-mode-dot { border-color: var(--text); }
+    /* appearance:none and the oversize box because Chromium draws the native colour
+       input as an inset rounded rectangle inside its own padding — left alone it shows
+       as a square in a round hole no matter what the wrapper clips. */
+    .colour-mode-dot--custom input[type="color"] {
+      appearance: none; -webkit-appearance: none;
+      display: block; width: 150%; height: 150%; margin: -25%;
+      padding: 0; border: none; background: none; cursor: pointer;
+    }
+    .colour-mode-dot--custom input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    .colour-mode-dot--custom input[type="color"]::-webkit-color-swatch { border: none; }
+    .colour-mode-dot--custom input[type="color"]::-moz-color-swatch { border: none; }
 
     /* Every player's colour beside their name in the scores, so the dots on the TV
        and the names on the phone agree about who is who. */
@@ -167,16 +192,28 @@
 
     <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
          duplicated here so there is one palette in the project, editable on the
-         PlayerColourPalette asset. The native picker is deliberate: it is the OS colour
-         wheel on both platforms, needs no library, and this page is served from a local
-         relay with nowhere to load one from. -->
+         PlayerColourPalette asset. They live behind the Default button rather than on
+         the screen: the full palette is eight 44px circles, which wraps to two rows on
+         a phone and pushes the advance buttons off the comfortable part of the thumb's
+         reach. The native picker is deliberate: it is the OS colour wheel on both
+         platforms, needs no library, and this page is served from a local relay with
+         nowhere to load one from. -->
     <div id="colourPicker" class="colour-picker" hidden>
       <span class="colour-label">Your colour</span>
-      <div id="colourSwatches" class="colour-swatches"></div>
-      <label class="colour-custom">
-        <span>Custom</span>
-        <input id="colourInput" type="color" value="#ffffff">
-      </label>
+      <div class="colour-modes">
+        <button id="colourDefaultBtn" type="button" class="colour-mode"
+                aria-expanded="false" aria-controls="colourSwatches">
+          <span id="colourDefaultDot" class="colour-mode-dot"></span>
+          <span>Default</span>
+        </button>
+        <label class="colour-mode">
+          <span class="colour-mode-dot colour-mode-dot--custom">
+            <input id="colourInput" type="color" value="#ffffff">
+          </span>
+          <span>Custom</span>
+        </label>
+      </div>
+      <div id="colourSwatches" class="colour-swatches" hidden></div>
     </div>
     <!-- Advancing the match from a phone, so a couch session never has to go back to
          the host's keyboard. Hidden until a SPECTATE says this phase can be advanced;
