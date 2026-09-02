@@ -119,5 +119,17 @@ namespace RockSkippingEditor
             // poll for that file rather than wait on the process — exiting the editor from
             // the domain reload that follows play mode is unreliable in batchmode.
         }
+
+        /// <summary>
+        /// Measure what the current tuning actually does. Writes skip-curve.txt at the
+        /// project root; see <see cref="SkipCurve"/> for how to read it.
+        /// </summary>
+        /// <remarks>
+        /// No play mode and no scene: SkipPhysics is pure and the tuning comes from
+        /// Resources, so this runs and finishes inside the menu click. That is the point —
+        /// retuning should cost a click, not a session.
+        /// </remarks>
+        [MenuItem("RockSkipping/Verify/Print Skip Curve")]
+        public static void PrintSkipCurve() => SkipCurve.Run();
     }
 }

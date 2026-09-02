@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b77e32e4e8ad0626de3c6dbc2d6c557, type: 3}
+  m_Name: SkipConstants
+  m_EditorClassIdentifier: Assembly-CSharp::Game.SkipConstants
+  Gravity: 9.81
+  WaterY: 0
+  SpeedScale: 1.2
+  EnergyLoss: 0.2
+  LiftShare: 0.03
+  MinLoss: 0.05
+  SpinForStability: 400
+  WanderPerBounce: 3
+  SpinRetention: 0.5
+  RollFalloffDeg: 20
+  MaxRollDeg: 30
+  PitchSteepFalloffDeg: 22
+  PitchShallowFalloffDeg: 55
+  YawFalloffDeg: 40
+  MaxIncidenceDeg: 45
+  ForgivenessPitchDeg: 0
+  ForgivenessRollDeg: 0
+  ForgivenessYawDeg: 0
+  SpinToleranceScale: 0.01
+  ReferenceSpeed: 30
+  FixedStep: 0.02
+  PredictSeconds: 22

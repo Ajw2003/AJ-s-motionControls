@@ -18,15 +18,121 @@
 // Pure math — no browser APIs below this line until the MotionSource section.
 // ---------------------------------------------------------------------------
 
+// --------------------------------------------------------------- quaternions
+//
+// Orientation is handled as quaternions rather than as three independent Euler
+// deltas, and that is not a stylistic preference — the Euler version was broken in
+// the exact pose this game is played in.
+//
+// DeviceOrientationEvent reports intrinsic Z-X'-Y'' Tait-Bryan angles with beta in
+// [-180, 180) and gamma confined to [-90, 90). beta = 90 is "phone upright, screen
+// facing you", which is how you hold a phone to aim at a television. So the grip
+// reference sits ON the gimbal singularity, not near it, and three things go wrong at
+// once: alpha and gamma become individually indeterminate (only their sum is real, so
+// sensor noise alone swings aim by tens of degrees); the browser's branch selection
+// flips and injects genuine 180-degree steps; and beta's derivative mirrors, so
+// pitching further back starts reporting as pitching forward.
+//
+// Differencing quaternions has none of that. The delta from grip to now is exact at
+// every pose, and — this is the part that matters — it is never decomposed at all.
+// It goes on the wire as four floats and Unity applies it to the stone directly, so
+// there is no three-angle parameterisation anywhere for the singularity to break.
+// An earlier version differenced quaternions and THEN decomposed the delta into
+// aim/attack/roll, which fixed the conditioning but kept a lossy re-composition (and
+// two hand-found sign flips) on the Unity side. That is what "the rock's rotation
+// doesn't match my phone" was.
+
+const DEG2RAD = Math.PI / 180;
+
 /**
- * Signed shortest distance from `reference` to `current`, in degrees, in (-180, 180].
- * Used so a throw that crosses the 0/360 wrap doesn't produce a ~360 degree jump.
+ * DeviceOrientationEvent angles (degrees) to a unit quaternion.
+ *
+ * Composition order is Z(alpha) then X'(beta) then Y''(gamma), which is what the
+ * DeviceOrientation spec defines. Getting this order wrong produces a quaternion
+ * that is correct for small angles and subtly wrong for large ones — the kind of
+ * bug that survives desk testing and only shows up mid-throw.
  */
-export function shortestAngleDelta(current, reference) {
-  let delta = (current - reference) % 360;
-  if (delta > 180) delta -= 360;
-  if (delta <= -180) delta += 360;
-  return delta;
+export function orientationToQuaternion(alpha = 0, beta = 0, gamma = 0) {
+  const halfZ = (alpha ?? 0) * DEG2RAD / 2;
+  const halfX = (beta ?? 0) * DEG2RAD / 2;
+  const halfY = (gamma ?? 0) * DEG2RAD / 2;
+
+  const cZ = Math.cos(halfZ), sZ = Math.sin(halfZ);
+  const cX = Math.cos(halfX), sX = Math.sin(halfX);
+  const cY = Math.cos(halfY), sY = Math.sin(halfY);
+
+  return {
+    w: cX * cY * cZ - sX * sY * sZ,
+    x: sX * cY * cZ - cX * sY * sZ,
+    y: cX * sY * cZ + sX * cY * sZ,
+    z: cX * cY * sZ + sX * sY * cZ,
+  };
+}
+
+/** Hamilton product. `a` then `b` applied in a's frame — order matters. */
+export function quaternionMultiply(a, b) {
+  return {
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+  };
+}
+
+/** Inverse, for unit quaternions. */
+export function quaternionConjugate(q) {
+  return { w: q.w, x: -q.x, y: -q.y, z: -q.z };
+}
+
+export function quaternionNormalize(q) {
+  const n = Math.hypot(q.w, q.x, q.y, q.z);
+  if (n < 1e-12) return { w: 1, x: 0, y: 0, z: 0 };
+  return { w: q.w / n, x: q.x / n, y: q.y / n, z: q.z / n };
+}
+
+/**
+ * A small rotation, given as a rotation vector in radians about the device's own
+ * x/y/z axes. Used to carry orientation forward between orientation events using
+ * the gyroscope — see MotionSource.
+ *
+ * Exact rather than the usual small-angle approximation, because the whole reason
+ * this exists is the moments when the phone is turning fastest.
+ */
+export function quaternionFromRotationVector(rx, ry, rz) {
+  const angle = Math.hypot(rx, ry, rz);
+  if (angle < 1e-9) return { w: 1, x: 0, y: 0, z: 0 };
+
+  const half = angle / 2;
+  const scale = Math.sin(half) / angle;
+  return { w: Math.cos(half), x: rx * scale, y: ry * scale, z: rz * scale };
+}
+
+/** Apply a rotation to a vector. */
+export function rotateVectorByQuaternion(q, v) {
+  const tx = 2 * (q.y * v.z - q.z * v.y);
+  const ty = 2 * (q.z * v.x - q.x * v.z);
+  const tz = 2 * (q.x * v.y - q.y * v.x);
+
+  return {
+    x: v.x + q.w * tx + (q.y * tz - q.z * ty),
+    y: v.y + q.w * ty + (q.z * tx - q.x * tz),
+    z: v.z + q.w * tz + (q.x * ty - q.y * tx),
+  };
+}
+
+/**
+ * The rotation that takes `qRef` to `qNow`, expressed in the device's own frame.
+ *
+ * This is the entire control scheme. Identity means the phone has not moved since the
+ * player tapped, and Unity draws that as a flat stone facing forward; every physical
+ * degree of rotation from there is one degree on the stone.
+ *
+ * Left as a quaternion on purpose. Anything that turns it into angles — here or on the
+ * far side — reintroduces a parameterisation that has a pole in it, and the pole sits
+ * exactly where this game is played. Unity applies the four floats directly.
+ */
+export function orientationDelta(qRef, qNow) {
+  return quaternionNormalize(quaternionMultiply(quaternionConjugate(qRef), qNow));
 }
 
 /** Rotate a vector's X/Y about the Z axis by `degrees` (counter-clockwise). */
@@ -42,197 +148,20 @@ export function magnitude(v) {
 }
 
 /**
- * Minimum forward lean of the phone's pointing axis before its heading is trusted.
- * 0.35 is about 70 degrees of pitch either side of level.
+ * How fast the phone is spinning about its own screen normal, in deg/s. Signed.
+ *
+ * The single definition of "spin" in the codebase, and the axis a player means by the
+ * word: the frisbee flick, the one that makes a stone skip. `rotationRate.alpha` is
+ * the rate about device Z, which is the axis out through the glass.
+ *
+ * This used to be hypot(alpha, beta, gamma) — unsigned, and across all three axes at
+ * once. Two things were wrong with that. The arm's swing is a far larger rotation than
+ * the wrist's twist, so the number mostly reported how hard the phone was being waved
+ * rather than how it was spun. And with the sign discarded, every stone turned the same
+ * way no matter which way the wrist actually went.
  */
-export const MIN_POINTING_CONFIDENCE = 0.35;
-
-/**
- * Rotation speed above which the fused orientation reading is not trusted at all.
- *
- * `deviceorientation` is sensor-fused and lags real motion by tens of milliseconds —
- * fine while aiming, useless mid-swing, which is precisely when accuracy matters.
- */
-export const FAST_ROTATION_DEG_PER_SEC = 120;
-
-/** How hard a trusted orientation reading pulls the integrated heading, per update. */
-export const HEADING_CORRECTION_GAIN = 0.15;
-
-/**
- * Rate of change of the pointing bearing, in deg/s, from the gyroscope.
- *
- * `rotationRate` arrives with `devicemotion` at the full sensor rate and is very close
- * to instantaneous, where `deviceorientation` is a fused estimate that both lags and
- * arrives on its own slower schedule.
- *
- * Derived from the Z-X'-Y'' Euler kinematics and checked numerically against a
- * finite-difference of the rotation matrix: exact to ~5e-7 deg/s across 600 poses up
- * to 500 deg/s. The 1/cos(beta) term is the same singularity `pointingHeading` guards,
- * which is why this scalar is used only as a turn-speed signal (the debug display, and
- * gating how hard the fused correction pulls). The heading itself is integrated as a
- * full quaternion attitude, which has no such singularity — see quatIntegrate and
- * pointingFromQuat.
- *
- * @param rotationRate DeviceMotionEvent.rotationRate, deg/s (alpha about Z, beta about
- *                     X, gamma about Y)
- */
-export function headingRateFromGyro(beta, gamma, rotationRate) {
-  const b = (beta * Math.PI) / 180;
-  const g = (gamma * Math.PI) / 180;
-
-  const cosBeta = Math.cos(b);
-  if (Math.abs(cosBeta) < 1e-3) return 0;
-
-  return (rotationRate.beta * Math.sin(g) - rotationRate.alpha * Math.cos(g)) / cosBeta;
-}
-
-/**
- * Compass-style bearing of the direction the top of the phone points, plus how much
- * to trust it.
- *
- * WHY NOT JUST USE `alpha`: alpha is the Euler yaw of a Z-X'-Y'' rotation, and it is
- * degenerate when the phone pitches toward vertical — exactly what a throwing swing
- * does. At beta = 89 the heading reads -30; at beta = 91 the same phone reads +150.
- * A two degree difference in pitch mid-swing flips the aim completely around, which
- * is why physically straight throws veered hard left or right at random.
- *
- * Instead this takes the device's +Y axis (out of the top of the phone, the end you
- * point at the screen), rotates it into world space, and projects it onto the ground.
- * Deriving it from the full rotation rather than one Euler angle is what removes the
- * singularity. `confidence` is the length of that projection, signed by whether the
- * phone points forward or backward — near zero means the phone is aimed at the sky or
- * the floor and its heading means nothing.
- *
- * gamma is deliberately absent: rolling the phone about its long axis cannot change
- * where its top points, so aim is immune to wrist roll for free.
- *
- * @returns {{headingDeg: number, confidence: number}} bearing, clockwise-positive
- */
-export function pointingHeading(alpha, beta) {
-  const a = (alpha * Math.PI) / 180;
-  const b = (beta * Math.PI) / 180;
-
-  // Device +Y expressed in world coordinates (X east, Y north, Z up).
-  const cosBeta = Math.cos(b);
-  const east = -Math.sin(a) * cosBeta;
-  const north = Math.cos(a) * cosBeta;
-
-  return {
-    headingDeg: (Math.atan2(east, north) * 180) / Math.PI,
-    confidence: cosBeta,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Quaternion attitude — {w,x,y,z}, unit, mapping device-frame vectors into the
-// world frame (X east, Y north, Z up).
-//
-// WHY A FULL ATTITUDE AND NOT A SCALAR HEADING: the pointing bearing is
-// degenerate while the phone is near vertical — exactly the middle of a swing.
-// Integrating the bearing directly forces a choice there between freezing (all
-// yaw applied through the steep part of the swing is lost forever) and dividing
-// by cos(pitch) (gyro noise amplified without bound). Integrating the full 3D
-// attitude has neither failure: rotation is well-defined in every pose, and the
-// bearing is simply *read out* of the attitude whenever the phone points
-// somewhere near the horizon again — with everything that happened in between
-// accounted for.
-//
-// Integrating the world-vertical rotation component alone is NOT equivalent and
-// was tried and reverted: rolling a tilted phone about its long axis sweeps a
-// large world-vertical rotation while the top of the phone keeps pointing
-// exactly where it did. The attitude form keeps that roll-immunity by
-// construction — rotation about the pointing axis cannot move the pointing axis.
-// ---------------------------------------------------------------------------
-
-/** Intrinsic Z-X'-Y'' (deviceorientation alpha/beta/gamma) -> quaternion. */
-export function quatFromEuler(alphaDeg, betaDeg, gammaDeg) {
-  const a = (alphaDeg * Math.PI) / 360; // half angles
-  const b = (betaDeg * Math.PI) / 360;
-  const g = (gammaDeg * Math.PI) / 360;
-  const qz = { w: Math.cos(a), x: 0, y: 0, z: Math.sin(a) };
-  const qx = { w: Math.cos(b), x: Math.sin(b), y: 0, z: 0 };
-  const qy = { w: Math.cos(g), x: 0, y: Math.sin(g), z: 0 };
-  return quatMultiply(quatMultiply(qz, qx), qy);
-}
-
-export function quatMultiply(q, r) {
-  return {
-    w: q.w * r.w - q.x * r.x - q.y * r.y - q.z * r.z,
-    x: q.w * r.x + q.x * r.w + q.y * r.z - q.z * r.y,
-    y: q.w * r.y - q.x * r.z + q.y * r.w + q.z * r.x,
-    z: q.w * r.z + q.x * r.y - q.y * r.x + q.z * r.w,
-  };
-}
-
-export function quatNormalize(q) {
-  const n = Math.hypot(q.w, q.x, q.y, q.z);
-  if (n < 1e-12) return { w: 1, x: 0, y: 0, z: 0 };
-  return { w: q.w / n, x: q.x / n, y: q.y / n, z: q.z / n };
-}
-
-/**
- * Advance an attitude by one gyro sample. `rotationRate` is deg/s in the DEVICE
- * frame (alpha about Z, beta about X, gamma about Y), so the delta rotation is
- * applied on the right — a body-frame update.
- */
-export function quatIntegrate(q, rotationRate, dtMs) {
-  const dt = dtMs / 1000;
-  const wx = ((rotationRate.beta * Math.PI) / 180) * dt;
-  const wy = ((rotationRate.gamma * Math.PI) / 180) * dt;
-  const wz = ((rotationRate.alpha * Math.PI) / 180) * dt;
-  const angle = Math.hypot(wx, wy, wz);
-  if (angle < 1e-9) return q;
-
-  const s = Math.sin(angle / 2) / angle;
-  const dq = { w: Math.cos(angle / 2), x: wx * s, y: wy * s, z: wz * s };
-  return quatNormalize(quatMultiply(q, dq));
-}
-
-/** Shortest-path slerp; t=0 returns a, t=1 returns b. */
-export function quatSlerp(a, b, t) {
-  let dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
-  let bw = b.w, bx = b.x, by = b.y, bz = b.z;
-  if (dot < 0) { dot = -dot; bw = -bw; bx = -bx; by = -by; bz = -bz; }
-
-  // Nearly parallel: lerp, which is faster and numerically safer here.
-  if (dot > 0.9995) {
-    return quatNormalize({
-      w: a.w + (bw - a.w) * t,
-      x: a.x + (bx - a.x) * t,
-      y: a.y + (by - a.y) * t,
-      z: a.z + (bz - a.z) * t,
-    });
-  }
-
-  const theta = Math.acos(Math.min(1, dot));
-  const sinTheta = Math.sin(theta);
-  const wa = Math.sin((1 - t) * theta) / sinTheta;
-  const wb = Math.sin(t * theta) / sinTheta;
-  return quatNormalize({
-    w: wa * a.w + wb * bw,
-    x: wa * a.x + wb * bx,
-    y: wa * a.y + wb * by,
-    z: wa * a.z + wb * bz,
-  });
-}
-
-/**
- * Bearing of the device's +Y axis (the top of the phone) read out of an
- * attitude, plus the length of its horizontal projection as confidence.
- * Agrees with pointingHeading(alpha, beta) for the poses that function accepts;
- * unlike it, this stays meaningful for an attitude the gyro carried through the
- * steep part of a swing.
- */
-export function pointingFromQuat(q) {
-  // R(q) * (0,1,0) — the middle column of the rotation matrix. Only the
-  // horizontal components matter for a bearing.
-  const east = 2 * (q.x * q.y - q.w * q.z);
-  const north = q.w * q.w - q.x * q.x + q.y * q.y - q.z * q.z;
-
-  return {
-    headingDeg: (Math.atan2(east, north) * 180) / Math.PI,
-    confidence: Math.hypot(east, north),
-  };
+export function screenSpinRate(rate) {
+  return rate?.alpha ?? 0;
 }
 
 export function clamp(value, min, max) {
@@ -245,53 +174,83 @@ export function normalize01(value, min, max) {
   return clamp((value - min) / (max - min), 0, 1);
 }
 
+export const GRAVITY_MS2 = 9.80665;
+
 /**
- * Separates gravity from user motion.
+ * Longest gap between two samples that is still worth integrating across, in ms.
  *
- * We cannot use `DeviceMotionEvent.acceleration` (which would already exclude
- * gravity) because iOS does not provide it — see readAcceleration below. So we
- * low-pass the gravity-inclusive signal to estimate the gravity vector, then
- * subtract it. A low K reacts fast but leaks motion into the gravity estimate;
- * a high K is stable but lags when the phone is re-oriented.
+ * At 60Hz samples land ~17ms apart. A gap this long means the browser stopped
+ * delivering events — the phone was backgrounded, the screen locked, the tab was
+ * throttled — and the motion during it was never measured. Integrating velocity or
+ * attitude across that invents a swing out of a pause, which reads as a throw the
+ * player never made.
+ *
+ * Not to be confused with ThrowTuning.spinEnvelopeTauMs, which is also 250 and means
+ * something entirely unrelated.
  */
-export const REFERENCE_SAMPLE_INTERVAL_MS = 1000 / 60;
+export const MAX_SAMPLE_GAP_MS = 250;
 
+/**
+ * The gravity component an accelerometer reads, in device coordinates, for a device
+ * at the given attitude.
+ *
+ * An accelerometer at rest reads the reaction force, so it reports +g along whichever
+ * device axis points UP — flat on a table, that is +z. Rotating world up into the
+ * device frame and scaling by g reproduces exactly that, with no estimation involved.
+ *
+ * This is what replaces GravityFilter wherever orientation is available, and it is
+ * the single biggest correction to how hard a throw measures. The filter estimates
+ * gravity in DEVICE coordinates, so when the phone turns quickly the gravity vector
+ * sweeps through that frame faster than the filter can track — and the lag comes out
+ * as spurious "user acceleration" of up to ~19.6 m/s^2. Every throw involves a large
+ * wrist rotation regardless of how hard it was thrown, so that error sat under every
+ * reading as a big effort-independent offset, compressing genuinely different throws
+ * into the top of the range. Subtracting a computed vector has no lag to leak.
+ */
+export function gravityInDeviceFrame(q, g = GRAVITY_MS2) {
+  return rotateVectorByQuaternion(quaternionConjugate(q), { x: 0, y: 0, z: g });
+}
+
+/**
+ * Separates gravity from user motion by low-pass estimating it.
+ *
+ * The fallback path, kept for devices with no usable orientation stream — see
+ * gravityInDeviceFrame for the exact method and why it is preferred. Read that
+ * comment before tuning tau: this filter cannot be made accurate during a fast
+ * rotation, only less wrong.
+ */
 export class GravityFilter {
-  constructor(k = 0.8) {
-    this.k = k;
+  /**
+   * @param {number} [tauMs] time constant. The old constructor took a per-sample
+   *   retention factor k with no dt term, which made the real time constant depend
+   *   on the device's sample rate — 45ms at 100Hz, 149ms at 30Hz, from one number.
+   *   A k in (0,1) is still accepted and converted, assuming the nominal 60Hz.
+   */
+  constructor(tauMs = 75) {
+    this.tauMs = tauMs > 0 && tauMs < 1 ? -(1000 / SAMPLE_HZ) / Math.log(tauMs) : tauMs;
     this.gravity = null;
-
-    // The configured k is a per-SAMPLE weight, which silently encodes a sample
-    // rate. Convert it once into a time constant so the filter can hold the same
-    // behaviour in wall-clock terms on a device that reports at a different rate.
-    // Android Chrome runs ~60Hz; iOS Safari is commonly slower, which would
-    // otherwise make the gravity estimate adapt at half the intended speed and
-    // leak the swing into the estimate it is supposed to be subtracting.
-    this.tauMs = k > 0 && k < 1
-      ? -REFERENCE_SAMPLE_INTERVAL_MS / Math.log(k)
-      : 0;
+    this.lastT = null;
   }
 
-  /**
-   * @param accel gravity-inclusive acceleration
-   * @param dtMs time since the previous sample. Defaults to the 60Hz reference, so
-   *             at 60Hz this is bit-for-bit the old behaviour.
-   * @returns {{x:number,y:number,z:number}} linear acceleration, gravity removed
-   */
-  update(accel, dtMs = REFERENCE_SAMPLE_INTERVAL_MS) {
+  /** @returns {{x:number,y:number,z:number}} linear acceleration, gravity removed */
+  update(accel, tMs = null) {
     if (this.gravity === null) {
       // Seed from the first sample. Starting at zero would report a full 9.8 m/s^2
       // of fake "user acceleration" on the first frame and spike the power reading.
       this.gravity = { x: accel.x, y: accel.y, z: accel.z };
     } else {
-      const k = this.tauMs > 0
-        ? Math.exp(-Math.max(dtMs, 0) / this.tauMs)
-        : this.k;
+      // Time-based, so the response no longer depends on how fast the device reports.
+      const dtMs = tMs === null || this.lastT === null
+        ? 1000 / SAMPLE_HZ
+        : Math.min(Math.max(tMs - this.lastT, 0), MAX_SAMPLE_GAP_MS);
+      const k = Math.exp(-dtMs / this.tauMs);
 
       this.gravity.x = k * this.gravity.x + (1 - k) * accel.x;
       this.gravity.y = k * this.gravity.y + (1 - k) * accel.y;
       this.gravity.z = k * this.gravity.z + (1 - k) * accel.z;
     }
+
+    this.lastT = tMs;
 
     return {
       x: accel.x - this.gravity.x,
@@ -302,6 +261,7 @@ export class GravityFilter {
 
   reset() {
     this.gravity = null;
+    this.lastT = null;
   }
 }
 
@@ -354,6 +314,25 @@ export function readAcceleration(event) {
   return { x: a.x ?? 0, y: a.y ?? 0, z: a.z ?? 0 };
 }
 
+/**
+ * The hardware's own gravity-free acceleration, or null where it does not exist.
+ *
+ * The other half of the iOS guard, and it does not weaken it. The failure the guard
+ * exists to prevent is *depending* on `event.acceleration`, which reads undefined on
+ * every iPhone; returning null and letting the caller fall back is the opposite of
+ * depending on it. When it is present it is fused in hardware, so it has none of the
+ * rotation artefact that both software methods have to work around.
+ *
+ * UNVERIFIED (iOS): expected to return null throughout on iOS.
+ */
+export function readLinearAcceleration(event) {
+  const a = event.acceleration;
+  if (!a) return null;
+  if (a.x === null && a.y === null && a.z === null) return null;
+  if (a.x === undefined && a.y === undefined && a.z === undefined) return null;
+  return { x: a.x ?? 0, y: a.y ?? 0, z: a.z ?? 0 };
+}
+
 export function readRotationRate(event) {
   const r = event.rotationRate;
   if (!r) return { alpha: 0, beta: 0, gamma: 0 };
@@ -397,6 +376,10 @@ export function isSecureContextOk() {
 const SAMPLE_HZ = 60;
 const BUFFER_SECONDS = 1.5;
 
+/** Monotonic clock, with a Date fallback so this module can be driven from tests. */
+const now = () =>
+  (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+
 /**
  * Streams normalized samples from the device's motion and orientation sensors.
  *
@@ -406,46 +389,46 @@ const BUFFER_SECONDS = 1.5;
  * they count in opposite directions), but a delta from a captured zero agrees.
  */
 export class MotionSource {
-  constructor({ gravityK = 0.8 } = {}) {
+  /**
+   * @param {object}   options
+   * @param {number}   [options.gravityK]  low-pass constant for the gravity estimate
+   * @param {function} [options.onSample]  called with every sample as it arrives
+   * @param {function} [options.now]  clock source, so tests can drive gyro integration
+   *   across controlled intervals instead of racing the real one
+   */
+  constructor({ gravityK = 0.8, onSample, now: clock } = {}) {
+    this.now = clock ?? now;
     this.gravityFilter = new GravityFilter(gravityK);
     this.buffer = new RingBuffer(Math.ceil(SAMPLE_HZ * BUFFER_SECONDS));
+
+    // Sample-rate, not poll-rate. Release detection watches for a sharp stop, and
+    // polling for that at the 20Hz aim cadence would miss it by up to 50ms and read
+    // the orientation well after the phone had already come to rest.
+    this.onSample = onSample ?? (() => {});
 
     this.reference = null;
     this.latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
     this.latest = null;
     this.running = false;
 
-    // Full device attitude, integrated from the gyro at the sensor rate and slowly
-    // corrected toward the fused deviceorientation reading. The bearing below is
-    // READ OUT of this whenever the phone points somewhere near the horizon, and
-    // held through the steep middle of a swing where a bearing means nothing — but
-    // the attitude keeps integrating there, so every degree of turn applied while
-    // the phone was steep is still present in the bearing that comes back out.
-    this._attitude = null;
+    // Grip reference and current attitude, as quaternions. See the quaternion
+    // section above for why these are not three Euler deltas.
+    this.referenceQuaternion = null;
+    this.orientationQuaternion = { w: 1, x: 0, y: 0, z: 0 };
 
-    // Bearing of the phone's +Y axis, and the bearing captured at calibration.
-    this.headingDeg = null;
-    this.referenceHeading = null;
-
-    // Set when a grip was taken before the first confident heading existed; the
-    // reference latches the moment one does — see calibrate().
-    this._awaitingReferenceHeading = false;
-
-    // Called with every normalized sample. The aim stream hangs off this so a
-    // frame leaves the phone the instant the sensor produced it, instead of
-    // waiting for a timer tick to come around.
-    this.onSample = null;
-
-    // Last gyro-derived turn rate, deg/s. Also decides how far the fused orientation
-    // reading is allowed to pull the estimate — see _onOrientation.
-    this.headingRateDegPerSec = 0;
-
-    // Measured, not assumed. The whole cross-platform question comes down to
-    // whether the two devices are actually feeding us data at comparable rates,
-    // and this is the number that answers it.
-    this.sampleHz = 0;
-    this._lastSampleT = 0;
-    this._intervalMs = 0;
+    // Attitude carried forward by the gyroscope between orientation events, and the
+    // timestamp it is current as of.
+    //
+    // deviceorientation and devicemotion are separate, unsynchronised streams. The
+    // old code read whatever orientation happened to be latched when a motion sample
+    // arrived, so on a device whose orientation event is slower, the same triple got
+    // stamped onto several consecutive samples — a staircase in the aim stream,
+    // worst exactly when the phone is moving fastest. rotationRate arrives on the
+    // motion event at motion rate, so integrating it across the gap costs nothing and
+    // removes the staircase where it is most visible.
+    this._fusedQuaternion = { w: 1, x: 0, y: 0, z: 0 };
+    this._fusedAtMs = null;
+    this._orientationAtMs = null;
 
     this._onMotion = this._onMotion.bind(this);
     this._onOrientation = this._onOrientation.bind(this);
@@ -466,44 +449,20 @@ export class MotionSource {
   }
 
   /**
-   * Capture the current orientation as the zero reference. Called on grip, which
-   * is what turns "point your phone at the lake and hold" into a calibration step
-   * the player never notices they are performing.
+   * Capture the current orientation as the zero reference. Called on the tap that arms
+   * a throw, which is what makes "however you happen to be holding the phone right now"
+   * mean "flat stone, facing forward" — the player performs a calibration step without
+   * ever being told they are doing one.
    */
   calibrate() {
     this.reference = { ...this.latestOrientation };
-    this.referenceHeading = this.headingDeg;
-
-    // Gripped before the first confident heading fix (first turn of a session, or
-    // the phone held steep): latch the reference the moment a heading exists,
-    // instead of pinning dYaw to zero for the whole grip and sending every rock
-    // dead straight regardless of aim.
-    this._awaitingReferenceHeading = this.headingDeg === null;
-
+    this.referenceQuaternion = this._fusedQuaternion;
     this.gravityFilter.reset();
     this.buffer.clear();
   }
 
   hasReference() {
     return this.reference !== null;
-  }
-
-  /**
-   * Read the bearing out of the integrated attitude. Held (not updated) while the
-   * horizontal projection of the pointing axis is too short to mean anything; the
-   * attitude keeps integrating regardless, so the first well-conditioned pose
-   * after a steep swing yields a bearing with the whole swing accounted for.
-   */
-  _refreshHeading() {
-    const { headingDeg, confidence } = pointingFromQuat(this._attitude);
-    if (confidence < MIN_POINTING_CONFIDENCE) return;
-
-    this.headingDeg = headingDeg;
-
-    if (this._awaitingReferenceHeading) {
-      this.referenceHeading = headingDeg;
-      this._awaitingReferenceHeading = false;
-    }
   }
 
   _onOrientation(event) {
@@ -517,97 +476,116 @@ export class MotionSource {
       gamma: event.gamma ?? 0,
     };
 
-    // Only trust the fused pose while the phone is actually pointing somewhere on
-    // the horizon — near vertical its Euler angles are degenerate (see
-    // pointingHeading) and would steer the attitude with garbage. Through the
-    // steep part of a swing the gyro carries the attitude alone.
-    const { confidence } = pointingHeading(
-      this.latestOrientation.alpha, this.latestOrientation.beta);
-
-    if (confidence < MIN_POINTING_CONFIDENCE) return;
-
-    const fused = quatFromEuler(
+    this.orientationQuaternion = orientationToQuaternion(
       this.latestOrientation.alpha, this.latestOrientation.beta, this.latestOrientation.gamma);
 
-    if (this._attitude === null) {
-      this._attitude = fused;
-      this._refreshHeading();
+    // A real reading supersedes whatever the gyro had carried forward, which is what
+    // stops integration drift accumulating.
+    this._fusedQuaternion = this.orientationQuaternion;
+    this._orientationAtMs = this.now();
+    this._fusedAtMs = this._orientationAtMs;
+  }
+
+  /**
+   * Advance the fused attitude to `tMs` using the gyroscope.
+   *
+   * rotationRate is deg/s about the device's own axes, and the spec names them for
+   * the Euler angle each drives: alpha about Z, beta about X, gamma about Y. That
+   * naming is the easiest thing in this file to get backwards.
+   */
+  _advanceFused(rate, tMs) {
+    if (this._fusedAtMs === null) {
+      this._fusedAtMs = tMs;
       return;
     }
 
-    // Correct rather than overwrite, and only in proportion to how slowly the phone is
-    // turning. This reading is drift-free but lags; the integrated one is immediate but
-    // drifts. Snapping to this mid-swing would hand the lag straight back — so while the
-    // phone is whipping around the gyro is believed outright, and the fused value only
-    // reasserts itself once things settle, which is when its lag costs nothing.
-    const trust = clamp(
-      1 - Math.abs(this.headingRateDegPerSec) / FAST_ROTATION_DEG_PER_SEC, 0, 1);
+    const dt = (tMs - this._fusedAtMs) / 1000;
+    this._fusedAtMs = tMs;
 
-    this._attitude = quatSlerp(this._attitude, fused, HEADING_CORRECTION_GAIN * trust);
-    this._refreshHeading();
+    // Negative dt means clocks disagreed; a long gap means the phone was backgrounded
+    // and integrating across it would fling the aim somewhere arbitrary.
+    if (!rate || dt <= 0 || dt > MAX_SAMPLE_GAP_MS / 1000) return;
+
+    const step = quaternionFromRotationVector(
+      (rate.beta ?? 0) * DEG2RAD * dt,
+      (rate.gamma ?? 0) * DEG2RAD * dt,
+      (rate.alpha ?? 0) * DEG2RAD * dt);
+
+    // Right-multiplied: the turn happens about the device's own axes, not the world's.
+    this._fusedQuaternion = quaternionNormalize(
+      quaternionMultiply(this._fusedQuaternion, step));
+  }
+
+  /**
+   * Gravity-free acceleration, by the best method this device supports.
+   *
+   * Ordered by how much rotation artefact each leaves in the reading, because that
+   * artefact is what was making a hard throw and a gentle one measure nearly the
+   * same: hardware fusion has none, exact subtraction has none once orientation is
+   * known, and the low-pass estimate has up to ~19.6 m/s^2 of it during a fast turn.
+   */
+  _linearAcceleration(event, tMs) {
+    const hardware = readLinearAcceleration(event);
+    if (hardware) return { linear: hardware, source: 'hardware' };
+
+    const accel = readAcceleration(event);
+    if (!accel) return { linear: null, source: 'none' };
+
+    if (this._orientationAtMs !== null) {
+      const g = gravityInDeviceFrame(this._fusedQuaternion);
+      return {
+        linear: { x: accel.x - g.x, y: accel.y - g.y, z: accel.z - g.z },
+        source: 'exact',
+      };
+    }
+
+    return { linear: this.gravityFilter.update(accel, tMs), source: 'filter' };
   }
 
   _onMotion(event) {
-    const accel = readAcceleration(event);
-    if (!accel) return;
-
-    const now = performance.now();
-    const dtMs = this._lastSampleT > 0 ? now - this._lastSampleT : REFERENCE_SAMPLE_INTERVAL_MS;
-    this._lastSampleT = now;
-
-    // Smoothed so one hitched frame does not swing the reported rate around.
-    this._intervalMs = this._intervalMs > 0 ? this._intervalMs * 0.9 + dtMs * 0.1 : dtMs;
-    this.sampleHz = this._intervalMs > 0 ? 1000 / this._intervalMs : 0;
-
+    const t = this.now();
     const rotationRate = readRotationRate(event);
+    this._advanceFused(rotationRate, t);
 
-    // Turn-speed signal only (the debug display, and the trust gate in
-    // _onOrientation). The heading itself no longer integrates this scalar: near
-    // vertical it is singular, and the old freeze-past-70° gate silently
-    // discarded every degree of turn applied through the steep part of a swing.
-    this.headingRateDegPerSec = headingRateFromGyro(
-      this.latestOrientation.beta, this.latestOrientation.gamma, rotationRate);
-
-    // Advance the full attitude by the gyro at the sensor rate. This is the half
-    // of the filter that makes a fast swing survive: orientation events arrive on
-    // their own, slower schedule and are already stale when they do, so between
-    // them the attitude would otherwise sit frozen at a pose from tens of
-    // milliseconds ago — and the release frame would report exactly that stale angle.
-    if (this._attitude !== null) {
-      this._attitude = quatIntegrate(this._attitude, rotationRate, dtMs);
-      this._refreshHeading();
-    }
-
-    const linearRaw = this.gravityFilter.update(accel, dtMs);
+    const { linear: linearRaw, source: gravitySource } = this._linearAcceleration(event, t);
+    if (!linearRaw) return;
 
     // Keep axes stable if the device rotates. Portrait lock is requested elsewhere
     // but is best-effort — not all browsers honour it — so compensate regardless.
-    const screenAngle = window.screen?.orientation?.angle ?? 0;
+    // typeof-guarded so this class can be driven from Node by the tests; it used to
+    // be unreachable outside a browser, which is why it had no coverage at all.
+    const screenAngle =
+      typeof window === 'undefined' ? 0 : (window.screen?.orientation?.angle ?? 0);
     const rotated = rotateXY(linearRaw.x, linearRaw.y, -screenAngle);
     const linear = { x: rotated.x, y: rotated.y, z: linearRaw.z };
 
-    const ref = this.reference ?? this.latestOrientation;
+    // Uncalibrated compares against itself and therefore reports identity, which is the
+    // same safe behaviour as the zeros this used to report.
+    const reference = this.referenceQuaternion ?? this._fusedQuaternion;
+
     const sample = {
-      t: now,
+      t,
       linear,
       power: magnitude(linear),
 
-      // Live, every sample, right through the swing. Aim is whatever the phone is
-      // pointing at now — the throw is taken from the last sample before release, so
-      // freezing this earlier would throw away the aim the player actually released
-      // on. Zero until a confident heading exists, so an uncalibrated throw goes
-      // straight rather than somewhere arbitrary.
-      dYaw: this.headingDeg !== null && this.referenceHeading !== null
-        ? shortestAngleDelta(this.headingDeg, this.referenceHeading)
-        : 0,
+      // The phone's rotation since the tap, and the only orientation this module
+      // reports. See orientationDelta.
+      attitude: orientationDelta(reference, this._fusedQuaternion),
 
-      dBeta: shortestAngleDelta(this.latestOrientation.beta, ref.beta),
-      dGamma: shortestAngleDelta(this.latestOrientation.gamma, ref.gamma),
       rotationRate,
+
+      // How stale the last real orientation reading is. Surfaced rather than hidden
+      // so the debug readout can show when the aim is running on gyro alone.
+      orientationAgeMs: this._orientationAtMs === null ? null : t - this._orientationAtMs,
+
+      // Which gravity-removal method produced `linear` — 'hardware', 'exact' or
+      // 'filter'. Worth reading on a real device before trusting any power tuning:
+      // 'filter' means the rotation artefact is still in the numbers.
+      gravitySource,
     };
 
     this.latest = sample;
     this.buffer.push(sample);
-    this.onSample?.(sample);
+    this.onSample(sample);
   }
 }

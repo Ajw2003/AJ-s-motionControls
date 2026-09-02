@@ -3,83 +3,68 @@
  *
  * Two channels leave this module, with deliberately different reliability:
  *
- *   AIM   — streamed at the sensor rate (~60Hz) while gripped, each frame sent
- *           the instant its devicemotion sample lands. Lossy and cosmetic.
- *           Dropping every one of these must only make the TV preview stutter,
- *           never change a throw.
+ *   AIM   — streamed ~20Hz while gripped. Lossy and cosmetic. Dropping every one
+ *           of these must only make the TV preview stutter, never change a throw.
  *   THROW — one authoritative payload on release, computed from the whole swing.
  *
  * That split is why a network hiccup can never cause a "the game read my throw
  * wrong" moment. Keep it: nothing in AIM may feed the simulation.
  */
 
-import { clamp, normalize01 } from './sensors.js';
+import {
+  normalize01, screenSpinRate, quaternionFromRotationVector, MAX_SAMPLE_GAP_MS,
+} from './sensors.js';
+
+/** Identity — the phone as it was held at the tap. A flat stone facing forward. */
+const IDENTITY_ATTITUDE = { w: 1, x: 0, y: 0, z: 0 };
 
 /**
- * Sign that converts device heading into game yaw. This is the one place the two
- * coordinate conventions meet, so it is the one place that can get it backwards.
+ * Flatten an attitude quaternion onto the wire.
  *
- * `dYaw` is a compass-style bearing delta from `pointingHeading` — clockwise-positive
- * viewed from above. Unity's `Quaternion.AngleAxis(deg, up)` is also clockwise viewed
- * from above, taking +Z toward +X. So the two already agree and the default is +1.
- *
- * (This was -1 while aim came straight from Euler `alpha`, which counts the other way.
- * Deriving the heading from the pointing vector changed the handedness of the source
- * value, so the correction that used to be needed would now reintroduce the error.)
- *
- * GAME-SPACE CONTRACT: positive aimDeg means aim to the player's right.
- *
- * Overridable per-device from the URL (?yawSign=-1) — see setYawSign.
+ * Flat rather than a nested object because Unity parses these with JsonUtility, which
+ * is happiest with flat public fields — and because a flat format gives the two
+ * runtimes one less shape to disagree about. Both AIM and THROW use this, so they
+ * cannot spell it differently.
  */
-let yawSign = 1;
-
-/** @param {number} sign +1 (default) or -1 */
-export function setYawSign(sign) {
-  yawSign = sign < 0 ? -1 : 1;
-}
-
-export function getYawSign() {
-  return yawSign;
-}
-
-/** Device heading delta -> game yaw. Positive is right. */
-export function toGameYaw(dYaw) {
-  return yawSign * dYaw;
+function attitudeFields(q) {
+  const a = q ?? IDENTITY_ATTITUDE;
+  return { qw: a.w, qx: a.x, qy: a.y, qz: a.z };
 }
 
 export const ThrowTuning = {
-  // Peak linear acceleration, m/s^2, mapped onto power 0..1. A gentle underarm
-  // toss sits near the low end; a hard swing saturates the high end.
-  minPeakAccel: 6,
-  maxPeakAccel: 35,
-
-  // How far from the acceleration peak a release can land before timing quality
-  // decays to zero. This is the Skip Skimmer "release at the right moment" beat.
-  peakWindowMs: 250,
-
-  // Full rotation. This was 45, which silently threw away the top of every fast
-  // swing: any turn past 45 degrees flattened to exactly 45, so hard throws all
-  // reported the same aim no matter where the phone was actually pointing, and the
-  // rock left on a line the player had not chosen. dYaw is already a shortest-angle
-  // delta in (-180, 180], so at 180 nothing is clipped and aiming behind you is
-  // simply allowed — if a player turns right around, that is a choice they made.
-  // Long-grip drift is bounded by the fused-orientation correction in sensors.js,
-  // not by this clamp.
-  maxAimDeg: 180,
-
-  minAttackDeg: -60,
-  maxAttackDeg: 60,
-
   // Below this peak, treat the gesture as a fumble rather than a throw — stops a
   // pocket bump or a shaky hand registering as a real attempt.
   minValidPeakAccel: 3,
 
-  // How far back from the release a swing can reach. Bounded in TIME, not in
-  // samples: the ring buffer holds a fixed sample count sized for a 60Hz device,
-  // so on a device reporting at ~30Hz it spans twice as long in wall-clock terms.
-  // Without this bound such a device can select a "peak" from seconds before the
-  // swing, which makes releaseDelayMs huge and collapses timingQuality to zero.
-  swingWindowMs: 1500,
+  // --- release detection ---------------------------------------------------
+  // The gesture is "accelerate hard, then stop dead". There is no button release:
+  // the stop IS the release, which is why orientation is read raw at that instant
+  // rather than inferred from earlier in the swing. A throwing motion ends pointing
+  // where it was aimed, so the stop sample is the aim.
+
+  // Acceleration that counts as a real swing rather than hand tremor.
+  swingAccel: 14,
+
+  // Once swinging, acceleration falling below this counts as stopping.
+  stopAccel: 4,
+
+  // Consecutive calm samples needed to call it a stop. One is not enough: a swing
+  // passes through zero acceleration at its own turnaround and would fire mid-arc.
+  stopSamples: 3,
+
+  // If the phone never settles, throw anyway this long after the peak rather than
+  // leaving the player armed forever.
+  maxSwingMs: 900,
+
+  // --- spin ----------------------------------------------------------------
+  // How long a spin peak is held before it has decayed away. Spin is peaky: a
+  // wrist flick is over in about 100ms, so a 20Hz aim frame samples it up to 50ms
+  // late and mostly catches the tail. Holding the peak briefly is what turns that
+  // into a ghost that spins up and winds down instead of one that flickers.
+  //
+  // The throw uses the same envelope, so the stone spins at the rate the ghost was
+  // showing. Raise this if a slow release is bleeding away spin the player earned.
+  spinEnvelopeTauMs: 250,
 };
 
 /**
@@ -93,17 +78,23 @@ export const ThrowTuning = {
 export const SimulatedThrow = {
   minHoldMs: 150,
   maxHoldMs: 1200,
-  minPower: 0.2,
-  maxPower: 0.95,
 
-  // attackAngleDeg is a delta from the player's grip, and SkipTuning maps a neutral
-  // grip onto the stone's optimal angle — so 0 is already a good throw. The jitter
-  // stays well inside the tolerance window so simulated throws skip rather than
-  // sinking, which would make every test score identically zero.
-  attackJitterDeg: 6,
-  aimJitterDeg: 10,
-  spinRate: 120,
-  timingQuality: 0.85,
+  // Raw m/s, standing in for a real swing measurement — a hold longer than
+  // minHoldMs synthesizes a harder "throw" between these two.
+  minSwingSpeed: 1.5,
+  maxSwingSpeed: 6,
+
+  // Identity attitude is a flat stone facing forward, which SkipTuning treats as a good
+  // throw — the ~20 degrees the water wants is applied inside the bounce, not to the
+  // stone. Jitter is a small rotation about the phone's own axes, in degrees: x pitches
+  // the face, y turns the aim. Both stay well inside the tolerance window so simulated
+  // throws skip rather than sinking, which would make every test score identically zero.
+  pitchJitterDeg: 6,
+  yawJitterDeg: 10,
+
+  // A plausible wrist flick. Visual only now, so unlike the old value this cannot drift
+  // out of sync with anything on the C# side — there is nothing there to match.
+  spinRate: 900,
 };
 
 /**
@@ -116,20 +107,21 @@ export const SimulatedThrow = {
  */
 export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
   const charge = normalize01(holdMs, SimulatedThrow.minHoldMs, SimulatedThrow.maxHoldMs);
-  const jitter = (range) => (random() * 2 - 1) * range;
+  const jitterRad = (deg) => ((random() * 2 - 1) * deg * Math.PI) / 180;
+
+  const attitude = quaternionFromRotationVector(
+    jitterRad(SimulatedThrow.pitchJitterDeg),
+    jitterRad(SimulatedThrow.yawJitterDeg),
+    0);
 
   return {
-    power: SimulatedThrow.minPower + charge * (SimulatedThrow.maxPower - SimulatedThrow.minPower),
-    timingQuality: SimulatedThrow.timingQuality,
-    aimDeg: jitter(SimulatedThrow.aimJitterDeg),
-    attackAngleDeg: jitter(SimulatedThrow.attackJitterDeg),
-    rollDeg: 0,
+    swingSpeed: SimulatedThrow.minSwingSpeed +
+      charge * (SimulatedThrow.maxSwingSpeed - SimulatedThrow.minSwingSpeed),
+    ...attitudeFields(attitude),
     spinRate: SimulatedThrow.spinRate,
 
     // Zero samples is the tell. A real gesture always has some, so the TV debug
     // readout distinguishes a simulated throw from a genuine one at a glance.
-    peakAccel: 0,
-    releaseDelayMs: 0,
     sampleCount: 0,
     simulated: true,
   };
@@ -137,22 +129,7 @@ export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
 
 export const ThrowState = {
   IDLE: 'IDLE',
-  GRIPPED: 'GRIPPED',
-};
-
-/**
- * How the player marks the moment the rock leaves their hand.
- *
- * HOLD — press and hold, swing, let go. The release is a finger lift.
- * TAP  — tap to arm, swing, tap again to throw. The release is a deliberate press.
- *
- * TAP exists because lifting a finger mid-swing is an imprecise moment: the thumb
- * leaves the glass whenever the swing shakes it loose, not necessarily when the
- * player means to let go. A second tap is a positive action they choose to make.
- */
-export const ThrowGesture = {
-  HOLD: 'hold',
-  TAP: 'tap',
+  ARMED: 'ARMED',
 };
 
 /**
@@ -162,176 +139,298 @@ export const ThrowGesture = {
  * so it is fully unit testable without a phone.
  *
  * @param {Array} samples oldest-to-newest, from MotionSource's ring buffer
+ * @param {object} tuning
+ * @param {number} [spinRate] the live spin envelope at release — see the spinRate
+ *   field below. Omitting it replays the envelope over `samples`, which keeps this
+ *   function usable from a buffer alone.
  * @returns {object|null} descriptor, or null if the gesture was too weak to count
  */
-export function computeThrowDescriptor(samples, tuning = ThrowTuning) {
+export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) {
   if (!samples || samples.length === 0) return null;
 
-  const release = samples[samples.length - 1];
-  const windowStart = release.t - tuning.swingWindowMs;
+  // The last sample is the moment the phone stopped, which is the release. Nothing
+  // is inferred, averaged or reached back for: what the sensors said at that instant
+  // is what the stone does.
+  const stop = samples[samples.length - 1];
 
   // Peak, not integral. Peak matches perceived effort and is far more forgiving
-  // of the sample rate wobbling, which it does on real phones. Restricted to the
-  // recent window so a low-rate device cannot reach back past the swing itself.
-  let peak = null;
+  // of the sample rate wobbling, which it does on real phones.
+  let peak = samples[0];
   for (const sample of samples) {
-    if (sample.t < windowStart) continue;
-    if (peak === null || sample.power > peak.power) peak = sample;
+    if (sample.power > peak.power) peak = sample;
   }
 
-  if (peak === null || peak.power < tuning.minValidPeakAccel) return null;
+  if (peak.power < tuning.minValidPeakAccel) return null;
 
-  const releaseDelayMs = Math.abs(release.t - peak.t);
+  const swingSpeed = peakSwingSpeed(samples, tuning);
 
   return {
-    power: normalize01(peak.power, tuning.minPeakAccel, tuning.maxPeakAccel),
-    timingQuality: 1 - normalize01(releaseDelayMs, 0, tuning.peakWindowMs),
-    aimDeg: clamp(toGameYaw(release.dYaw), -tuning.maxAimDeg, tuning.maxAimDeg),
-    attackAngleDeg: clamp(release.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
-    rollDeg: release.dGamma,
-    spinRate: Math.hypot(
-      release.rotationRate.alpha,
-      release.rotationRate.beta,
-      release.rotationRate.gamma
-    ),
+    // Raw m/s. The only thing that decides how far the stone goes — Unity converts
+    // it once, via SkipConstants.SpeedScale. There used to be a normalised `power`
+    // here and a timingQuality alongside it, scaling launch speed by how fast the
+    // phone came to rest after its peak — but a hard swing takes longer to stop, so
+    // it landed hardest on the throws it should have rewarded, and the extra
+    // normalisation was a second lossy conversion of the same measurement Unity was
+    // about to convert again. Effort and result now agree, and there is only one
+    // conversion left, on the Unity side.
+    swingSpeed,
 
-    // Diagnostics — useful on the TV debug readout while tuning, ignored by physics.
-    peakAccel: peak.power,
-    releaseDelayMs,
+    // Unclamped, deliberately. Throwing backwards, sideways or straight up is a
+    // legitimate thing to attempt, and clamping quietly rewrote what the player did
+    // into something they did not ask for.
+    ...attitudeFields(stop.attitude),
+
+    // The one field deliberately NOT read from the stop sample. Attitude is an
+    // orientation, and where the phone ended up pointing IS the throw. Spin is a
+    // rate: it peaks mid-swing and is spent by the time the phone halts — and the
+    // throw fires precisely because it halted. Reading it off `stop` sampled the one
+    // instant the wrist had finished turning, so a hard flick and a limp one both
+    // arrived as roughly zero and the stone never visibly span.
+    spinRate: spinRate ?? peakSpinEnvelope(samples, tuning),
+
     sampleCount: samples.length,
   };
 }
 
-/** Cosmetic aim frame. Never authoritative — see the module header. */
-export function buildAimPayload(sample, seq, tuning = ThrowTuning) {
+/**
+ * A peak-hold envelope over the spin signal: jumps straight to any new peak, then
+ * decays exponentially toward zero.
+ *
+ * Pure, and takes the elapsed time rather than counting samples, because the device
+ * sample rate wobbles on real phones — a per-sample decay constant would make the
+ * ghost wind down faster on a phone that happens to be reporting quickly.
+ *
+ * @param {number} previous  the envelope's last value
+ * @param {number} instantaneous  spin magnitude from the newest sample
+ * @param {number} dtMs  time since the last update
+ */
+/**
+ * Peak hand speed during the swing, in m/s, by integrating linear acceleration.
+ *
+ * The physically correct measure of how hard a throw was. Peak *acceleration* — what
+ * this used to key off exclusively — is a poor proxy: a short sharp jerk and a long
+ * powerful pull peak identically, and on real hardware the useful range was squashed
+ * into the top of the window, so a throw with two to three times less effort still
+ * read within about 13% of a maximum one. Velocity is the integral of exactly the
+ * thing that differs between them, so it separates what peak cannot.
+ *
+ * Integrated from the start of the swing rather than the whole buffer, because any
+ * residual bias accumulates and a 1.5s window would collect far more of it than a
+ * 300ms one. Tracks the running peak instead of the endpoint: the swing ends with the
+ * phone stopped, so the value at the stop is by definition near zero — it is the
+ * maximum along the way that the stone leaves the hand at.
+ *
+ * Only as good as the gravity removal feeding it; see sensors.js gravityInDeviceFrame.
+ *
+ * Pure.
+ */
+export function peakSwingSpeed(samples, tuning = ThrowTuning) {
+  if (!samples || samples.length < 2) return 0;
+
+  let peakIdx = 0;
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].power > samples[peakIdx].power) peakIdx = i;
+  }
+
+  // Walk back from the peak to the last calm sample before it: that is where this
+  // swing began, and anything earlier belongs to lining the shot up.
+  let start = peakIdx;
+  while (start > 0 && samples[start - 1].power > tuning.stopAccel) start--;
+
+  let vx = 0, vy = 0, vz = 0, best = 0;
+  for (let i = start + 1; i < samples.length; i++) {
+    // Stop at the release. Past the peak, a calm sample means the phone has been let
+    // go of and anything after it is the hand settling — integrating through that
+    // adds speed the throw never had, and adds more of it the longer the player
+    // stands still afterwards.
+    if (i > peakIdx && samples[i].power <= tuning.stopAccel) break;
+
+    const dtMs = samples[i].t - samples[i - 1].t;
+    if (!(dtMs > 0) || dtMs > MAX_SAMPLE_GAP_MS) continue;
+
+    const a = samples[i].linear;
+    if (!a) continue;
+
+    const dt = dtMs / 1000;
+    vx += a.x * dt;
+    vy += a.y * dt;
+    vz += a.z * dt;
+    best = Math.max(best, Math.hypot(vx, vy, vz));
+  }
+
+  return best;
+}
+
+/**
+ * Peak-hold with an exponential decay: jumps straight to any new peak, then falls back
+ * toward zero. Signed — the peak is chosen by magnitude but keeps its direction.
+ *
+ * Generic, despite the name it grew up with. Spin uses it so a wrist flick that is over
+ * in 100ms still reaches a 20Hz aim frame; the live power estimate uses it for the same
+ * reason with a different time constant.
+ *
+ * Signed because spin is now a signed rate about the phone's screen normal. Taking a
+ * plain max() would have let a decaying positive peak win over a genuine negative one,
+ * so a counter-clockwise flick following a clockwise one would read as clockwise.
+ */
+export function decaySpinEnvelope(previous, instantaneous, dtMs, tauMs = ThrowTuning.spinEnvelopeTauMs) {
+  const decayed = previous * Math.exp(-Math.max(dtMs, 0) / tauMs);
+  return Math.abs(instantaneous) > Math.abs(decayed) ? instantaneous : decayed;
+}
+
+/**
+ * Replay decaySpinEnvelope across a whole buffer and return where it ended up.
+ *
+ * ThrowController already tracks this envelope live, so the real device path passes
+ * its value straight in. This is for callers holding only samples — tests, tooling,
+ * and computeThrowDescriptor's own fallback — and it agrees with the live tracker by
+ * construction, because it is the same function over the same samples.
+ *
+ * The tau does the windowing: spin from before the swing, while the player was
+ * lining the shot up, has decayed away by the time the buffer reaches the release,
+ * so there is no separate window constant to keep in sync.
+ *
+ * Pure.
+ */
+export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
+  if (!samples || samples.length === 0) return 0;
+
+  let spin = 0;
+  let prevT = null;
+
+  for (const sample of samples) {
+    const dtMs = prevT === null ? 0 : sample.t - prevT;
+    prevT = sample.t;
+    spin = decaySpinEnvelope(spin, screenSpinRate(sample.rotationRate), dtMs, tuning.spinEnvelopeTauMs);
+  }
+
+  return spin;
+}
+
+/**
+ * Cosmetic aim frame. Never authoritative — see the module header.
+ *
+ * Raw and unclamped, matching the throw descriptor exactly. Clamping here while the
+ * throw went through unclamped would put the preview and the stone back into
+ * disagreement, which is the whole class of bug this pass exists to remove.
+ *
+ * `spinRate` is passed in rather than read off the sample because the useful value is
+ * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
+ * this instant's spin, which keeps the function usable on its own and honest either way.
+ */
+export function buildAimPayload(sample, seq, spinRate, swingSpeed = 0) {
   if (!sample) return null;
   return {
     type: 'AIM',
     seq,
-    aimDeg: clamp(toGameYaw(sample.dYaw), -tuning.maxAimDeg, tuning.maxAimDeg),
-    attackAngleDeg: clamp(sample.dBeta, tuning.minAttackDeg, tuning.maxAttackDeg),
-    rollDeg: sample.dGamma,
-    windup: normalize01(sample.power, tuning.minPeakAccel, tuning.maxPeakAccel),
+    ...attitudeFields(sample.attitude),
+    spinRate: spinRate ?? screenSpinRate(sample.rotationRate),
+
+    // Raw m/s — how fast the phone is being swung right now, unnormalised. See
+    // ThrowController._windSpeed. The TV draws the arc at this, so winding up
+    // visibly extends it.
+    swingSpeed,
   };
 }
 
 /**
- * Drives the grip/release gesture and owns the AIM stream while gripped.
+ * Owns the arm/swing gesture and the AIM stream while armed.
+ *
+ * The gesture is: <b>tap to arm, then swing</b>. The throw fires when the phone
+ * stops, not when a finger lifts — accelerate hard, stop dead, and the stone goes.
+ * A second tap disarms instead, so a player who armed with the phone pointing the
+ * wrong way can re-aim and tap again to recalibrate.
+ *
+ * Firing on the stop is what lets orientation be read raw. A throwing motion ends
+ * pointing where it was thrown, so the stop sample already is the aim — nothing has
+ * to be inferred from earlier in the swing, and nothing can disagree with it.
  *
  * Deliberately does not know about the network — it calls onAim/onThrow and lets
  * the caller decide what to do with them, so this can be tested with plain stubs.
  */
 export class ThrowController {
-  constructor(motion, {
-    onAim, onThrow, onStateChange, onExpire,
-
-    // HOLD matches app.js — tap-swing-tap was tried in playtest and reverted
-    // there. The two defaults agreeing means a caller that forgets to pass a
-    // gesture gets the behaviour the app actually ships.
-    gesture = ThrowGesture.HOLD,
-    minArmMs = 150,
-    maxArmMs = 10_000,
-  } = {}) {
+  constructor(motion, { onAim, onThrow, onStateChange, aimHz = 20, tuning = ThrowTuning } = {}) {
     this.motion = motion;
     this.onAim = onAim ?? (() => {});
     this.onThrow = onThrow ?? (() => {});
     this.onStateChange = onStateChange ?? (() => {});
-    this.onExpire = onExpire ?? (() => {});
-
-    this.gesture = gesture;
-
-    // Shortest gap between arming and throwing. Below this a double-tap, or one
-    // bouncy tap, would arm and fire in the same motion and launch a rock with no
-    // swing behind it at all.
-    this.minArmMs = minArmMs;
-
-    // In TAP mode the armed state is invisible — no finger is on the glass — so a
-    // player who gets distracted mid-turn would otherwise stream aim frames forever
-    // and stall the match. In HOLD mode the held finger is unambiguous intent, so
-    // this does not apply there.
-    this.maxArmMs = maxArmMs;
+    this.aimIntervalMs = 1000 / aimHz;
+    this.tuning = tuning;
 
     this.state = ThrowState.IDLE;
     this.seq = 0;
     this._timer = null;
-    this._grippedAt = 0;
+    this._armedAt = 0;
+
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
+
+    // Live spin for the preview, and when it was last updated. Null rather than 0,
+    // because a timestamp of 0 is a legitimate reading and must not be mistaken for
+    // "no previous sample" — that would skip the decay for the sample after it.
+    this._spin = 0;
+    this._spinT = null;
+
+    // Live swing speed, so the aim arc can be drawn at how hard the phone is being
+    // swung right now. `_windVelocity` is acceleration integrated since the phone was
+    // last calm; `_windSpeed` is the decaying peak of its magnitude.
+    this._windVelocity = { x: 0, y: 0, z: 0 };
+    this._windSpeed = 0;
+
+    // Detection runs per sample rather than on the aim timer: a stop is a handful of
+    // milliseconds and polling at 20Hz reads the phone well after it has settled.
+    if (motion) motion.onSample = (sample) => this._onSample(sample);
+  }
+
+  /** Tap. Arms if idle, disarms if already armed. */
+  toggle() {
+    if (this.state === ThrowState.IDLE) return this.arm();
+    return this.disarm();
+  }
+
+  /** Captures the aim reference and starts streaming. */
+  arm() {
+    if (this.state !== ThrowState.IDLE) return null;
+
+    this._armedAt = performance.now();
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
+    this._spin = 0;
+    this._spinT = null;
+    this._windVelocity = { x: 0, y: 0, z: 0 };
+    this._windSpeed = 0;
+
+    this.motion.calibrate();
+    this._setState(ThrowState.ARMED);
+
+    this._timer = setInterval(() => {
+      const payload = buildAimPayload(
+        this.motion.latest, ++this.seq, this._spin, this._windSpeed);
+      if (payload) this.onAim(payload);
+    }, this.aimIntervalMs);
+
+    return null;
   }
 
   /**
-   * One tap, dispatched by state: the first arms the throw, the second releases it.
-   * Only used in TAP mode; HOLD mode drives grip/release directly.
+   * Second tap. Stands down without throwing so the player can re-aim — arming
+   * again recalibrates, which is the only way to fix a reference captured while
+   * pointing the wrong way.
    *
-   * @returns {object|null} the throw descriptor if this tap threw, else null
+   * On a device with no motion sensors this throws instead, because otherwise a
+   * desktop browser can arm and then never fire, deadlocking the match. A phone
+   * populates `latest` within a frame of start(), long before anyone can tap.
    */
-  tap() {
-    if (this.state === ThrowState.IDLE) {
-      this.grip();
-      return null;
-    }
+  disarm() {
+    if (this.state !== ThrowState.ARMED) return null;
 
-    if (performance.now() - this._grippedAt < this.minArmMs) return null;
+    const heldMs = performance.now() - this._armedAt;
+    this.cancel();
 
-    return this.release();
-  }
-
-  /** Player pressed and held. Captures the aim reference and starts streaming. */
-  grip() {
-    if (this.state !== ThrowState.IDLE) return;
-
-    this._grippedAt = performance.now();
-    this.motion.calibrate();
-    this._setState(ThrowState.GRIPPED);
-
-    // Event-driven, not a timer: a frame leaves the instant its sensor sample
-    // lands, so the arc never shows a value that is a timer tick stale. Flood
-    // control lives in the network layer (sendIfClear), which skips frames while
-    // the socket still has bytes queued.
-    this.motion.onSample = (sample) => {
-      const payload = buildAimPayload(sample, ++this.seq);
-      if (payload) this.onAim(payload);
-    };
-
-    // Only TAP mode can be armed-and-forgotten; see maxArmMs. This clock decides
-    // expiry only — aim cadence comes from the sensor — so it runs slow, scaled
-    // to the deadline it is checking.
-    if (this.gesture === ThrowGesture.TAP && this.maxArmMs > 0) {
-      const checkMs = Math.min(250, Math.max(this.maxArmMs / 2, 5));
-      this._timer = setInterval(() => {
-        if (performance.now() - this._grippedAt > this.maxArmMs) {
-          this.cancel();
-          this.onExpire();
-        }
-      }, checkMs);
-    }
-  }
-
-  /** Player let go. Analyses the swing and emits exactly one THROW. */
-  release() {
-    if (this.state !== ThrowState.GRIPPED) return null;
-
-    const holdMs = performance.now() - this._grippedAt;
-
-    this._stopAim();
-    this._setState(ThrowState.IDLE);
-
-    const descriptor = computeThrowDescriptor(this.motion.buffer.toArray());
-    if (descriptor) {
-      // sampleHz rides along for diagnostics: it is the number that tells you
-      // whether two platforms are actually feeding the same quality of data.
-      this.onThrow({
-        type: 'THROW',
-        ...descriptor,
-        sampleHz: Math.round(this.motion.sampleHz ?? 0),
-      });
-      return descriptor;
-    }
-
-    // A real device that produced samples but a weak gesture is a fumble, and must
-    // stay one. Only a device that has never produced a single motion event has no
-    // sensors at all — a phone sets `latest` within a frame of start(), long before
-    // anyone can grip, so this branch is unreachable on real hardware.
     if (this.motion.latest === null) {
-      const simulated = computeSimulatedThrowDescriptor(holdMs);
+      const simulated = computeSimulatedThrowDescriptor(heldMs);
       this.onThrow({ type: 'THROW', ...simulated });
       return simulated;
     }
@@ -339,19 +438,110 @@ export class ThrowController {
     return null;
   }
 
-  /** Turn ended or connection dropped mid-grip — abandon without throwing. */
+  /** Turn ended or connection dropped while armed — stand down without throwing. */
   cancel() {
-    this._stopAim();
+    this._stopTimer();
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
+    this._spin = 0;
+    this._spinT = null;
+    this._windVelocity = { x: 0, y: 0, z: 0 };
+    this._windSpeed = 0;
     this._setState(ThrowState.IDLE);
   }
 
-  /** Stop streaming: detach from the sensor and kill the expiry clock. */
-  _stopAim() {
+  _trackWindup(sample, dtMs) {
+    // Calm means the swing is over, or has not started. Resetting the integrator here is
+    // what keeps sensor bias from accumulating into phantom speed while someone lines a
+    // shot up — the same reason peakSwingSpeed starts from the last calm sample rather
+    // than from the top of the buffer.
+    if (sample.power <= this.tuning.stopAccel) {
+      this._windVelocity = { x: 0, y: 0, z: 0 };
+    } else if (dtMs > 0 && dtMs <= MAX_SAMPLE_GAP_MS && sample.linear) {
+      const dt = dtMs / 1000;
+      this._windVelocity = {
+        x: this._windVelocity.x + sample.linear.x * dt,
+        y: this._windVelocity.y + sample.linear.y * dt,
+        z: this._windVelocity.z + sample.linear.z * dt,
+      };
+    }
+
+    const speed = Math.hypot(this._windVelocity.x, this._windVelocity.y, this._windVelocity.z);
+
+    // Held briefly so the arc does not snap back to nothing between swings, and so a
+    // 20Hz aim frame lands on the peak rather than on whatever the phone was doing 50ms
+    // later. Same envelope as spin, same reason.
+    this._windSpeed = decaySpinEnvelope(this._windSpeed, speed, dtMs, this.tuning.spinEnvelopeTauMs);
+  }
+
+  // ---------------------------------------------------------------- detection
+
+  _onSample(sample) {
+    if (this.state !== ThrowState.ARMED) return;
+
+    // Tracked here rather than on the aim timer, for the same reason release
+    // detection is: a wrist flick peaks and is gone well inside one 20Hz interval,
+    // so sampling spin there would read mostly tail and miss what the player did.
+    const dtMs = this._spinT === null ? 0 : sample.t - this._spinT;
+    this._spinT = sample.t;
+    this._spin = decaySpinEnvelope(
+      this._spin, screenSpinRate(sample.rotationRate), dtMs, this.tuning.spinEnvelopeTauMs);
+
+    this._trackWindup(sample, dtMs);
+
+    if (sample.power >= this.tuning.swingAccel) {
+      this._swinging = true;
+      this._calmRun = 0;
+      if (this._peak === null || sample.power > this._peak.power) this._peak = sample;
+      return;
+    }
+
+    if (!this._swinging) return;
+
+    // A swing passes through near-zero acceleration at its own turnaround, so one
+    // calm sample is not a stop. Requiring a short run of them is what stops the
+    // throw firing halfway through the arc.
+    if (sample.power <= this.tuning.stopAccel) {
+      this._calmRun++;
+      if (this._calmRun >= this.tuning.stopSamples) this._fire();
+      return;
+    }
+
+    this._calmRun = 0;
+
+    // Never leave a player armed because their phone did not quite settle.
+    if (this._peak && sample.t - this._peak.t > this.tuning.maxSwingMs) this._fire();
+  }
+
+  _fire() {
+    // Spin is read from the absolute peak during the swing, rather than the live decayed envelope.
+    // A fast wrist flick peaks and decays hundreds of milliseconds before the phone finally comes 
+    // to a halt (which is what triggers this release). Using the live envelope meant the rock 
+    // left the hand with barely any spin.
+    let peakSpin = 0;
+    const samples = this.motion.buffer.toArray();
+    for (const sample of samples) {
+      const s = screenSpinRate(sample.rotationRate);
+      if (Math.abs(s) > Math.abs(peakSpin)) peakSpin = s;
+    }
+
+    const descriptor = computeThrowDescriptor(
+      samples, this.tuning, peakSpin);
+    this.cancel();
+
+    if (!descriptor) return null; // a twitch, not a throw — stay armed-off and let them retry
+
+
+    this.onThrow({ type: 'THROW', ...descriptor });
+    return descriptor;
+  }
+
+  _stopTimer() {
     if (this._timer !== null) {
       clearInterval(this._timer);
       this._timer = null;
     }
-    this.motion.onSample = null;
   }
 
   _setState(next) {

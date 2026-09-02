@@ -15,9 +15,9 @@ namespace Ui
     /// not auto-load the Lobby: the scene is empty, so loading it would look like the game
     /// had closed rather than like a results screen.
     ///
-    /// Reads standings from TurnManager rather than caching MatchEndedEvent's snapshot, so
-    /// there is one source of truth on screen. The event still carries its own copy for
-    /// anything that outlives the next match, when scores are cleared.
+    /// Reads standings straight off TurnManager, so there is one source of truth on
+    /// screen. There used to be a MatchEndedEvent carrying a duplicate snapshot; nothing
+    /// ever subscribed to it, so it was deleted rather than left as a second answer.
     /// </remarks>
     public class ResultsScreen : MonoBehaviour
     {
@@ -105,7 +105,8 @@ namespace Ui
             DrawStandings();
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label($"Press {_turns.StartMatchKey} to play again", _hint);
+            GUILayout.Label($"Press {_turns.StartMatchKey} — or tap PLAY AGAIN on a phone", _hint);
+            GUILayout.Label("Press F4 for match settings", _hint);
             GUILayout.Label($"{toggleKey} hides this screen", _hint);
 
             GUILayout.EndArea();

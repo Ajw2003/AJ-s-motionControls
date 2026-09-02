@@ -1,6 +1,7 @@
 namespace EventTypes.SkipEvents
 {
     using EventSystems;
+    using UnityEngine;
 
     /// <summary>Published each time the rock successfully bounces off the water.</summary>
     public class SkipOccurredEvent : IEvent
@@ -8,10 +9,14 @@ namespace EventTypes.SkipEvents
         public int SkipIndex { get; }
         public float Speed { get; }
 
-        public SkipOccurredEvent(int skipIndex, float speed)
+        /// <summary>Where it touched down, already clamped to the water plane.</summary>
+        public Vector3 Position { get; }
+
+        public SkipOccurredEvent(int skipIndex, float speed, Vector3 position)
         {
             SkipIndex = skipIndex;
             Speed = speed;
+            Position = position;
         }
     }
 }

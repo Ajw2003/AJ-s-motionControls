@@ -3,7 +3,7 @@
 A couch party game: the game runs on a PC driving a TV, and players use their phones as
 motion controllers through a web page — no app download, Jackbox-style.
 
-**Read [PLAN.md](PLAN.md) first.** It has the full architecture, the cross-platform sensor
+**Read [PLAN.md](docs/PLAN.md) first.** It has the full architecture, the cross-platform sensor
 problem, the physics design, and the milestone breakdown. This file only covers how to run
 what currently exists.
 
@@ -14,158 +14,106 @@ what currently exists.
 | `Assets/` | Unity 6 project (6000.3.10f1) — the game screen |
 | `relay/` | Node WebSocket relay, and the HTTP server for the controller page |
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
-| `PLAN.md` | Full design and implementation plan |
+| `deploy/` | Hosting runbook and `local-https.ps1`, which serves the controller over HTTPS |
+| `docs/` | Project documentation and plans |
+| `docs/PLAN.md` | Full design and implementation plan |
+| `docs/HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
+| `docs/Reference-Constants.md` | Every magic number, hidden constant and serialized field, and which of them must agree across Unity/phone/relay |
+| `docs/Reference-PlayerColours.md` | How player colour flows end to end: phone picker, host adjudication, SPECTATE sync, and which UI elements get tinted |
 
 ## Status
 
 **M0 and M1 complete, M2 in progress.** The relay is hardened and tested, the controller
 app normalizes sensors and sends `AIM`/`THROW`, and the pure skip solver plus the aim
-preview are in. Verified end to end with one Android phone.
+preview are in. Verified end to end on both Android and iOS.
 
-Hosting is one click: pressing Play brings up the relay and a public HTTPS tunnel, then
-puts the room code, join URL and a QR on screen. A match runs a fixed number of rounds and
-ends with a standings screen — see Match flow below.
+A match runs a fixed number of rounds and ends with a standings screen — see Match flow
+below.
 
 Still open in M2: `RockDefinition`/`RockSpawner` and the four specials, `RingGate`
 (nothing publishes `RingPassedEvent` yet, so `ScoreManager.pointsPerRing` is currently
 dead), and an authored lake scene to replace the runtime placeholder geometry.
 
-Not yet run with more than one real player — turn rotation, the spectator view and the
-results screen are written and unit-tested but have not been exercised at a party.
+**Multiplayer is done and verified.** A real 5-player session across iOS and Android
+exercised scoring, turn rotation, late-join and lobby-rejoin, and all four behaved. That
+was M3, and it landed ahead of the remaining M2 work above.
+
+> **Hosting has changed and this matters before you press Play.** There is no longer a
+> deployed relay. The Fly.io deployment was torn down and its files deleted, but
+> `RelayClient.relayUrl` still *compiles in* `wss://rockskipping-relay.fly.dev` as its
+> default — that address is dead, and pressing Play without overriding it will simply fail
+> to connect. You run the relay on this machine now; see **Running the game** below.
 
 ## Running the game
 
-Open the **Bootstrap** scene and press Play. `LocalServices` then:
+Start the relay on this machine first, then press Play. One command does the whole setup:
 
-1. reuses a relay already listening on `:3000`, or runs `npm install` (first launch only)
-   and starts one
-2. starts `cloudflared` and waits for its public `https://….trycloudflare.com` address
-3. hands the URL to `JoinScreen`, which shows it with the room code and a scannable QR
+```bash
+pwsh ./deploy/local-https.ps1
+```
+
+It detects this machine's LAN IP, borrows the published `*.local-ip.sh` certificate for the
+matching IP-encoded name (`10.0.0.213` → `10-0-0-213.local-ip.sh`), writes `relay-url.txt`
+and `relay-env.txt` for you, starts the relay over TLS, and verifies the chain before you
+pick up the phone. **Ctrl+C undoes all of it.** Full runbook:
+[deploy/README.md](deploy/README.md).
+
+⚠️ **Its last verification step is broken** — it calls `node test-deployed.js`, a file deleted
+along with the Fly config, so the script aborts at the end of an otherwise successful setup
+(the relay is already up by then). **If the game currently plays for you, you are not running
+this script** — the config and certificate from an earlier run persist outside the repo and
+Unity starts the relay from them. It becomes blocking the moment that state expires or the
+machine's IP changes. Details and workaround: [deploy/README.md](deploy/README.md).
+
+Then open **Bootstrap** and press Play:
+
+1. `RelayClient` reads `relay-url.txt` and opens a socket to the relay on this machine
+2. it derives the page origin from that socket URL, so the page and the socket cannot drift
+   onto different hosts
+3. `JoinScreen` shows the room code, the join URL and a scannable QR once connected
 
 Players scan the QR — it pre-fills the room code via `?room=CODE` — and type only a name.
 
-## How aiming works
+**The phone must be on the same network as the PC.** The name resolves to a private address,
+so it is unreachable from mobile data — a guest on cellular cannot join. That is the standing
+limitation of local hosting and is not a bug; [HostingPlan.md](docs/HostingPlan.md) §2 has the
+derivation, and [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) has the rest of
+what it costs.
 
-Two conventions have to agree, and both were wrong in the first playtest.
+"The same network" is looser than it sounds, though. A 5-player iOS/Android session ran on a
+home setup with an ISP router *and* a second unit in AP mode on its own SSID, with phones
+joining from either. And if guests cannot get onto the network — no password, or enterprise
+Wi-Fi wanting per-user credentials — **host a mobile hotspot from the PC and have phones join
+that**. The PC stays on the venue network and bridges them, which sidesteps AP isolation and
+sign-in walls entirely. Confirmed on a school network that a phone could not join.
 
-**On the phone**, aim is the compass bearing of the direction the top of the phone
-points — derived from the device's full rotation and projected onto the ground, *not*
-from the DeviceOrientation `alpha` angle. Alpha is a Euler yaw and is degenerate near
-vertical: at `beta = 89` a phone reads a bearing of -30°, and at `beta = 91` the same
-phone reads +150°. A throwing swing sweeps straight through that singularity, so
-physically straight throws veered hard left or right depending on where in the arc the
-release landed. `pointingHeading` returns a `confidence` alongside the bearing, and the
-heading is only updated while the phone is actually pointing at the horizon — through
-the steep middle of a swing the last good bearing is held. That is what makes "point at
-the screen and let go" behave.
+Why HTTPS at all, rather than plain `ws://` to a LAN IP: phone motion sensors need a secure
+context, and an HTTPS page cannot open a plain `ws://` socket. Both problems disappear when
+the page and the socket share one secure origin, which is why the relay serves the controller
+itself and why the certificate is worth the trouble.
 
-A side effect worth keeping: wrist roll (`gamma`) cannot change where the top of the
-phone points, so aim is immune to it for free.
+### Where aim and throw actually travel
 
-**In Unity**, `aimDeg = 0` means "along `AimPreview.ThrowForward`", which is derived
-from the aiming camera flattened onto the horizontal plane. Straight has to mean
-straight *to the player looking at the TV*; a camera framed even slightly off-axis makes
-a centred throw visibly drift, and no amount of correct phone aiming can fix it. The
-preview arc, the ghost rock and the live throw all read the same value, so the preview
-cannot promise a line the throw does not take.
+`AIM` and `THROW` ride a **direct WebRTC DataChannel** to each phone by default, so gameplay
+does not round-trip through the service. A phone that cannot negotiate one falls back to the
+relay socket by itself, per phone, and plays normally — only with slightly softer aim
+tracking. Roster, turn state, scores and the spectator view always go over the relay.
 
-The aiming camera is therefore square on to the lake — identity rotation, looking
-straight down +Z, so `ThrowForward` comes out as exactly +Z. Keep it that way when the
-real lake is authored: any yaw left in the aiming view is yaw the player has to
-unconsciously correct for.
+**F1** on the TV reports `N/M direct` and names which phones are on which transport, so a
+silent downgrade is visible rather than merely slower. Turn it off with **Use Peer
+Connections** on `Bootstrap`, or per-phone with `?direct=0` on the controller URL.
 
-The camera only moves while a rock is in flight. Once it has returned it snaps exactly
-onto the home pose and stops being touched at all — the smoothing used to run every
-idle frame, and since both interpolations approach their target asymptotically, the
-aiming view never quite settled.
+### Plain HTTP, for desktop-only testing
 
-Bearings and Unity's yaw are both clockwise-from-above, so the sign passes straight
-through. If a platform turns out to disagree, open the controller with `?yawSign=-1` to
-confirm it on the device before changing any code.
+`local-https.ps1` is the path for anything involving a real phone. If you only need two
+desktop browsers, you can skip the certificate entirely:
 
-## The throw gesture
+1. Tick **Start Local Services** on `Bootstrap`. It is **off by default**.
+2. Put `ws://localhost:3000` in a `relay-url.txt` beside the executable, so `RelayClient`
+   actually points at it. The file is gitignored, so it stays a per-machine choice.
 
-**Point at the lake, hold, swing, let go.** The hold is load-bearing: it is the only
-window in which the player sees the predicted arc and can adjust before committing.
-
-Tap-swing-tap was tried in playtest and reverted. It did not sharpen the release so much
-as delete the aiming phase — with no hold there is barely any time when the arc is on
-screen and steady. `?gesture=tap` still opts back into it; `ThrowController` keeps both,
-along with the two guards tap mode needs (`minArmMs`, so one bouncy tap cannot arm and
-fire in the same motion; `maxArmMs`, because an armed-and-forgotten throw is invisible
-when no finger is on the glass and would stall the match).
-
-### Aim is live to the last frame, and the throw is that frame
-
-Aim tracks the phone continuously, right through the swing, and the throw is computed
-from the **last sensor sample before release**. Nothing freezes or averages it: the
-value the player released on is the value that gets thrown.
-
-### Heading is integrated from the gyro, not sampled from fused orientation
-
-`deviceorientation` is a *fused* estimate: it lags real motion by tens of milliseconds
-and arrives on its own schedule, independent of `devicemotion`. Reading the heading out
-of it means every sample carries an angle from a moment ago — during a fast swing, the
-heading barely moves at all between orientation events, and the release frame reports
-where the phone was pointing before the swing finished. Fast swings simply got lost.
-
-`rotationRate` arrives with `devicemotion` at the full sensor rate and is essentially
-instantaneous. `headingRateFromGyro` converts it into the rate of change of the pointing
-bearing, and `MotionSource` integrates that every sample, so the heading is current at
-the moment of release rather than a stale snapshot.
-
-The fused reading is still used, as the drift-free reference — but it corrects the
-integrated value *in proportion to how slowly the phone is turning*
-(`FAST_ROTATION_DEG_PER_SEC`). Above that rate it is ignored outright, because snapping
-to it mid-swing would hand back exactly the lag this exists to remove. Once the phone
-settles, it reasserts itself and drift goes away.
-
-The conversion is the Z-X'-Y'' Euler kinematics:
-
-```
-headingRate = (rotationRate.beta * sin(gamma) - rotationRate.alpha * cos(gamma)) / cos(beta)
-```
-
-Checked numerically against a finite difference of the rotation matrix — exact to
-~5e-7 deg/s across 600 poses at up to 500 deg/s. The obvious-looking shortcut of taking
-the world-vertical component of the angular velocity is **wrong**: rolling a tilted phone
-about its own long axis sweeps a large vertical rotation while the top of the phone does
-not change heading at all, and that shortcut reports a couple of hundred deg/s of aim
-drift the player never performed. There is a test for exactly that case.
-
-`1/cos(beta)` is the same singularity `pointingHeading` has, so integration is gated on
-the same forward-lean check.
-
-### Aim covers the full rotation
-
-`maxAimDeg` is 180, not 45. A 45 degree ceiling silently discarded the top of every fast
-swing: any turn past it flattened to exactly 45, so hard throws all reported the same aim
-regardless of where the phone actually pointed. `dYaw` is already a shortest-angle delta
-in (-180, 180], so nothing is clipped — and aiming behind you is simply allowed.
-
-Two more things are sized for aim-stream accuracy:
-
-- **AIM streams at 60Hz**, matching the sensor rate, not the 20Hz the plan originally
-  specified. At 20Hz every frame is up to 50ms stale before it leaves the phone, which
-  during a swing is degrees of error baked in before the network is involved.
-- **The relay's rate limit is 180 msg/sec**, not 60. At exactly 60 the limiter began
-  discarding aim frames as soon as a throw or heartbeat shared the same second — and it
-  drops silently, so the arc would stutter for reasons that look nothing like rate
-  limiting from the game side.
-
-`AimPreview.smoothTime` is the remaining lag: `SmoothDamp` trails its target by roughly
-that long, so it wants to be only just large enough to hide packet jitter. It is 0.035s
-against a 60Hz stream.
-
-**On release the arc snaps to the throw that actually happened** and holds there while it
-fades, redrawn with the throw's real power, timing and spin instead of the nominal ones.
-So the last thing on screen is the line the rock is genuinely on — which also makes any
-remaining preview/throw disagreement visible rather than something to squint at frame by
-frame.
-
-While still predicting, power and timing are unknown, so the arc is drawn at a nominal
-0.7 power with perfect timing. Until release the arc promises a *line*, not a landing
-spot.
+That origin is not secure, so motion sensors will not work on it — which is exactly why it is
+desktop-only. Anything involving a phone needs the HTTPS path above.
 
 ## Match flow
 
@@ -188,30 +136,14 @@ cannot fling rocks across the results screen.
 ### Verifying with a second PC
 
 A desktop browser has no motion sensors, so a real swing produces nothing. Rather than
-letting that seat deadlock the match, `release()` synthesizes a throw from how long the
-grip button was held — but **only on a device that has never produced a single motion
+letting that seat deadlock the match, the **second tap** synthesizes a throw from how long
+the controller was armed — but **only on a device that has never produced a single motion
 event**, which a phone does within a frame of joining. A weak gesture on a real phone
 stays a fumble. Simulated throws are labelled on the controller and report zero samples,
 which is how the TV debug readout (**F1**) tells them apart.
 
 So: open the join URL on a second PC, join with a different name, and press Space on the
 host. Both seats take turns, scores accumulate, and the match ends on the final round.
-
-**Requires** Node 20+ and cloudflared:
-
-```bash
-winget install Cloudflare.cloudflared
-```
-
-A tunnel is not optional: phone motion sensors need a secure context, and an HTTPS page
-cannot open a plain `ws://` socket to a LAN address. Both problems disappear when the page
-and the socket share one public origin, which is why the relay serves the controller itself.
-
-The quick tunnel's hostname is random per launch. Nobody types it — that is what the QR is
-for — but it does mean a URL from a previous session is dead. For a stable address, switch
-to a named tunnel; only the `cloudflared` arguments in `LocalServices` change.
-
-To run the pieces by hand instead, untick **Start Local Services** on `Bootstrap`.
 
 ## Running the relay directly
 
@@ -220,7 +152,8 @@ cd relay && npm install && npm start
 ```
 
 Listens on `:3000`, or `$PORT` if set, serving the controller page, the WebSocket, `/health`
-and `/qr`. Deploy with `fly deploy` (see `relay/fly.toml`).
+and `/qr`. Set `TLS_CERT` and `TLS_KEY` and it serves HTTPS instead — which is what
+`local-https.ps1` does for you. Running it for real play is [deploy/README.md](deploy/README.md).
 
 Integration tests — routing, identity stamping, reconnect, the QR endpoint, and each
 hardening fix:
@@ -240,7 +173,7 @@ Console and in `verification-result.txt`.
 Headless — note the deliberate absence of `-quit`, since the method enters play mode:
 
 ```bash
-"C:\Users\Ayden's mini\Desktop\UnityVersions\6000.3.10f1\Editor\Unity.exe" -batchmode -nographics -projectPath . -executeMethod RockSkippingEditor.ProjectSetup.RunVerification -logFile verify.log
+"<your-unity-install>/6000.3.10f1/Editor/Unity.exe" -batchmode -nographics -projectPath . -executeMethod RockSkippingEditor.ProjectSetup.RunVerification -logFile verify.log
 ```
 
 Poll for `verification-result.txt`, then kill the process — exiting the editor from the
@@ -271,8 +204,9 @@ creates the managers that have to outlive scene transitions, then loads `Lobby`.
 `RelayClient` is created in `Bootstrap` alongside the other persistent managers. It must
 stay there: if it lives in a scene instead, the WebSocket is torn down on every transition
 and every phone bounces back to the join screen — which looks like a networking bug but is
-a lifecycle one. The same applies to `LocalServices`, which owns the two child processes,
-and `JoinScreen`, so a latecomer can still scan in during the Game scene.
+a lifecycle one. The same applies to `LocalServices`, which owns the relay child process on
+the machines where it is enabled at all, and `JoinScreen`, so a latecomer can still scan in
+during the Game scene.
 
 ## Notes for whoever picks this up
 

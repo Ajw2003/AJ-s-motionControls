@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26dc5ddb45096c54db94c91f7dc9bbc2, type: 3}
+  m_Name: Rock_01
+  m_EditorClassIdentifier: Assembly-CSharp::Game.RockDefinition
+  Id: rock_01
+  DisplayName: Skimmer
+  Blurb: Thin and fast. Rewards a clean angle, forgives nothing.
+  Mesh: {fileID: -6597847060184789411, guid: 1799593868c9d8b4eb5f1fed0447979a, type: 3}
+  LocalScale: {x: 0.75, y: 0.39, z: 0.75}
+  MeshRotation: {x: 0, y: 0, z: 0}
+  Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
+  Tuning: {fileID: 11400000, guid: 8959104894a79555bb0e997928127447, type: 2}

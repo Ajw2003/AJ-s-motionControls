@@ -65,21 +65,75 @@
     }
     button:disabled { opacity: 0.4; }
 
-    #gripBtn {
-      width: min(70vw, 260px); aspect-ratio: 1; border-radius: 50%;
-      background: var(--bad); color: #fff; font-size: 26px; letter-spacing: 1px;
-      box-shadow: 0 10px 0 #b3204a; transition: transform 80ms, box-shadow 80ms;
-      touch-action: none;
-      /* The tap-mode labels are two words, so they wrap inside the circle. */
-      padding: 0 24px; line-height: 1.2;
+    /* A secondary action, not a stone or the primary CTA — flat and quiet so
+       CONFIRM stays the one thing on this screen that looks pressable at a glance. */
+    button.link {
+      background: transparent; color: var(--muted);
+      font-size: 14px; font-weight: 600; padding: 10px 20px;
+      box-shadow: none; text-decoration: underline;
     }
-    #gripBtn.held { transform: translateY(8px); box-shadow: 0 2px 0 #b3204a; background: var(--good); }
+
+    /* A stone, not a button. Irregular radii give it a worn, asymmetric outline, and
+       the off-centre highlight reads as a lit surface rather than flat fill. */
+    #gripBtn {
+      width: min(70vw, 260px); aspect-ratio: 1;
+      border-radius: 54% 46% 49% 51% / 47% 52% 48% 53%;
+      background: radial-gradient(ellipse 60% 50% at 34% 28%, #9aa7b4 0%, #6f7d8c 42%, #4d5967 100%);
+      color: #f2f5f8; font-size: 24px; letter-spacing: 1px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+      box-shadow: 0 10px 0 #2b333d, inset 0 2px 6px rgba(255, 255, 255, 0.18);
+      transition: transform 80ms, box-shadow 80ms, filter 80ms;
+      touch-action: none;
+    }
+
+    /* Armed. Shifts tone and depth rather than swapping colour outright: this is the
+       only feedback that the phone is listening, so it has to read at a glance while
+       still looking like the same stone. */
+    #gripBtn.held {
+      transform: translateY(8px);
+      filter: brightness(1.14);
+      box-shadow: 0 2px 0 #2b333d, inset 0 2px 8px rgba(255, 255, 255, 0.28),
+                  0 0 0 3px var(--good);
+    }
+
+    /* Explicit and !important because `hidden` is only a UA rule of `display: none`,
+       which any later display declaration on a button quietly beats. The advance
+       buttons are hidden most of the time, so this has to be the rule that wins. */
+    [hidden] { display: none !important; }
 
     .error { color: var(--bad); font-weight: 600; min-height: 20px; text-align: center; }
+
+    /* The throw that just finished. Empty most of the time, so it collapses rather
+       than leaving a gap above the scores. */
+    .last-throw { color: var(--accent); font-weight: 600; margin: 0; min-height: 0; }
+    .last-throw:empty { display: none; }
 
     .scores { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 6px; }
     .score-row { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--surface); border-radius: 10px; font-size: 15px; }
     .score-row.active { border-left: 4px solid var(--accent); }
+
+    /* Colour picker. Swatch targets are 44px, the smallest thing a thumb hits
+       reliably on a phone — the same reason the throw button is as large as it is. */
+    .colour-picker { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+    .colour-label { color: var(--muted); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .colour-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .colour-swatch {
+      width: 44px; height: 44px; border-radius: 50%; padding: 0;
+      border: 3px solid transparent; box-shadow: none; cursor: pointer;
+    }
+    /* The ring, not a tick: a checkmark over an arbitrary colour is unreadable on
+       roughly half the palette. */
+    .colour-swatch.selected { border-color: var(--text); }
+    .colour-custom { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+    .colour-custom input[type="color"] {
+      width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
+      background: none; cursor: pointer;
+    }
+
+    /* Every player's colour beside their name in the scores, so the dots on the TV
+       and the names on the phone agree about who is who. */
+    .score-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+    .score-row .name { display: flex; align-items: center; gap: 8px; }
 
     #debug {
       flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 11px;
@@ -104,19 +158,53 @@
     <p>Enter the code shown on the TV.</p>
   </section>
 
+  <!-- Choosing a stone -->
+  <section id="chooseScreen" class="screen">
+    <h2>Choose your stone</h2>
+    <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
+    <p id="chooseRock" class="last-throw"></p>
+    <button id="confirmBtn">CONFIRM</button>
+
+    <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
+         duplicated here so there is one palette in the project, editable on the
+         PlayerColourPalette asset. The native picker is deliberate: it is the OS colour
+         wheel on both platforms, needs no library, and this page is served from a local
+         relay with nowhere to load one from. -->
+    <div id="colourPicker" class="colour-picker" hidden>
+      <span class="colour-label">Your colour</span>
+      <div id="colourSwatches" class="colour-swatches"></div>
+      <label class="colour-custom">
+        <span>Custom</span>
+        <input id="colourInput" type="color" value="#ffffff">
+      </label>
+    </div>
+    <!-- Advancing the match from a phone, so a couch session never has to go back to
+         the host's keyboard. Hidden until a SPECTATE says this phase can be advanced;
+         renderAdvance owns the label, because LOBBY on the wire covers both a fresh
+         lobby and a mid-match re-pick. -->
+    <button id="advanceBtn" class="link" hidden>START MATCH</button>
+    <button id="recentreBtn" class="link">RE-CENTRE</button>
+  </section>
+
   <!-- Spectating -->
   <section id="waitScreen" class="screen">
     <h2 id="waitTitle">Waiting for your turn</h2>
     <p id="waitDetail">Watch the TV.</p>
+    <p id="lastThrow" class="last-throw"></p>
+    <!-- The results-screen half of the same idea. Primary here rather than a .link:
+         on final scores it is the only thing left to do. -->
+    <button id="againBtn" hidden>PLAY AGAIN</button>
     <div id="scores" class="scores"></div>
   </section>
 
   <!-- Your turn -->
   <section id="throwScreen" class="screen">
     <h2 id="throwTitle">Your turn!</h2>
-    <!-- Both of these are overwritten at startup to match the bound gesture. -->
-    <p id="throwHint">Point your phone at the lake, hold, swing, and let go.</p>
-    <button id="gripBtn">HOLD</button>
+    <p id="throwHint">Point your phone at the lake, tap, then swing and stop sharply.</p>
+    <!-- renderGripButton paints this on startup; the markup only covers the instant
+         before the script runs. It used to say HOLD and stayed that way, because
+         onStateChange fires on transitions and the first one is the player's own tap. -->
+    <button id="gripBtn">TAP TO AIM</button>
     <p id="throwResult"></p>
   </section>
 

@@ -18,20 +18,31 @@ const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
 const nodePath = require('path');
+const { createResponder } = require('./dns');
 
 const PORT = Number(process.env.PORT) || 3000;
+
+// Must default to all interfaces. On Fly the proxy reaches this process from
+// outside the VM, so binding loopback there would refuse every connection and
+// fail the health check on deploy. Behind a reverse proxy on the SAME host —
+// the Caddy/VPS route in deploy/README.md — set BIND_HOST=127.0.0.1 so the
+// plain-HTTP relay is not reachable from the LAN alongside the TLS one.
+const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
 const MAX_PLAYERS_PER_ROOM = 8;
 const MAX_MESSAGE_BYTES = 4096;
 const HEARTBEAT_MS = 30_000;
 const ROOM_IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const ROOM_SWEEP_MS = 5 * 60 * 1000;
+
+// How long a room outlives its host. A host socket drops for dull reasons — a
+// redeploy, a Wi-Fi blip, the machine being restarted underneath it — and closing
+// the room the instant that happens ejects every player and forces them to retype
+// a code that no longer exists. Holding it briefly lets the host reclaim it and
+// everyone carry on. Overridable so the tests do not have to wait a minute.
+const HOST_GRACE_MS = Number(process.env.HOST_GRACE_MS) || 60_000;
+const HOST_GRACE_SWEEP_MS = 2_000;
 const RATE_WINDOW_MS = 1000;
-// AIM streams at the sensor rate (60Hz) while a player is gripping, so the ceiling
-// has to sit well clear of that. At exactly 60 the limiter starts discarding aim
-// frames the moment a throw or a heartbeat shares the same second — silently, since
-// a flooding client deliberately gets no feedback — and the arc stutters for reasons
-// that look nothing like rate limiting from the game side.
-const RATE_MAX_MESSAGES = 180;
+const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
 
 // No I and no O — these are read aloud off a TV and typed on a phone.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -42,16 +53,13 @@ const MAX_PLAYER_ID_LENGTH = 16;
 // tunnel, so it takes a bound rather than trusting the caller.
 const MAX_QR_DATA_LENGTH = 512;
 
-// Latest-value-wins streams: when the destination socket is backed up, delivering
-// these late is strictly worse than not delivering them at all, because a fresher
-// frame is at most a sensor tick behind. TCP would otherwise queue every stale
-// frame and replay the whole backlog in order. The relay stays game-agnostic
-// apart from this two-entry drop list.
-const LATEST_WINS_TYPES = new Set(['AIM', 'SPECTATE']);
-const BACKPRESSURE_BYTES = 4096;
-
-/** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number}>} */
+/** @type {Map<string, {code: string, host: WebSocket, players: Map<string, WebSocket>, lastActivity: number, hostGoneAt: number|null}>} */
 const rooms = new Map();
+
+// Counters for /health. Two integer increments on the hot path, which is cheap
+// enough to leave on permanently — and without them there is no way to answer
+// "how close is this box to its limit?" except by waiting for it to fall over.
+const metrics = { messagesIn: 0, messagesOut: 0, roomsCreated: 0, startedAt: Date.now() };
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -73,14 +81,8 @@ function generateRoomCode() {
 function send(ws, payload) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
+    metrics.messagesOut++;
   }
-}
-
-/** Pre-serialized send, so a broadcast stringifies once, not once per recipient. */
-function sendRaw(ws, json, dropWhenCongested = false) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  if (dropWhenCongested && ws.bufferedAmount > BACKPRESSURE_BYTES) return;
-  ws.send(json);
 }
 
 function sendError(ws, code, message) {
@@ -121,18 +123,6 @@ function closeRoom(room, reason) {
     playerWs.close(1000, reason);
   }
   room.players.clear();
-
-  // Tell the host too, and clear its registration so a re-sent CREATE_ROOM
-  // succeeds. Without this an idle-swept room left the Unity host alive but
-  // permanently bricked: every broadcast hit NOT_IN_ROOM and CREATE_ROOM bounced
-  // off ALREADY_REGISTERED, with no way back short of restarting the game.
-  // When the host itself disconnected, the send is a no-op on a closed socket.
-  send(room.host, { type: 'ROOM_CLOSED', reason });
-  if (room.host.meta) {
-    room.host.meta.role = null;
-    room.host.meta.roomCode = null;
-  }
-
   rooms.delete(room.code);
   log(`room ${room.code} closed (${reason})`);
 }
@@ -141,10 +131,31 @@ function closeRoom(room, reason) {
 // message handlers
 // ---------------------------------------------------------------------------
 
-function handleCreateRoom(ws) {
+function handleCreateRoom(ws, data) {
   if (ws.meta.role) {
     sendError(ws, 'ALREADY_REGISTERED', 'This connection already has a role.');
     return;
+  }
+
+  // A host that dropped asks for its previous code back, so every phone still
+  // holding it reconnects instead of the room silently becoming unreachable and
+  // everyone having to retype. Honoured only when the code is genuinely free or
+  // its host is gone — a live room is never handed to a different connection.
+  const requested = normalizeRoomCode(data && data.preferredCode);
+
+  if (requested) {
+    const existing = rooms.get(requested);
+
+    if (existing && (existing.hostGoneAt !== null || existing.host.readyState !== WebSocket.OPEN)) {
+      resumeRoom(existing, ws);
+      return;
+    }
+
+    if (!existing) {
+      createRoom(ws, requested, true);
+      return;
+    }
+    // Otherwise it is in use by a live host; fall through and mint a fresh one.
   }
 
   const code = generateRoomCode();
@@ -153,14 +164,52 @@ function handleCreateRoom(ws) {
     return;
   }
 
-  const room = { code, host: ws, players: new Map(), lastActivity: Date.now() };
+  createRoom(ws, code, false);
+}
+
+function createRoom(ws, code, reclaimed) {
+  const room = { code, host: ws, players: new Map(), lastActivity: Date.now(), hostGoneAt: null };
   rooms.set(code, room);
+  metrics.roomsCreated++;
 
   ws.meta.role = 'host';
   ws.meta.roomCode = code;
 
-  send(ws, { type: 'ROOM_CREATED', roomCode: code });
-  log(`room ${code} created`);
+  send(ws, { type: 'ROOM_CREATED', roomCode: code, resumed: false });
+  log(`room ${code} created${reclaimed ? ' (code reclaimed after host restart)' : ''}`);
+}
+
+/**
+ * Hand a room whose host vanished to the reconnecting host, keeping every player
+ * in place. The players never learn the socket flapped beyond one HOST_RESUMED.
+ */
+function resumeRoom(room, ws) {
+  const previous = room.host;
+
+  room.host = ws;
+  room.hostGoneAt = null;
+  room.lastActivity = Date.now();
+
+  ws.meta.role = 'host';
+  ws.meta.roomCode = room.code;
+
+  // Detach the old socket first: its close handler checks `room.host === ws` to
+  // decide whether the host left, and must not now think it did.
+  if (previous && previous.meta) previous.meta.roomCode = null;
+  if (previous && previous.readyState === WebSocket.OPEN) {
+    previous.close(1000, 'Replaced by a reconnecting host');
+  }
+
+  send(ws, {
+    type: 'ROOM_CREATED',
+    roomCode: room.code,
+    resumed: true,
+    players: [...room.players.keys()],
+  });
+
+  for (const [, playerWs] of room.players) send(playerWs, { type: 'HOST_RESUMED' });
+
+  log(`room ${room.code} resumed by a reconnecting host (${room.players.size} players kept)`);
 }
 
 function handleJoinRoom(ws, data) {
@@ -187,20 +236,6 @@ function handleJoinRoom(ws, data) {
   if (!room) {
     sendError(ws, 'ROOM_NOT_FOUND', `No game found with code ${code}.`);
     return;
-  }
-
-  // A connection already registered as a player that joins again under a
-  // different name or room would otherwise leave its old slot pointing at this
-  // socket forever — a ghost that counts toward the room cap, never gets a
-  // PLAYER_LEFT, and shows a stale name on the TV.
-  if (ws.meta.role === 'player' && ws.meta.roomCode &&
-      (ws.meta.roomCode !== code || ws.meta.playerId !== playerId)) {
-    const oldRoom = rooms.get(ws.meta.roomCode);
-    if (oldRoom && oldRoom.players.get(ws.meta.playerId) === ws) {
-      oldRoom.players.delete(ws.meta.playerId);
-      send(oldRoom.host, { type: 'PLAYER_LEFT', playerId: ws.meta.playerId });
-      log(`room ${oldRoom.code}: ${ws.meta.playerId} left (rejoined as someone else)`);
-    }
   }
 
   const existing = room.players.get(playerId);
@@ -239,11 +274,6 @@ function relayToHost(ws, data) {
   room.lastActivity = Date.now();
   // Stamp the sender server-side so a phone cannot spoof another player.
   data.playerId = ws.meta.playerId;
-
-  // Latest-wins streams are dropped rather than queued behind a backed-up host
-  // socket — a queued AIM frame is already obsolete by the time it would drain.
-  if (LATEST_WINS_TYPES.has(data.type) && room.host.bufferedAmount > BACKPRESSURE_BYTES) return;
-
   send(room.host, data);
 }
 
@@ -256,19 +286,14 @@ function relayToPlayers(ws, data) {
   }
   room.lastActivity = Date.now();
 
-  const dropWhenCongested = LATEST_WINS_TYPES.has(data.type);
-  const json = JSON.stringify(data);
-
   if (data.targetPlayerId) {
-    // Sanitized with the same rules used when the key was stored, or a long name
-    // can never match its truncated slot.
-    const target = room.players.get(sanitizePlayerId(data.targetPlayerId) ?? '');
-    if (target) sendRaw(target, json, dropWhenCongested);
+    const target = room.players.get(String(data.targetPlayerId).toUpperCase());
+    if (target) send(target, data);
     return;
   }
 
   for (const [, playerWs] of room.players) {
-    sendRaw(playerWs, json, dropWhenCongested);
+    send(playerWs, data);
   }
 }
 
@@ -298,10 +323,8 @@ function serveStatic(req, res) {
   const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
   const resolved = nodePath.resolve(STATIC_DIR, relative);
 
-  // Refuse anything that escapes the static root. The path-separator check
-  // matters: a bare prefix test also accepts sibling directories whose names
-  // merely start with "controller".
-  if (resolved !== STATIC_DIR && !resolved.startsWith(STATIC_DIR + nodePath.sep)) {
+  // Refuse anything that escapes the static root.
+  if (!resolved.startsWith(STATIC_DIR)) {
     res.writeHead(403).end('Forbidden');
     return;
   }
@@ -356,13 +379,62 @@ function serveQr(req, res, query) {
   }
 }
 
-const httpServer = http.createServer((req, res) => {
+// LOAD-BEARING. This began as a spike and its comment said to delete it; it is now
+// the only way the game is played. CertificateProvider hands this process a LAN
+// certificate and a key, and the phone will not hand out motion sensors to a page
+// that is not on a secure origin — so without this branch there is no input.
+//
+// Env-gated, so the default path is byte-identical to before: with neither
+// variable set, this is the plain http.createServer it has always been.
+const TLS_CERT = process.env.TLS_CERT;
+const TLS_KEY = process.env.TLS_KEY;
+const useTls = Boolean(TLS_CERT && TLS_KEY);
+
+// Local DNS, in the same env-gated shape and for the same reason: with the variable
+// unset, nothing about this file changes.
+//
+// Set in HOTSPOT MODE ONLY. On a LAN the phones use the router's resolver, and running
+// one here would be answering questions nobody asked us. DNS_ALLOW is not optional when
+// DNS_RESPOND_IP is set — dns.js refuses to start without it, because an unguarded
+// resolver is a DDoS amplifier rather than merely untidy. See SecurityReview.md §4.
+const DNS_RESPOND_IP = process.env.DNS_RESPOND_IP;
+const DNS_ALLOW = process.env.DNS_ALLOW;
+const DNS_SUFFIX = process.env.DNS_SUFFIX || '.local-ip.sh';
+const DNS_UPSTREAM = process.env.DNS_UPSTREAM || null;
+const useDns = Boolean(DNS_RESPOND_IP);
+
+let dnsResponder = null;
+
+// True only once the UDP :53 bind has actually resolved — the listen() callback below only
+// *initiates* the bind, it doesn't wait for it, so a caller that needs to know DNS is really
+// listening (HotspotService, before it starts tethering — the responder must win the race
+// against ICS for :53) has to check this, not just that /health answers at all.
+let dnsBound = false;
+
+function handleRequest(req, res) {
   // Base is a formality — only the path and query are ever read.
   const url = new URL(req.url || '/', 'http://localhost');
 
   if (url.pathname === '/health') {
+    let players = 0;
+    for (const room of rooms.values()) players += room.players.size;
+
+    const memory = process.memoryUsage();
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ ok: true, rooms: rooms.size }));
+      .end(JSON.stringify({
+        ok: true,
+        rooms: rooms.size,
+        players,
+        connections: wss.clients.size,
+        roomsCreated: metrics.roomsCreated,
+        messagesIn: metrics.messagesIn,
+        messagesOut: metrics.messagesOut,
+        rssMb: Math.round(memory.rss / 1048576),
+        heapMb: Math.round(memory.heapUsed / 1048576),
+        uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
+        dns: { enabled: useDns, bound: dnsBound },
+      }));
     return;
   }
 
@@ -372,7 +444,15 @@ const httpServer = http.createServer((req, res) => {
   }
 
   serveStatic(req, res);
-});
+}
+
+// The WebSocket server attaches to either kind of listener unchanged, so wss://
+// comes free with the TLS branch and needs no separate handling.
+const httpServer = useTls
+  ? require('https').createServer(
+      { cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) },
+      handleRequest)
+  : http.createServer(handleRequest);
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
 
@@ -391,6 +471,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('message', (raw) => {
+    metrics.messagesIn++;
     if (isRateLimited(ws.meta)) return; // drop silently; a flooding client gets no feedback loop
 
     let data;
@@ -410,15 +491,13 @@ wss.on('connection', (ws) => {
 
     switch (data.type) {
       case 'CREATE_ROOM':
-        handleCreateRoom(ws);
+        handleCreateRoom(ws, data);
         return;
       case 'JOIN_ROOM':
         handleJoinRoom(ws, data);
         return;
       case 'PING':
-        // Echo the client's timestamp so it can measure round-trip time — the
-        // number that separates tunnel latency from everything the code owns.
-        send(ws, { type: 'PONG', t: typeof data.t === 'number' ? data.t : undefined });
+        send(ws, { type: 'PONG' });
         return;
       default:
         if (ws.meta.role === 'player') relayToHost(ws, data);
@@ -435,7 +514,12 @@ wss.on('connection', (ws) => {
     if (!room) return;
 
     if (role === 'host' && room.host === ws) {
-      closeRoom(room, 'Host disconnected');
+      // Held rather than closed. See HOST_GRACE_MS — the host is very often coming
+      // straight back, and ejecting everyone the moment its socket flaps is what
+      // makes a redeploy or a Wi-Fi blip look like the game crashed.
+      room.hostGoneAt = Date.now();
+      for (const [, playerWs] of room.players) send(playerWs, { type: 'HOST_LEFT' });
+      log(`room ${roomCode}: host disconnected, holding for ${HOST_GRACE_MS}ms`);
       return;
     }
 
@@ -474,16 +558,35 @@ const roomSweep = setInterval(() => {
   }
 }, ROOM_SWEEP_MS);
 
+// Separate from the idle sweep because it runs on a much shorter clock: a host that
+// is not coming back should not strand its players for minutes.
+const hostGraceSweep = setInterval(() => {
+  const now = Date.now();
+  for (const room of [...rooms.values()]) {
+    if (room.hostGoneAt !== null && now - room.hostGoneAt > HOST_GRACE_MS) {
+      closeRoom(room, 'Host disconnected');
+    }
+  }
+}, HOST_GRACE_SWEEP_MS);
+
 wss.on('close', () => {
   clearInterval(heartbeat);
   clearInterval(roomSweep);
+  clearInterval(hostGraceSweep);
 });
 
 function shutdown() {
   log('shutting down');
   clearInterval(heartbeat);
   clearInterval(roomSweep);
+  clearInterval(hostGraceSweep);
   for (const room of [...rooms.values()]) closeRoom(room, 'Server shutting down');
+
+  // Released explicitly so a restart can rebind it. Leaving :53 held by a dying process
+  // is exactly how the race against ICS gets lost on the next run.
+  if (dnsResponder) { dnsResponder.stop().catch(() => {}); dnsResponder = null; }
+  dnsBound = false;
+
   wss.close(() => httpServer.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
 }
@@ -491,9 +594,44 @@ function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-httpServer.listen(PORT, () => {
-  log(`Rock Skipping relay listening on :${PORT}`);
-  log(`  controller page  http://localhost:${PORT}/`);
-  log(`  websocket        ws://localhost:${PORT}/`);
+httpServer.listen(PORT, BIND_HOST, () => {
+  const scheme = useTls ? 'https' : 'http';
+  const wsScheme = useTls ? 'wss' : 'ws';
+  log(`Rock Skipping relay listening on ${BIND_HOST}:${PORT}${useTls ? ' (TLS)' : ''}`);
+  log(`  controller page  ${scheme}://localhost:${PORT}/`);
+  log(`  websocket        ${wsScheme}://localhost:${PORT}/`);
   log(`  serving static from ${STATIC_DIR}`);
+
+  if (useDns) startDns();
 });
+
+function startDns() {
+  try {
+    dnsResponder = createResponder({
+      ip: DNS_RESPOND_IP,
+      suffix: DNS_SUFFIX,
+      allow: DNS_ALLOW,
+      upstream: DNS_UPSTREAM,
+      log,
+    });
+  } catch (err) {
+    // Thrown for a missing DNS_ALLOW, which is a configuration mistake rather than a
+    // runtime condition. Refusing to start the resolver is correct; killing the relay
+    // with it is not, because the game still works on a LAN without one.
+    log(`DNS responder NOT started: ${err.message}`);
+    dnsResponder = null;
+    return;
+  }
+
+  dnsResponder.start().then(() => {
+    dnsBound = true;
+  }).catch((err) => {
+    // EADDRINUSE here almost certainly means ICS got :53 first, which breaks name
+    // resolution for every phone on the hotspot. Loud, because the symptom at the phone
+    // is an unrelated-looking "server not found".
+    log(`DNS responder FAILED to bind: ${err.code || err.message}`);
+    log('  Phones on the hotspot will not resolve the game address.');
+    log('  The responder must bind :53 before tethering starts.');
+    dnsResponder = null;
+  });
+}

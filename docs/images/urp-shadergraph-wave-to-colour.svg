@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1650 790" width="1650" height="790" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif">
+  <title>WaterRippleURP — step 4d, Wave to Base Color</title>
+
+  <defs>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0 L0 0 0 28" fill="none" stroke="#2a2a2a" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1650" height="790" fill="#212121"/>
+  <rect width="1650" height="790" fill="url(#grid)"/>
+
+  <!-- ── caption ───────────────────────────────────────────────────────── -->
+  <text x="24" y="34" fill="#e8e8e8" font-size="19" font-weight="600">Step 4d — Wave → Base Color</text>
+  <text x="24" y="60" fill="#8fd7ff" font-size="13" font-family="Consolas, monospace">albedo = lerp(_BaseColor, _CrestColor, saturate(wave));</text>
+  <text x="24" y="78" fill="#8fd7ff" font-size="13" font-family="Consolas, monospace">albedo *= 1.0 - saturate(-wave) * _TroughDarkness;</text>
+
+  <!-- ── wires (drawn under nodes) ─────────────────────────────────────── -->
+  <g fill="none" stroke-width="2.5" stroke-linecap="round" opacity="0.95">
+    <path d="M200,454 C254,454 236,256 290,256" stroke="#9ad7f5"/>
+    <path d="M200,454 C254,454 236,576 290,576" stroke="#9ad7f5"/>
+    <path d="M466,256 C552,256 524,256 610,256" stroke="#9ad7f5"/>
+    <path d="M560,105 C600,105 570,200 610,200" stroke="#f5c842"/>
+    <path d="M560,151 C600,151 570,228 610,228" stroke="#f5c842"/>
+    <path d="M786,200 C906,200 1090,388 1210,388" stroke="#f5c842"/>
+    <path d="M466,576 C506,576 480,576 520,576" stroke="#9ad7f5"/>
+    <path d="M696,576 C736,576 710,578 750,578" stroke="#9ad7f5"/>
+    <path d="M650,685 C710,685 690,606 750,606" stroke="#9ad7f5"/>
+    <path d="M926,578 C966,578 940,576 980,576" stroke="#9ad7f5"/>
+    <path d="M1156,576 C1196,576 1170,416 1210,416" stroke="#9ad7f5"/>
+    <path d="M1386,388 C1426,388 1390,356 1430,356" stroke="#f5c842"/>
+  </g>
+
+  <!-- ── property pills ───────────────────────────────────────────────── -->
+  <g>
+    <rect x="400" y="90" width="160" height="30" rx="15" fill="#4a4020" stroke="#f5c842" stroke-width="1.5"/>
+    <text x="416" y="110" fill="#f0e0b0" font-size="12.5" font-family="Consolas, monospace">_BaseColor</text>
+    <circle cx="560" cy="105" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+
+    <rect x="400" y="136" width="160" height="30" rx="15" fill="#4a4020" stroke="#f5c842" stroke-width="1.5"/>
+    <text x="416" y="156" fill="#f0e0b0" font-size="12.5" font-family="Consolas, monospace">_CrestColor</text>
+    <circle cx="560" cy="151" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+
+    <rect x="470" y="670" width="180" height="30" rx="15" fill="#1e3a4a" stroke="#9ad7f5" stroke-width="1.5"/>
+    <text x="486" y="690" fill="#c8e8f8" font-size="12.5" font-family="Consolas, monospace">_TroughDarkness</text>
+    <circle cx="650" cy="685" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+  </g>
+
+  <!-- ── N1 Custom Function (from step 4c) ─────────────────────────────── -->
+  <g>
+    <rect x="24" y="350" width="176" height="132" rx="6" fill="#333" stroke="#0d0d0d" stroke-width="1.5" stroke-dasharray="5 3"/>
+    <path d="M30,350 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="36" y="368" fill="#cfcfcf" font-size="12.5" font-weight="600">Custom Function</text>
+    <text x="36" y="396" fill="#9a9a9a" font-size="11.5" font-family="Consolas, monospace">RippleWave</text>
+    <text x="36" y="414" fill="#7a7a7a" font-size="11">File mode · 5 inputs</text>
+    <text x="36" y="430" fill="#7a7a7a" font-size="11">(wired in step 4c)</text>
+    <text x="192" y="458" fill="#cfcfcf" font-size="11.5" text-anchor="end">Wave</text>
+    <circle cx="200" cy="454" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+  </g>
+
+  <!-- ── N2 Saturate (crest branch) ────────────────────────────────────── -->
+  <g>
+    <rect x="290" y="200" width="176" height="76" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M296,200 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="302" y="218" fill="#e4e4e4" font-size="12.5" font-weight="600">Saturate</text>
+    <circle cx="290" cy="256" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="302" y="260" fill="#a8a8a8" font-size="11">In</text>
+    <text x="454" y="260" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="466" cy="256" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="288" cy="198" r="12" fill="#d4642a"/>
+    <text x="288" y="203" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">1</text>
+  </g>
+
+  <!-- ── N3 Lerp ───────────────────────────────────────────────────────── -->
+  <g>
+    <rect x="610" y="146" width="176" height="132" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M616,146 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="622" y="164" fill="#e4e4e4" font-size="12.5" font-weight="600">Lerp</text>
+    <circle cx="610" cy="200" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <text x="622" y="204" fill="#a8a8a8" font-size="11">A</text>
+    <circle cx="610" cy="228" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <text x="622" y="232" fill="#a8a8a8" font-size="11">B</text>
+    <circle cx="610" cy="256" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="622" y="260" fill="#a8a8a8" font-size="11">T</text>
+    <text x="774" y="204" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="786" cy="200" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="608" cy="144" r="12" fill="#d4642a"/>
+    <text x="608" y="149" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">2</text>
+  </g>
+
+  <!-- ── N4 Negate ─────────────────────────────────────────────────────── -->
+  <g>
+    <rect x="290" y="520" width="176" height="76" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M296,520 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="302" y="538" fill="#e4e4e4" font-size="12.5" font-weight="600">Negate</text>
+    <circle cx="290" cy="576" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="302" y="580" fill="#a8a8a8" font-size="11">In</text>
+    <text x="454" y="580" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="466" cy="576" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="288" cy="518" r="12" fill="#d4642a"/>
+    <text x="288" y="523" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">3</text>
+  </g>
+
+  <!-- ── N5 Saturate (trough branch) ───────────────────────────────────── -->
+  <g>
+    <rect x="520" y="520" width="176" height="76" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M526,520 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="532" y="538" fill="#e4e4e4" font-size="12.5" font-weight="600">Saturate</text>
+    <circle cx="520" cy="576" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="532" y="580" fill="#a8a8a8" font-size="11">In</text>
+    <text x="684" y="580" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="696" cy="576" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="518" cy="518" r="12" fill="#d4642a"/>
+    <text x="518" y="523" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">4</text>
+  </g>
+
+  <!-- ── N6 Multiply (trough × darkness) ───────────────────────────────── -->
+  <g>
+    <rect x="750" y="520" width="176" height="104" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M756,520 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="762" y="538" fill="#e4e4e4" font-size="12.5" font-weight="600">Multiply</text>
+    <circle cx="750" cy="578" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="762" y="582" fill="#a8a8a8" font-size="11">A</text>
+    <circle cx="750" cy="606" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="762" y="610" fill="#a8a8a8" font-size="11">B</text>
+    <text x="914" y="582" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="926" cy="578" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="748" cy="518" r="12" fill="#d4642a"/>
+    <text x="748" y="523" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">5</text>
+  </g>
+
+  <!-- ── N7 One Minus ──────────────────────────────────────────────────── -->
+  <g>
+    <rect x="980" y="520" width="176" height="76" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M986,520 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="992" y="538" fill="#e4e4e4" font-size="12.5" font-weight="600">One Minus</text>
+    <circle cx="980" cy="576" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="992" y="580" fill="#a8a8a8" font-size="11">In</text>
+    <text x="1144" y="580" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="1156" cy="576" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="978" cy="518" r="12" fill="#d4642a"/>
+    <text x="978" y="523" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">6</text>
+  </g>
+
+  <!-- ── N8 Multiply (final albedo) ────────────────────────────────────── -->
+  <g>
+    <rect x="1210" y="330" width="176" height="104" rx="6" fill="#383838" stroke="#0d0d0d" stroke-width="1.5"/>
+    <path d="M1216,330 h164 a6,6 0 0 1 6,6 v20 h-176 v-20 a6,6 0 0 1 6,-6 z" fill="#2a2a2a"/>
+    <text x="1222" y="348" fill="#e4e4e4" font-size="12.5" font-weight="600">Multiply</text>
+    <circle cx="1210" cy="388" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <text x="1222" y="392" fill="#a8a8a8" font-size="11">A</text>
+    <circle cx="1210" cy="416" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="1222" y="420" fill="#a8a8a8" font-size="11">B</text>
+    <text x="1374" y="392" fill="#a8a8a8" font-size="11" text-anchor="end">Out</text>
+    <circle cx="1386" cy="388" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <circle cx="1208" cy="328" r="12" fill="#d4642a"/>
+    <text x="1208" y="333" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">7</text>
+  </g>
+
+  <!-- ── N9 Fragment master stack ──────────────────────────────────────── -->
+  <g>
+    <rect x="1430" y="300" width="180" height="150" rx="6" fill="#2f3a2f" stroke="#5c8a5c" stroke-width="2"/>
+    <path d="M1436,300 h168 a6,6 0 0 1 6,6 v20 h-180 v-20 a6,6 0 0 1 6,-6 z" fill="#26301f"/>
+    <text x="1442" y="318" fill="#bfe0bf" font-size="12.5" font-weight="600">Fragment</text>
+    <circle cx="1430" cy="356" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <text x="1442" y="360" fill="#e4e4e4" font-size="11.5" font-weight="600">Base Color</text>
+    <text x="1442" y="392" fill="#9a9a9a" font-size="11.5">Metallic</text>
+    <text x="1598" y="392" fill="#f0e0b0" font-size="11.5" text-anchor="end" font-family="Consolas, monospace">0</text>
+    <text x="1442" y="416" fill="#9a9a9a" font-size="11.5">Smoothness</text>
+    <text x="1598" y="416" fill="#f0e0b0" font-size="11.5" text-anchor="end" font-family="Consolas, monospace">0.5</text>
+    <text x="1442" y="438" fill="#6f8a6f" font-size="10">Standard's defaults — see 4d</text>
+  </g>
+
+  <!-- ── legend ────────────────────────────────────────────────────────── -->
+  <g>
+    <circle cx="34" cy="742" r="5" fill="#9ad7f5" stroke="#101010" stroke-width="1.5"/>
+    <text x="48" y="746" fill="#a8a8a8" font-size="12">Float</text>
+    <circle cx="112" cy="742" r="5" fill="#f5c842" stroke="#101010" stroke-width="1.5"/>
+    <text x="126" y="746" fill="#a8a8a8" font-size="12">Color / Vector4</text>
+    <text x="248" y="746" fill="#6f6f6f" font-size="12">Wire colour follows the source port type.</text>
+    <circle cx="560" cy="738" r="10" fill="#d4642a"/>
+    <text x="560" y="743" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">n</text>
+    <text x="578" y="746" fill="#6f6f6f" font-size="12">Node order — seven nodes total.</text>
+    <text x="820" y="746" fill="#6f6f6f" font-size="12">Dashed node = built in step 4c, shown for context.</text>
+  </g>
+</svg>

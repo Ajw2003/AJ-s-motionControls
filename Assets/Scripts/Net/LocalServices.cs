@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Text.RegularExpressions;
 using Singleton;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -12,56 +11,74 @@ using Debug = UnityEngine.Debug;
 
 namespace Net
 {
-    /// <summary>How far along the one-click launch is. Drives what the TV shows.</summary>
+    /// <summary>How far along the local relay launch is. Drives what the TV shows.</summary>
     public enum ServiceState
     {
         Idle,
+        ObtainingCertificate,
         InstallingDependencies,
         StartingRelay,
-        OpeningTunnel,
         Ready,
         Failed,
     }
 
     /// <summary>
-    /// Brings up everything a phone needs in order to join, as a side effect of pressing
-    /// Play: the relay process and a public HTTPS tunnel to it.
+    /// Runs a relay on this machine, for development only.
     /// </summary>
     /// <remarks>
-    /// The point is that hosting a game is one action. Previously it was three terminals
-    /// and a hand-copied URL, which is fine for the person who built it and a non-starter
-    /// for a party.
+    /// OFF BY DEFAULT, and deliberately so. Hosts connect out to the deployed service
+    /// (see RelayClient and HostingPlan.md), which is what makes hosting require no setup
+    /// at all — there is nothing to install, nothing to configure and nothing listening.
     ///
-    /// One tunnel is enough for both jobs because the relay serves the controller page
-    /// from the same origin it accepts WebSockets on (see server.js). The page therefore
-    /// arrives over HTTPS — which the motion sensors require — and upgrades to wss:// on
-    /// the same host, so there is no mixed-content problem to fight.
+    /// This exists for the local edit-test loop, where deploying on every change would be
+    /// absurd. Turning it on is only half the job: RelayClient must also be pointed at the
+    /// local instance, by putting `ws://localhost:3000` in a relay-url.txt beside the
+    /// executable. Enabling this alone starts a relay that nothing connects to.
     ///
-    /// The host itself does NOT go through the tunnel. RelayClient connects to
-    /// ws://localhost:3000 directly, because routing the PC's own traffic through
-    /// Cloudflare and back would add a datacenter round trip to every aim frame for no
-    /// benefit. Only the phones need the public address.
+    /// That plain-http origin is not a secure context, so motion sensors stay dark on it.
+    /// For a loop that does unlock them, deploy/local-https.ps1 writes both that file and a
+    /// relay-env.txt, and this class picks up whichever of the two it finds.
+    ///
+    /// This class used to also spawn a cloudflared tunnel and scrape the assigned hostname
+    /// out of its stderr, because a quick tunnel offers no machine-readable channel for it.
+    /// A fixed service address removed the need for both.
     /// </remarks>
     public class LocalServices : SingletonBase<LocalServices>
     {
-        [Tooltip("Bring up the relay and tunnel on Play. Turn off if you run them yourself in a terminal.")]
+        /// <summary>
+        /// Optional per-machine environment for the relay child, beside relay-url.txt.
+        /// Gitignored. Written by deploy/local-https.ps1; absent otherwise.
+        /// </summary>
+        private const string EnvFileName = "relay-env.txt";
+
+        [Tooltip("Start a relay on this machine. Development only — you must also point " +
+                 "RelayClient at it with a relay-url.txt containing ws://localhost:3000.")]
         [SerializeField] private bool launchOnStart = true;
 
-        [Tooltip("Must match the port in RelayClient's relayUrl.")]
+        [Tooltip("Fallback only — the port from the relay-url.txt override wins when there is one.")]
         [SerializeField] private int relayPort = 3000;
 
-        [Tooltip("Echo relay and tunnel output into the Unity console.")]
+        [Tooltip("Echo relay output into the Unity console.")]
         [SerializeField] private bool verboseLogging;
+
+        [Header("HTTPS")]
+        [Tooltip("Obtain a certificate and serve the controller over HTTPS. Required for phone " +
+                 "motion sensors — an insecure origin makes them unavailable. Turn off only for " +
+                 "a desktop-only loop where no phone is involved.")]
+        [SerializeField] private bool useHttps = true;
+
+        [Tooltip("Leave empty to detect. Set only when this machine has several plausible " +
+                 "network interfaces, where detection refuses to guess between them.")]
+        [SerializeField] private string lanAddressOverride;
+
+        [Tooltip("Port for the HTTPS relay. Ignored when HTTPS is off.")]
+        [SerializeField] private int securePort = 8443;
 
         [Header("Timeouts (seconds)")]
         [SerializeField] private float dependencyInstallTimeout = 180f;
         [SerializeField] private float relayStartTimeout = 30f;
-        [SerializeField] private float tunnelStartTimeout = 60f;
 
         public ServiceState State { get; private set; } = ServiceState.Idle;
-
-        /// <summary>Public HTTPS origin for the controller page. Null until the tunnel is up.</summary>
-        public string PublicUrl { get; private set; }
 
         /// <summary>One line for the TV describing what is happening right now.</summary>
         public string StatusMessage { get; private set; } = "Starting up…";
@@ -69,23 +86,92 @@ namespace Net
         /// <summary>On failure, what the person standing at the PC should actually do about it.</summary>
         public string FailureHint { get; private set; }
 
-        public int RelayPort => relayPort;
-
         public event Action<ServiceState> StateChanged;
 
         private Process _relay;
-        private Process _tunnel;
         private bool _ownsRelay;
         private ChildProcessGroup _group;
 
         private readonly ConcurrentQueue<string> _output = new();
 
-        // cloudflared prints the assigned hostname inside a banner box on stderr; there
-        // is no machine-readable channel for it on a quick tunnel, so it gets scraped.
-        private static readonly Regex TunnelUrlPattern =
-            new(@"https://[a-z0-9][a-z0-9\-]*\.trycloudflare\.com", RegexOptions.IgnoreCase);
+        private string _origin;
 
-        private string HealthUrl => $"http://127.0.0.1:{relayPort}/health";
+        private CertificateProvider.Result _certificate;
+
+        /// <summary>
+        /// The mode this session launched with, read once at Start(). StartScreen (the
+        /// MainMenu scene) is what actually gates this — by the time Bootstrap's scene loads
+        /// at all, a mode has already been chosen and persisted, so there is nothing to wait
+        /// for here.
+        /// </summary>
+        public NetworkMode Mode { get; private set; }
+
+        /// <summary>
+        /// The name the certificate covers for this machine, once one has been obtained —
+        /// 10-0-0-213.local-ip.sh. Null when HTTPS is off or the certificate step failed.
+        /// </summary>
+        /// <remarks>
+        /// This is what a phone must use. The raw IP would not match the certificate, and a
+        /// name mismatch on a phone reads as a configuration mistake rather than the naming
+        /// rule it actually is.
+        /// </remarks>
+        public string CertificateHostName => _certificate.Ok ? _certificate.HostName : null;
+
+        /// <summary>The wss:// address a phone should be pointed at, or null when HTTPS is off.</summary>
+        public string SecureSocketUrl =>
+            _certificate.Ok ? $"wss://{_certificate.HostName}:{securePort}" : null;
+
+        /// <summary>
+        /// Where the relay actually lives, derived from the same relay-url.txt RelayClient
+        /// reads so the two can never disagree about it.
+        /// </summary>
+        /// <remarks>
+        /// This used to be hardcoded to http://127.0.0.1:3000, which quietly broke the reuse
+        /// path below for any relay not on that address: a relay started by hand on another
+        /// port looked absent, so this spawned a second one that nothing ever connected to.
+        ///
+        /// This is the address shown to a human (log messages, the Fail() hint) and handed to
+        /// a phone (SecureSocketUrl, JoinUrlFor) — it is NOT what LocalServices probes its own
+        /// process with. See ProbeHealthUrl for why those had to split.
+        /// </remarks>
+        private string Origin => _origin ??= ResolveOrigin();
+
+        private string HealthUrl => $"{Origin}/health";
+
+        /// <summary>
+        /// The address ProbeHealth/ProbeDnsBound actually connect to — loopback, once a
+        /// certificate is in play, never the public hostname in HealthUrl.
+        /// </summary>
+        /// <remarks>
+        /// In Hotspot mode the certificate's address (192.168.137.1) is not reachable on
+        /// this host until Hotspot tethering has actually started — which happens only after
+        /// this class reaches Ready. Probing the public hostname here deadlocks forever:
+        /// LocalServices waits on its own health check to reach Ready, HotspotService waits
+        /// on Ready before starting tethering, and the address the health check needs does
+        /// not exist until tethering has started. Loopback sidesteps the whole cycle — it is
+        /// always reachable regardless of hotspot state, because this is really just asking
+        /// "is the process I just spawned still alive," not a network question at all.
+        ///
+        /// A phone never sees this URL — SecureSocketUrl/JoinUrlFor still hand out the real
+        /// hostname, validated normally by every phone that connects to it. Loopback HTTPS
+        /// needs its own certificate handling since the cert's SAN never includes
+        /// "127.0.0.1"; see AcceptAnyCertificate for why that is scoped tightly enough to be
+        /// safe here and nowhere else.
+        /// </remarks>
+        private string ProbeHealthUrl => useHttps && _certificate.Ok
+            ? $"https://127.0.0.1:{securePort}/health"
+            : HealthUrl;
+
+        /// <summary>
+        /// Accepts any certificate. Scoped to LocalServices' own loopback probe of the relay
+        /// process it just spawned — a same-machine liveness check, not a network trust
+        /// decision, and not reachable from anywhere else. Nothing phone-facing ever uses
+        /// this; every real client still validates the relay's actual certificate normally.
+        /// </summary>
+        private sealed class AcceptAnyCertificate : CertificateHandler
+        {
+            protected override bool ValidateCertificate(byte[] certificateData) => true;
+        }
 
         protected override void Awake()
         {
@@ -97,9 +183,14 @@ namespace Net
         {
             if (!launchOnStart)
             {
-                SetState(ServiceState.Idle, "Auto-launch off — start the relay and tunnel yourself.");
+                SetState(ServiceState.Idle, "Local relay off — using the deployed service.");
                 return;
             }
+
+            // StartScreen (the MainMenu scene) is the actual gate: nothing here runs until a
+            // player deliberately presses Start, which is also the only place the mode can be
+            // changed, so by the time this scene has loaded a mode is already decided.
+            Mode = NetworkModeStore.Load();
 
             _group = ChildProcessGroup.Create();
             StartCoroutine(LaunchSequence());
@@ -107,28 +198,12 @@ namespace Net
 
         private void Update()
         {
-            // Process output arrives on threadpool threads; everything that touches Unity
-            // or mutates state happens here instead.
+            // Process output arrives on threadpool threads; logging it from here keeps
+            // everything that touches Unity on the main thread.
             while (_output.TryDequeue(out var line))
             {
                 if (verboseLogging) Debug.Log($"[LocalServices] {line}");
-
-                if (PublicUrl != null) continue;
-
-                var match = TunnelUrlPattern.Match(line);
-                if (match.Success)
-                {
-                    PublicUrl = match.Value;
-                    Debug.Log($"[LocalServices] Tunnel open at {PublicUrl}");
-                }
             }
-        }
-
-        /// <summary>The address a phone should open, with the room code pre-filled.</summary>
-        public string JoinUrlFor(string roomCode)
-        {
-            if (string.IsNullOrEmpty(PublicUrl)) return null;
-            return string.IsNullOrEmpty(roomCode) ? PublicUrl : $"{PublicUrl}/?room={roomCode}";
         }
 
         // ------------------------------------------------------------------ sequence
@@ -144,10 +219,50 @@ namespace Net
                 yield break;
             }
 
+            // Before the relay, because the relay reads the certificate paths out of its
+            // environment at startup and has no way to pick them up afterwards.
+            if (useHttps)
+            {
+                yield return ObtainCertificate();
+                if (State == ServiceState.Failed) yield break;
+            }
+
             yield return StartRelay(relayDir);
             if (State == ServiceState.Failed) yield break;
 
-            yield return StartTunnel();
+            SetState(ServiceState.Ready, useHttps && _certificate.Ok
+                ? $"Relay at {SecureSocketUrl}."
+                : $"Local relay at {Origin}.");
+        }
+
+        /// <summary>
+        /// In Hotspot mode the address is not detected — CertificateProvider.ResolveLanAddress
+        /// only considers interfaces with their own default gateway, and the hotspot's own AP
+        /// adapter has none (it hands out 192.168.137.1 as a gateway to its clients but has no
+        /// gateway configured on itself). This forces the one address that is ever correct,
+        /// bypassing detection entirely rather than leaving it to fail or guess wrong.
+        /// </summary>
+        private string EffectiveLanAddressOverride =>
+            Mode == NetworkMode.Hotspot ? "192.168.137.1" : lanAddressOverride;
+
+        private IEnumerator ObtainCertificate()
+        {
+            SetState(ServiceState.ObtainingCertificate, "Checking the certificate…");
+
+            CertificateProvider.Result result = default;
+            yield return CertificateProvider.Ensure(EffectiveLanAddressOverride, r => result = r);
+
+            if (!result.Ok)
+            {
+                Fail(result.Error, result.Detail);
+                yield break;
+            }
+
+            _certificate = result;
+
+            // The origin is derived from the certificate's name from here on, so the page,
+            // the socket and the certificate cannot drift onto different hosts.
+            _origin = $"https://{result.HostName}:{securePort}";
         }
 
         private IEnumerator StartRelay(string relayDir)
@@ -162,7 +277,7 @@ namespace Net
             {
                 _ownsRelay = false;
                 SetState(ServiceState.StartingRelay, "Using the relay already running.");
-                Debug.Log($"[LocalServices] Relay already listening on :{relayPort} — reusing it.");
+                Debug.Log($"[LocalServices] Relay already listening at {Origin} — reusing it.");
                 yield break;
             }
 
@@ -175,7 +290,7 @@ namespace Net
 
             SetState(ServiceState.StartingRelay, "Starting the relay…");
 
-            var node = ResolveExecutable("node", new[] { @"C:\Program Files\nodejs" });
+            var node = ProcessUtil.ResolveExecutable("node", new[] { @"C:\Program Files\nodejs" });
             if (node == null)
             {
                 Fail("Node.js not found.",
@@ -201,7 +316,7 @@ namespace Net
                 if (_relay.HasExited)
                 {
                     Fail($"The relay exited immediately (code {_relay.ExitCode}).",
-                         $"Something else may be holding port {relayPort}. Check the console output.");
+                         $"Something else may be holding the port in {Origin}. Check the console output.");
                     yield break;
                 }
 
@@ -212,68 +327,8 @@ namespace Net
             if (!healthy)
             {
                 Fail("The relay never answered its health check.",
-                     $"It started but nothing is responding on port {relayPort}.");
+                     $"It started but nothing is answering at {HealthUrl}.");
             }
-        }
-
-        private IEnumerator StartTunnel()
-        {
-            SetState(ServiceState.OpeningTunnel, "Opening the public tunnel…");
-
-            var cloudflared = ResolveExecutable("cloudflared", new[]
-            {
-                @"C:\Program Files (x86)\cloudflared",
-                @"C:\Program Files\cloudflared",
-                // winget drops a shim here, which is on PATH only after a new sign-in.
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                             "Microsoft", "WinGet", "Links"),
-            });
-
-            if (cloudflared == null)
-            {
-                Fail("cloudflared not found.",
-                     "Install it with:  winget install Cloudflare.cloudflared\n" +
-                     "Then relaunch. Players cannot join without an HTTPS address — phone " +
-                     "motion sensors refuse to work on a plain http:// page.");
-                yield break;
-            }
-
-            // --no-autoupdate: an update mid-party would restart the tunnel and hand out
-            // a different hostname, silently invalidating every QR code on screen.
-            _tunnel = Spawn(cloudflared,
-                            $"tunnel --no-autoupdate --url http://localhost:{relayPort}",
-                            Path.GetDirectoryName(cloudflared));
-
-            if (_tunnel == null)
-            {
-                Fail("Could not start cloudflared.", "See the console for the underlying error.");
-                yield break;
-            }
-
-            var deadline = Time.realtimeSinceStartup + tunnelStartTimeout;
-
-            while (PublicUrl == null && Time.realtimeSinceStartup < deadline)
-            {
-                if (_tunnel.HasExited)
-                {
-                    Fail($"cloudflared exited before giving us a URL (code {_tunnel.ExitCode}).",
-                         "Quick tunnels are rate limited — wait a minute and try again, or " +
-                         "check your internet connection. Turn on Verbose Logging to see its output.");
-                    yield break;
-                }
-
-                yield return null;
-            }
-
-            if (PublicUrl == null)
-            {
-                Fail("The tunnel did not come up in time.",
-                     "cloudflared is running but never printed a trycloudflare.com address. " +
-                     "Turn on Verbose Logging to see what it is saying.");
-                yield break;
-            }
-
-            SetState(ServiceState.Ready, "Ready — phones can join.");
         }
 
         private IEnumerator InstallDependencies(string relayDir)
@@ -294,7 +349,7 @@ namespace Net
 
             if (!install.HasExited)
             {
-                TryKill(install);
+                ProcessUtil.TryKill(install);
                 Fail("npm install timed out.", $"Run it yourself in {relayDir} and relaunch.");
                 yield break;
             }
@@ -309,79 +364,115 @@ namespace Net
         /// <summary>Single GET against /health. Invokes the callback with the result either way.</summary>
         private IEnumerator ProbeHealth(Action<bool> onResult)
         {
-            using var request = UnityWebRequest.Get(HealthUrl);
+            using var request = UnityWebRequest.Get(ProbeHealthUrl);
             request.timeout = 2;
+
+            // UnityWebRequest.Dispose() does not dispose a custom certificateHandler — this
+            // runs on a 0.25s poll during startup, so an unfreed one here would add up.
+            using var handler = useHttps && _certificate.Ok ? new AcceptAnyCertificate() : null;
+            if (handler != null) request.certificateHandler = handler;
+
             yield return request.SendWebRequest();
             onResult(request.result == UnityWebRequest.Result.Success);
+        }
+
+        [Serializable]
+        private struct HealthDns
+        {
+            public bool enabled;
+            public bool bound;
+        }
+
+        [Serializable]
+        private struct HealthPayload
+        {
+            public bool ok;
+            public HealthDns dns;
+        }
+
+        /// <summary>
+        /// Probes /health and reports whether the DNS responder has actually finished
+        /// binding — a plain health-endpoint success only proves the HTTP listener is up.
+        /// </summary>
+        /// <remarks>
+        /// relay/server.js initiates the UDP :53 bind inside its httpServer.listen()
+        /// callback but does not await it before that callback returns, so /health can
+        /// answer before the bind has resolved one way or the other. HotspotService needs
+        /// the stronger guarantee before starting tethering, since the responder must win a
+        /// race against ICS for :53 — this turns that inferred timing into a confirmed one.
+        /// </remarks>
+        public IEnumerator ProbeDnsBound(Action<bool> onResult)
+        {
+            using var request = UnityWebRequest.Get(ProbeHealthUrl);
+            request.timeout = 2;
+
+            using var handler = useHttps && _certificate.Ok ? new AcceptAnyCertificate() : null;
+            if (handler != null) request.certificateHandler = handler;
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                onResult(false);
+                yield break;
+            }
+
+            try
+            {
+                var payload = JsonUtility.FromJson<HealthPayload>(request.downloadHandler.text);
+                onResult(payload.ok && payload.dns.bound);
+            }
+            catch
+            {
+                onResult(false);
+            }
         }
 
         // ------------------------------------------------------------------ processes
 
         private Process Spawn(string fileName, string arguments, string workingDirectory)
         {
-            var info = new ProcessStartInfo
+            var env = new List<KeyValuePair<string, string>>();
+
+            // The certificate goes on first so relay-env.txt can still override it. That
+            // ordering is the point: a developer pinning a hand-made certificate or a
+            // different port must win over anything derived automatically, or the escape
+            // hatch is not one.
+            if (_certificate.Ok)
             {
-                FileName = fileName,
-                Arguments = arguments,
-                WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-
-            try
-            {
-                var process = new Process { StartInfo = info, EnableRaisingEvents = true };
-
-                // Both streams are drained. A redirected stream that nobody reads fills
-                // its pipe buffer and blocks the child permanently — cloudflared is
-                // chatty enough to hit that within seconds.
-                process.OutputDataReceived += (_, e) => { if (e.Data != null) _output.Enqueue(e.Data); };
-                process.ErrorDataReceived += (_, e) => { if (e.Data != null) _output.Enqueue(e.Data); };
-
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-
-                _group?.Adopt(process);
-
-                Debug.Log($"[LocalServices] Started {Path.GetFileName(fileName)} {arguments} (pid {process.Id})");
-                return process;
+                env.Add(new KeyValuePair<string, string>("TLS_CERT", _certificate.CertPath));
+                env.Add(new KeyValuePair<string, string>("TLS_KEY", _certificate.KeyPath));
+                env.Add(new KeyValuePair<string, string>("PORT", securePort.ToString()));
+                Debug.Log($"[LocalServices] Serving HTTPS for {_certificate.HostName} on :{securePort}.");
             }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LocalServices] Failed to start {fileName}: {e.Message}");
-                return null;
-            }
-        }
 
-        private static void TryKill(Process process)
-        {
-            if (process == null) return;
+            // Hotspot-only, and env-gated the same way on the relay side: server.js's DNS
+            // branch does nothing unless DNS_RESPOND_IP is set, so this is inert in LAN mode.
+            if (Mode == NetworkMode.Hotspot)
+            {
+                env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", "192.168.137.1"));
+                env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));
+                env.Add(new KeyValuePair<string, string>("DNS_SUFFIX", CertificateProvider.Suffix));
+                Debug.Log("[LocalServices] Hotspot mode: DNS responder will bind on 192.168.137.0/24.");
+            }
 
-            try
+            var overrides = ReadRelayEnvironment();
+            env.AddRange(overrides);
+
+            if (overrides.Count > 0)
             {
-                if (!process.HasExited) process.Kill();
-                process.WaitForExit(2000);
+                // Names only — one of these is a path to a private key.
+                Debug.Log($"[LocalServices] {EnvFileName} applied: " +
+                          string.Join(", ", overrides.ConvertAll(e => e.Key)));
             }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[LocalServices] Could not stop pid: {e.Message}");
-            }
-            finally
-            {
-                process.Dispose();
-            }
+
+            return ProcessUtil.Spawn(fileName, arguments, workingDirectory, env, _group, _output);
         }
 
         private void Shutdown()
         {
-            TryKill(_tunnel);
-            _tunnel = null;
-
             // A relay we merely borrowed belongs to whoever started it.
-            if (_ownsRelay) TryKill(_relay);
+            if (_ownsRelay) ProcessUtil.TryKill(_relay);
             _relay = null;
 
             // Closes the job object, which terminates anything the kills above missed.
@@ -410,6 +501,61 @@ namespace Net
         // ------------------------------------------------------------------ resolution
 
         /// <summary>
+        /// The override file's origin, or loopback on the inspector port when there is none.
+        /// </summary>
+        private string ResolveOrigin()
+        {
+            var overridden = RelayClient.ReadOverride();
+            if (overridden != null)
+            {
+                var origin = RelayClient.DeriveOrigin(overridden);
+                if (origin != null) return origin;
+            }
+
+            return $"http://127.0.0.1:{relayPort}";
+        }
+
+        /// <summary>
+        /// Per-machine environment for the relay child, one KEY=VALUE per line, blank lines
+        /// and # comments ignored. Absent on almost every machine, and absent means the child
+        /// starts exactly as it always has.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately generic. This class stays ignorant of what the variables mean, which
+        /// is what keeps configuration the relay only needs in development — TLS material, a
+        /// different port — out of a component that also runs in a shipped build.
+        /// </remarks>
+        private static List<KeyValuePair<string, string>> ReadRelayEnvironment()
+        {
+            var result = new List<KeyValuePair<string, string>>();
+
+            try
+            {
+                var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", EnvFileName));
+                if (!File.Exists(path)) return result;
+
+                foreach (var raw in File.ReadAllLines(path))
+                {
+                    var line = raw.Trim();
+                    if (line.Length == 0 || line[0] == '#') continue;
+
+                    var split = line.IndexOf('=');
+                    if (split <= 0) continue;
+
+                    result.Add(new KeyValuePair<string, string>(
+                        line[..split].Trim(), line[(split + 1)..].Trim()));
+                }
+            }
+            catch (Exception e)
+            {
+                // Same reasoning as the URL override: unreadable config must not stop a boot.
+                Debug.LogWarning($"[LocalServices] Could not read {EnvFileName}: {e.Message}");
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Locates the relay folder. Works out to the same expression in both cases:
         /// in the editor dataPath is &lt;project&gt;/Assets, and in a player build it is
         /// &lt;exe folder&gt;/&lt;Product&gt;_Data, so the parent is the right place both times.
@@ -418,52 +564,6 @@ namespace Net
         {
             var candidate = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "relay"));
             return File.Exists(Path.Combine(candidate, "server.js")) ? candidate : null;
-        }
-
-        /// <summary>
-        /// Finds an executable on PATH, then in a list of known install locations.
-        /// The fallbacks matter: an installer that edits PATH does not change the
-        /// environment of an already-running Unity, so a freshly installed tool is
-        /// invisible until a restart that nobody realises they need.
-        /// </summary>
-        private static string ResolveExecutable(string name, IEnumerable<string> extraDirectories)
-        {
-            var extensions = Application.platform == RuntimePlatform.WindowsEditor ||
-                             Application.platform == RuntimePlatform.WindowsPlayer
-                ? new[] { ".exe", ".cmd", ".bat", "" }
-                : new[] { "" };
-
-            var pathDirs = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-                .Split(Path.PathSeparator);
-
-            foreach (var directory in JoinDirectories(pathDirs, extraDirectories))
-            {
-                if (string.IsNullOrWhiteSpace(directory)) continue;
-
-                foreach (var extension in extensions)
-                {
-                    string full;
-                    try
-                    {
-                        full = Path.Combine(directory.Trim(), name + extension);
-                    }
-                    catch (ArgumentException)
-                    {
-                        break; // a malformed PATH entry; skip the whole directory
-                    }
-
-                    if (File.Exists(full)) return full;
-                }
-            }
-
-            return null;
-        }
-
-        private static IEnumerable<string> JoinDirectories(IEnumerable<string> first, IEnumerable<string> second)
-        {
-            foreach (var item in first) yield return item;
-            if (second == null) yield break;
-            foreach (var item in second) yield return item;
         }
 
         // ------------------------------------------------------------------ state

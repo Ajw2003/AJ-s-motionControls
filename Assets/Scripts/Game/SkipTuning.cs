@@ -3,60 +3,63 @@ using UnityEngine;
 namespace Game
 {
     /// <summary>
-    /// Global feel constants for skipping. Everything tunable lives here so the game
-    /// can be dialled in from the inspector during play without recompiling.
+    /// One rock's character: exactly three bounded multipliers plus its display name.
     /// </summary>
     /// <remarks>
-    /// Expect tuning to take longer than implementation. These starting values are
-    /// educated guesses, not measurements — the ~20 degree optimum is the one number
-    /// grounded in real stone-skipping physics.
+    /// Used to be 25 fields, most of them fighting each other, and the throw's own power
+    /// barely moved the result next to a one-point tuning edit — see
+    /// docs/plans/Plan-ThrowDrivenSkipModel.md for the numbers. The model now derives energy
+    /// loss from bounce geometry (incidence, face-vs-velocity) rather than an authored
+    /// retention constant, so there is nothing left here to author except how strongly THIS
+    /// rock expresses that geometry: how much it spins, how high it hops, how far it carries.
+    ///
+    /// Everything else — gravity, water height, the forgiveness bands, the speed scale, and
+    /// above all <see cref="SkipConstants.EnergyLoss"/>, the single dial for how many skips a
+    /// good throw gets — is global, on <see cref="SkipConstants"/>, because it answers "how
+    /// does this game feel" rather than "what is this rock," and a rock should not be able to
+    /// quietly become easier instead of stronger.
+    ///
+    /// All three multipliers currently ship at 1.0 on every rock, on purpose: the physics is
+    /// being evaluated bare first, so that every difference between two throws is the throw.
+    /// Rock character gets authored once that reads well — see
+    /// docs/plans/Plan-SkipEnergyInvariant.md.
     /// </remarks>
     [CreateAssetMenu(menuName = "RockSkipping/Skip Tuning", fileName = "SkipTuning")]
     public class SkipTuning : ScriptableObject
     {
-        [Header("World")]
-        public float Gravity = 9.81f;
-        public float WaterY = 0f;
+        [Header("Character")]
+        [Tooltip("How well this rock turns the player's wrist spin into gyroscopic stability.\n\n" +
+                 "Stability is what holds the stone's attack angle through each impact. What it " +
+                 "fails to hold accumulates as tumble (SkipConstants.WanderPerBounce), which is " +
+                 "charged against the pitch and roll errors — so a spinny rock keeps its bounce " +
+                 "quality, and its skips, further into a run. Spin also widens every forgiveness " +
+                 "band slightly (SkipConstants.SpinToleranceScale).\n\n" +
+                 "Above 1 = holds a spin better than average. 1.0 is neutral.")]
+        [Range(0.8f, 1.2f)] public float SpinMultiplier = 1f;
 
-        [Header("Launch")]
-        [Tooltip("Speed at power = 0.")]
-        public float MinSpeed = 6f;
-        [Tooltip("Speed at power = 1.")]
-        public float MaxSpeed = 26f;
-        [Tooltip("Upward angle of the toss itself, separate from the stone's face angle.")]
-        public float LaunchPitchDeg = 8f;
+        [Tooltip("This rock's share of the energy surviving a bounce that gets sent UPWARD.\n\n" +
+                 "Forward and upward are a split of one fixed budget (see SkipConstants.LiftShare), " +
+                 "so this trades carry for arc rather than adding anything: higher hops, fewer and " +
+                 "longer skips, same total energy. A flatter, thinner stone should sit higher.\n\n" +
+                 "Above 1 = hops higher. 1.0 is neutral.")]
+        [Range(0.7f, 1.3f)] public float VerticalMultiplier = 1f;
 
-        [Tooltip("Bridges phone space and physics space. The phone reports pitch as a delta " +
-                 "from wherever the player gripped, so neutral is 0 — but a real stone wants " +
-                 "about 20 degrees. Without this offset a natural, untilted throw is always " +
-                 "outside tolerance and always sinks. Set to the stone's optimal angle so " +
-                 "'hold naturally' means 'good throw', and tilting is how you trade it away.")]
-        public float AttackAngleOffsetDeg = 20f;
-        [Tooltip("Speed multiplier at zero timing quality. 1 would make timing irrelevant.")]
-        [Range(0.1f, 1f)] public float WorstTimingSpeedScale = 0.6f;
+        [Tooltip("Scales how much energy THIS rock loses per bounce (SkipConstants.EnergyLoss).\n\n" +
+                 "Below 1 = slipperier, keeps more speed, skips further. Above 1 = draggier.\n\n" +
+                 "Deliberately the narrowest range of the three: skip count goes as " +
+                 "1 / ln(speed kept), which is hyperbolic, so a wide range here would let the " +
+                 "rock outweigh how hard the player actually threw — the exact failure the " +
+                 "throw-driven model was written to remove. 1.0 is neutral.")]
+        [Range(0.95f, 1.05f)] public float HorizontalMultiplier = 1f;
 
-        [Header("Bounce")]
-        [Tooltip("Steeper than this and the stone plows in instead of skipping.")]
-        public float MaxIncidenceDeg = 45f;
-        [Tooltip("Energy kept on a perfectly angled bounce.")]
-        [Range(0f, 1f)] public float BestRestitution = 0.92f;
-        [Tooltip("Energy kept on a bounce at the edge of tolerance.")]
-        [Range(0f, 1f)] public float WorstRestitution = 0.45f;
-
-        [Header("Spin")]
-        [Tooltip("Extra angle tolerance per unit of spin — gyroscopic stability.")]
-        public float SpinToleranceScale = 0.02f;
-        [Tooltip("Ceiling on that bonus, so a wild flick isn't an auto-win.")]
-        public float MaxSpinToleranceBonus = 18f;
-
-        [Header("Simulation")]
-        public float FixedStep = 0.02f;
-        [Tooltip("Safety cap on prediction length.")]
-        public int MaxPredictSteps = 500;
+        [Header("Presentation")]
+        [Tooltip("Shown on the phones as the rock currently in play. A label, not a knob.")]
+        public string DisplayName = "Pebble";
 
         /// <summary>
-        /// Runtime fallback so physics and the preview work before anyone authors an
-        /// asset. Create a real SkipTuning asset once tuning starts in earnest.
+        /// Last-resort fallback so a rock still throws if its asset is missing. Reaching
+        /// this means a rock's tuning is back to being a recompile, so it is worth noticing
+        /// rather than silently living with.
         /// </summary>
         public static SkipTuning CreateDefault()
         {

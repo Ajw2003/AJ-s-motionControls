@@ -45,3 +45,73 @@ verification-result.txt
 node_modules/
 npm-debug.log*
 yarn-error.log*
+
+# Per-machine relay override read by RelayClient. Pointing your own checkout at a
+# local relay must not repoint everyone else's.
+relay-url.txt
+
+# Per-machine environment for the relay child, written by deploy/local-https.ps1.
+relay-env.txt
+
+# Per-machine network mode choice (LAN/Hotspot), written by StartScreen. Each host's
+# own preference, not something one checkout should impose on everyone else's.
+network-mode.txt
+
+# Per-host match settings (Random rocks / Tuning set / Rounds per match), written by the
+# F4 host panel. Same reasoning as network-mode.txt.
+match-settings.json
+
+# Spike output. Records one machine's run, so it is evidence rather than source.
+deploy/spike/*.log
+
+# A backstop, not a workflow. local-https.ps1 keeps the borrowed local-ip.sh key in a
+# scratch directory outside the repo precisely so this rule never has to fire — but
+# .dockerignore is an allowlist, so a key that did land in relay/ would be baked into
+# the Fly image, and that key is published.
+*.pem
+*.key
+Assets/Audio/ui_confirm_01.wav.meta
+Assets/Audio.meta
+Assets/Audio/match_start_01.wav
+Assets/Audio/match_start_01.wav.meta
+Assets/Audio/match_tie_01.wav
+Assets/Audio/match_tie_01.wav.meta
+Assets/Audio/match_win_01.wav
+Assets/Audio/match_win_01.wav.meta
+Assets/Audio/player_joined_01.wav
+Assets/Audio/player_joined_01.wav.meta
+Assets/Audio/score_tick_01.wav
+Assets/Audio/score_tick_01.wav.meta
+Assets/Audio/score_tick_02.wav
+Assets/Audio/score_tick_02.wav.meta
+Assets/Audio/score_tick_03.wav
+Assets/Audio/score_tick_03.wav.meta
+Assets/Audio/sink_01.wav
+Assets/Audio/sink_01.wav.meta
+Assets/Audio/sink_02.wav
+Assets/Audio/sink_02.wav.meta
+Assets/Audio/skip_01.wav
+Assets/Audio/skip_01.wav.meta
+Assets/Audio/skip_02.wav
+Assets/Audio/skip_02.wav.meta
+Assets/Audio/skip_03.wav
+Assets/Audio/skip_03.wav.meta
+Assets/Audio/skip_04.wav
+Assets/Audio/skip_04.wav.meta
+Assets/Audio/skip_milestone_01.wav
+Assets/Audio/skip_milestone_01.wav.meta
+Assets/Audio/skip_milestone_02.wav
+Assets/Audio/skip_milestone_02.wav.meta
+Assets/Audio/throw_failed_01.wav
+Assets/Audio/throw_failed_01.wav.meta
+Assets/Audio/throw_release_01.wav
+Assets/Audio/throw_release_01.wav.meta
+Assets/Audio/throw_release_02.wav
+Assets/Audio/throw_release_02.wav.meta
+Assets/Audio/throw_release_03.wav
+Assets/Audio/throw_release_03.wav.meta
+Assets/Audio/throw_scored_01.wav
+Assets/Audio/throw_scored_01.wav.meta
+Assets/Audio/turn_start_01.wav
+Assets/Audio/turn_start_01.wav.meta
+Assets/Audio/ui_confirm_01.wav

@@ -1,0 +1,12 @@
+make rocks render configurable trail behind them instead of keeping the prediction line
+
+make the spin better visually match the amount of skips and height of the skip/ velocity decent
+
+actual skybox with backgrounds
+
+actual level geometry to avoid/ aim for
+
+rock textures, water textures and enviornment textures
+
+
+add ability to tune forgiveness for each of the 3 axis roll, pitch, yaw. for instance I want to make roll affect the rock less and to have the first 5 degrees or so ignored

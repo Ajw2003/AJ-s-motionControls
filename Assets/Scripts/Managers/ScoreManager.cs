@@ -16,13 +16,12 @@ namespace Managers
     {
         [Header("Point values")]
         [SerializeField] private int pointsPerSkip = 10;
-        [SerializeField] private int pointsPerRing = 50;
         [SerializeField] private int pointsPerMetre = 1;
 
         private readonly Dictionary<string, int> _scores = new();
 
-        // Skips and rings arrive mid-flight, before we know the throw completed.
-        // They're banked here and committed to the player on ThrowCompletedEvent.
+        // Skips arrive mid-flight, before we know the throw completed. They're banked
+        // here and committed to the player on ThrowCompletedEvent.
         private int _pendingThrowPoints;
 
         public IReadOnlyDictionary<string, int> Scores => _scores;
@@ -33,7 +32,6 @@ namespace Managers
             base.Awake();
 
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, OnSkipOccurred);
-            EventManager.Instance?.Subscribe<RingPassedEvent>(this, OnRingPassed);
             EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
             EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnTurnStarted);
         }
@@ -51,11 +49,6 @@ namespace Managers
             _pendingThrowPoints += pointsPerSkip;
         }
 
-        private void OnRingPassed(RingPassedEvent e)
-        {
-            _pendingThrowPoints += pointsPerRing;
-        }
-
         private void OnThrowCompleted(ThrowCompletedEvent e)
         {
             var total = _pendingThrowPoints + Mathf.RoundToInt(e.Distance * pointsPerMetre);
@@ -65,7 +58,17 @@ namespace Managers
                 return;
 
             _scores.TryGetValue(e.PlayerId, out var current);
-            _scores[e.PlayerId] = current + total;
+            var updated = current + total;
+            _scores[e.PlayerId] = updated;
+
+            // After the dictionary is written, never before. TurnManager handles this same
+            // ThrowCompletedEvent immediately after this method returns and reads the scores
+            // to build standings and broadcast them — a subscriber woken here finds the
+            // total already banked, matching what every other reader will see.
+            //
+            // Below the empty-id guard above, so a throw with no player attached scores
+            // nothing and announces nothing rather than announcing points that went nowhere.
+            EventManager.Instance?.Publish(new ScoreAwardedEvent(e.PlayerId, total, updated));
         }
 
         public int GetScore(string playerId)

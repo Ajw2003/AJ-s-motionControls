@@ -57,9 +57,8 @@ namespace Net
             if (Input.GetKeyDown(toggleKey)) visible = !visible;
             EnsureBound();
 
-            // Measured, not assumed: if this reads well under the sensor rate (~60)
-            // the phone or the network is dropping aim frames and the preview will
-            // look choppy.
+            // Measured, not assumed: if this reads well under 20 the phone or the
+            // network is dropping aim frames and the preview will look choppy.
             if (Time.time - _aimRateWindowStart >= 1f)
             {
                 _aimHz = _aimFrames / (Time.time - _aimRateWindowStart);
@@ -80,6 +79,19 @@ namespace Net
             while (_throws.Count > historySize) _throws.RemoveAt(_throws.Count - 1);
             Debug.Log($"[Throw] {thrown}");
         }
+
+        /// <summary>
+        /// The face angle a throw was released at, in degrees above horizontal.
+        /// </summary>
+        /// <remarks>
+        /// Recovered through PhoneAttitude rather than read off a field, because there is
+        /// no such field any more — the wire carries the rotation itself. Which is the
+        /// point: this readout and SkipPhysics get the number from the same function, so
+        /// the HUD cannot report an angle the water did not use.
+        /// </remarks>
+        private static float FaceAngleOf(ThrowMessage thrown) =>
+            Game.PhoneAttitude.FaceAngleDeg(
+                Game.PhoneAttitude.ToUnity(thrown.qw, thrown.qx, thrown.qy, thrown.qz));
 
         /// <summary>Spread as a percentage of the mean — the repeatability number.</summary>
         private static string Spread(IEnumerable<float> values)
@@ -117,24 +129,50 @@ namespace Net
             GUILayout.Label($"<b>Turn</b>   {turns?.ActivePlayer ?? "nobody"}   " +
                             $"players {turns?.Players.Count ?? 0}   (press N for next)", rich);
 
+            // Which transport each phone's input is on. Direct means peer-to-peer over the
+            // LAN; relay means it is still round-tripping through the hosted service, which
+            // is a working state and not an error — see HostingPlan §5.
+            if (PeerLink.HasInstance && turns != null && turns.Players.Count > 0)
+            {
+                var link = PeerLink.Instance;
+                var players = new System.Text.StringBuilder();
+
+                foreach (var player in turns.Players)
+                {
+                    var direct = link.IsDirect(player);
+                    players.Append(direct ? "<b>" : "").Append(player).Append(direct ? "</b>:direct  " : ":relay  ");
+                }
+
+                GUILayout.Label($"<b>Input</b>  {link.DirectPeerCount}/{turns.Players.Count} direct   {players}", rich);
+            }
+
             GUILayout.Space(6);
-            // "queued" is the backlog behind the main-thread drain. 0–2 is healthy;
-            // a number that climbs during a grip means intake is falling behind and
-            // the arc is showing progressively older frames.
-            GUILayout.Label($"<b>Aim</b>   {_aimHz:F0} Hz (sensor-rate ~60)   queued {_client.PendingInbound}", rich);
+            GUILayout.Label($"<b>Aim</b>   {_aimHz:F0} Hz (target 20)", rich);
 
             if (_latestAim != null)
             {
-                GUILayout.Label($"  seq {_latestAim.seq}   aim {_latestAim.aimDeg,6:F1}°   " +
-                                $"attack {_latestAim.attackAngleDeg,6:F1}°   windup {_latestAim.windup:F2}");
+                // Face angle and heading rather than the raw quaternion: these are the two
+                // numbers the physics actually reads, and reading them back through
+                // PhoneAttitude is what proves the conversion is doing what it claims.
+                // With the phone flat, both should sit near zero.
+                var attitude = Game.PhoneAttitude.ToUnity(
+                    _latestAim.qw, _latestAim.qx, _latestAim.qy, _latestAim.qz);
+
+                GUILayout.Label($"  seq {_latestAim.seq}   " +
+                                $"face {Game.PhoneAttitude.FaceAngleDeg(attitude),6:F1}°   " +
+                                $"heading {Game.PhoneAttitude.HeadingDeg(attitude),6:F1}°   " +
+                                $"spin {_latestAim.spinRate,5:F0}   " +
+                                $"windup {_latestAim.swingSpeed:F2} m/s");
             }
             else
             {
-                GUILayout.Label("  no aim frames yet — grip on the phone");
+                GUILayout.Label("  no aim frames yet — tap to aim on the phone");
             }
 
             if (_preview != null)
             {
+                // The arc is also hidden while a rock is in the air, so a hidden arc with
+                // a live signal is expected mid-throw rather than a fault.
                 GUILayout.Label(_preview.HasSignal
                     ? $"  predicted {_preview.PredictedSkips} skips over {_preview.PredictedDistance:F1} m"
                     : "  arc hidden (no recent aim frames)");
@@ -151,20 +189,15 @@ namespace Net
             {
                 foreach (var t in _throws)
                 {
-                    // sampleHz is the cross-platform tell: the swing analysis assumes a
-                    // 60Hz-class feed, so a phone reporting well under that undersamples
-                    // the peak and reads as a weaker, mistimed throw than it really was.
-                    GUILayout.Label($"  {t.playerId,-8} pow {t.power:F2}  tim {t.timingQuality:F2}  " +
-                                    $"aim {t.aimDeg,5:F0}°  atk {t.attackAngleDeg,5:F0}°  " +
-                                    $"spin {t.spinRate,5:F0}  peak {t.peakAccel:F1}  {t.sampleHz,3}Hz");
+                    GUILayout.Label($"  face {FaceAngleOf(t),5:F0}°  " +
+                                    $"spin {t.spinRate,5:F0}  spd {t.swingSpeed:F2}");
                 }
 
                 GUILayout.Space(6);
                 GUILayout.Label("<b>Repeatability</b> (spread across the above; want under 10%)",
                                 rich);
-                GUILayout.Label($"  power {Spread(_throws.Select(t => t.power))}   " +
-                                $"peak {Spread(_throws.Select(t => t.peakAccel))}   " +
-                                $"attack {Spread(_throws.Select(t => t.attackAngleDeg))}");
+                GUILayout.Label($"  speed {Spread(_throws.Select(t => t.swingSpeed))}   " +
+                                $"face {Spread(_throws.Select(FaceAngleOf))}");
             }
 
             GUILayout.Space(6);
