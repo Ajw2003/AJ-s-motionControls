@@ -19,6 +19,7 @@ what currently exists.
 | `docs/PLAN.md` | Full design and implementation plan |
 | `docs/HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
 | `docs/Reference-Constants.md` | Every magic number, hidden constant and serialized field, and which of them must agree across Unity/phone/relay |
+| `docs/Reference-PlayerColours.md` | How player colour flows end to end: phone picker, host adjudication, SPECTATE sync, and which UI elements get tinted |
 
 ## Status
 
