@@ -113,7 +113,7 @@ namespace Game
             var launch = SkipPhysics.CreateLaunch(
                 _preview.ThrowOrigin.position, message.swingSpeed, attitude, message.spinRate, constants, tuning);
 
-            _active = CreateRockObject(rock, constants);
+            _active = CreateRockObject(rock, constants, message.playerId);
             _active.Launch(launch, constants, tuning, message.playerId);
         }
 
@@ -184,7 +184,7 @@ namespace Game
         /// every yaw, so a box was chosen so the stone shows its own rotation from every
         /// angle. RockCatalogBuilder's meshes carry that concern themselves now.
         /// </remarks>
-        private static RockController CreateRockObject(RockDefinition rock, SkipConstants constants)
+        private static RockController CreateRockObject(RockDefinition rock, SkipConstants constants, string playerId)
         {
             var prefab = Resources.Load<GameObject>("RockObject");
             var go = Instantiate(prefab);
@@ -198,7 +198,17 @@ namespace Game
                 go.transform.localScale = rock.LocalScale;
             }
 
-            var tint = rock != null ? rock.Tint : Color.gray3;
+            var baseTint = rock != null ? rock.Tint : Color.gray3;
+            var playerColour = PlayerColours.HasInstance ? PlayerColours.Instance.For(playerId) : Color.white;
+
+            // Taken as a parameter and applied here rather than re-tinted after the object
+            // exists, so the stone is never visibly the wrong colour for a frame between
+            // spawning and being claimed — see PlayerColours.StoneColourFor, the same blend
+            // the shore stone and the aim ghost use.
+            var tint = PlayerColours.HasInstance
+                ? PlayerColours.Instance.StoneColourFor(playerId, baseTint)
+                : baseTint;
+
             go.GetComponent<MeshRenderer>().material =
                 PlaceholderArt.Create(tint, PlaceholderArt.StoneQueue);
 
@@ -207,8 +217,10 @@ namespace Game
             // After the controller, because the trail reads IsFlying and Speed off it. The
             // same constants the throw is about to be simulated with are handed over so the
             // trail's speed thresholds cannot drift from the launch speed they scale
-            // against — see TrailTuning's remarks on why they are fractions.
-            RockTrail.Attach(go, constants);
+            // against — see TrailTuning's remarks on why they are fractions. The player's
+            // full colour goes to the trail rather than the blended stone tint — see
+            // RockTrail.ApplySpeedTint's remarks on why the trail has nothing to preserve.
+            RockTrail.Attach(go, constants, playerColour);
 
             return controller;
         }

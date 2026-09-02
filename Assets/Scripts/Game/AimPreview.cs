@@ -38,7 +38,7 @@ namespace Game
         [Tooltip("Global simulation/forgiveness constants. Leave empty to use a runtime default.")]
         [SerializeField] private SkipConstants constants;
 
-        [Tooltip("Arc colour and ghost charge numbers. Leave empty to use a runtime default.")]
+        [Tooltip("Arc colour ramp. Leave empty to use a runtime default.")]
         [SerializeField] private AimFeedbackTuning feedback;
 
         [SerializeField] private Transform throwOrigin;
@@ -93,16 +93,9 @@ namespace Game
 
         // Held rather than looked back off the renderers. Renderer.material INSTANCES on
         // read, so fetching it per frame to tint it would leak a fresh material every
-        // frame — and these are written every frame now that the arc has a colour and the
-        // ghost has a charge.
+        // frame — and the arc's material is written every frame for its colour.
         private Material _lineMaterial;
         private Material _ghostMaterial;
-
-        /// <summary>The ghost's authored scale, which the charge multiplies rather than replaces.</summary>
-        private Vector3 _ghostBaseScale = Vector3.one;
-
-        /// <summary>Whether the ghost's shader actually has an emission property to drive.</summary>
-        private bool _ghostEmissive;
 
         /// <summary>
         /// Smoothed 0..1 arc quality, and a request to skip the smoothing for one frame.
@@ -175,8 +168,8 @@ namespace Game
             {
                 feedback = AimFeedbackTuning.CreateDefault();
                 Debug.LogWarning("[AimPreview] No AimFeedbackTuning at Resources/AimFeedbackTuning — " +
-                                 "arc colour and ghost charge are on code defaults, which cannot be " +
-                                 "tuned without a recompile.");
+                                 "arc colour is on code defaults, which cannot be tuned without a " +
+                                 "recompile.");
             }
 
             // PredictSeconds is global now — every rock predicts the same horizon — so this
@@ -191,6 +184,7 @@ namespace Game
             BuildShoreRocks();
 
             EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnTurnStarted);
+            EventManager.Instance?.Subscribe<PlayerColourChangedEvent>(this, OnPlayerColourChanged);
         }
 
         private void OnDestroy()
@@ -239,10 +233,34 @@ namespace Game
 
             _ghost.localScale = rock.LocalScale;
 
-            // Re-captured, not left stale: UpdateGhostCharge multiplies from this every
-            // frame, and a base scale from the previous rock would make the ghost jump
-            // size the instant the next wind-up starts.
-            _ghostBaseScale = _ghost.localScale;
+            TintGhost(e.PlayerId);
+        }
+
+        /// <summary>
+        /// Paints the ghost in the aiming player's colour — the same blend the shore stone
+        /// and the thrown stone use, so the rock a player is about to throw already looks
+        /// like the one that leaves their hand.
+        /// </summary>
+        private void TintGhost(string playerId)
+        {
+            if (_ghostMaterial == null || !PlayerColours.HasInstance) return;
+
+            var tint = CurrentRock != null ? CurrentRock.Tint : Color.gray3;
+            _ghostMaterial.color = PlayerColours.Instance.StoneColourFor(playerId, tint);
+        }
+
+        /// <summary>Re-tints a live ghost the instant its player's colour changes, rather
+        /// than waiting for their next turn to start.</summary>
+        /// <remarks>
+        /// Checked against TurnManager.ActivePlayer, not _lastAimPlayer: the ghost is
+        /// already tinted for the new player the moment their turn starts (see
+        /// OnTurnStarted), before their first AIM frame has arrived to update
+        /// _lastAimPlayer — using that instead would miss a colour change landing in
+        /// that gap.
+        /// </remarks>
+        private void OnPlayerColourChanged(PlayerColourChangedEvent e)
+        {
+            if (TurnManager.HasInstance && e.PlayerId == TurnManager.Instance.ActivePlayer) TintGhost(e.PlayerId);
         }
 
         private void Update()
@@ -441,54 +459,6 @@ namespace Game
             // The thrown stone still spins, because once it leaves the hand there is no
             // phone left to track — see RockController.
             _ghost.rotation = _curAttitude;
-
-            UpdateGhostCharge();
-        }
-
-        /// <summary>
-        /// Swells and lights the ghost with how hard the phone is being swung.
-        /// </summary>
-        /// <remarks>
-        /// Winding up should look like winding up. _curSwingSpeed was already smoothed
-        /// every frame and fed to arc length alone, which puts the only reading of effort
-        /// at the far end of the arc — several metres from where the player is looking,
-        /// and mixed in with the angle the arc is mainly there to teach.
-        ///
-        /// Raw _curSwingSpeed, deliberately, and NOT the drawSwingSpeed the arc uses. The
-        /// arc floors its speed at previewSwingSpeed so that holding still still shows a
-        /// usable guide; a ghost floored the same way would sit permanently half-charged
-        /// and never show the bottom of the range. The whole point here is the difference
-        /// between still and winding up, so it has to start from actually still.
-        ///
-        /// Normalised against ReferenceSpeed purely for this visual — the physics reads
-        /// _curSwingSpeed raw, this is the only place it needs a 0..1 fraction.
-        /// </remarks>
-        private void UpdateGhostCharge()
-        {
-            if (!feedback.ChargeGlow) return;
-
-            var charge = Mathf.Clamp01(_curSwingSpeed / Mathf.Max(constants.ReferenceSpeed, 0.0001f));
-
-            // Scaled by charge so a stone at rest is perfectly still. An unscaled pulse
-            // reads as an idle animation, which is the opposite of feedback: it says the
-            // same thing whether the player is doing anything or not.
-            var pulse = 1f + Mathf.Sin(Time.time * feedback.PulseHz * 2f * Mathf.PI)
-                             * feedback.PulseAmount * charge;
-
-            var scale = Mathf.Lerp(feedback.IdleScale, feedback.ChargedScale, charge) * pulse;
-            _ghost.localScale = _ghostBaseScale * scale;
-
-            if (_ghostMaterial == null) return;
-
-            _ghostMaterial.color = Color.Lerp(feedback.IdleColour, feedback.ChargedColour, charge);
-
-            if (!_ghostEmissive) return;
-
-            // Squared, so the glow stays out of the way through the early part of a swing
-            // and arrives near the top. Linear emission reads as the ghost being lit rather
-            // than as it charging, because the first small movement already visibly brightens
-            // it and there is nowhere left to escalate to.
-            PlaceholderArt.SetEmission(_ghostMaterial, feedback.ChargedEmission * (charge * charge));
         }
 
         // ---------------------------------------------------------------- scaffolding
@@ -534,21 +504,13 @@ namespace Game
             ghost.name = "GhostRock";
             Destroy(ghost.GetComponent<Collider>());
 
-            _ghostMaterial = PlaceholderArt.Create(feedback.IdleColour, PlaceholderArt.StoneQueue);
+            // Neutral until OnTurnStarted paints it in the aiming player's colour — this
+            // runs at Awake, before anyone's turn has started.
+            _ghostMaterial = PlaceholderArt.Create(Color.gray3, PlaceholderArt.StoneQueue);
             ghost.GetComponent<MeshRenderer>().material = _ghostMaterial;
-
-            // Asked once at build time rather than tested per frame. The answer cannot
-            // change — it is a property of the shader that resolved — and PlaceholderArt
-            // records why a silent no-op on a missing property is worth ruling out early.
-            _ghostEmissive = PlaceholderArt.PrepareEmission(_ghostMaterial);
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
-
-            // AFTER the reparent, because SetParent(worldPositionStays: false) can rewrite
-            // localScale — capturing before it would bake the parent's scale into the base
-            // the charge multiplies, and the ghost would jump size on the first wind-up.
-            _ghostBaseScale = _ghost.localScale;
         }
 
         /// <summary>

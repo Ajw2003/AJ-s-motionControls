@@ -3,9 +3,9 @@ using UnityEngine;
 namespace Game
 {
     /// <summary>
-    /// Every number behind the two things a player reads while aiming: what colour the arc
-    /// is, and how the ghost stone answers a wind-up. One asset, edited in the inspector,
-    /// no recompile.
+    /// Every number behind the one thing a player reads while aiming: what colour the arc
+    /// is, from red through amber to green as the predicted throw gets better. One asset,
+    /// edited in the inspector, no recompile.
     /// </summary>
     /// <remarks>
     /// A ScriptableObject at Resources/AimFeedbackTuning for exactly the reason TrailTuning
@@ -16,10 +16,15 @@ namespace Game
     /// These are look numbers, which is precisely the kind that get tuned twenty times in an
     /// evening, so they are the last ones that should need a compile.
     ///
-    /// Nothing in here is read by the simulation. The arc's colour and the ghost's size are
-    /// downstream of SkipPhysics.Predict and feed back into nothing — the same
-    /// presentation-only guarantee RockTrail states, and it matters here for the same
-    /// reason: the preview runs the solver every frame for a throw that never happened.
+    /// Nothing in here is read by the simulation. The arc's colour is downstream of
+    /// SkipPhysics.Predict and feeds back into nothing — the same presentation-only
+    /// guarantee RockTrail states, and it matters here for the same reason: the preview runs
+    /// the solver every frame for a throw that never happened.
+    ///
+    /// The ghost used to swell, pulse and glow with wind-up (a "Ghost charge" header lived
+    /// here). That feature is gone — the ghost now simply shows the throwing player's
+    /// colour, from PlayerColours via AimPreview.TintGhost — and every field that only fed
+    /// it went with it.
     ///
     /// Skip counts are stored as ABSOLUTE counts rather than fractions of anything, and that
     /// is not an oversight of the fractions rule TrailTuning documents. That rule exists
@@ -68,40 +73,6 @@ namespace Game
                  "on a stone that is not moving. Slower than the attitude smoothing on " +
                  "purpose: the ghost should feel instant, the verdict should not twitch.")]
         [Range(0.5f, 40f)] public float ColourSmoothing = 7f;
-
-        [Header("Ghost charge")]
-        [Tooltip("Let the ghost stone swell and glow with how hard the phone is being swung. " +
-                 "Off leaves it at its authored size and colour.")]
-        public bool ChargeGlow = true;
-
-        [Tooltip("Scale multiplier at rest, on top of the prefab's own scale.")]
-        [Range(0.5f, 2f)] public float IdleScale = 1f;
-
-        [Tooltip("Scale multiplier at a full-power wind-up. Kept close to Idle — the ghost " +
-                 "still has to read as the size of the stone that is about to be thrown.")]
-        [Range(0.5f, 2f)] public float ChargedScale = 1.16f;
-
-        [Tooltip("Base colour at rest. Matches the live stone's grey so the ghost reads as " +
-                 "the same object until it is charged.")]
-        public Color IdleColour = new(0.28f, 0.27f, 0.27f);
-
-        [Tooltip("Base colour at full charge.")]
-        public Color ChargedColour = new(0.62f, 0.72f, 0.80f);
-
-        [Tooltip("Emissive colour added at full charge, scaled by charge.\n\n" +
-                 "Emission on top of base colour rather than instead of it, because base " +
-                 "colour alone tops out at white and cannot get brighter than the lighting " +
-                 "allows. Emission is also the half that would bloom if a Global Volume is " +
-                 "ever added (Plan-SfxVfx.md section 6.11), and it looks correct without one.")]
-        [ColorUsage(false, true)] public Color ChargedEmission = new(0.45f, 0.85f, 1f);
-
-        [Tooltip("Wobbles per second in the charge pulse. Zero holds a steady glow.")]
-        [Range(0f, 12f)] public float PulseHz = 3.2f;
-
-        [Tooltip("How much of the scale the pulse swings, at full charge. Scaled by charge, " +
-                 "so a stone at rest is perfectly still — a ghost that breathes while nobody " +
-                 "is winding up reads as an idle animation rather than as feedback.")]
-        [Range(0f, 0.5f)] public float PulseAmount = 0.045f;
 
         /// <summary>
         /// The 0..1 quality a predicted skip count sits at on the ramp between

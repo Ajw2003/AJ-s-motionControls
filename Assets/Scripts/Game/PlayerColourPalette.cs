@@ -65,10 +65,13 @@ namespace Game
         [Range(0f, 1f)] public float MinSaturation = 0.25f;
 
         [Header("Materials")]
-        [Tooltip("How far a confirmed stone is pulled toward the colour of the player who " +
-                 "claimed it: 0 leaves the rock's own tint alone, 1 paints it flat in " +
-                 "their colour. Partway keeps the stone looking like stone while still " +
-                 "answering 'whose is that'.")]
+        [Tooltip("How far a stone is pulled toward the colour of the player it belongs to: " +
+                 "0 leaves the rock's own tint alone, 1 paints it flat in their colour. " +
+                 "Partway keeps the stone looking like stone while still answering " +
+                 "'whose is that'.\n\n" +
+                 "One knob for all three stones — the claimed stone on the shore, the stone " +
+                 "in flight, and the aim ghost — because the rock you picked has to look " +
+                 "like the rock you threw. See PlayerColours.StoneColourFor.")]
         [Range(0f, 1f)] public float ConfirmedBlend = 0.65f;
 
         // No highlight knob here on purpose: the pointed-at (not yet confirmed) stone is

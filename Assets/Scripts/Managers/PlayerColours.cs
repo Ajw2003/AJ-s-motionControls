@@ -116,6 +116,27 @@ namespace Managers
         public IEnumerable<KeyValuePair<string, Color>> All => _colours;
 
         /// <summary>
+        /// A stone in this player's colour: their colour blended over the rock's own tint by
+        /// <see cref="PlayerColourPalette.ConfirmedBlend"/>. Partway rather than flat, so the
+        /// stone still looks like stone while answering "whose is that" across a room.
+        /// </summary>
+        /// <remarks>
+        /// The one place that calculation lives. The shore stone a player claims, the stone
+        /// they throw and the ghost they aim with all call this, so the three cannot drift
+        /// apart — the rock you picked has to look like the rock you threw, and a second copy
+        /// of the blend is how that would quietly stop being true.
+        ///
+        /// Returns <paramref name="baseColour"/> untouched when there is no palette, so a
+        /// build without the asset degrades to the rock's authored tint rather than to
+        /// nothing.
+        /// </remarks>
+        public Color StoneColourFor(string playerId, Color baseColour)
+        {
+            if (_palette == null) return baseColour;
+            return Color.Lerp(baseColour, For(playerId), _palette.ConfirmedBlend);
+        }
+
+        /// <summary>
         /// Records a colour a phone asked for, after making it usable.
         /// </summary>
         /// <remarks>

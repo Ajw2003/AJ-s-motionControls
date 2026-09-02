@@ -35,6 +35,7 @@ namespace Game
         private TrailRenderer _trail;
 
         private Material _material;
+        private Color _playerColour = Color.white;
         private Texture2D _dashTexture;
 
         private float _minSpeed;
@@ -75,7 +76,7 @@ namespace Game
         /// looked up so the speed thresholds come from the same asset the throw was
         /// simulated with; two lookups could disagree after a retune.
         /// </remarks>
-        public static RockTrail Attach(GameObject rock, SkipConstants skipConstants)
+        public static RockTrail Attach(GameObject rock, SkipConstants skipConstants, Color playerColour)
         {
             if (rock == null) return null;
 
@@ -101,16 +102,17 @@ namespace Game
             go.transform.localRotation = FaceAlignedRotation;
 
             var self = go.AddComponent<RockTrail>();
-            self.Init(tuning, skipConstants, material, rock.GetComponent<RockController>());
+            self.Init(tuning, skipConstants, material, rock.GetComponent<RockController>(), playerColour);
 
             return self;
         }
 
-        private void Init(TrailTuning tuning, SkipConstants skipConstants, Material material, RockController rock)
+        private void Init(TrailTuning tuning, SkipConstants skipConstants, Material material, RockController rock, Color playerColour)
         {
             _tuning = tuning;
             _rock = rock;
             _material = material;
+            _playerColour = playerColour;
             _trail = GetComponent<TrailRenderer>();
 
             if (skipConstants != null)
@@ -159,6 +161,11 @@ namespace Game
             // built fresh for this trail and is destroyed with it, so there is nothing to
             // share it with anyway.
             _trail.sharedMaterial = _material;
+
+            // Set once here rather than left to ApplySpeedTint, which only runs when
+            // ColourBySpeed is on — a trail with that style off must still be the player's
+            // colour, just without the speed-based dimming.
+            _material.color = _playerColour;
         }
 
         /// <summary>
@@ -249,7 +256,14 @@ namespace Game
             if (_material == null || _rock == null) return;
 
             var t = Mathf.InverseLerp(_minSpeed, _maxSpeed, _rock.Speed);
-            _material.color = Color.Lerp(_tuning.SlowTint, _tuning.FastTint, t);
+
+            // Multiplied, not replaced, so the speed fade survives: SlowTint is dim and
+            // FastTint is white, so the product is the player's own colour at full
+            // brightness on a fast run and dimmed on a dying one — ColourBySpeed still
+            // reads. Full player colour rather than PlayerColours.StoneColourFor's partial
+            // blend: a trail has no rock tint of its own worth preserving, and blending
+            // toward SlowTint's grey a second time would only wash it out.
+            _material.color = Color.Lerp(_tuning.SlowTint, _tuning.FastTint, t) * _playerColour;
         }
 
         /// <summary>A copy of a gradient with every alpha key scaled. Used by the Wake style.</summary>

@@ -20,11 +20,3 @@ MonoBehaviour:
   GoodColour: {r: 0.35, g: 0.88, b: 0.42, a: 1}
   TailAlpha: 0.15
   ColourSmoothing: 7
-  ChargeGlow: 1
-  IdleScale: 1
-  ChargedScale: 1.16
-  IdleColour: {r: 0.28, g: 0.27, b: 0.27, a: 1}
-  ChargedColour: {r: 0.62, g: 0.72, b: 0.8, a: 1}
-  ChargedEmission: {r: 0.45, g: 0.85, b: 1, a: 1}
-  PulseHz: 3.2
-  PulseAmount: 0.045

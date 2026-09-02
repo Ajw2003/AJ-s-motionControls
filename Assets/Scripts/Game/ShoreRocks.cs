@@ -379,19 +379,14 @@ namespace Game
         /// itself lives on the PlayerColourPalette asset where it can be edited.
         /// </remarks>
         /// <summary>
-        /// A claimed stone, pulled part-way toward its owner's colour rather than painted
-        /// flat in it: enough to answer "whose is that" across a room, not so much that the
-        /// stone stops looking like stone. The blend is authored on PlayerColourPalette.
+        /// A claimed stone, in its owner's colour. The blend itself lives on
+        /// PlayerColours.StoneColourFor, shared with the thrown stone and the aim ghost so
+        /// the stone a player picks looks like the stone they throw.
         /// </summary>
-        private Color ConfirmedColourFor(string playerId, Color baseColour)
-        {
-            if (!PlayerColours.HasInstance) return _tuning.ConfirmedColour;
-
-            var palette = PlayerColours.Instance.Palette;
-            if (palette == null) return _tuning.ConfirmedColour;
-
-            return Color.Lerp(baseColour, PlayerColours.Instance.For(playerId), palette.ConfirmedBlend);
-        }
+        private Color ConfirmedColourFor(string playerId, Color baseColour) =>
+            PlayerColours.HasInstance
+                ? PlayerColours.Instance.StoneColourFor(playerId, baseColour)
+                : _tuning.ConfirmedColour;
 
         private Transform CreateMarker(string playerId)
         {

@@ -120,10 +120,12 @@ Defaults for reference:
   `MinSpeedFraction` 0.15 / `MaxSpeedFraction` 0.96 (same `ReferenceSpeed` basis as the
   ripples), `SlowTint` `(0.55, 0.62, 0.70, 0.55)`, `FastTint` white, `WakeWidthScale` 4,
   `WakeAlphaScale` 0.35, `DashLength` 0.6, `DashDutyCycle` 0.5.
-- **`AimFeedbackTuning`** — the arc's red/amber/green thresholds: `PoorSkips` 2,
+- **`AimFeedbackTuning`** — the arc's red/amber/green thresholds only: `PoorSkips` 2,
   `GoodSkips` 9; `PoorColour`/`FairColour`/`GoodColour`; `TailAlpha` 0.15,
-  `ColourSmoothing` 7; ghost `IdleScale` 1 → `ChargedScale` 1.16, `PulseHz` 3.2,
-  `PulseAmount` 0.045.
+  `ColourSmoothing` 7. The ghost's own charge fields (`IdleScale`/`ChargedScale`,
+  `IdleColour`/`ChargedColour`/`ChargedEmission`, `PulseHz`/`PulseAmount`) are gone — the
+  ghost now shows the aiming player's colour instead of swelling and glowing with wind-up,
+  via `AimPreview.TintGhost` and `PlayerColours.StoneColourFor`.
 - **`RockSelectTuning`** — `FanDegrees` 38, `ShoreRadius` 6, `ShoreHeight` 0,
   `StickyMarginDeg` 3, `PointerSmoothing` 12, `PointerStaleSeconds` 1.5,
   `HighlightScale` 1.12, `HighlightColour`, `ConfirmedColour`.
@@ -492,12 +494,15 @@ Carry-over work; none of these are broken today.
 3. **`AudioBank.Entry.StepCap` 14** and `SemitonesPerStep` — no recorded reasoning for 14.
 4. **`RockSelectTuning.ShoreRadius` 6 / `FanDegrees` 38** — geometry with no note on the
    camera framing they were chosen against.
-5. **`RockLauncher.cs:201` still tints a thrown stone from `RockDefinition.Tint`**, not from
-   the throwing player's colour. Deliberate for now — colouring the in-flight stone is a
-   readability decision against the water, not a bug — and the API it would need
-   (`PlayerColours.For` plus `PlaceholderArt.Create`) is in place either way.
-
 ### Closed by the fixes in this pass
+
+- ~~`RockLauncher.cs:201` tinted a thrown stone from `RockDefinition.Tint` alone~~ — it now
+  calls `PlayerColours.StoneColourFor`, the same blend the shore stone and the ghost use.
+  The trail (`RockTrail.ApplySpeedTint`) multiplies in the player's full colour on top of
+  its existing speed fade, so a dying run still dims. The pre-release ghost is tinted the
+  same way — see `AimPreview.TintGhost` — which meant removing the ghost's separate
+  swell/glow "charge" feature (`AimFeedbackTuning`'s `ChargeGlow` block) entirely, since
+  both used the ghost's material colour for different things.
 
 - ~~`RelayClient.relayUrl` pointed at the torn-down Fly.io host~~ — now defaults to
   `ws://localhost:3000`, matching `LocalServices.relayPort`, and the last-resort branch logs
