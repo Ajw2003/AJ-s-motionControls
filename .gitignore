@@ -64,12 +64,17 @@ match-settings.json
 # Spike output. Records one machine's run, so it is evidence rather than source.
 deploy/spike/*.log
 
-# A backstop, not a workflow. local-https.ps1 keeps the borrowed local-ip.sh key in a
-# scratch directory outside the repo precisely so this rule never has to fire — but
-# .dockerignore is an allowlist, so a key that did land in relay/ would be baked into
-# the Fly image, and that key is published.
+# Load-bearing, not a backstop. The certificate key for play.skiprocking.ca is published
+# deliberately (docs/plans/magic-domain-replacement.md), so the risk this guards against is
+# not disclosure — it is permanence. A key committed here lives in git history forever,
+# removable only by a history rewrite, and GitHub's push protection is liable to reject the
+# push outright. deploy/fetch-seed-cert.ps1 therefore stages the seed under
+# deploy/seed-cert/ at packaging time, where these two rules keep it untracked, and
+# installer.iss bakes it into the build from there — so the key reaches a player's machine
+# without ever becoming a tracked object.
 *.pem
 *.key
+deploy/seed-cert/
 Assets/Audio/ui_confirm_01.wav.meta
 Assets/Audio.meta
 Assets/Audio/match_start_01.wav

@@ -35,9 +35,11 @@
 ;        (LocalServices' own dependency-install fallback still works if this step is
 ;        skipped, but then a fresh install needs internet on its very first launch, which
 ;        defeats part of the point of bundling Node at all).
-;     4. Place a real server.pem/server.key under Assets/StreamingAssets/ before building the
-;        Unity player, so CertificateProvider.TrySeedCache has something to fall back to.
-;        Nothing here fabricates one — see CertificateProvider.cs's remarks.
+;     4. DONE, and it is a prerequisite of every compile: run deploy/fetch-seed-cert.ps1
+;        before ISCC. It downloads the published certificate into deploy/seed-cert/ (which
+;        .gitignore keeps untracked) and refuses anything expired, staging-issued, or whose
+;        SAN does not cover play.skiprocking.ca. The [Files] entries below then bake it into
+;        the build's StreamingAssets folder. Nothing here fabricates a certificate.
 ;     5. Code-sign the installer and node.exe/Unity's player exe, or Windows SmartScreen and
 ;        several antivirus products will flag an unsigned installer that also unpacks a
 ;        second unsigned executable — this is called out as a real risk in
@@ -52,7 +54,18 @@
 #define SourceUnityBuild "..\Build\Windows"
 #define SourceNodeRuntime "node-runtime"
 #define SourceRelay "..\relay"
-#define SourceStreamingAssetsCert "..\Assets\StreamingAssets"
+
+; The seed certificate, staged by deploy/fetch-seed-cert.ps1 rather than committed. It is
+; NOT under Assets/StreamingAssets/ in the repo, and deliberately so: committing a private
+; key puts it in git history permanently and trips GitHub push protection, which is why
+; .gitignore rejects *.pem/*.key. Run fetch-seed-cert.ps1 before compiling this script.
+#define SourceSeedCert "seed-cert"
+
+; Unity names the data folder after the executable, so RockSkipping.exe implies
+; RockSkipping_Data. StreamingAssets is an ordinary uncompressed folder inside it on
+; Windows Standalone, which is what lets CertificateProvider.TrySeedCache read it with plain
+; File I/O instead of UnityWebRequest.
+#define StreamingAssetsDir "RockSkipping_Data\StreamingAssets"
 
 [Setup]
 AppId={{9E9B9E9C-9D7A-4E51-8C9B-ROCKSKIPPING}}
@@ -96,6 +109,19 @@ Source: "{#SourceNodeRuntime}\*"; DestDir: "{app}\node"; Flags: recursesubdirs c
 ; never ship: local dev overrides, and the relay's own gitignored per-machine config files.
 Source: "{#SourceRelay}\*"; DestDir: "{app}\relay"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "relay-env.txt,*.log"
 
+; The seed certificate, laid down into the installed build's StreamingAssets folder where
+; CertificateProvider.TrySeedCache looks for it. This is what makes a brand-new install
+; survive a first launch with the download URL unreachable — the exact failure that took the
+; project down when local-ip.sh went offline, where an empty cache plus an unreachable
+; service was fatal rather than merely degraded.
+;
+; Deliberately NOT "external" or "skipifsourcedoesntexist": if fetch-seed-cert.ps1 has not
+; been run, ISCC should fail at compile time on the packaging machine, not silently produce
+; an installer whose offline fallback is missing. A seed that is absent fails on a player's
+; machine, offline, with nobody able to diagnose it.
+Source: "{#SourceSeedCert}\server.pem"; DestDir: "{app}\{#StreamingAssetsDir}"; Flags: ignoreversion
+Source: "{#SourceSeedCert}\server.key"; DestDir: "{app}\{#StreamingAssetsDir}"; Flags: ignoreversion
+
 [Dirs]
 ; LocalServices resolves relay-url.txt, network-mode.txt and magic-domain.txt beside the
 ; executable (Application.dataPath's parent) — {app} is exactly that location for an
@@ -130,6 +156,11 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 [Files]
 Source: "setup-offline.ps1"; DestDir: "{app}\deploy"; Flags: ignoreversion
 
+; Back into [Run] explicitly. This entry is a [Run] directive, and an earlier revision left
+; it sitting under the [Files] section above, where ISCC rejects it — "Filename" is not a
+; valid [Files] parameter. Section headers are not scoped by blank lines, so the header has
+; to be restated here.
+[Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
