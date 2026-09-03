@@ -381,7 +381,11 @@ namespace Net
         private struct HealthDns
         {
             public bool enabled;
-            public bool isBound;
+            // Wire name from server.js's /health handler is "bound", not "isBound".
+            // JsonUtility does not fail or even warn on an unmatched field name — it just
+            // leaves this at its default (false) — so a mismatch here reads as a permanent,
+            // silent DNS-bind failure regardless of what the relay actually reports.
+            public bool bound;
         }
 
         [Serializable]
@@ -421,7 +425,7 @@ namespace Net
             try
             {
                 var payload = JsonUtility.FromJson<HealthPayload>(request.downloadHandler.text);
-                onResult(payload.ok && payload.dns.isBound);
+                onResult(payload.ok && payload.dns.bound);
             }
             catch
             {
