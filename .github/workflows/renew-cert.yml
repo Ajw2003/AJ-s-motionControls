@@ -141,11 +141,20 @@ jobs:
           # A fixed tag, reused forever. The URL MagicDomain.cs points at must never change,
           # so the release is a stable container that gets new assets rather than a new
           # release per renewal — which would move the URL every 90 days and defeat the point.
-          gh release create "$CERT_TAG" \
-            --repo "$CERT_REPO" \
-            --title 'Current certificate' \
-            --notes 'Auto-published by renew-cert.yml. The private key here is public by design; see docs/plans/magic-domain-replacement.md.' \
-            || echo "Release $CERT_TAG already exists, reusing it."
+          # Check-then-create rather than `create || echo`. The first version swallowed every
+          # failure, which hid a real HTTP 422 ("Repository is empty" — a release needs a
+          # commit to tag, and a freshly created repo has none) and surfaced it two lines
+          # later as a baffling "release not found" from the upload. Anything other than a
+          # genuinely-already-exists release must now fail loudly, where it happened.
+          if gh release view "$CERT_TAG" --repo "$CERT_REPO" >/dev/null 2>&1; then
+            echo "Release $CERT_TAG exists; uploading into it."
+          else
+            echo "Release $CERT_TAG does not exist yet; creating it."
+            gh release create "$CERT_TAG" \
+              --repo "$CERT_REPO" \
+              --title 'Current certificate' \
+              --notes 'Auto-published by renew-cert.yml. The private key here is public by design; see docs/plans/magic-domain-replacement.md.'
+          fi
           gh release upload "$CERT_TAG" \
             --repo "$CERT_REPO" \
             --clobber \
