@@ -124,10 +124,10 @@ Phones normalize sensors *before* sending — Unity never sees a platform (iOS/A
 difference. The governing rule and the iOS/Android landmines (no `acceleration` on iOS,
 opposite-direction compass headings, `requestPermission()` gating) are in PLAN.md's "The motion
 pipeline" section; the current heading/attitude conversion used on both the throw path and rock
-selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/PhoneAttitude.cs`) —
+selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/Physics/PhoneAttitude.cs`) —
 **one conversion, reused everywhere a heading is needed**, no ad-hoc Euler math at call sites.
 
-### Skip physics (`Scripts/Game/SkipPhysics.cs`)
+### Skip physics (`Scripts/Game/Physics/SkipPhysics.cs`)
 
 A custom, pure, side-effect-free stepping function (`SkipPhysics.Step`), not PhysX rigidbody
 collision — needed both for precise per-bounce control and so the aim preview can run the same
@@ -135,6 +135,14 @@ math speculatively, many frames ahead, without side effects. **`Step` must never
 events or otherwise touch anything observable** (score, audio, VFX, haptics) — only the caller
 driving a *real* throw does that (`RockController`/`RockLauncher`), because the preview runs
 `Step` continuously while a player merely aims and would otherwise "score" imaginary throws.
+
+`SkipPhysics`, `PhoneAttitude`, `SkipConstants` and `SkipTuning` (all four under
+`Scripts/Game/Physics/`) are the pure, dependency-free core of the skip model — they import
+only `System.Collections.Generic`/`UnityEngine`, nothing project-specific — and live in their
+own `RockSkipping.Physics` assembly (`RockSkipping.Physics.asmdef`) specifically so
+`Assets/Tests/EditMode/` can reference them in isolation for NUnit EditMode tests. That asmdef
+is `autoReferenced: true`, so the rest of the project (Assembly-CSharp) keeps compiling against
+them unchanged, without adding an explicit reference.
 
 ### Rock catalog and tuning (`Assets/Rocks/`, `Scripts/Game/RockDefinition.cs`, `RockCatalog.cs`)
 

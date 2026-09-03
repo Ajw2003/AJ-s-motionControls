@@ -5,6 +5,8 @@
  * the routing plus each hardening fix. Run with: npm test
  */
 
+const { test, describe, before, after } = require('node:test');
+const assert = require('node:assert/strict');
 const { WebSocket } = require('ws');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -13,11 +15,9 @@ const path = require('path');
 const PORT = 3999;
 const URL = `ws://127.0.0.1:${PORT}`;
 
-let failures = 0;
-
 function check(label, ok, detail) {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`);
-  if (!ok) failures++;
+  assert.ok(ok, `${label}${detail ? ` — ${detail}` : ''}`);
 }
 
 function connect() {
@@ -72,208 +72,206 @@ function httpGet(pathAndQuery) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function run() {
-  console.log('Relay integration test\n');
+describe('Relay integration', () => {
+  let server;
 
-  // ---- routing basics -----------------------------------------------------
-  const host = await connect();
-  send(host, { type: 'CREATE_ROOM' });
-  const created = await next(host);
+  // Shared connections/state threaded across the tests below, in the same order
+  // the original single run() function used them.
+  let host, code, stranger, player, rejoin, returning, heldCode;
 
-  check('host receives ROOM_CREATED', created.type === 'ROOM_CREATED');
-  const code = created.roomCode;
-  check('room code is 4 characters', typeof code === 'string' && code.length === 4, code);
-  check('room code avoids ambiguous I/O', !/[IO]/.test(code), code);
+  before(async () => {
+    server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
+      // A short grace period so the host-disconnect cases do not take a minute each.
+      env: { ...process.env, PORT: String(PORT), HOST_GRACE_MS: '1500' },
+      stdio: ['ignore', 'ignore', 'inherit'],
+    });
+    server.on('exit', (code, signal) => {
+      if (!signal) {
+        console.error(`\nServer exited unexpectedly with code ${code} — it should never die.`);
+      }
+    });
+    await sleep(600);
+  });
 
-  // ---- fix: joins to a missing room must be answered, not ignored ----------
-  const stranger = await connect();
-  send(stranger, { type: 'JOIN_ROOM', roomCode: 'ZZZZ', playerId: 'NOBODY' });
-  const rejected = await next(stranger);
-  check(
-    'join to unknown room is rejected',
-    rejected.type === 'ERROR' && rejected.code === 'ROOM_NOT_FOUND',
-    `${rejected.type}/${rejected.code}`,
-  );
-  stranger.close();
+  after(async () => {
+    server.kill('SIGKILL');
+  });
 
-  // ---- normal join --------------------------------------------------------
-  const player = await connect();
-  send(player, { type: 'JOIN_ROOM', roomCode: code, playerId: 'aj' });
-  const joined = await next(player);
-  check('player receives JOINED', joined.type === 'JOINED');
-  check('player id is normalised to uppercase', joined.playerId === 'AJ', joined.playerId);
+  test('routing basics', async () => {
+    host = await connect();
+    send(host, { type: 'CREATE_ROOM' });
+    const created = await next(host);
 
-  const hostSawJoin = await next(host);
-  check(
-    'host is told PLAYER_JOINED',
-    hostSawJoin.type === 'PLAYER_JOINED' && hostSawJoin.playerId === 'AJ',
-  );
+    check('host receives ROOM_CREATED', created.type === 'ROOM_CREATED');
+    code = created.roomCode;
+    check('room code is 4 characters', typeof code === 'string' && code.length === 4, code);
+    check('room code avoids ambiguous I/O', !/[IO]/.test(code), code);
+  });
 
-  // ---- player -> host, with server-side identity stamping ------------------
-  send(player, { type: 'THROW', playerId: 'SOMEONE_ELSE', power: 0.72 });
-  const throwMsg = await next(host);
-  check('THROW reaches the host', throwMsg.type === 'THROW' && throwMsg.power === 0.72);
-  check(
-    'spoofed playerId is overwritten by the server',
-    throwMsg.playerId === 'AJ',
-    throwMsg.playerId,
-  );
+  test('fix: joins to a missing room must be answered, not ignored', async () => {
+    stranger = await connect();
+    send(stranger, { type: 'JOIN_ROOM', roomCode: 'ZZZZ', playerId: 'NOBODY' });
+    const rejected = await next(stranger);
+    check(
+      'join to unknown room is rejected',
+      rejected.type === 'ERROR' && rejected.code === 'ROOM_NOT_FOUND',
+      `${rejected.type}/${rejected.code}`,
+    );
+    stranger.close();
+  });
 
-  // ---- host -> players ----------------------------------------------------
-  send(host, { type: 'SPECTATE', liveSkips: 3 });
-  const spectate = await next(player);
-  check('SPECTATE broadcasts to players', spectate.type === 'SPECTATE' && spectate.liveSkips === 3);
+  test('normal join', async () => {
+    player = await connect();
+    send(player, { type: 'JOIN_ROOM', roomCode: code, playerId: 'aj' });
+    const joined = await next(player);
+    check('player receives JOINED', joined.type === 'JOINED');
+    check('player id is normalised to uppercase', joined.playerId === 'AJ', joined.playerId);
 
-  send(host, { type: 'TURN', targetPlayerId: 'AJ', yourTurn: true });
-  const turn = await next(player);
-  check('targetPlayerId routes to one player', turn.type === 'TURN' && turn.yourTurn === true);
+    const hostSawJoin = await next(host);
+    check(
+      'host is told PLAYER_JOINED',
+      hostSawJoin.type === 'PLAYER_JOINED' && hostSawJoin.playerId === 'AJ',
+    );
+  });
 
-  // ---- fix: malformed JSON must not kill the process -----------------------
-  player.send('this is not json{{{');
-  const badJson = await next(player);
-  check('malformed JSON returns an error', badJson.type === 'ERROR' && badJson.code === 'BAD_JSON');
+  test('player -> host, with server-side identity stamping', async () => {
+    send(player, { type: 'THROW', playerId: 'SOMEONE_ELSE', power: 0.72 });
+    const throwMsg = await next(host);
+    check('THROW reaches the host', throwMsg.type === 'THROW' && throwMsg.power === 0.72);
+    check(
+      'spoofed playerId is overwritten by the server',
+      throwMsg.playerId === 'AJ',
+      throwMsg.playerId,
+    );
+  });
 
-  send(player, { type: 'THROW', power: 0.5 });
-  const stillAlive = await next(host);
-  check(
-    'server still routing after malformed input',
-    stillAlive.type === 'THROW' && stillAlive.power === 0.5,
-  );
+  test('host -> players', async () => {
+    send(host, { type: 'SPECTATE', liveSkips: 3 });
+    const spectate = await next(player);
+    check('SPECTATE broadcasts to players', spectate.type === 'SPECTATE' && spectate.liveSkips === 3);
 
-  // ---- reconnect reclaims the same slot -----------------------------------
-  const rejoin = await connect();
-  send(rejoin, { type: 'JOIN_ROOM', roomCode: code, playerId: 'AJ' });
-  const rejoined = await next(rejoin);
-  check('reconnect is accepted', rejoined.type === 'JOINED');
-  check('reconnect is flagged as such', rejoined.reconnected === true);
+    send(host, { type: 'TURN', targetPlayerId: 'AJ', yourTurn: true });
+    const turn = await next(player);
+    check('targetPlayerId routes to one player', turn.type === 'TURN' && turn.yourTurn === true);
+  });
 
-  // ---- QR endpoint: the join URL players actually scan ---------------------
-  const joinUrl = `https://sample-words-here.trycloudflare.com/?room=${code}`;
-  const qr = await httpGet(`/qr?data=${encodeURIComponent(joinUrl)}`);
-  check('/qr answers 200', qr.status === 200, String(qr.status));
+  test('fix: malformed JSON must not kill the process', async () => {
+    player.send('this is not json{{{');
+    const badJson = await next(player);
+    check('malformed JSON returns an error', badJson.type === 'ERROR' && badJson.code === 'BAD_JSON');
 
-  const grid = JSON.parse(qr.body);
-  check(
-    '/qr returns a square matrix',
-    Number.isInteger(grid.size) && grid.size >= 21 && grid.rows.length === grid.size,
-    `${grid.size}x${grid.size}`,
-  );
-  check(
-    '/qr rows are 0/1 strings of the right width',
-    grid.rows.every((r) => r.length === grid.size && /^[01]+$/.test(r)),
-  );
-  // The finder pattern is what a scanner locks onto; an all-white corner means
-  // the matrix came back empty or transposed into nonsense.
-  check(
-    '/qr has a dark finder pattern in the top-left corner',
-    grid.rows[0][0] === '1' && grid.rows[6][6] === '1' && grid.rows[1][1] === '0',
-  );
+    send(player, { type: 'THROW', power: 0.5 });
+    const stillAlive = await next(host);
+    check(
+      'server still routing after malformed input',
+      stillAlive.type === 'THROW' && stillAlive.power === 0.5,
+    );
+  });
 
-  const tooLong = await httpGet(`/qr?data=${'x'.repeat(600)}`);
-  check('/qr rejects oversized data', tooLong.status === 400, String(tooLong.status));
+  test('reconnect reclaims the same slot', async () => {
+    rejoin = await connect();
+    send(rejoin, { type: 'JOIN_ROOM', roomCode: code, playerId: 'AJ' });
+    const rejoined = await next(rejoin);
+    check('reconnect is accepted', rejoined.type === 'JOINED');
+    check('reconnect is flagged as such', rejoined.reconnected === true);
+  });
 
-  const missing = await httpGet('/qr');
-  check('/qr rejects a missing data parameter', missing.status === 400, String(missing.status));
+  test('QR endpoint: the join URL players actually scan', async () => {
+    const joinUrl = `https://sample-words-here.trycloudflare.com/?room=${code}`;
+    const qr = await httpGet(`/qr?data=${encodeURIComponent(joinUrl)}`);
+    check('/qr answers 200', qr.status === 200, String(qr.status));
 
-  const health = await httpGet('/health');
-  check('/health still answers', health.status === 200 && JSON.parse(health.body).ok === true);
+    const grid = JSON.parse(qr.body);
+    check(
+      '/qr returns a square matrix',
+      Number.isInteger(grid.size) && grid.size >= 21 && grid.rows.length === grid.size,
+      `${grid.size}x${grid.size}`,
+    );
+    check(
+      '/qr rows are 0/1 strings of the right width',
+      grid.rows.every((r) => r.length === grid.size && /^[01]+$/.test(r)),
+    );
+    // The finder pattern is what a scanner locks onto; an all-white corner means
+    // the matrix came back empty or transposed into nonsense.
+    check(
+      '/qr has a dark finder pattern in the top-left corner',
+      grid.rows[0][0] === '1' && grid.rows[6][6] === '1' && grid.rows[1][1] === '0',
+    );
+
+    const tooLong = await httpGet(`/qr?data=${'x'.repeat(600)}`);
+    check('/qr rejects oversized data', tooLong.status === 400, String(tooLong.status));
+
+    const missing = await httpGet('/qr');
+    check('/qr rejects a missing data parameter', missing.status === 400, String(missing.status));
+
+    const health = await httpGet('/health');
+    check('/health still answers', health.status === 200 && JSON.parse(health.body).ok === true);
+  });
 
   // ---- a host that comes back keeps its room and its players ---------------
   // This is the party-survival case: a redeploy or a Wi-Fi blip must not eject
   // everyone and force them to retype a code that no longer exists.
-  const heldCode = code;
-  host.close();
+  test('a host that comes back keeps its room and its players', async () => {
+    heldCode = code;
+    host.close();
 
-  const hostLeft = await next(rejoin, 3000);
-  check(
-    'players are told HOST_LEFT, not ROOM_CLOSED, on a host drop',
-    hostLeft.type === 'HOST_LEFT',
-    hostLeft.type,
-  );
+    const hostLeft = await next(rejoin, 3000);
+    check(
+      'players are told HOST_LEFT, not ROOM_CLOSED, on a host drop',
+      hostLeft.type === 'HOST_LEFT',
+      hostLeft.type,
+    );
 
-  const returning = await connect();
-  returning.send(JSON.stringify({ type: 'CREATE_ROOM', preferredCode: heldCode }));
+    returning = await connect();
+    returning.send(JSON.stringify({ type: 'CREATE_ROOM', preferredCode: heldCode }));
 
-  const resumed = await next(returning);
-  check(
-    'a reconnecting host reclaims the same room code',
-    resumed.type === 'ROOM_CREATED' && resumed.roomCode === heldCode,
-    resumed.roomCode,
-  );
-  check('the room is resumed rather than recreated', resumed.resumed === true);
-  check(
-    'players were kept across the drop',
-    Array.isArray(resumed.players) && resumed.players.includes('AJ'),
-    JSON.stringify(resumed.players),
-  );
+    const resumed = await next(returning);
+    check(
+      'a reconnecting host reclaims the same room code',
+      resumed.type === 'ROOM_CREATED' && resumed.roomCode === heldCode,
+      resumed.roomCode,
+    );
+    check('the room is resumed rather than recreated', resumed.resumed === true);
+    check(
+      'players were kept across the drop',
+      Array.isArray(resumed.players) && resumed.players.includes('AJ'),
+      JSON.stringify(resumed.players),
+    );
 
-  const resumeNotice = await next(rejoin, 3000);
-  check('players are told HOST_RESUMED', resumeNotice.type === 'HOST_RESUMED', resumeNotice.type);
+    const resumeNotice = await next(rejoin, 3000);
+    check('players are told HOST_RESUMED', resumeNotice.type === 'HOST_RESUMED', resumeNotice.type);
 
-  // Routing must work again without anyone rejoining.
-  rejoin.send(JSON.stringify({ type: 'THROW', power: 0.5 }));
-  const afterResume = await next(returning);
-  check(
-    'input routes to the resumed host',
-    afterResume.type === 'THROW' && afterResume.playerId === 'AJ',
-  );
+    // Routing must work again without anyone rejoining.
+    rejoin.send(JSON.stringify({ type: 'THROW', power: 0.5 }));
+    const afterResume = await next(returning);
+    check(
+      'input routes to the resumed host',
+      afterResume.type === 'THROW' && afterResume.playerId === 'AJ',
+    );
+  });
 
   // ---- a host that never comes back does close the room --------------------
   // The grace period holds the room, it does not keep it forever: players must not
   // be stranded on a dead room either.
-  returning.close();
+  test('a host that never comes back does close the room', async () => {
+    returning.close();
 
-  const secondDrop = await next(rejoin, 3000);
-  check(
-    'a second host drop is announced the same way',
-    secondDrop.type === 'HOST_LEFT',
-    secondDrop.type,
-  );
+    const secondDrop = await next(rejoin, 3000);
+    check(
+      'a second host drop is announced the same way',
+      secondDrop.type === 'HOST_LEFT',
+      secondDrop.type,
+    );
 
-  const eventuallyClosed = await next(rejoin, 6000);
-  check(
-    'the room closes once the grace period expires without the host returning',
-    eventuallyClosed.type === 'ROOM_CLOSED',
-    eventuallyClosed.type,
-  );
+    const eventuallyClosed = await next(rejoin, 6000);
+    check(
+      'the room closes once the grace period expires without the host returning',
+      eventuallyClosed.type === 'ROOM_CLOSED',
+      eventuallyClosed.type,
+    );
 
-  player.close();
-  rejoin.close();
-  await sleep(100);
-}
-
-const server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-  // A short grace period so the host-disconnect cases do not take a minute each.
-  env: { ...process.env, PORT: String(PORT), HOST_GRACE_MS: '1500' },
-  stdio: ['ignore', 'ignore', 'inherit'],
+    player.close();
+    rejoin.close();
+    await sleep(100);
+  });
 });
-
-let exitCode = 0;
-server.on('exit', (code, signal) => {
-  if (!signal) {
-    console.error(`\nServer exited unexpectedly with code ${code} — it should never die.`);
-    process.exit(1);
-  }
-});
-
-(async () => {
-  await sleep(600);
-  try {
-    await run();
-  } catch (err) {
-    console.error('\nTest run threw:', err.message);
-    exitCode = 1;
-  }
-
-  // A run that threw has not passed, however many individual checks did — the
-  // checks after the throw never ran. Reporting PASS there is worse than useless.
-  console.log(
-    exitCode !== 0
-      ? '\nFAIL — the run threw before finishing'
-      : failures === 0
-        ? '\nPASS — all relay checks green'
-        : `\nFAIL — ${failures} check(s) failed`,
-  );
-  server.kill('SIGKILL');
-  process.exit(failures === 0 ? exitCode : 1);
-})();

@@ -1,5 +1,65 @@
 # Standards Audit & Remediation — RockSkipping
 
+## Status
+
+| Phase | State |
+|---|---|
+| Phase 0 — re-runnable audit | **Done** (commit `0ab198d`) |
+| Phase 1 — tooling + documented deviations | **Done** (commit `0ab198d`) |
+| Phase 2 — mechanical fixes | **Done** (commit `0ab198d`) |
+| Phase 3 — tests | **Done, pending Editor verification** — see note below |
+| Phase 4 — structural | Not started (gated on explicit go-ahead) |
+
+Phase 3 step 12 (Node test runner) converted `relay/test-relay.js` and `relay/test-dns.js` to
+`node:test` — verified, 19/19 pass. `controller/test-sensors.js` was deliberately left as-is:
+1139 lines of working ESM holding the iOS guard PLAN.md calls the standing regression check,
+already exiting correctly. Restructuring it for uniformity alone was not worth the risk.
+
+Audit went from **11 failing checks to 1**. The single remaining failure is
+`cs.linq-in-per-frame-methods` — `RelayDebugHud.OnGUI` calls `_throws.Select(...)` twice per
+frame. Fixing it means caching the computed strings on change; it was left alone deliberately
+because that refactor was not in the approved scope.
+
+Also fixed during Phase 2, beyond the written steps:
+- `ShoreRocks` camera caching was first written as a one-shot `Awake` lookup. `Camera.main` can
+  be null at Awake, which would have left the shore labels permanently blank with no error. It
+  now uses the same lazy retry as `RockLauncher`.
+- `ChildProcessGroup.cs:91` had a genuinely empty `catch (EntryPointNotFoundException) {}` —
+  now carries the same degradation reason as the sibling block above it. This contradicted the
+  plan's original "no silent exception swallowing" finding.
+- Four defects in the audit script itself: it flagged its own TODO/HACK/FIXME search pattern,
+  counted nested private structs as multi-type files (18 reported vs 7 real), could not silence
+  the noise-word check (it uses a `Set`, so `.size` not `.length`), and flagged a comment that
+  merely mentioned `Camera.main`.
+
+Drift found since the plan was first measured: 5 C# files now exceed 500 lines (`JoinScreen`
+grew to 515), and `Debug.Log` is at 110, not 104.
+
+### Phase 3 — how the asmdef blocker was resolved
+
+Unity Test Framework tests must live in an `.asmdef` assembly, and an `.asmdef` assembly
+**cannot reference `Assembly-CSharp`** — the predefined assembly that currently holds all 70
+of this project's scripts. There are 0 asmdefs in the project today.
+
+A full folder-per-assembly split turned out to be impossible without either large file moves
+or real refactoring: `Game` and `Managers` reference each other (3 files each way), and
+`Managers/Bootstrap.cs` constructs `Ui.JoinScreen`/`Ui.ResultsScreen`/`Ui.MatchSettingsScreen`
+by fully-qualified name, so `Managers` and `Ui` are circular too. Asmdefs forbid cycles;
+`Assembly-CSharp` allowed them. Asmdefs also cover folder *trees*, so merging those sibling
+folders into one assembly would mean physically relocating ~40 files.
+
+The way out: `SkipPhysics.cs` and `PhoneAttitude.cs` — the actual test targets — import only
+`System.Collections.Generic` and `UnityEngine`. The tangle is entirely in `AimPreview`,
+`RockLauncher` and `ShoreRocks`, none of which are under test. So the four pure files
+(`SkipPhysics`, `PhoneAttitude`, `SkipConstants`, `SkipTuning`) moved to
+`Assets/Scripts/Game/Physics/` under a `RockSkipping.Physics` asmdef with
+`autoReferenced: true`, which keeps `Assembly-CSharp` compiling against them unchanged. Two
+cycles avoided rather than untangled; no refactoring needed.
+
+Tests live in `Assets/Tests/EditMode/` under an Editor-only test asmdef, and build their
+inputs with `ScriptableObject.CreateInstance` so they depend on no project assets.
+
+
 ## Context
 
 Three coding-standards documents now load into every session in this repo:
