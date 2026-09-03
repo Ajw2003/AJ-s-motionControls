@@ -1,5 +1,13 @@
 # Decision: how the host runs a network with no internet
 
+> **Update — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+> local-ip.sh (referenced throughout this doc as the source of the `192-168-137-1.local-ip.sh`
+> certificate name) is permanently dead. Hotspot mode itself, the tethering mechanism, and
+> everything else measured below is unaffected — only the certificate's hostname changed, to
+> a fixed domain (`play.skiprocking.ca`) renewed by a GitHub Actions job instead of borrowed
+> from a third party. LAN mode, mentioned in passing below, is now deprecated in favour of
+> Hotspot-only.
+
 **Date:** 2026-08-21
 **Status:** Decided, confirmed offline, and **implemented** in `hotspot/hotspot-control.ps1`.
 **Answer: use Mobile Hotspot. Drop Wi-Fi Direct. The blocker was a bug in our code, not a

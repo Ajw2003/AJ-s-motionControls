@@ -18,9 +18,14 @@ namespace Net
     /// <remarks>
     /// Phone motion sensors require a secure context, a secure context requires a publicly
     /// trusted certificate, and a certificate requires a name — for a machine on a private
-    /// address that is a circle with no obvious exit. local-ip.sh breaks it by publishing a
-    /// real wildcard for *.local-ip.sh together with DNS that maps IP-encoded labels back to
-    /// the address they encode, so 10.0.0.213 becomes 10-0-0-213.local-ip.sh and resolves.
+    /// address that used to be a circle with no obvious exit. local-ip.sh used to break it by
+    /// publishing a real wildcard for *.local-ip.sh together with DNS that mapped IP-encoded
+    /// labels back to the address they encoded. It is permanently dead (verified at the DNS
+    /// layer — see docs/plans/magic-domain-replacement.md), and there is no drop-in
+    /// replacement, so this now downloads a single-name certificate for a domain we own
+    /// instead (MagicDomain.HostName, renewed by .github/workflows/renew-cert.yml). LAN mode,
+    /// the only mode that ever needed an address-varying wildcard, is deprecated in favour of
+    /// Hotspot-only, whose address is always the fixed 192.168.137.1 — one name is now enough.
     ///
     /// Its private key is published deliberately. That is what makes this possible and also
     /// what caps what it may ever be used for: the certificate proves nothing about who is
@@ -34,16 +39,23 @@ namespace Net
     ///
     /// Renewal is structural rather than scheduled. Every launch checks, and a 90-day
     /// certificate cannot lapse between two launches of a game nobody has opened in three
-    /// months, because opening it is the check.
+    /// months, because opening it is the check. On a launch where the cache is stale AND the
+    /// configured source(s) are unreachable, TrySeedCache() falls back to a certificate shipped
+    /// in StreamingAssets rather than failing outright — see its remarks for what that does and
+    /// does not cover.
     /// </remarks>
     public static class CertificateProvider
     {
-        private const string CertUrl = "https://local-ip.sh/server.pem";
-        private const string KeyUrl = "https://local-ip.sh/server.key";
         private const string CacheDirName = "local-https";
 
-        /// <summary>Internal so LocalServices can derive DNS_SUFFIX from the same value.</summary>
-        internal const string Suffix = ".local-ip.sh";
+        /// <summary>
+        /// Filenames the seed certificate is shipped under in StreamingAssets, and the names
+        /// the cache always uses regardless of where a copy came from — downloaded, cached, or
+        /// seeded. Keeping one pair of names for all three sources is what lets Inspect() stay
+        /// ignorant of provenance.
+        /// </summary>
+        private const string CertFileName = "server.pem";
+        private const string KeyFileName = "server.key";
 
         /// <summary>
         /// Renew this far ahead of expiry. Large enough that a party is never the moment the
@@ -61,8 +73,8 @@ namespace Net
         public struct Result
         {
             public bool Ok;
-            public string Address;    // 10.0.0.213
-            public string HostName;   // 10-0-0-213.local-ip.sh
+            public string Address;    // 10.0.0.213, or 192.168.137.1 in Hotspot mode
+            public string HostName;   // MagicDomain.HostName, e.g. play.skiprocking.ca
             public string CertPath;
             public string KeyPath;
             public DateTime NotAfter;
@@ -94,9 +106,15 @@ namespace Net
                 yield break;
             }
 
-            var hostName = ToHostName(address);
-            var certPath = Path.Combine(CacheDir, "server.pem");
-            var keyPath = Path.Combine(CacheDir, "server.key");
+            // Fixed, not derived from the address any more. The certificate is single-name
+            // now (MagicDomain.HostName, e.g. play.skiprocking.ca), not a wildcard keyed to
+            // whatever address this machine happens to have — see MagicDomain's remarks for
+            // why that stopped being necessary once Hotspot's address became a constant.
+            // ToHostName(address) still exists for the deprecated LAN path, which is why
+            // `address` above is still resolved at all — it is otherwise unused here now.
+            var hostName = MagicDomain.HostName;
+            var certPath = Path.Combine(CacheDir, CertFileName);
+            var keyPath = Path.Combine(CacheDir, KeyFileName);
 
             var cached = Inspect(certPath, keyPath);
 
@@ -109,7 +127,8 @@ namespace Net
             }
 
             var reason = !cached.IsUsable ? cached.Reason : $"expires in {cached.DaysLeft} days";
-            Debug.Log($"[CertificateProvider] Fetching from local-ip.sh ({reason}).");
+            Debug.Log($"[CertificateProvider] Fetching from {MagicDomain.CertUrls.Count} " +
+                      $"configured source(s) ({reason}).");
 
             string downloadError = null;
             yield return Download(certPath, keyPath, e => downloadError = e);
@@ -127,12 +146,39 @@ namespace Net
                     yield break;
                 }
 
+                // Neither a usable cache nor a successful download — the state that used to be
+                // unconditionally fatal (a fresh install on a day the CDN is unreachable could
+                // never start at all). There is no real certificate to fall back to yet — the
+                // renewal pipeline (.github/workflows/renew-cert.yml) has not necessarily ever
+                // run — so this only helps once something has actually been placed in
+                // StreamingAssets; on a build with no seed shipped, this is a no-op and the
+                // fatal Result below is reported exactly as before.
+                if (TrySeedCache(certPath, keyPath))
+                {
+                    var seeded = Inspect(certPath, keyPath);
+                    if (seeded.IsUsable)
+                    {
+                        Debug.LogWarning($"[CertificateProvider] Download failed and there was " +
+                                         $"no usable cache — copied the bundled seed certificate " +
+                                         $"instead ({seeded.DaysLeft} days left): {downloadError}");
+                        onResult(Success(address, hostName, certPath, keyPath, seeded.NotAfter));
+                        yield break;
+                    }
+
+                    // The seed exists but doesn't pass Inspect() (expired, wrong name, corrupt
+                    // — a bad seed shipped by mistake). Fall through to the fatal Result rather
+                    // than serving a certificate that will only fail again at the phone.
+                    Debug.LogWarning($"[CertificateProvider] Seed certificate present but " +
+                                     $"unusable: {seeded.Reason}");
+                }
+
                 onResult(new Result
                 {
                     Ok = false,
                     Error = "Could not get a certificate.",
-                    Detail = $"local-ip.sh is unreachable and there is no usable cached copy " +
-                             $"({cached.Reason}). Connect to a network and restart. Underlying " +
+                    Detail = $"The configured certificate source(s) are unreachable, there is no " +
+                             $"usable cached copy ({cached.Reason}), and no seed certificate is " +
+                             $"available either. Connect to a network and restart. Underlying " +
                              $"error: {downloadError}",
                 });
                 yield break;
@@ -169,18 +215,38 @@ namespace Net
 
         // ------------------------------------------------------------------ address
 
+        /// <summary>
+        /// The suffix local-ip.sh's now-dead wildcard covered. Kept only so the also-dead
+        /// <see cref="ToHostName"/> still compiles — nothing downloads a certificate for this
+        /// suffix any more, see MagicDomain for what replaced it.
+        /// </summary>
+        private const string LegacyLanSuffix = ".local-ip.sh";
+
         /// <summary>10.0.0.213 -&gt; 10-0-0-213.local-ip.sh.</summary>
         /// <remarks>
-        /// The wildcard covers exactly one label, so the dashes are not cosmetic:
-        /// 10-0-0-213.local-ip.sh is covered and 10.0.0.213.local-ip.sh is not.
+        /// LAN-only, and slated for removal along with the rest of LAN mode — see
+        /// NetworkMode.Lan and docs/plans/magic-domain-replacement.md Phase 3. This produced
+        /// the name local-ip.sh's wildcard covered; there is no equivalent any more, since the
+        /// replacement certificate is single-name for a fixed hostname
+        /// (MagicDomain.HostName), not a wildcard keyed to an address. Nothing in Ensure()
+        /// calls this any more. Left in place, unobsoleted formally, because LAN mode itself
+        /// is deprecated rather than deleted this pass and a hand-editor of network-mode.txt
+        /// may still be relying on the shape of this method existing, even though the
+        /// certificate it would need no longer downloads.
         /// </remarks>
         public static string ToHostName(string address) =>
-            address.Replace('.', '-') + Suffix;
+            address.Replace('.', '-') + LegacyLanSuffix;
 
         /// <summary>
         /// Finds the address a phone on this network would use to reach this machine.
         /// </summary>
         /// <remarks>
+        /// LAN-only, and slated for removal along with the rest of LAN mode (NetworkMode.Lan,
+        /// docs/plans/magic-domain-replacement.md Phase 3) — Hotspot mode never calls this at
+        /// all, since LocalServices.EffectiveLanAddressOverride forces the fixed
+        /// 192.168.137.1 instead. Kept working for LAN mode's sake while it remains
+        /// hand-selectable via network-mode.txt.
+        ///
         /// The gateway test is what discards the 169.254.x APIPA addresses that unplugged
         /// NICs, Bluetooth and virtual switches leave lying around — a plain sweep of every
         /// unicast address returns those too, and they look entirely plausible.
@@ -366,7 +432,7 @@ namespace Net
                     {
                         NotAfter = cert.NotAfter,
                         DaysLeft = daysLeft,
-                        Reason = $"cached certificate does not cover *{Suffix}",
+                        Reason = $"cached certificate does not cover {MagicDomain.HostName}",
                     };
 
                 return new CacheState { IsUsable = true, NotAfter = cert.NotAfter, DaysLeft = daysLeft };
@@ -378,16 +444,26 @@ namespace Net
         }
 
         /// <summary>
-        /// Confirms the SAN really covers the wildcard, which catches a truncated or swapped
-        /// download that would otherwise only surface as a name mismatch on somebody's phone.
+        /// Confirms the SAN really covers the configured hostname, which catches a truncated
+        /// or swapped download that would otherwise only surface as a name mismatch on
+        /// somebody's phone.
         /// </summary>
+        /// <remarks>
+        /// Named CoversWildcard for history — with local-ip.sh's wildcard gone, the
+        /// certificate <see cref="MagicDomain"/> configures is single-name
+        /// (docs/plans/magic-domain-replacement.md Phase 1 explains why a wildcard is no
+        /// longer needed at all), so this now checks for an exact match rather than a
+        /// leading <c>*.</c> label. Not renamed, to keep this diff to the behaviour change
+        /// rather than a name that would otherwise need updating at every call site too.
+        /// </remarks>
         private static bool CoversWildcard(X509Certificate2 cert)
         {
             foreach (var extension in cert.Extensions)
             {
                 if (extension.Oid?.Value != "2.5.29.17") continue;   // subjectAltName
                 var names = extension.Format(false);
-                return names != null && names.IndexOf("*" + Suffix, StringComparison.OrdinalIgnoreCase) >= 0;
+                return names != null &&
+                       names.IndexOf(MagicDomain.HostName, StringComparison.OrdinalIgnoreCase) >= 0;
             }
 
             return false;
@@ -402,18 +478,42 @@ namespace Net
         /// Downloading straight over the cache would turn a dropped connection into a
         /// corrupted cache — and the fallback path exists precisely for hosts whose
         /// connection is unreliable, so that is not a rare combination.
+        ///
+        /// MagicDomain.CertUrls/KeyUrls are lists, tried in order as a pair — index 0's cert
+        /// with index 0's key, and so on — rather than a single hardcoded URL. One entry
+        /// today, same as local-ip.sh ever had; a mirror later (a second CDN, a direct R2
+        /// object URL as a fallback for a custom-domain outage) costs no code, only another
+        /// line in magic-domain.txt or the compiled default list.
         /// </remarks>
         private static IEnumerator Download(string certPath, string keyPath, Action<string> onError)
         {
             Directory.CreateDirectory(CacheDir);
 
+            var certUrls = MagicDomain.CertUrls;
+            var keyUrls = MagicDomain.KeyUrls;
+            var pairCount = Math.Min(certUrls.Count, keyUrls.Count);
+
+            if (pairCount == 0)
+            {
+                onError("no certificate source is configured");
+                yield break;
+            }
+
             byte[] certBytes = null;
             byte[] keyBytes = null;
             string failure = null;
 
-            yield return Fetch(CertUrl, (data, error) => { certBytes = data; failure ??= error; });
-            if (failure == null)
-                yield return Fetch(KeyUrl, (data, error) => { keyBytes = data; failure ??= error; });
+            for (var i = 0; i < pairCount; i++)
+            {
+                failure = null;
+                yield return Fetch(certUrls[i], (data, error) => { certBytes = data; failure ??= error; });
+                if (failure == null)
+                    yield return Fetch(keyUrls[i], (data, error) => { keyBytes = data; failure ??= error; });
+
+                if (failure == null) break; // this pair worked, no need to try the rest
+
+                Debug.LogWarning($"[CertificateProvider] Source {i + 1}/{pairCount} failed: {failure}");
+            }
 
             if (failure != null) { onError(failure); yield break; }
 
@@ -429,6 +529,47 @@ namespace Net
             }
 
             onError(null);
+        }
+
+        /// <summary>
+        /// Copies the certificate bundled in StreamingAssets into the cache, so a brand-new
+        /// install still reaches Ready on a day none of MagicDomain.CertUrls is reachable —
+        /// today's local-ip.sh outage, next time as a CDN hiccup instead of a shipped-domain
+        /// outage. There is no real certificate to seed with yet (the renewal pipeline has
+        /// never run), so on a build with nothing placed at
+        /// StreamingAssets/server.pem/server.key this is a harmless no-op and Ensure() falls
+        /// through to the same fatal Result it always returned — this never fabricates a
+        /// certificate, only relocates one that was deliberately placed ahead of time.
+        /// </summary>
+        /// <remarks>
+        /// Plain File I/O rather than UnityWebRequest against
+        /// <c>Application.streamingAssetsPath</c>: this project ships Windows Standalone only
+        /// (every other elevation/registry/ICS assumption in this codebase already commits to
+        /// that), where StreamingAssets is an ordinary uncompressed folder next to the
+        /// executable — the platforms where that assumption breaks (Android's compressed
+        /// APK, WebGL) are not targets here.
+        /// </remarks>
+        private static bool TrySeedCache(string certPath, string keyPath)
+        {
+            var seedCert = Path.Combine(Application.streamingAssetsPath, CertFileName);
+            var seedKey = Path.Combine(Application.streamingAssetsPath, KeyFileName);
+
+            if (!File.Exists(seedCert) || !File.Exists(seedKey))
+                return false; // nothing shipped — the ordinary case until renew-cert.yml has run
+
+            try
+            {
+                Directory.CreateDirectory(CacheDir);
+                WriteAtomic(certPath, File.ReadAllBytes(seedCert));
+                WriteAtomic(keyPath, File.ReadAllBytes(seedKey));
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[CertificateProvider] Found a seed certificate but could not " +
+                                 $"copy it into the cache: {e.Message}");
+                return false;
+            }
         }
 
         private static IEnumerator Fetch(string url, Action<byte[], string> onDone)

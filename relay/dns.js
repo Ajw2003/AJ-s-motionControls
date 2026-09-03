@@ -202,6 +202,9 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  * @param {string}   options.ip        address to answer with
  * @param {string}  [options.suffix]   answer anything ending in this
  * @param {string}  [options.name]     or answer exactly this name
+ * @param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
+ *                                     hostname plus the captive-portal probe domains —
+ *                                     see docs/plans/magic-domain-replacement.md Phase 4)
  * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
  * @param {number}  [options.rate]     max queries per second per source
  * @param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
@@ -211,6 +214,7 @@ function createResponder(options) {
     ip,
     suffix = null,
     name = null,
+    names = null,
     port = 53,
     bind = '0.0.0.0',
     allow,
@@ -221,18 +225,27 @@ function createResponder(options) {
   } = options;
 
   if (!ip) throw new Error('ip is required');
-  if (!suffix && !name) throw new Error('one of suffix or name is required');
+  if (!suffix && !name && !(names && names.length)) {
+    throw new Error('one of suffix, name or names is required');
+  }
   if (!allow) throw new Error('allow is required — see SecurityReview.md §4');
 
   const isAllowed = makeSubnetTest(allow);
   const isRateLimited = makeRateLimiter(rate);
   const stats = { answered: 0, forwarded: 0, refused: 0, dropped: 0 };
 
+  // `name` folds into `names` so the matching logic has exactly one exact-match path to
+  // reason about, whether the caller asked for one name or several.
+  const exactNames = new Set(
+    [...(names || []), name].filter(Boolean).map((n) => n.toLowerCase()),
+  );
+
   let socket = null;
 
   const matches = (queried) => {
     const lower = queried.toLowerCase();
-    return name ? lower === name.toLowerCase() : lower.endsWith(suffix.toLowerCase());
+    if (exactNames.size > 0 && exactNames.has(lower)) return true;
+    return suffix ? lower.endsWith(suffix.toLowerCase()) : false;
   };
 
   function handle(message, remote) {
@@ -335,8 +348,11 @@ function createResponder(options) {
         });
         socket.on('message', handle);
         socket.bind(port, bind, () => {
+          const described = exactNames.size > 0
+            ? [...exactNames].join(', ')
+            : `*${suffix}`;
           log(
-            `dns responder on ${bind}:${port}, answering ${name || `*${suffix}`} -> ${ip}, ` +
+            `dns responder on ${bind}:${port}, answering ${described} -> ${ip}, ` +
               `accepting ${allow} only, max ${rate}/s per source`,
           );
           resolve();

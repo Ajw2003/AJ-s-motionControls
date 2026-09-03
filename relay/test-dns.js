@@ -170,13 +170,26 @@ describe('Refusing to start unguarded', () => {
 
 // ------------------------------------------------------------------ integration
 
+// The game's fixed hostname, now that the certificate is single-name rather than an
+// IP-encoded wildcard label under local-ip.sh — see
+// docs/plans/magic-domain-replacement.md Phase 1/2. `names` covers this plus the
+// captive-portal probe domains added in Phase 4; server.js wires the exact same list.
+const GAME_NAME = 'play.skiprocking.ca';
+const PROBE_NAMES = [
+  'connectivitycheck.gstatic.com',
+  'connectivitycheck.android.com',
+  'clients3.google.com',
+  'captive.apple.com',
+  'www.appleiphonecell.com',
+];
+
 describe('Responder integration', () => {
   let responder;
 
   test('Answering', async () => {
     responder = dns.createResponder({
       ip: '192.168.137.1',
-      suffix: '.local-ip.sh',
+      names: [GAME_NAME, ...PROBE_NAMES],
       port: PORT,
       bind: '127.0.0.1',
       allow: '127.0.0.0/8',
@@ -184,7 +197,7 @@ describe('Responder integration', () => {
     });
     await responder.start();
 
-    const a = await ask('play.local-ip.sh');
+    const a = await ask(GAME_NAME);
     check(
       'A for a matching name is answered',
       a && a.answers[0] === '192.168.137.1',
@@ -192,18 +205,28 @@ describe('Responder integration', () => {
     );
     check('the answer is authoritative', a && a.authoritative);
 
-    const encoded = await ask('192-168-137-1.local-ip.sh');
-    check(
-      'IP-encoded names match the suffix too',
-      encoded && encoded.answers[0] === '192.168.137.1',
-    );
-
-    const upper = await ask('PLAY.LOCAL-IP.SH');
+    const upper = await ask(GAME_NAME.toUpperCase());
     check('matching is case-insensitive', upper && upper.answers[0] === '192.168.137.1');
   });
 
+  test('Captive-portal probe domains are answered too', async () => {
+    // Android and iOS each probe a domain of their own choosing right after joining a
+    // network to decide whether to show "No internet". setup-offline.ps1 disables IP
+    // forwarding every session, so these probes would otherwise always fail on a genuinely
+    // isolated hotspot — answering them here is what keeps a phone from flagging the
+    // network as broken. See docs/plans/magic-domain-replacement.md Phase 4.
+    for (const probeName of PROBE_NAMES) {
+      const answer = await ask(probeName);
+      check(
+        `probe domain ${probeName} resolves to the hotspot address`,
+        answer && answer.answers[0] === '192.168.137.1',
+        answer ? `got ${answer.answers[0]}` : 'no reply',
+      );
+    }
+  });
+
   test('AAAA must not be NXDOMAIN', async () => {
-    const aaaa = await ask('play.local-ip.sh', 28);
+    const aaaa = await ask(GAME_NAME, 28);
     check(
       'AAAA returns NOERROR',
       aaaa && aaaa.rcode === dns.RCODE_NOERROR,
@@ -257,7 +280,7 @@ describe('Responder integration', () => {
       `responder ${truncated}`,
     );
 
-    const stillAlive = await ask('play.local-ip.sh');
+    const stillAlive = await ask(GAME_NAME);
     check(
       'the responder still answers afterwards',
       stillAlive && stillAlive.answers[0] === '192.168.137.1',
@@ -279,19 +302,22 @@ describe('Responder integration', () => {
  * silently downgrades to testing nothing is worse than one that says it did not run.
  */
 describe('Out-of-range sources are dropped, not refused', () => {
-  test('a query from a real LAN source gets no reply and is counted as dropped', async () => {
+  function findLocalAddress() {
     const os = require('os');
-    let localAddress = null;
     for (const entries of Object.values(os.networkInterfaces())) {
       for (const entry of entries || []) {
-        if (entry.family === 'IPv4' && !entry.internal) {
-          localAddress = entry.address;
-          break;
-        }
+        if (entry.family === 'IPv4' && !entry.internal) return entry.address;
       }
-      if (localAddress) break;
     }
+    return null;
+  }
 
+  /**
+   * Shared body for both cases below: send `queryName` from a real (non-loopback) LAN
+   * source at a responder whose `allow` range certainly excludes it, and confirm silence.
+   */
+  async function expectDropped(queryName, port) {
+    const localAddress = findLocalAddress();
     if (!localAddress) {
       console.log('  SKIP  no non-loopback address on this machine to send from');
       return;
@@ -300,8 +326,8 @@ describe('Out-of-range sources are dropped, not refused', () => {
     // Allow a range this machine is certainly not in: TEST-NET-3, reserved for documentation.
     const responder = dns.createResponder({
       ip: '192.168.137.1',
-      suffix: '.local-ip.sh',
-      port: PORT + 1,
+      names: [GAME_NAME, ...PROBE_NAMES],
+      port,
       bind: '0.0.0.0',
       allow: '203.0.113.0/24',
       rate: 100,
@@ -335,12 +361,12 @@ describe('Out-of-range sources are dropped, not refused', () => {
         });
         // Binding the client pins the source address the responder will see.
         socket.bind(0, localAddress, () => {
-          socket.send(encodeQuery('play.local-ip.sh'), PORT + 1, localAddress);
+          socket.send(encodeQuery(queryName), port, localAddress);
         });
       });
 
       check(
-        `a query from ${localAddress} gets NO reply at all`,
+        `a query for ${queryName} from ${localAddress} gets NO reply at all`,
         reply === null,
         'silence, not REFUSED — replying to a possibly-forged source is the amplification',
       );
@@ -351,5 +377,18 @@ describe('Out-of-range sources are dropped, not refused', () => {
     } finally {
       await responder.stop();
     }
+  }
+
+  test('a query for the game hostname from a real LAN source gets no reply', async () => {
+    await expectDropped(GAME_NAME, PORT + 1);
+  });
+
+  test('a captive-portal probe query from outside the hotspot CIDR is also dropped', async () => {
+    // The probe domains are matched by the same exact-name set as the game hostname
+    // (dns.js's `exactNames`), so the source guard runs identically for both — this proves
+    // it rather than assuming it from the game-hostname case above. A source outside the
+    // hotspot subnet must never learn the hotspot answers for connectivitycheck.gstatic.com
+    // either; the whole point of the guard is that it applies before *any* name is matched.
+    await expectDropped(PROBE_NAMES[0], PORT + 2);
   });
 });

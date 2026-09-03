@@ -1,5 +1,13 @@
 # Offline play — current state, and what setup automation has to do
 
+> **Update — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+> The certificate hostname below (`192-168-137-1.local-ip.sh`) is stale — local-ip.sh is
+> permanently dead. The certificate is now single-name for `play.skiprocking.ca` (or whatever
+> `magic-domain.txt` overrides it to), renewed by `.github/workflows/renew-cert.yml`, and the
+> hosts-entry fix still applies but now maps that domain to `192.168.137.1` instead of an
+> IP-encoded local-ip.sh label — `deploy/setup-offline.ps1` reads the same override file.
+> LAN mode is deprecated; Hotspot is the only mode `StartScreen` launches.
+
 **Date:** 2026-08-21
 **Status: working.** A match runs on this machine with no network of any kind — no internet, no
 router, no Wi-Fi association. Phones join by QR and reach the game.

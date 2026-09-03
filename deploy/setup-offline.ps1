@@ -63,16 +63,43 @@ $RelayPort        = 8443
 $ForwardingTask   = 'RockSkippingDisableForwarding'
 $HostsPath        = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 
-# local-ip.sh names encode their own address, so this is what public DNS answers too. That is
-# what makes a static hosts entry safe: it cannot drift from the truth, and it stays correct
-# whether or not the hotspot is running.
-$RelayHostName    = ($HotspotAddress -replace '\.', '-') + '.local-ip.sh'
+# The certificate is single-name now (play.skiprocking.ca, renewed by
+# .github/workflows/renew-cert.yml), not a wildcard keyed to this machine's address — see
+# docs/plans/magic-domain-replacement.md. Reads the same optional override file
+# Assets/Scripts/Net/MagicDomain.cs does, sited the same way as relay-url.txt/
+# network-mode.txt, so hand-editing one file repoints both the game and this script
+# instead of the literal drifting out of sync with C# the way $RelayHostName used to.
+function Get-MagicDomainHostName {
+    $default = 'play.skiprocking.ca'
+    $root = Split-Path -Parent $PSScriptRoot
+    $path = Join-Path $root 'magic-domain.txt'
+
+    if (-not (Test-Path $path)) { return $default }
+
+    try {
+        # Line 1 is the hostname; any further lines are cert/key URL pairs that only
+        # MagicDomain.cs needs. Never throws — a malformed file falls back to the
+        # compiled default exactly like MagicDomain.cs's own Load() does.
+        $lines = @(Get-Content $path -ErrorAction Stop |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_.Length -gt 0 -and $_[0] -ne '#' })
+        if ($lines.Count -eq 0) { return $default }
+        return $lines[0]
+    } catch {
+        Write-Warning "Could not read magic-domain.txt, using the default: $($_.Exception.Message)"
+        return $default
+    }
+}
+
+$RelayHostName    = Get-MagicDomainHostName
 
 $FirewallRules = @(
     @{ Name = 'RockSkipping relay';       Protocol = 'TCP'; Port = "$RelayPort"; Remote = 'LocalSubnet'
        Why = 'phones reach the relay and the controller page' }
     @{ Name = 'RockSkipping hotspot DNS'; Protocol = 'UDP'; Port = '53';         Remote = $HotspotSubnet
        Why = 'phones resolve the relay address; hotspot subnet only, never a normal LAN' }
+    @{ Name = 'RockSkipping captive portal'; Protocol = 'TCP'; Port = '80';      Remote = $HotspotSubnet
+       Why = 'answers Android/iOS captive-portal probes so phones do not flag "No internet"; hotspot subnet only, see docs/plans/magic-domain-replacement.md Phase 4' }
 )
 
 # Added by the spikes, never used by the game. Removed so a machine set up by this script does
@@ -203,6 +230,13 @@ function Sync-HostsEntry {
     Write-Info 'The host does not take DHCP from itself, so it never consults the DNS responder'
     Write-Info 'running on its own :53. Offline, without this line, Unity cannot resolve the'
     Write-Info 'relay it just started - the symptom that looked like "hotspot mode is broken".'
+    Write-Info ''
+    Write-Info 'Unlike the old local-ip.sh name, this hostname does not encode 192.168.137.1 in'
+    Write-Info 'itself - it is an ordinary domain (play.skiprocking.ca by default), so this'
+    Write-Info 'entry is what makes it resolve to the hotspot address at all when this machine'
+    Write-Info 'has no internet to ask a real resolver. It only ever matters in Hotspot mode,'
+    Write-Info 'where the address is the fixed constant above - this would be wrong to add for'
+    Write-Info 'LAN mode, whose address varies per network.'
 
     $lines = Get-HostsLines
     # Match the hostname, not the whole line: whitespace and comments vary, and a stale entry

@@ -24,7 +24,7 @@ Three independently-run pieces, only one of which lives under `Assets/`:
 | `Assets/` (this directory) | Unity 6 project (`6000.3.10f1`) — the game/TV screen |
 | `../relay/` | Node WebSocket relay + HTTP server that also serves the controller page |
 | `../controller/` | Phone controller web app (vanilla JS): sensors, throw gesture, join/choose screens |
-| `../deploy/` | `local-https.ps1` — the one command that hosts the relay+controller over HTTPS from this PC |
+| `../deploy/` | `setup-offline.ps1` — one-time elevated machine setup for Hotspot mode; `LocalServices` hosts the relay+controller over HTTPS itself, on Play |
 | `../docs/` | Design docs, plans, findings — check dates/"Superseded" notes, this project changes hosting/physics decisions often |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
@@ -36,17 +36,14 @@ state (`SPECTATE`). There is no Unity-to-Unity networking.
 There is no Unity CLI test runner set up for this project; verification is via in-editor menu
 items and the relay's own Node test scripts.
 
-**Play the game** — start hosting from the repo root, then press Play on `Bootstrap` in Unity:
-
-```bash
-pwsh ./deploy/local-https.ps1
-```
-
-This detects the LAN IP, borrows a `*.local-ip.sh` certificate, and writes `relay-url.txt` /
-`relay-env.txt` at the repo root (gitignored) for `RelayClient`/`LocalServices` to read. Ctrl+C
-tears it all back down. Full runbook, including known-broken step 6 and its workaround:
-[`../deploy/README.md`](../deploy/README.md). Desktop-only testing (no real sensors, two
-browser tabs) is also documented there and in [`../README.md`](../README.md).
+**Play the game** — just press Play on `Bootstrap` in Unity. `LocalServices` obtains a
+certificate (`Assets/Scripts/Net/CertificateProvider.cs`, `MagicDomain.cs`) and starts the
+relay itself; no setup script needs to run first. One elevated one-time step per machine is
+still required for Hotspot mode — `./deploy/setup-offline.ps1` — see
+[`../deploy/README.md`](../deploy/README.md) and
+[`../docs/plans/magic-domain-replacement.md`](../docs/plans/magic-domain-replacement.md).
+Desktop-only testing (no real sensors, two browser tabs) is documented in
+[`../README.md`](../README.md).
 
 **Relay tests** (routing, identity stamping, reconnect, `/qr`):
 
