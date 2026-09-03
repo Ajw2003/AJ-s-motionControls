@@ -1,5 +1,5 @@
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Net
@@ -93,17 +93,41 @@ namespace Net
             Game.PhoneAttitude.FaceAngleDeg(
                 Game.PhoneAttitude.ToUnity(thrown.qw, thrown.qx, thrown.qy, thrown.qz));
 
-        /// <summary>Spread as a percentage of the mean — the repeatability number.</summary>
-        private static string Spread(IEnumerable<float> values)
-        {
-            var list = values.ToList();
-            if (list.Count < 2) return "n/a";
+        /// <summary>Reads the swing speed off a throw. Cached so OnGUI allocates no delegate.</summary>
+        private static readonly Func<ThrowMessage, float> SwingSpeedOf = t => t.swingSpeed;
 
-            var mean = list.Average();
+        /// <summary>Reads the face angle off a throw. Cached so OnGUI allocates no delegate.</summary>
+        private static readonly Func<ThrowMessage, float> FaceAngleSelector = FaceAngleOf;
+
+        /// <summary>Spread as a percentage of the mean — the repeatability number.</summary>
+        /// <remarks>
+        /// Takes the list and a selector rather than an IEnumerable&lt;float&gt; because this
+        /// runs inside OnGUI, twice a frame, for as long as the HUD is up. The LINQ form
+        /// allocated an iterator, a closure and a backing List per call to produce three
+        /// numbers that one pass already has in hand. The selectors are cached statics for
+        /// the same reason — a method group or lambda written at the call site would
+        /// allocate a fresh delegate every frame.
+        /// </remarks>
+        private static string Spread(List<ThrowMessage> throws, Func<ThrowMessage, float> selector)
+        {
+            if (throws.Count < 2) return "n/a";
+
+            var min = float.MaxValue;
+            var max = float.MinValue;
+            var sum = 0f;
+
+            foreach (var throwMessage in throws)
+            {
+                var value = selector(throwMessage);
+                if (value < min) min = value;
+                if (value > max) max = value;
+                sum += value;
+            }
+
+            var mean = sum / throws.Count;
             if (Mathf.Abs(mean) < 0.0001f) return "n/a";
 
-            var spread = (list.Max() - list.Min()) / Mathf.Abs(mean) * 100f;
-            return $"{spread:F0}%";
+            return $"{(max - min) / Mathf.Abs(mean) * 100f:F0}%";
         }
 
         private void OnGUI()
@@ -196,8 +220,8 @@ namespace Net
                 GUILayout.Space(6);
                 GUILayout.Label("<b>Repeatability</b> (spread across the above; want under 10%)",
                                 rich);
-                GUILayout.Label($"  speed {Spread(_throws.Select(t => t.swingSpeed))}   " +
-                                $"face {Spread(_throws.Select(FaceAngleOf))}");
+                GUILayout.Label($"  speed {Spread(_throws, SwingSpeedOf)}   " +
+                                $"face {Spread(_throws, FaceAngleSelector)}");
             }
 
             GUILayout.Space(6);

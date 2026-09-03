@@ -7,7 +7,7 @@
 | Phase 0 — re-runnable audit | **Done** (commit `0ab198d`) |
 | Phase 1 — tooling + documented deviations | **Done** (commit `0ab198d`) |
 | Phase 2 — mechanical fixes | **Done** (commit `0ab198d`) |
-| Phase 3 — tests | **Done, pending Editor verification** — see note below |
+| Phase 3 — tests | **Done** — EditMode tests verified green in the Editor (commit `0300acc`) |
 | Phase 4 — structural | Not started (gated on explicit go-ahead) |
 
 Phase 3 step 12 (Node test runner) converted `relay/test-relay.js` and `relay/test-dns.js` to
@@ -15,10 +15,17 @@ Phase 3 step 12 (Node test runner) converted `relay/test-relay.js` and `relay/te
 1139 lines of working ESM holding the iOS guard PLAN.md calls the standing regression check,
 already exiting correctly. Restructuring it for uniformity alone was not worth the risk.
 
-Audit went from **11 failing checks to 1**. The single remaining failure is
-`cs.linq-in-per-frame-methods` — `RelayDebugHud.OnGUI` calls `_throws.Select(...)` twice per
-frame. Fixing it means caching the computed strings on change; it was left alone deliberately
-because that refactor was not in the approved scope.
+Audit went from **11 failing checks to 0** — `node tools/audit/check-standards.js` now exits 0.
+
+The last failure closed was `cs.linq-in-per-frame-methods`: `RelayDebugHud.Spread` took an
+`IEnumerable<float>` and called `.ToList()`/`.Average()`/`.Max()`/`.Min()`, fed by
+`_throws.Select(...)` at two call sites inside `OnGUI`. It now takes the list plus a selector
+and computes min/max/mean in a single pass, with the two selectors cached as static readonly
+delegates so no closure is allocated per frame. `using System.Linq` is gone from the file.
+
+Worth recording honestly: this HUD is key-toggled and built on IMGUI, which allocates heavily
+regardless, so the change satisfies the standard and closes the audit but is not a meaningful
+performance win.
 
 Also fixed during Phase 2, beyond the written steps:
 - `ShoreRocks` camera caching was first written as a one-shot `Awake` lookup. `Camera.main` can
