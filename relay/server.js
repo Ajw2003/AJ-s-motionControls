@@ -261,7 +261,9 @@ function handleJoinRoom(ws, data) {
 
   send(ws, { type: 'JOINED', roomCode: code, playerId, reconnected: isReconnect });
   send(room.host, { type: 'PLAYER_JOINED', playerId, reconnected: isReconnect });
-  log(`room ${code}: ${playerId} ${isReconnect ? 'reconnected' : 'joined'} (${room.players.size} players)`);
+  log(
+    `room ${code}: ${playerId} ${isReconnect ? 'reconnected' : 'joined'} (${room.players.size} players)`,
+  );
 }
 
 /** Player -> host. */
@@ -334,7 +336,8 @@ function serveStatic(req, res) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
       return;
     }
-    const type = CONTENT_TYPES[nodePath.extname(resolved).toLowerCase()] || 'application/octet-stream';
+    const type =
+      CONTENT_TYPES[nodePath.extname(resolved).toLowerCase()] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' }).end(data);
   });
 }
@@ -351,7 +354,8 @@ function serveQr(req, res, query) {
   const data = query.get('data');
 
   if (!data || data.length > MAX_QR_DATA_LENGTH) {
-    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res
+      .writeHead(400, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: `data must be 1..${MAX_QR_DATA_LENGTH} characters` }));
     return;
   }
@@ -371,10 +375,12 @@ function serveQr(req, res, query) {
       rows.push(bits);
     }
 
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
+    res
+      .writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
       .end(JSON.stringify({ size, rows }));
   } catch (err) {
-    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res
+      .writeHead(400, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: String(err.message || err) }));
   }
 }
@@ -399,11 +405,35 @@ const useTls = Boolean(TLS_CERT && TLS_KEY);
 // resolver is a DDoS amplifier rather than merely untidy. See SecurityReview.md §4.
 const DNS_RESPOND_IP = process.env.DNS_RESPOND_IP;
 const DNS_ALLOW = process.env.DNS_ALLOW;
-const DNS_SUFFIX = process.env.DNS_SUFFIX || '.local-ip.sh';
+// DNS_NAME, not a suffix: the certificate LocalServices hands this process is single-name
+// now (see Assets/Scripts/Net/MagicDomain.cs), so the responder answers exactly one name
+// rather than any label ending in a wildcard's suffix. The literal default here is a
+// genuine fallback, not a second source of truth — LocalServices always passes its own
+// MagicDomain.HostName explicitly, so this only matters if the relay is started by hand
+// with DNS_RESPOND_IP set and DNS_NAME left unset.
+const DNS_NAME = process.env.DNS_NAME || 'play.skiprocking.ca';
 const DNS_UPSTREAM = process.env.DNS_UPSTREAM || null;
 const useDns = Boolean(DNS_RESPOND_IP);
 
+// Android and iOS each probe a domain of their choosing right after joining a network, to
+// decide whether to show "No internet" and whether to keep cellular as the default route.
+// setup-offline.ps1 deliberately disables IP forwarding every session so guests are
+// isolated from each other and from the host's own internet — which means these probes
+// always fail on their own, and "it just stopped working" reports are very likely a phone
+// that decided this network was useless rather than an actual game bug. Answering them
+// ourselves (this list, plus /generate_204 and /hotspot-detect.html below) fixes the
+// symptom without re-enabling forwarding and undoing the isolation decision — see
+// docs/plans/magic-domain-replacement.md Phase 4 and docs/Decision-OfflineHosting.md.
+const CAPTIVE_PROBE_DOMAINS = [
+  'connectivitycheck.gstatic.com',
+  'connectivitycheck.android.com',
+  'clients3.google.com',
+  'captive.apple.com',
+  'www.appleiphonecell.com',
+];
+
 let dnsResponder = null;
+let http80Server = null;
 
 // True only once the UDP :53 bind has actually resolved — the listen() callback below only
 // *initiates* the bind, it doesn't wait for it, so a caller that needs to know DNS is really
@@ -421,8 +451,8 @@ function handleRequest(req, res) {
 
     const memory = process.memoryUsage();
 
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+      JSON.stringify({
         ok: true,
         rooms: rooms.size,
         players,
@@ -434,12 +464,29 @@ function handleRequest(req, res) {
         heapMb: Math.round(memory.heapUsed / 1048576),
         uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
         dns: { enabled: useDns, bound: dnsBound },
-      }));
+      }),
+    );
     return;
   }
 
   if (url.pathname === '/qr') {
     serveQr(req, res, url.searchParams);
+    return;
+  }
+
+  // Android's captive-portal check treats anything other than a bare 204 as "there is a
+  // portal here, show it in a webview" — so this must be an empty body, not JSON, not even
+  // an empty JSON object.
+  if (url.pathname === '/generate_204') {
+    res.writeHead(204).end();
+    return;
+  }
+
+  // Apple's captive-portal check looks for this exact literal body (no whitespace, no
+  // trailing newline) on a plain page load; anything else and the phone assumes a portal
+  // needs signing into and pops its captive-portal browser instead of just joining.
+  if (url.pathname === '/hotspot-detect.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end('Success');
     return;
   }
 
@@ -451,7 +498,8 @@ function handleRequest(req, res) {
 const httpServer = useTls
   ? require('https').createServer(
       { cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) },
-      handleRequest)
+      handleRequest,
+    )
   : http.createServer(handleRequest);
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
@@ -584,8 +632,20 @@ function shutdown() {
 
   // Released explicitly so a restart can rebind it. Leaving :53 held by a dying process
   // is exactly how the race against ICS gets lost on the next run.
-  if (dnsResponder) { dnsResponder.stop().catch(() => {}); dnsResponder = null; }
+  if (dnsResponder) {
+    dnsResponder.stop().catch(() => {});
+    dnsResponder = null;
+  }
   dnsBound = false;
+
+  if (http80Server) {
+    try {
+      http80Server.close();
+    } catch {
+      // Already down, or never bound — nothing to recover from, safe to ignore.
+    }
+    http80Server = null;
+  }
 
   wss.close(() => httpServer.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
@@ -602,14 +662,21 @@ httpServer.listen(PORT, BIND_HOST, () => {
   log(`  websocket        ${wsScheme}://localhost:${PORT}/`);
   log(`  serving static from ${STATIC_DIR}`);
 
-  if (useDns) startDns();
+  if (useDns) {
+    startDns();
+    // Captive-portal probes are cleartext HTTP on :80, never :8443, so they need their own
+    // listener regardless of whether the main server is TLS. Hotspot-only, same as DNS —
+    // gated on useDns rather than a separate flag because there is no reason to want one
+    // without the other.
+    startHttpProbeListener();
+  }
 });
 
-function startDns() {
+async function startDns() {
   try {
     dnsResponder = createResponder({
       ip: DNS_RESPOND_IP,
-      suffix: DNS_SUFFIX,
+      names: [DNS_NAME, ...CAPTIVE_PROBE_DOMAINS],
       allow: DNS_ALLOW,
       upstream: DNS_UPSTREAM,
       log,
@@ -623,9 +690,10 @@ function startDns() {
     return;
   }
 
-  dnsResponder.start().then(() => {
+  try {
+    await dnsResponder.start();
     dnsBound = true;
-  }).catch((err) => {
+  } catch (err) {
     // EADDRINUSE here almost certainly means ICS got :53 first, which breaks name
     // resolution for every phone on the hotspot. Loud, because the symptom at the phone
     // is an unrelated-looking "server not found".
@@ -633,5 +701,32 @@ function startDns() {
     log('  Phones on the hotspot will not resolve the game address.');
     log('  The responder must bind :53 before tethering starts.');
     dnsResponder = null;
+  }
+}
+
+/**
+ * Plain-HTTP listener on :80 for the captive-portal probes only — the game itself is never
+ * served here, /generate_204 and /hotspot-detect.html are the only routes that matter, and
+ * both are already in handleRequest's table alongside /health and /qr.
+ *
+ * Per the plan's resolved open question: some machines already have :80 taken (IIS, Docker
+ * Desktop, Skype's old binding), and a failed launch is a worse outcome than a phone that
+ * shows "No internet" while the game still works perfectly over :8443. So this DEGRADES
+ * QUIETLY — EADDRINUSE and friends are caught and logged, never thrown past this function —
+ * and LOGS LOUDLY, because the resulting symptom is easy to misdiagnose as a network
+ * problem rather than a cosmetic one.
+ */
+function startHttpProbeListener() {
+  http80Server = http.createServer(handleRequest);
+
+  http80Server.on('error', (err) => {
+    log(`Captive-portal probe listener on :80 FAILED to bind: ${err.code || err.message}`);
+    log('  This is cosmetic: guests may see "No internet" on their phone, but the game');
+    log('  itself is unaffected — it is served on :8443, not :80.');
+    http80Server = null;
+  });
+
+  http80Server.listen(80, BIND_HOST, () => {
+    log(`Captive-portal probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html)`);
   });
 }

@@ -66,7 +66,7 @@ namespace Game
         public float WanderDeg;
 
         public int SkipCount;
-        public bool Sunk;
+        public bool HasSunk;
     }
 
     /// <summary>What one integration step did.</summary>
@@ -74,7 +74,7 @@ namespace Game
     {
         public SkipState State;
         public bool Bounced;
-        public bool Sank;
+        public bool HasSunk;
         public float ImpactSpeed;
     }
 
@@ -211,7 +211,7 @@ namespace Game
                 Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.8f, 1.2f),
                 WanderDeg = 0f,
                 SkipCount = 0,
-                Sunk = false,
+                HasSunk = false,
             };
         }
 
@@ -221,7 +221,7 @@ namespace Game
             var next = state;
             var result = new SkipStep();
 
-            if (next.Sunk)
+            if (next.HasSunk)
             {
                 result.State = next;
                 return result;
@@ -254,9 +254,9 @@ namespace Game
             if (speed < MinSkipSpeed || incidenceDeg > constants.MaxIncidenceDeg
                 || Mathf.Abs(next.RollDeg) + next.WanderDeg > constants.MaxRollDeg)
             {
-                next.Sunk = true;
+                next.HasSunk = true;
                 next.Velocity = Vector3.zero;
-                result.Sank = true;
+                result.HasSunk = true;
                 result.State = next;
                 return result;
             }
@@ -317,9 +317,9 @@ namespace Game
             var rise = speedAfter * Mathf.Sqrt(liftShare);
             if (rise < MinExitRiseSpeed)
             {
-                next.Sunk = true;
+                next.HasSunk = true;
                 next.Velocity = Vector3.zero;
-                result.Sank = true;
+                result.HasSunk = true;
                 result.State = next;
                 return result;
             }
@@ -367,7 +367,7 @@ namespace Game
                 state = step.State;
                 path.Add(state.Position);
 
-                if (state.Sunk) break;
+                if (state.HasSunk) break;
             }
 
             return state;

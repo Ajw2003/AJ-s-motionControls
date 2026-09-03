@@ -1,215 +1,445 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0d1b2a">
-  <title>Rock Skipping — Controller</title>
-  <style>
-    :root {
-      --bg: #0d1b2a;
-      --surface: #1b263b;
-      --accent: #4cc9f0;
-      --good: #57cc99;
-      --bad: #ef476f;
-      --text: #e0e1dd;
-      --muted: #7d8597;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0d1b2a" />
+    <title>Rock Skipping — Controller</title>
+    <style>
+      :root {
+        --bg: #0d1b2a;
+        --surface: #1b263b;
+        --accent: #4cc9f0;
+        --good: #57cc99;
+        --bad: #ef476f;
+        --text: #e0e1dd;
+        --muted: #7d8597;
+      }
 
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
 
-    body {
-      margin: 0;
-      min-height: 100dvh;
-      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      touch-action: manipulation;
-      user-select: none;
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        touch-action: manipulation;
+        user-select: none;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+          env(safe-area-inset-left);
+      }
 
-    #status {
-      padding: 8px 12px;
-      font-size: 12px;
-      text-align: center;
-      color: var(--muted);
-      background: rgba(0,0,0,0.25);
-      flex: 0 0 auto;
-    }
-    #status.ok { color: var(--good); }
-    #status.bad { color: var(--bad); }
+      #status {
+        padding: 8px 12px;
+        font-size: 12px;
+        text-align: center;
+        color: var(--muted);
+        background: rgba(0, 0, 0, 0.25);
+        flex: 0 0 auto;
+      }
+      #status.ok {
+        color: var(--good);
+      }
+      #status.bad {
+        color: var(--bad);
+      }
 
-    .screen { display: none; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; padding: 20px; gap: 14px; }
-    .screen.active { display: flex; }
+      .screen {
+        display: none;
+        flex: 1 1 auto;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        gap: 14px;
+      }
+      .screen.active {
+        display: flex;
+      }
 
-    h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 2px; text-align: center; }
-    h2 { margin: 0; font-size: 20px; font-weight: 600; text-align: center; }
-    p  { margin: 0; color: var(--muted); text-align: center; font-size: 15px; line-height: 1.5; }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+        letter-spacing: 2px;
+        text-align: center;
+      }
+      h2 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        text-align: center;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        text-align: center;
+        font-size: 15px;
+        line-height: 1.5;
+      }
 
-    input {
-      width: 100%; max-width: 320px; padding: 16px;
-      border-radius: 12px; border: 2px solid #2f3e56;
-      background: var(--surface); color: var(--text);
-      font-size: 20px; text-align: center; text-transform: uppercase;
-    }
-    input:focus { border-color: var(--accent); outline: none; }
+      input {
+        width: 100%;
+        max-width: 320px;
+        padding: 16px;
+        border-radius: 12px;
+        border: 2px solid #2f3e56;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 20px;
+        text-align: center;
+        text-transform: uppercase;
+      }
+      input:focus {
+        border-color: var(--accent);
+        outline: none;
+      }
 
-    button {
-      padding: 16px 36px; border: none; border-radius: 999px;
-      background: var(--accent); color: #06263a;
-      font-size: 18px; font-weight: 700; cursor: pointer;
-    }
-    button:disabled { opacity: 0.4; }
+      button {
+        padding: 16px 36px;
+        border: none;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #06263a;
+        font-size: 18px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+      }
 
-    /* A secondary action, not a stone or the primary CTA — flat and quiet so
+      /* A secondary action, not a stone or the primary CTA — flat and quiet so
        CONFIRM stays the one thing on this screen that looks pressable at a glance. */
-    button.link {
-      background: transparent; color: var(--muted);
-      font-size: 14px; font-weight: 600; padding: 10px 20px;
-      box-shadow: none; text-decoration: underline;
-    }
+      button.link {
+        background: transparent;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+        padding: 10px 20px;
+        box-shadow: none;
+        text-decoration: underline;
+      }
 
-    /* A stone, not a button. Irregular radii give it a worn, asymmetric outline, and
+      /* A stone, not a button. Irregular radii give it a worn, asymmetric outline, and
        the off-centre highlight reads as a lit surface rather than flat fill. */
-    #gripBtn {
-      width: min(70vw, 260px); aspect-ratio: 1;
-      border-radius: 54% 46% 49% 51% / 47% 52% 48% 53%;
-      background: radial-gradient(ellipse 60% 50% at 34% 28%, #9aa7b4 0%, #6f7d8c 42%, #4d5967 100%);
-      color: #f2f5f8; font-size: 24px; letter-spacing: 1px;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
-      box-shadow: 0 10px 0 #2b333d, inset 0 2px 6px rgba(255, 255, 255, 0.18);
-      transition: transform 80ms, box-shadow 80ms, filter 80ms;
-      touch-action: none;
-    }
+      #gripBtn {
+        width: min(70vw, 260px);
+        aspect-ratio: 1;
+        border-radius: 54% 46% 49% 51% / 47% 52% 48% 53%;
+        background: radial-gradient(
+          ellipse 60% 50% at 34% 28%,
+          #9aa7b4 0%,
+          #6f7d8c 42%,
+          #4d5967 100%
+        );
+        color: #f2f5f8;
+        font-size: 24px;
+        letter-spacing: 1px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+        box-shadow:
+          0 10px 0 #2b333d,
+          inset 0 2px 6px rgba(255, 255, 255, 0.18);
+        transition:
+          transform 80ms,
+          box-shadow 80ms,
+          filter 80ms;
+        touch-action: none;
+      }
 
-    /* Armed. Shifts tone and depth rather than swapping colour outright: this is the
+      /* Armed. Shifts tone and depth rather than swapping colour outright: this is the
        only feedback that the phone is listening, so it has to read at a glance while
        still looking like the same stone. */
-    #gripBtn.held {
-      transform: translateY(8px);
-      filter: brightness(1.14);
-      box-shadow: 0 2px 0 #2b333d, inset 0 2px 8px rgba(255, 255, 255, 0.28),
-                  0 0 0 3px var(--good);
-    }
+      #gripBtn.held {
+        transform: translateY(8px);
+        filter: brightness(1.14);
+        box-shadow:
+          0 2px 0 #2b333d,
+          inset 0 2px 8px rgba(255, 255, 255, 0.28),
+          0 0 0 3px var(--good);
+      }
 
-    /* Explicit and !important because `hidden` is only a UA rule of `display: none`,
+      /* Explicit and !important because `hidden` is only a UA rule of `display: none`,
        which any later display declaration on a button quietly beats. The advance
        buttons are hidden most of the time, so this has to be the rule that wins. */
-    [hidden] { display: none !important; }
+      [hidden] {
+        display: none !important;
+      }
 
-    .error { color: var(--bad); font-weight: 600; min-height: 20px; text-align: center; }
+      .error {
+        color: var(--bad);
+        font-weight: 600;
+        min-height: 20px;
+        text-align: center;
+      }
 
-    /* The throw that just finished. Empty most of the time, so it collapses rather
+      /* The throw that just finished. Empty most of the time, so it collapses rather
        than leaving a gap above the scores. */
-    .last-throw { color: var(--accent); font-weight: 600; margin: 0; min-height: 0; }
-    .last-throw:empty { display: none; }
+      .last-throw {
+        color: var(--accent);
+        font-weight: 600;
+        margin: 0;
+        min-height: 0;
+      }
+      .last-throw:empty {
+        display: none;
+      }
 
-    .scores { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 6px; }
-    .score-row { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--surface); border-radius: 10px; font-size: 15px; }
-    .score-row.active { border-left: 4px solid var(--accent); }
+      .scores {
+        width: 100%;
+        max-width: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .score-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: var(--surface);
+        border-radius: 10px;
+        font-size: 15px;
+      }
+      .score-row.active {
+        border-left: 4px solid var(--accent);
+      }
 
-    /* Colour picker. Swatch targets are 44px, the smallest thing a thumb hits
+      /* Colour picker. Swatch targets are 44px, the smallest thing a thumb hits
        reliably on a phone — the same reason the throw button is as large as it is. */
-    .colour-picker { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-    .colour-label { color: var(--muted); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
-    .colour-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-    .colour-swatch {
-      width: 44px; height: 44px; border-radius: 50%; padding: 0;
-      border: 3px solid transparent; box-shadow: none; cursor: pointer;
-    }
-    /* The ring, not a tick: a checkmark over an arbitrary colour is unreadable on
+      .colour-picker {
+        width: 100%;
+        max-width: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+      }
+      .colour-label {
+        color: var(--muted);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .colour-swatches {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+      }
+      .colour-swatch {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        padding: 0;
+        border: 3px solid transparent;
+        box-shadow: none;
+        cursor: pointer;
+      }
+      /* The ring, not a tick: a checkmark over an arbitrary colour is unreadable on
        roughly half the palette. */
-    .colour-swatch.selected { border-color: var(--text); }
-    .colour-custom { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
-    .colour-custom input[type="color"] {
-      width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
-      background: none; cursor: pointer;
-    }
+      .colour-swatch.selected {
+        border-color: var(--text);
+      }
 
-    /* Every player's colour beside their name in the scores, so the dots on the TV
+      /* The two ways in, side by side and the same weight, so neither reads as the
+       main one. Both are the same 44px circle as a swatch. */
+      .colour-modes {
+        display: flex;
+        gap: 24px;
+        justify-content: center;
+      }
+      /* font: inherit as well as the colour reset — the generic `button` rule above is
+       700-weight uppercase, and Default is a peer of the Custom <label>, not a CTA. */
+      .colour-mode {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: none;
+        box-shadow: none;
+        padding: 0;
+        border: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 400;
+        text-transform: none;
+        cursor: pointer;
+      }
+      .colour-mode-dot {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 3px solid transparent;
+        overflow: hidden;
+        flex: 0 0 auto;
+      }
+      /* Same ring as a selected swatch, borrowed for "this sub-menu is open" — one
+       visual idiom for "you are here" rather than two. */
+      .colour-mode[aria-expanded='true'] .colour-mode-dot {
+        border-color: var(--text);
+      }
+      /* appearance:none and the oversize box because Chromium draws the native colour
+       input as an inset rounded rectangle inside its own padding — left alone it shows
+       as a square in a round hole no matter what the wrapper clips. */
+      .colour-mode-dot--custom input[type='color'] {
+        appearance: none;
+        -webkit-appearance: none;
+        display: block;
+        width: 150%;
+        height: 150%;
+        margin: -25%;
+        padding: 0;
+        border: none;
+        background: none;
+        cursor: pointer;
+      }
+      .colour-mode-dot--custom input[type='color']::-webkit-color-swatch-wrapper {
+        padding: 0;
+      }
+      .colour-mode-dot--custom input[type='color']::-webkit-color-swatch {
+        border: none;
+      }
+      .colour-mode-dot--custom input[type='color']::-moz-color-swatch {
+        border: none;
+      }
+
+      /* Every player's colour beside their name in the scores, so the dots on the TV
        and the names on the phone agree about who is who. */
-    .score-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
-    .score-row .name { display: flex; align-items: center; gap: 8px; }
+      .score-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+      }
+      .score-row .name {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
 
-    #debug {
-      flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 11px;
-      color: var(--muted); background: rgba(0,0,0,0.35); padding: 8px 12px;
-      display: none; white-space: pre; overflow-x: auto;
-    }
-    #debug.visible { display: block; }
-    #debugToggle { position: fixed; top: 4px; right: 8px; font-size: 10px; padding: 6px 10px; background: transparent; color: var(--muted); box-shadow: none; }
-  </style>
-</head>
-<body>
-  <div id="status">Connecting…</div>
-  <button id="debugToggle">debug</button>
+      #debug {
+        flex: 0 0 auto;
+        font-family: ui-monospace, monospace;
+        font-size: 11px;
+        color: var(--muted);
+        background: rgba(0, 0, 0, 0.35);
+        padding: 8px 12px;
+        display: none;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      #debug.visible {
+        display: block;
+      }
+      #debugToggle {
+        position: fixed;
+        top: 4px;
+        right: 8px;
+        font-size: 10px;
+        padding: 6px 10px;
+        background: transparent;
+        color: var(--muted);
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="status">Connecting…</div>
+    <button id="debugToggle">debug</button>
 
-  <!-- Join -->
-  <section id="joinScreen" class="screen active">
-    <h1>ROCK SKIPPING</h1>
-    <div id="joinError" class="error"></div>
-    <input id="nameInput" type="text" placeholder="YOUR NAME" maxlength="12" autocomplete="off">
-    <input id="codeInput" type="text" placeholder="ROOM CODE" maxlength="4" autocomplete="off">
-    <button id="joinBtn">JOIN GAME</button>
-    <p>Enter the code shown on the TV.</p>
-  </section>
+    <!-- Join -->
+    <section id="joinScreen" class="screen active">
+      <h1>ROCK SKIPPING</h1>
+      <div id="joinError" class="error"></div>
+      <input id="nameInput" type="text" placeholder="YOUR NAME" maxlength="12" autocomplete="off" />
+      <input id="codeInput" type="text" placeholder="ROOM CODE" maxlength="4" autocomplete="off" />
+      <button id="joinBtn">JOIN GAME</button>
+      <p>Enter the code shown on the TV.</p>
+    </section>
 
-  <!-- Choosing a stone -->
-  <section id="chooseScreen" class="screen">
-    <h2>Choose your stone</h2>
-    <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
-    <p id="chooseRock" class="last-throw"></p>
-    <button id="confirmBtn">CONFIRM</button>
+    <!-- Choosing a stone -->
+    <section id="chooseScreen" class="screen">
+      <h2>Choose your stone</h2>
+      <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
+      <p id="chooseRock" class="last-throw"></p>
+      <button id="confirmBtn">CONFIRM</button>
 
-    <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
+      <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
          duplicated here so there is one palette in the project, editable on the
-         PlayerColourPalette asset. The native picker is deliberate: it is the OS colour
-         wheel on both platforms, needs no library, and this page is served from a local
-         relay with nowhere to load one from. -->
-    <div id="colourPicker" class="colour-picker" hidden>
-      <span class="colour-label">Your colour</span>
-      <div id="colourSwatches" class="colour-swatches"></div>
-      <label class="colour-custom">
-        <span>Custom</span>
-        <input id="colourInput" type="color" value="#ffffff">
-      </label>
-    </div>
-    <!-- Advancing the match from a phone, so a couch session never has to go back to
+         PlayerColourPalette asset. They live behind the Default button rather than on
+         the screen: the full palette is eight 44px circles, which wraps to two rows on
+         a phone and pushes the advance buttons off the comfortable part of the thumb's
+         reach. The native picker is deliberate: it is the OS colour wheel on both
+         platforms, needs no library, and this page is served from a local relay with
+         nowhere to load one from. -->
+      <div id="colourPicker" class="colour-picker" hidden>
+        <span class="colour-label">Your colour</span>
+        <div class="colour-modes">
+          <button
+            id="colourDefaultBtn"
+            type="button"
+            class="colour-mode"
+            aria-expanded="false"
+            aria-controls="colourSwatches"
+          >
+            <span id="colourDefaultDot" class="colour-mode-dot"></span>
+            <span>Default</span>
+          </button>
+          <label class="colour-mode">
+            <span class="colour-mode-dot colour-mode-dot--custom">
+              <input id="colourInput" type="color" value="#ffffff" />
+            </span>
+            <span>Custom</span>
+          </label>
+        </div>
+        <div id="colourSwatches" class="colour-swatches" hidden></div>
+      </div>
+      <!-- Advancing the match from a phone, so a couch session never has to go back to
          the host's keyboard. Hidden until a SPECTATE says this phase can be advanced;
          renderAdvance owns the label, because LOBBY on the wire covers both a fresh
          lobby and a mid-match re-pick. -->
-    <button id="advanceBtn" class="link" hidden>START MATCH</button>
-    <button id="recentreBtn" class="link">RE-CENTRE</button>
-  </section>
+      <button id="advanceBtn" class="link" hidden>START MATCH</button>
+      <button id="recentreBtn" class="link">RE-CENTRE</button>
+    </section>
 
-  <!-- Spectating -->
-  <section id="waitScreen" class="screen">
-    <h2 id="waitTitle">Waiting for your turn</h2>
-    <p id="waitDetail">Watch the TV.</p>
-    <p id="lastThrow" class="last-throw"></p>
-    <!-- The results-screen half of the same idea. Primary here rather than a .link:
+    <!-- Spectating -->
+    <section id="waitScreen" class="screen">
+      <h2 id="waitTitle">Waiting for your turn</h2>
+      <p id="waitDetail">Watch the TV.</p>
+      <p id="lastThrow" class="last-throw"></p>
+      <!-- The results-screen half of the same idea. Primary here rather than a .link:
          on final scores it is the only thing left to do. -->
-    <button id="againBtn" hidden>PLAY AGAIN</button>
-    <div id="scores" class="scores"></div>
-  </section>
+      <button id="againBtn" hidden>PLAY AGAIN</button>
+      <div id="scores" class="scores"></div>
+    </section>
 
-  <!-- Your turn -->
-  <section id="throwScreen" class="screen">
-    <h2 id="throwTitle">Your turn!</h2>
-    <p id="throwHint">Point your phone at the lake, tap, then swing and stop sharply.</p>
-    <!-- renderGripButton paints this on startup; the markup only covers the instant
+    <!-- Your turn -->
+    <section id="throwScreen" class="screen">
+      <h2 id="throwTitle">Your turn!</h2>
+      <p id="throwHint">Point your phone at the lake, tap, then swing and stop sharply.</p>
+      <!-- renderGripButton paints this on startup; the markup only covers the instant
          before the script runs. It used to say HOLD and stayed that way, because
          onStateChange fires on transitions and the first one is the player's own tap. -->
-    <button id="gripBtn">TAP TO AIM</button>
-    <p id="throwResult"></p>
-  </section>
+      <button id="gripBtn">TAP TO AIM</button>
+      <p id="throwResult"></p>
+    </section>
 
-  <pre id="debug"></pre>
+    <pre id="debug"></pre>
 
-  <script type="module" src="./js/app.js"></script>
-</body>
+    <script type="module" src="./js/app.js"></script>
+  </body>
 </html>

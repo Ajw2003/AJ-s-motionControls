@@ -24,7 +24,7 @@ Three independently-run pieces, only one of which lives under `Assets/`:
 | `Assets/` (this directory) | Unity 6 project (`6000.3.10f1`) — the game/TV screen |
 | `../relay/` | Node WebSocket relay + HTTP server that also serves the controller page |
 | `../controller/` | Phone controller web app (vanilla JS): sensors, throw gesture, join/choose screens |
-| `../deploy/` | `local-https.ps1` — the one command that hosts the relay+controller over HTTPS from this PC |
+| `../deploy/` | `setup-offline.ps1` — one-time elevated machine setup for Hotspot mode; `LocalServices` hosts the relay+controller over HTTPS itself, on Play |
 | `../docs/` | Design docs, plans, findings — check dates/"Superseded" notes, this project changes hosting/physics decisions often |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
@@ -36,17 +36,14 @@ state (`SPECTATE`). There is no Unity-to-Unity networking.
 There is no Unity CLI test runner set up for this project; verification is via in-editor menu
 items and the relay's own Node test scripts.
 
-**Play the game** — start hosting from the repo root, then press Play on `Bootstrap` in Unity:
-
-```bash
-pwsh ./deploy/local-https.ps1
-```
-
-This detects the LAN IP, borrows a `*.local-ip.sh` certificate, and writes `relay-url.txt` /
-`relay-env.txt` at the repo root (gitignored) for `RelayClient`/`LocalServices` to read. Ctrl+C
-tears it all back down. Full runbook, including known-broken step 6 and its workaround:
-[`../deploy/README.md`](../deploy/README.md). Desktop-only testing (no real sensors, two
-browser tabs) is also documented there and in [`../README.md`](../README.md).
+**Play the game** — just press Play on `Bootstrap` in Unity. `LocalServices` obtains a
+certificate (`Assets/Scripts/Net/CertificateProvider.cs`, `MagicDomain.cs`) and starts the
+relay itself; no setup script needs to run first. One elevated one-time step per machine is
+still required for Hotspot mode — `./deploy/setup-offline.ps1` — see
+[`../deploy/README.md`](../deploy/README.md) and
+[`../docs/plans/magic-domain-replacement.md`](../docs/plans/magic-domain-replacement.md).
+Desktop-only testing (no real sensors, two browser tabs) is documented in
+[`../README.md`](../README.md).
 
 **Relay tests** (routing, identity stamping, reconnect, `/qr`):
 
@@ -124,10 +121,10 @@ Phones normalize sensors *before* sending — Unity never sees a platform (iOS/A
 difference. The governing rule and the iOS/Android landmines (no `acceleration` on iOS,
 opposite-direction compass headings, `requestPermission()` gating) are in PLAN.md's "The motion
 pipeline" section; the current heading/attitude conversion used on both the throw path and rock
-selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/PhoneAttitude.cs`) —
+selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/Physics/PhoneAttitude.cs`) —
 **one conversion, reused everywhere a heading is needed**, no ad-hoc Euler math at call sites.
 
-### Skip physics (`Scripts/Game/SkipPhysics.cs`)
+### Skip physics (`Scripts/Game/Physics/SkipPhysics.cs`)
 
 A custom, pure, side-effect-free stepping function (`SkipPhysics.Step`), not PhysX rigidbody
 collision — needed both for precise per-bounce control and so the aim preview can run the same
@@ -135,6 +132,14 @@ math speculatively, many frames ahead, without side effects. **`Step` must never
 events or otherwise touch anything observable** (score, audio, VFX, haptics) — only the caller
 driving a *real* throw does that (`RockController`/`RockLauncher`), because the preview runs
 `Step` continuously while a player merely aims and would otherwise "score" imaginary throws.
+
+`SkipPhysics`, `PhoneAttitude`, `SkipConstants` and `SkipTuning` (all four under
+`Scripts/Game/Physics/`) are the pure, dependency-free core of the skip model — they import
+only `System.Collections.Generic`/`UnityEngine`, nothing project-specific — and live in their
+own `RockSkipping.Physics` assembly (`RockSkipping.Physics.asmdef`) specifically so
+`Assets/Tests/EditMode/` can reference them in isolation for NUnit EditMode tests. That asmdef
+is `autoReferenced: true`, so the rest of the project (Assembly-CSharp) keeps compiling against
+them unchanged, without adding an explicit reference.
 
 ### Rock catalog and tuning (`Assets/Rocks/`, `Scripts/Game/RockDefinition.cs`, `RockCatalog.cs`)
 
@@ -198,3 +203,24 @@ not authored clips checked in as assets.
   should go through.
 - **`mesh.vertices` is unavailable** on the rock meshes (`RocksRemeshed.fbx.meta` sets
   `isReadable: 0`) — use `mesh.bounds`/`mesh.vertexCount` for any mesh-derived logic.
+
+## Documented deviations from the coding standards
+
+Recorded so a future pass doesn't "fix" these back — each is a deliberate call, not an oversight.
+
+- **`[SerializeField] private` fields keep bare camelCase** (plain privates use `_camelCase`) —
+  renaming risks silently dropping Inspector-set values across 70 fields for a naming-taste win.
+- **`EventManager.Instance?.` is kept deliberately** — `SingletonBase.Instance`'s getter already
+  uses Unity's overloaded `==` internally, so the fake-null window is narrow: only the
+  `_isQuitting` teardown path can hand back a destroyed instance.
+- **The `*Manager` class names stay** (`AudioManager`, `EventManager`, `ScoreManager`,
+  `TurnManager`) — referenced by name across this file, `docs/PLAN.md`, and the `Bootstrap`
+  ordering comments; renaming is docs-wide churn for a naming-taste win.
+- **`ok` / `resumed` / `reconnected` / `randomRocks` keep their non-question names** — they are
+  wire-format field names (matched by string between `Assets/Scripts/Net/Messages.cs` and
+  `relay/server.js`) and a persisted `match-settings.json` key, not internal identifiers;
+  renaming them is a coordinated cross-stack change with a save-file migration.
+- **The heavy comment density (roughly 30% of C# lines) is INTENTIONAL and must not be
+  trimmed.** It is this codebase's best asset — comments explain *why*, not *what* — and a
+  future pass reading "comment why, not what" could otherwise misread density as bloat and
+  delete the gotcha notes that document real footguns.

@@ -210,7 +210,7 @@ namespace Game
                             new SkipOccurredEvent(_state.SkipCount, step.ImpactSpeed, _state.Position));
                     }
 
-                    if (step.Sank)
+                    if (step.HasSunk)
                     {
                         // Before Finish, and the order is the point. Finish publishes
                         // ThrowCompletedEvent, which banks the score and rotates the turn

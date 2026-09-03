@@ -107,8 +107,9 @@ namespace Net
         public NetworkMode Mode { get; private set; }
 
         /// <summary>
-        /// The name the certificate covers for this machine, once one has been obtained —
-        /// 10-0-0-213.local-ip.sh. Null when HTTPS is off or the certificate step failed.
+        /// The name the certificate covers, once one has been obtained — MagicDomain.HostName
+        /// (e.g. play.skiprocking.ca), fixed regardless of this machine's address. Null when
+        /// HTTPS is off or the certificate step failed.
         /// </summary>
         /// <remarks>
         /// This is what a phone must use. The raw IP would not match the certificate, and a
@@ -380,7 +381,7 @@ namespace Net
         private struct HealthDns
         {
             public bool enabled;
-            public bool bound;
+            public bool isBound;
         }
 
         [Serializable]
@@ -420,7 +421,7 @@ namespace Net
             try
             {
                 var payload = JsonUtility.FromJson<HealthPayload>(request.downloadHandler.text);
-                onResult(payload.ok && payload.dns.bound);
+                onResult(payload.ok && payload.dns.isBound);
             }
             catch
             {
@@ -452,7 +453,12 @@ namespace Net
             {
                 env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", "192.168.137.1"));
                 env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));
-                env.Add(new KeyValuePair<string, string>("DNS_SUFFIX", CertificateProvider.Suffix));
+                // DNS_NAME, not DNS_SUFFIX — the certificate is single-name now
+                // (MagicDomain.HostName), so dns.js is told to answer exactly this name
+                // rather than a wildcard suffix. See relay/dns.js's `name` option and
+                // docs/plans/magic-domain-replacement.md Phase 1 for why a wildcard is no
+                // longer needed once the hotspot's address is a fixed constant.
+                env.Add(new KeyValuePair<string, string>("DNS_NAME", MagicDomain.HostName));
                 Debug.Log("[LocalServices] Hotspot mode: DNS responder will bind on 192.168.137.0/24.");
             }
 

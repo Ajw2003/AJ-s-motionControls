@@ -83,9 +83,13 @@ function rotationAngleDeg(q) {
 function sameRotation(a, b, tolerance = 1e-6) {
   const p = quaternionNormalize(a);
   const q = quaternionNormalize(b);
-  const flip = (p.w * q.w + p.x * q.x + p.y * q.y + p.z * q.z) < 0 ? -1 : 1;
-  return near(p.w, flip * q.w, tolerance) && near(p.x, flip * q.x, tolerance) &&
-         near(p.y, flip * q.y, tolerance) && near(p.z, flip * q.z, tolerance);
+  const flip = p.w * q.w + p.x * q.x + p.y * q.y + p.z * q.z < 0 ? -1 : 1;
+  return (
+    near(p.w, flip * q.w, tolerance) &&
+    near(p.x, flip * q.x, tolerance) &&
+    near(p.y, flip * q.y, tolerance) &&
+    near(p.z, flip * q.z, tolerance)
+  );
 }
 
 /** A rotation of `deg` about one of the device's own axes. */
@@ -98,7 +102,10 @@ console.log('Controller sensor math\n');
 console.log('\nquaternion math');
 {
   const q0 = orientationToQuaternion(0, 0, 0);
-  check('flat and level is identity', near(q0.w, 1) && near(q0.x, 0) && near(q0.y, 0) && near(q0.z, 0));
+  check(
+    'flat and level is identity',
+    near(q0.w, 1) && near(q0.x, 0) && near(q0.y, 0) && near(q0.z, 0),
+  );
 
   // Each Euler angle must land on its own axis. Getting the Z-X'-Y'' composition
   // order wrong still passes these individually but fails the round trip below.
@@ -116,16 +123,19 @@ console.log('\nquaternion math');
   const composed = orientationToQuaternion(30, 20, -15);
   const byHand = quaternionMultiply(
     quaternionMultiply(orientationToQuaternion(30, 0, 0), orientationToQuaternion(0, 20, 0)),
-    orientationToQuaternion(0, 0, -15));
-  check('composes Z then X\' then Y\'\'', sameRotation(composed, byHand));
+    orientationToQuaternion(0, 0, -15),
+  );
+  check("composes Z then X' then Y''", sameRotation(composed, byHand));
 
   const q = orientationToQuaternion(35, -20, 55);
   const id = quaternionMultiply(quaternionConjugate(q), q);
-  check('conjugate times self is identity', near(id.w, 1) && near(id.x, 0) && near(id.y, 0) && near(id.z, 0));
+  check(
+    'conjugate times self is identity',
+    near(id.w, 1) && near(id.x, 0) && near(id.y, 0) && near(id.z, 0),
+  );
 
-  const rot = quaternionFromRotationVector(0, 0, 90 * Math.PI / 180);
-  check('rotation vector about z matches an alpha turn',
-    near(rot.w, h) && near(rot.z, h));
+  const rot = quaternionFromRotationVector(0, 0, (90 * Math.PI) / 180);
+  check('rotation vector about z matches an alpha turn', near(rot.w, h) && near(rot.z, h));
   const none = quaternionFromRotationVector(0, 0, 0);
   check('a zero rotation vector is identity', near(none.w, 1) && near(none.z, 0));
 
@@ -140,18 +150,24 @@ console.log('\norientationDelta');
 {
   const grip = orientationToQuaternion(200, 90, -30); // an awkward, arbitrary pose
 
-  check('no movement from the reference is identity',
-    sameRotation(orientationDelta(grip, grip), IDENTITY));
+  check(
+    'no movement from the reference is identity',
+    sameRotation(orientationDelta(grip, grip), IDENTITY),
+  );
 
   // The property the whole control scheme rests on: the delta is the rotation the
   // player physically applied, in the phone's own frame, whatever pose they started
   // from. Ten degrees of wrist is ten degrees of stone.
-  for (const pose of [orientationToQuaternion(0, 0, 0),
-                      orientationToQuaternion(200, 90, -30),
-                      orientationToQuaternion(-45, 12, 80)]) {
+  for (const pose of [
+    orientationToQuaternion(0, 0, 0),
+    orientationToQuaternion(200, 90, -30),
+    orientationToQuaternion(-45, 12, 80),
+  ]) {
     const turned = quaternionMultiply(pose, aboutX(10));
-    check('a 10 degree pitch from any grip reads as 10 degrees about x',
-      sameRotation(orientationDelta(pose, turned), aboutX(10)));
+    check(
+      'a 10 degree pitch from any grip reads as 10 degrees about x',
+      sameRotation(orientationDelta(pose, turned), aboutX(10)),
+    );
   }
 
   // The singularity, stated as the thing it actually breaks. Held upright (beta 90),
@@ -161,19 +177,28 @@ console.log('\norientationDelta');
   const upright = orientationToQuaternion(0, 90, 0);
   const viaAlpha = orientationDelta(upright, orientationToQuaternion(20, 90, 0));
   const viaGamma = orientationDelta(upright, orientationToQuaternion(0, 90, 20));
-  check('at the play pose alpha and gamma produce the same rotation',
+  check(
+    'at the play pose alpha and gamma produce the same rotation',
     sameRotation(viaAlpha, viaGamma),
-    `${rotationAngleDeg(viaAlpha).toFixed(3)} vs ${rotationAngleDeg(viaGamma).toFixed(3)} deg`);
+    `${rotationAngleDeg(viaAlpha).toFixed(3)} vs ${rotationAngleDeg(viaGamma).toFixed(3)} deg`,
+  );
 
   // Crossing the alpha 0/360 seam must not produce a ~360 degree turn. There is no
   // wrap handling anywhere any more — quaternions simply have no seam.
   const wrapped = orientationDelta(
-    orientationToQuaternion(355, 90, 0), orientationToQuaternion(5, 90, 0));
-  check('crossing the 0/360 seam is a 10 degree turn',
-    near(rotationAngleDeg(wrapped), 10, 1e-6), `${rotationAngleDeg(wrapped).toFixed(3)} deg`);
+    orientationToQuaternion(355, 90, 0),
+    orientationToQuaternion(5, 90, 0),
+  );
+  check(
+    'crossing the 0/360 seam is a 10 degree turn',
+    near(rotationAngleDeg(wrapped), 10, 1e-6),
+    `${rotationAngleDeg(wrapped).toFixed(3)} deg`,
+  );
 
-  check('the result is a unit quaternion',
-    near(Math.hypot(wrapped.w, wrapped.x, wrapped.y, wrapped.z), 1, 1e-12));
+  check(
+    'the result is a unit quaternion',
+    near(Math.hypot(wrapped.w, wrapped.x, wrapped.y, wrapped.z), 1, 1e-12),
+  );
 }
 
 // ------------------------------------------------------------ gravity removal
@@ -184,15 +209,26 @@ console.log('\ngravity removal');
   // An accelerometer at rest reads the reaction force: +g along whichever device
   // axis points up. Flat on a table that is +z; upright it is +y.
   const flat = gravityInDeviceFrame(orientationToQuaternion(0, 0, 0));
-  check('flat on a table reads +g on z', near(flat.z, G, 1e-9) && near(flat.x, 0, 1e-9) && near(flat.y, 0, 1e-9),
-    `(${flat.x.toFixed(3)}, ${flat.y.toFixed(3)}, ${flat.z.toFixed(3)})`);
+  check(
+    'flat on a table reads +g on z',
+    near(flat.z, G, 1e-9) && near(flat.x, 0, 1e-9) && near(flat.y, 0, 1e-9),
+    `(${flat.x.toFixed(3)}, ${flat.y.toFixed(3)}, ${flat.z.toFixed(3)})`,
+  );
 
   const upright = gravityInDeviceFrame(orientationToQuaternion(0, 90, 0));
-  check('upright reads +g on y', near(upright.y, G, 1e-6) && near(upright.z, 0, 1e-6),
-    `(${upright.x.toFixed(3)}, ${upright.y.toFixed(3)}, ${upright.z.toFixed(3)})`);
+  check(
+    'upright reads +g on y',
+    near(upright.y, G, 1e-6) && near(upright.z, 0, 1e-6),
+    `(${upright.x.toFixed(3)}, ${upright.y.toFixed(3)}, ${upright.z.toFixed(3)})`,
+  );
 
   // Magnitude is invariant: it is the same gravity whichever way the phone is held.
-  for (const [a, b, g] of [[0, 0, 0], [45, 30, -20], [200, 90, 0], [10, -60, 75]]) {
+  for (const [a, b, g] of [
+    [0, 0, 0],
+    [45, 30, -20],
+    [200, 90, 0],
+    [10, -60, 75],
+  ]) {
     const v = gravityInDeviceFrame(orientationToQuaternion(a, b, g));
     check(`gravity magnitude holds at ${a}/${b}/${g}`, near(magnitude(v), G, 1e-9));
   }
@@ -209,34 +245,51 @@ console.log('\ngravity removal');
   let exactWorst = 0;
   for (let i = 0; i <= 12; i++) {
     const q = orientationToQuaternion(0, i * 15, 0);
-    const reading = gravityInDeviceFrame(q);  // at rest: gravity and nothing else
+    const reading = gravityInDeviceFrame(q); // at rest: gravity and nothing else
 
     filterWorst = Math.max(filterWorst, magnitude(filter.update(reading, i * 16)));
 
     const exact = gravityInDeviceFrame(q);
-    exactWorst = Math.max(exactWorst, magnitude({
-      x: reading.x - exact.x, y: reading.y - exact.y, z: reading.z - exact.z,
-    }));
+    exactWorst = Math.max(
+      exactWorst,
+      magnitude({
+        x: reading.x - exact.x,
+        y: reading.y - exact.y,
+        z: reading.z - exact.z,
+      }),
+    );
   }
-  check('exact removal reports no motion while merely turning', exactWorst < 1e-9,
-    `${exactWorst.toExponential(2)} m/s²`);
+  check(
+    'exact removal reports no motion while merely turning',
+    exactWorst < 1e-9,
+    `${exactWorst.toExponential(2)} m/s²`,
+  );
 
   // This is the number that was compressing every throw into the top of the power
   // window: a large offset present in every gesture, proportional to how fast the
   // wrist turned rather than to how hard the stone was thrown.
-  check('the filter fabricates motion while merely turning', filterWorst > 5,
-    `${filterWorst.toFixed(2)} m/s² of phantom acceleration`);
+  check(
+    'the filter fabricates motion while merely turning',
+    filterWorst > 5,
+    `${filterWorst.toFixed(2)} m/s² of phantom acceleration`,
+  );
 }
 
 console.log('\nreadLinearAcceleration');
 {
-  check('reads the hardware value when present',
-    readLinearAcceleration({ acceleration: { x: 1, y: 2, z: 3 } })?.y === 2);
+  check(
+    'reads the hardware value when present',
+    readLinearAcceleration({ acceleration: { x: 1, y: 2, z: 3 } })?.y === 2,
+  );
   check('absent on iOS gives null', readLinearAcceleration({}) === null);
-  check('all-null axes give null',
-    readLinearAcceleration({ acceleration: { x: null, y: null, z: null } }) === null);
-  check('a partial reading is still usable',
-    readLinearAcceleration({ acceleration: { x: 1, y: null, z: null } })?.x === 1);
+  check(
+    'all-null axes give null',
+    readLinearAcceleration({ acceleration: { x: null, y: null, z: null } }) === null,
+  );
+  check(
+    'a partial reading is still usable',
+    readLinearAcceleration({ acceleration: { x: 1, y: null, z: null } })?.x === 1,
+  );
 }
 
 // ------------------------------------------------- MotionSource orientation
@@ -261,8 +314,11 @@ console.log('\nMotionSource orientation');
   {
     const m = new MotionSource();
     const s = drive(m, 12, 34, 56);
-    check('uncalibrated reports no deflection', sameRotation(s.attitude, IDENTITY, 1e-9),
-      `${s.attitude.w}/${s.attitude.x}/${s.attitude.y}/${s.attitude.z}`);
+    check(
+      'uncalibrated reports no deflection',
+      sameRotation(s.attitude, IDENTITY, 1e-9),
+      `${s.attitude.w}/${s.attitude.x}/${s.attitude.y}/${s.attitude.z}`,
+    );
   }
 
   {
@@ -273,14 +329,17 @@ console.log('\nMotionSource orientation');
     m._onMotion(motionEvent());
     m.calibrate();
 
-    check('the tap pose itself is identity',
-      sameRotation(drive(m, 0, 0, 0).attitude, IDENTITY));
+    check('the tap pose itself is identity', sameRotation(drive(m, 0, 0, 0).attitude, IDENTITY));
 
-    check('pitching the top edge up 10 degrees is 10 degrees about device x',
-      sameRotation(drive(m, 0, 10, 0).attitude, aboutX(10)));
+    check(
+      'pitching the top edge up 10 degrees is 10 degrees about device x',
+      sameRotation(drive(m, 0, 10, 0).attitude, aboutX(10)),
+    );
 
-    check('rolling the phone 10 degrees is 10 degrees about device y',
-      sameRotation(drive(m, 0, 0, 10).attitude, aboutY(10)));
+    check(
+      'rolling the phone 10 degrees is 10 degrees about device y',
+      sameRotation(drive(m, 0, 0, 10).attitude, aboutY(10)),
+    );
   }
 
   {
@@ -292,11 +351,15 @@ console.log('\nMotionSource orientation');
     m._onMotion(motionEvent());
     m.calibrate();
 
-    check('no movement from an upright grip reads as identity',
-      sameRotation(drive(m, 0, 90, 0).attitude, IDENTITY));
+    check(
+      'no movement from an upright grip reads as identity',
+      sameRotation(drive(m, 0, 90, 0).attitude, IDENTITY),
+    );
 
-    check('pitching 10 degrees forward of an upright grip is a 10 degree turn',
-      sameRotation(drive(m, 0, 80, 0).attitude, aboutX(-10)));
+    check(
+      'pitching 10 degrees forward of an upright grip is a 10 degree turn',
+      sameRotation(drive(m, 0, 80, 0).attitude, aboutX(-10)),
+    );
 
     // The headline case. Sweeping through vertical used to flip alpha and fold gamma,
     // so aim and roll jumped by up to 180 degrees while the phone moved one. Every
@@ -311,8 +374,10 @@ console.log('\nMotionSource orientation');
       const angle = rotationAngleDeg(s.attitude);
 
       if (prev !== null) {
-        worstJump = Math.max(worstJump,
-          rotationAngleDeg(orientationDelta(prev.attitude, s.attitude)));
+        worstJump = Math.max(
+          worstJump,
+          rotationAngleDeg(orientationDelta(prev.attitude, s.attitude)),
+        );
         // Past the grip pose the turn shrinks to zero and grows again the other way,
         // so only the leg on each side has to be monotonic.
         if (beta > 90 && angle > prevAngle + 1e-9) monotonic = false;
@@ -322,8 +387,11 @@ console.log('\nMotionSource orientation');
       prev = s;
       prevAngle = angle;
     }
-    check('sweeping through vertical never jumps', worstJump < 1.5,
-      `worst step ${worstJump.toFixed(3)} deg`);
+    check(
+      'sweeping through vertical never jumps',
+      worstJump < 1.5,
+      `worst step ${worstJump.toFixed(3)} deg`,
+    );
     check('the turn from the grip changes monotonically across vertical', monotonic);
   }
 
@@ -336,9 +404,11 @@ console.log('\nMotionSource orientation');
     m.calibrate();
 
     const yawed = drive(m, 215, 90, 0);
-    check('aim is measured from the tap, not from north',
+    check(
+      'aim is measured from the tap, not from north',
       near(rotationAngleDeg(yawed.attitude), 15, 1e-6),
-      `${rotationAngleDeg(yawed.attitude).toFixed(3)} deg`);
+      `${rotationAngleDeg(yawed.attitude).toFixed(3)} deg`,
+    );
   }
 
   {
@@ -360,32 +430,46 @@ console.log('\nMotionSource orientation');
     }
 
     // 6 frames x 16ms x 60 deg/s = 5.76 degrees, about the device's own y axis.
-    check('the attitude keeps moving while orientation is stale',
+    check(
+      'the attitude keeps moving while orientation is stale',
       sameRotation(m.latest.attitude, aboutY(5.76), 1e-3),
-      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`);
-    check('staleness is reported', m.latest.orientationAgeMs === 96, `${m.latest.orientationAgeMs}`);
+      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`,
+    );
+    check(
+      'staleness is reported',
+      m.latest.orientationAgeMs === 96,
+      `${m.latest.orientationAgeMs}`,
+    );
 
     // A real reading must win, or integration drift accumulates forever.
     clock += 16;
     m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
-    check('a fresh orientation reading overrides the gyro estimate',
+    check(
+      'a fresh orientation reading overrides the gyro estimate',
       sameRotation(m.latest.attitude, IDENTITY),
-      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`);
+      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`,
+    );
 
     // A gap long enough to be a backgrounded tab must not be integrated across.
     clock += 5000;
     m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
-    check('a long gap is not integrated across',
+    check(
+      'a long gap is not integrated across',
       sameRotation(m.latest.attitude, IDENTITY),
-      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`);
+      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`,
+    );
   }
 }
 
 // ---------------------------------------------------------------- rotation
 console.log('\nrotateXY');
 const r90 = rotateXY(1, 0, 90);
-check('90deg maps +X to +Y', near(r90.x, 0) && near(r90.y, 1), `(${r90.x.toFixed(3)}, ${r90.y.toFixed(3)})`);
+check(
+  '90deg maps +X to +Y',
+  near(r90.x, 0) && near(r90.y, 1),
+  `(${r90.x.toFixed(3)}, ${r90.y.toFixed(3)})`,
+);
 const r180 = rotateXY(1, 0, 180);
 check('180deg negates X', near(r180.x, -1) && near(r180.y, 0));
 const r0 = rotateXY(3, 4, 0);
@@ -400,15 +484,18 @@ check('normalize01 clamps above range', normalize01(99, 0, 10) === 1);
 check('normalize01 handles zero-width range', normalize01(5, 3, 3) === 0);
 // Spin is the twist about the phone's own screen normal — the frisbee flick — and
 // nothing else. alpha is the rate about device Z.
-check('screenSpinRate reads the twist about the screen normal',
-  screenSpinRate({ alpha: 300, beta: 0, gamma: 0 }) === 300);
-check('screenSpinRate keeps the direction of the twist',
-  screenSpinRate({ alpha: -300, beta: 0, gamma: 0 }) === -300);
+check(
+  'screenSpinRate reads the twist about the screen normal',
+  screenSpinRate({ alpha: 300, beta: 0, gamma: 0 }) === 300,
+);
+check(
+  'screenSpinRate keeps the direction of the twist',
+  screenSpinRate({ alpha: -300, beta: 0, gamma: 0 }) === -300,
+);
 
 // The bug this replaced. Swinging your arm turns the phone about its other two axes far
 // harder than any wrist twist, so a 3-axis magnitude reported arm motion as spin.
-check('swinging the arm is not spin',
-  screenSpinRate({ alpha: 0, beta: 900, gamma: 700 }) === 0);
+check('swinging the arm is not spin', screenSpinRate({ alpha: 0, beta: 900, gamma: 700 }) === 0);
 check('screenSpinRate treats a missing rate as still', screenSpinRate(null) === 0);
 check('screenSpinRate tolerates null axes', screenSpinRate({ alpha: null }) === 0);
 
@@ -417,8 +504,11 @@ console.log('\nGravityFilter');
 {
   const filter = new GravityFilter(0.8);
   const first = filter.update({ x: 0, y: 0, z: 9.8 });
-  check('seeds on first sample instead of spiking',
-    near(first.z, 0), `linear.z was ${first.z.toFixed(3)}`);
+  check(
+    'seeds on first sample instead of spiking',
+    near(first.z, 0),
+    `linear.z was ${first.z.toFixed(3)}`,
+  );
 
   const resting = filter.update({ x: 0, y: 0, z: 9.8 });
   check('reports ~zero while at rest', Math.abs(resting.z) < 1e-9);
@@ -435,12 +525,18 @@ console.log('\nGravityFilter');
 console.log('\nRingBuffer');
 {
   const buffer = new RingBuffer(3);
-  buffer.push(1); buffer.push(2);
+  buffer.push(1);
+  buffer.push(2);
   check('partial fill returns in order', JSON.stringify(buffer.toArray()) === '[1,2]');
 
-  buffer.push(3); buffer.push(4); buffer.push(5);
-  check('keeps only the newest N', JSON.stringify(buffer.toArray()) === '[3,4,5]',
-    JSON.stringify(buffer.toArray()));
+  buffer.push(3);
+  buffer.push(4);
+  buffer.push(5);
+  check(
+    'keeps only the newest N',
+    JSON.stringify(buffer.toArray()) === '[3,4,5]',
+    JSON.stringify(buffer.toArray()),
+  );
   check('length caps at capacity', buffer.length === 3);
 
   buffer.clear();
@@ -458,21 +554,29 @@ console.log('\nreadAcceleration (iOS guard)');
     accelerationIncludingGravity: { x: 1, y: 2, z: 3 },
   };
   const fromAndroid = readAcceleration(androidStyle);
-  check('ignores event.acceleration even when present',
+  check(
+    'ignores event.acceleration even when present',
     fromAndroid.x === 1 && fromAndroid.y === 2 && fromAndroid.z === 3,
-    `got ${JSON.stringify(fromAndroid)}`);
+    `got ${JSON.stringify(fromAndroid)}`,
+  );
 
   const iosStyle = { accelerationIncludingGravity: { x: 1, y: 2, z: 3 } };
-  check('works with no .acceleration property at all (iOS shape)',
-    readAcceleration(iosStyle)?.x === 1);
+  check(
+    'works with no .acceleration property at all (iOS shape)',
+    readAcceleration(iosStyle)?.x === 1,
+  );
 
   check('null when the event carries nothing', readAcceleration({}) === null);
-  check('null when all axes are null',
-    readAcceleration({ accelerationIncludingGravity: { x: null, y: null, z: null } }) === null);
+  check(
+    'null when all axes are null',
+    readAcceleration({ accelerationIncludingGravity: { x: null, y: null, z: null } }) === null,
+  );
 
   const partial = readAcceleration({ accelerationIncludingGravity: { x: 5, y: null, z: null } });
-  check('missing axes default to 0 rather than NaN',
-    partial.x === 5 && partial.y === 0 && partial.z === 0);
+  check(
+    'missing axes default to 0 rather than NaN',
+    partial.x === 5 && partial.y === 0 && partial.z === 0,
+  );
 
   const noRate = readRotationRate({});
   check('rotationRate defaults to zeros', noRate.alpha === 0 && noRate.beta === 0);
@@ -497,8 +601,11 @@ console.log('\ncomputeThrowDescriptor');
   const late = [...perfect];
   for (let i = 1; i <= 25; i++) late.push(makeSample(100 + i * 10, 1));
   const dLate = computeThrowDescriptor(late);
-  check('a trailing stop does not weaken the throw', near(dLate.swingSpeed, d.swingSpeed),
-    `${dLate.swingSpeed.toFixed(3)} vs ${d.swingSpeed.toFixed(3)}`);
+  check(
+    'a trailing stop does not weaken the throw',
+    near(dLate.swingSpeed, d.swingSpeed),
+    `${dLate.swingSpeed.toFixed(3)} vs ${d.swingSpeed.toFixed(3)}`,
+  );
   check('timing is not a wire field any more', dLate.timingQuality === undefined);
 
   // Ramp to `peakAccel` over `steps` samples, then release.
@@ -511,19 +618,23 @@ console.log('\ncomputeThrowDescriptor');
 
   const harder = computeThrowDescriptor(swing(36));
   const softer = computeThrowDescriptor(swing(14)); // ~2.5x less effort
-  check('a much softer throw measures much softer',
+  check(
+    'a much softer throw measures much softer',
     softer.swingSpeed < harder.swingSpeed * 0.55,
-    `${softer.swingSpeed.toFixed(3)} vs ${harder.swingSpeed.toFixed(3)}`);
+    `${softer.swingSpeed.toFixed(3)} vs ${harder.swingSpeed.toFixed(3)}`,
+  );
 
   // The property that actually motivated using swing speed over peak acceleration: a
   // short sharp jerk and a long powerful pull reach the same peak, but the pull puts
   // far more speed into the stone. Peak acceleration reports them as the same throw.
   // Velocity, being the integral, does not.
-  const jerk = computeThrowDescriptor(swing(30, 10));   // 100ms
-  const pull = computeThrowDescriptor(swing(30, 25));   // 250ms, same peak
-  check('swing speed tells a jerk and a pull apart even though they peak identically',
+  const jerk = computeThrowDescriptor(swing(30, 10)); // 100ms
+  const pull = computeThrowDescriptor(swing(30, 25)); // 250ms, same peak
+  check(
+    'swing speed tells a jerk and a pull apart even though they peak identically',
     pull.swingSpeed > jerk.swingSpeed * 1.5,
-    `jerk ${jerk.swingSpeed.toFixed(3)} vs pull ${pull.swingSpeed.toFixed(3)}`);
+    `jerk ${jerk.swingSpeed.toFixed(3)} vs pull ${pull.swingSpeed.toFixed(3)}`,
+  );
 
   // A limp gesture should not register as a throw at all.
   const fumble = [makeSample(0, 1), makeSample(10, 2), makeSample(20, 1)];
@@ -538,29 +649,41 @@ console.log('\ncomputeThrowDescriptor');
   const backwards = aboutX(190);
   const wild = [makeSample(0, 5), makeSample(10, 30, { attitude: backwards })];
   const dWild = computeThrowDescriptor(wild);
-  check('attitude is not clamped — backwards throws are allowed',
+  check(
+    'attitude is not clamped — backwards throws are allowed',
     sameRotation({ w: dWild.qw, x: dWild.qx, y: dWild.qy, z: dWild.qz }, backwards),
-    `${rotationAngleDeg(backwards).toFixed(1)} deg`);
+    `${rotationAngleDeg(backwards).toFixed(1)} deg`,
+  );
 
   // The stop sample is the aim: a throwing motion ends pointing where it was thrown.
   const swung = [
-    makeSample(0, 1, { attitude: aboutY(20) }),    // lining the shot up
+    makeSample(0, 1, { attitude: aboutY(20) }), // lining the shot up
     makeSample(120, 25, { attitude: aboutY(70) }), // swinging
     makeSample(180, 30, { attitude: aboutY(95) }), // peak
     makeSample(200, 2, { attitude: aboutY(110) }), // stopped, pointing at the target
   ];
   const dSwung = computeThrowDescriptor(swung);
-  check('attitude comes from the stop, raw',
-    sameRotation({ w: dSwung.qw, x: dSwung.qx, y: dSwung.qy, z: dSwung.qz }, aboutY(110)));
-  check('swing speed is measured from the swing, not the stop sample', dSwung.swingSpeed > 0,
-    dSwung.swingSpeed.toFixed(3));
+  check(
+    'attitude comes from the stop, raw',
+    sameRotation({ w: dSwung.qw, x: dSwung.qx, y: dSwung.qy, z: dSwung.qz }, aboutY(110)),
+  );
+  check(
+    'swing speed is measured from the swing, not the stop sample',
+    dSwung.swingSpeed > 0,
+    dSwung.swingSpeed.toFixed(3),
+  );
 
   // Only the twist about the screen normal counts, and it keeps its sign — see
   // screenSpinRate. The arm-swing components alongside it are not spin.
-  const spun = [makeSample(0, 5), makeSample(10, 30, { rotationRate: { alpha: -420, beta: 900, gamma: 700 } })];
-  check('spin is the signed twist about the screen normal, not the arm swing',
+  const spun = [
+    makeSample(0, 5),
+    makeSample(10, 30, { rotationRate: { alpha: -420, beta: 900, gamma: 700 } }),
+  ];
+  check(
+    'spin is the signed twist about the screen normal, not the arm swing',
     near(computeThrowDescriptor(spun).spinRate, -420),
-    `${computeThrowDescriptor(spun).spinRate}`);
+    `${computeThrowDescriptor(spun).spinRate}`,
+  );
 
   // Spin is the one field not read from the stop sample, and this is why: the wrist
   // flick peaks mid-swing and is spent by the time the phone halts — and the throw
@@ -570,19 +693,26 @@ console.log('\ncomputeThrowDescriptor');
   const flicked = [
     makeSample(0, 1),
     makeSample(120, 25, { rotationRate: { alpha: 1000, beta: 0, gamma: 0 } }), // the flick
-    makeSample(180, 30, { rotationRate: { alpha: 500, beta: 0, gamma: 0 } }),  // peak accel, spin fading
-    makeSample(200, 2),                                                         // stopped, not turning
+    makeSample(180, 30, { rotationRate: { alpha: 500, beta: 0, gamma: 0 } }), // peak accel, spin fading
+    makeSample(200, 2), // stopped, not turning
   ];
   const dFlicked = computeThrowDescriptor(flicked);
-  check('spin comes from the swing, not the calm stop sample',
-    dFlicked.spinRate > 500, `${dFlicked.spinRate.toFixed(1)}`);
+  check(
+    'spin comes from the swing, not the calm stop sample',
+    dFlicked.spinRate > 500,
+    `${dFlicked.spinRate.toFixed(1)}`,
+  );
 
   // The device path hands in the envelope ThrowController tracked live, so the stone
   // leaves at the rate the ghost was showing. Anything passed wins over the replay.
-  check('an explicit envelope overrides the buffer',
-    computeThrowDescriptor(flicked, ThrowTuning, 1234).spinRate === 1234);
-  check('a zero envelope is honoured rather than treated as absent',
-    computeThrowDescriptor(flicked, ThrowTuning, 0).spinRate === 0);
+  check(
+    'an explicit envelope overrides the buffer',
+    computeThrowDescriptor(flicked, ThrowTuning, 1234).spinRate === 1234,
+  );
+  check(
+    'a zero envelope is honoured rather than treated as absent',
+    computeThrowDescriptor(flicked, ThrowTuning, 0).spinRate === 0,
+  );
 }
 
 // ---------------------------------------------------------------- aim payload
@@ -596,28 +726,38 @@ console.log('\nbuildAimPayload');
   // The preview and the throw must show the same rotation, so both flatten the
   // attitude through the same helper. If these ever spelled it differently the ghost
   // would aim somewhere the stone did not go.
-  check('attitude is raw, matching the throw descriptor',
-    sameRotation({ w: payload.qw, x: payload.qx, y: payload.qy, z: payload.qz }, aimed));
-  check('a phone at the tap pose sends identity',
-    buildAimPayload(makeSample(0, 20), 1).qw === 1);
+  check(
+    'attitude is raw, matching the throw descriptor',
+    sameRotation({ w: payload.qw, x: payload.qx, y: payload.qy, z: payload.qz }, aimed),
+  );
+  check('a phone at the tap pose sends identity', buildAimPayload(makeSample(0, 20), 1).qw === 1);
   check('null sample yields null payload', buildAimPayload(null, 1) === null);
 
   // Spin is what drives the ghost's visual spin on the TV. It has to be the envelope
   // when one is supplied, because the instantaneous value at a 20Hz tick mostly misses
   // the flick that produced it.
   const spinning = makeSample(0, 20, { rotationRate: { alpha: 50, beta: 30, gamma: 40 } });
-  check('falls back to this instant\'s spin when no envelope is given',
-    near(buildAimPayload(spinning, 1).spinRate, 50));
-  check('carries the supplied envelope in preference to the instant',
-    near(buildAimPayload(spinning, 1, 320).spinRate, 320));
+  check(
+    "falls back to this instant's spin when no envelope is given",
+    near(buildAimPayload(spinning, 1).spinRate, 50),
+  );
+  check(
+    'carries the supplied envelope in preference to the instant',
+    near(buildAimPayload(spinning, 1, 320).spinRate, 320),
+  );
   check('a still phone reports no spin', buildAimPayload(makeSample(0, 20), 1).spinRate === 0);
 
   // Raw swing speed, not a normalised power — Unity reads this one (see
   // AimPreview.OnAim), and there is no power field left to disagree with it.
-  check('carries raw swing speed',
-    buildAimPayload(makeSample(0, 20), 1, 0, 3.2).swingSpeed === 3.2);
+  check(
+    'carries raw swing speed',
+    buildAimPayload(makeSample(0, 20), 1, 0, 3.2).swingSpeed === 3.2,
+  );
   check('defaults swing speed to zero', buildAimPayload(makeSample(0, 20), 1).swingSpeed === 0);
-  check('no normalised power field on the wire', buildAimPayload(makeSample(0, 20), 1).power === undefined);
+  check(
+    'no normalised power field on the wire',
+    buildAimPayload(makeSample(0, 20), 1).power === undefined,
+  );
 }
 
 // ------------------------------------------------------------- spin envelope
@@ -631,23 +771,32 @@ console.log('\ndecaySpinEnvelope');
   // Time-based, not per-sample: two half-steps must land where one full step does, or
   // the ghost winds down at a rate that depends on how fast the phone reports.
   const twoSteps = decaySpinEnvelope(decaySpinEnvelope(900, 0, 50), 0, 50);
-  check('is independent of sample rate', near(twoSteps, decaySpinEnvelope(900, 0, 100), 1e-9),
-    `${twoSteps.toFixed(6)} vs ${decaySpinEnvelope(900, 0, 100).toFixed(6)}`);
+  check(
+    'is independent of sample rate',
+    near(twoSteps, decaySpinEnvelope(900, 0, 100), 1e-9),
+    `${twoSteps.toFixed(6)} vs ${decaySpinEnvelope(900, 0, 100).toFixed(6)}`,
+  );
   check('a negative dt cannot inflate the envelope', decaySpinEnvelope(900, 0, -500) <= 900);
 
   // Signed, because spin is now a signed rate about the screen normal. The peak is
   // chosen by magnitude and keeps its direction.
-  check('a negative peak is held like a positive one',
-    near(decaySpinEnvelope(-100, -900, 16), -900));
-  check('a decaying positive peak does not beat a real negative one',
+  check(
+    'a negative peak is held like a positive one',
+    near(decaySpinEnvelope(-100, -900, 16), -900),
+  );
+  check(
+    'a decaying positive peak does not beat a real negative one',
     near(decaySpinEnvelope(900, -950, 16), -950),
-    `${decaySpinEnvelope(900, -950, 16).toFixed(1)}`);
+    `${decaySpinEnvelope(900, -950, 16).toFixed(1)}`,
+  );
 
   // A plain max() would have returned the stale +900 here, so a wrist flicked back the
   // other way would have spun the stone the way the previous throw went.
-  check('a decaying peak still wins while it is the larger magnitude',
+  check(
+    'a decaying peak still wins while it is the larger magnitude',
     decaySpinEnvelope(900, -100, 16) > 800,
-    `${decaySpinEnvelope(900, -100, 16).toFixed(1)}`);
+    `${decaySpinEnvelope(900, -100, 16).toFixed(1)}`,
+  );
 }
 
 console.log('\npeakSpinEnvelope');
@@ -666,8 +815,11 @@ console.log('\npeakSpinEnvelope');
   live = decaySpinEnvelope(live, 100, 0);
   live = decaySpinEnvelope(live, 900, 50);
   live = decaySpinEnvelope(live, 0, 50);
-  check('matches the envelope tracked sample by sample',
-    near(peakSpinEnvelope(swing), live, 1e-9), `${peakSpinEnvelope(swing).toFixed(6)}`);
+  check(
+    'matches the envelope tracked sample by sample',
+    near(peakSpinEnvelope(swing), live, 1e-9),
+    `${peakSpinEnvelope(swing).toFixed(6)}`,
+  );
 
   // The tau is the window: spin from before the swing decays away on its own, so
   // there is no separate cutoff constant that could drift out of sync with it.
@@ -675,8 +827,11 @@ console.log('\npeakSpinEnvelope');
     makeSample(0, 1, { rotationRate: { alpha: 900, beta: 0, gamma: 0 } }), // lining up
     makeSample(2000, 20, { rotationRate: { alpha: 40, beta: 0, gamma: 0 } }),
   ];
-  check('spin from before the swing has decayed away', near(peakSpinEnvelope(stale), 40, 1e-3),
-    `${peakSpinEnvelope(stale).toFixed(3)}`);
+  check(
+    'spin from before the swing has decayed away',
+    near(peakSpinEnvelope(stale), 40, 1e-3),
+    `${peakSpinEnvelope(stale).toFixed(3)}`,
+  );
 }
 
 // ------------------------------------------------- simulated throw (sensorless)
@@ -687,32 +842,45 @@ console.log('\ncomputeSimulatedThrowDescriptor');
   const brief = computeSimulatedThrowDescriptor(0, mid);
   const long = computeSimulatedThrowDescriptor(5000, mid);
 
-  check('a brief tap gives minimum swing speed',
-    near(brief.swingSpeed, SimulatedThrow.minSwingSpeed));
-  check('a long hold saturates at maximum swing speed',
-    near(long.swingSpeed, SimulatedThrow.maxSwingSpeed));
-  check('hold duration scales swing speed in between',
+  check(
+    'a brief tap gives minimum swing speed',
+    near(brief.swingSpeed, SimulatedThrow.minSwingSpeed),
+  );
+  check(
+    'a long hold saturates at maximum swing speed',
+    near(long.swingSpeed, SimulatedThrow.maxSwingSpeed),
+  );
+  check(
+    'hold duration scales swing speed in between',
     computeSimulatedThrowDescriptor(600, mid).swingSpeed > brief.swingSpeed &&
-    computeSimulatedThrowDescriptor(600, mid).swingSpeed < long.swingSpeed);
+      computeSimulatedThrowDescriptor(600, mid).swingSpeed < long.swingSpeed,
+  );
 
-  check('centred randomness gives a dead-straight throw',
-    sameRotation({ w: brief.qw, x: brief.qx, y: brief.qy, z: brief.qz }, IDENTITY));
+  check(
+    'centred randomness gives a dead-straight throw',
+    sameRotation({ w: brief.qw, x: brief.qx, y: brief.qy, z: brief.qz }, IDENTITY),
+  );
 
   // The whole point of the jitter bounds: identity is already a good throw, and the
   // jitter has to stay inside SkipTuning's tolerance window or every simulated throw
   // sinks and every test score is zero.
-  const extremes = [computeSimulatedThrowDescriptor(600, () => 0),
-                    computeSimulatedThrowDescriptor(600, () => 1)];
+  const extremes = [
+    computeSimulatedThrowDescriptor(600, () => 0),
+    computeSimulatedThrowDescriptor(600, () => 1),
+  ];
   const jitterBound = Math.hypot(SimulatedThrow.pitchJitterDeg, SimulatedThrow.yawJitterDeg);
-  check('the jittered attitude stays inside the skip tolerance window',
-    extremes.every((d) =>
-      rotationAngleDeg({ w: d.qw, x: d.qx, y: d.qy, z: d.qz }) <= jitterBound + 1e-6),
-    extremes.map((d) =>
-      rotationAngleDeg({ w: d.qw, x: d.qx, y: d.qy, z: d.qz }).toFixed(1)).join(' / '));
+  check(
+    'the jittered attitude stays inside the skip tolerance window',
+    extremes.every(
+      (d) => rotationAngleDeg({ w: d.qw, x: d.qx, y: d.qy, z: d.qz }) <= jitterBound + 1e-6,
+    ),
+    extremes
+      .map((d) => rotationAngleDeg({ w: d.qw, x: d.qx, y: d.qy, z: d.qz }).toFixed(1))
+      .join(' / '),
+  );
 
   check('is flagged as simulated', brief.simulated === true);
-  check('reports zero samples, which is the tell on the TV readout',
-    brief.sampleCount === 0);
+  check('reports zero samples, which is the tell on the TV readout', brief.sampleCount === 0);
 }
 
 // ------------------------------------------------- release() fallback selection
@@ -740,10 +908,10 @@ console.log('\nThrowController: arm, swing, stop');
   const hardSwing = [
     makeSample(0, 2),
     makeSample(20, 20),
-    makeSample(40, 32),   // peak
-    makeSample(60, 3),    // calm 1
-    makeSample(80, 2),    // calm 2
-    makeSample(100, 1),   // calm 3 — fires here
+    makeSample(40, 32), // peak
+    makeSample(60, 3), // calm 1
+    makeSample(80, 2), // calm 2
+    makeSample(100, 1), // calm 3 — fires here
   ];
 
   {
@@ -762,8 +930,11 @@ console.log('\nThrowController: arm, swing, stop');
   {
     const sent = [];
     const dip = [
-      makeSample(0, 2), makeSample(20, 25), makeSample(40, 1), // momentary dip mid-swing
-      makeSample(60, 30), makeSample(80, 28),
+      makeSample(0, 2),
+      makeSample(20, 25),
+      makeSample(40, 1), // momentary dip mid-swing
+      makeSample(60, 30),
+      makeSample(80, 28),
     ];
     const motion = makeMotion(null, dip);
     const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
@@ -807,8 +978,10 @@ console.log('\nThrowController: arm, swing, stop');
 
     c.toggle();
     const d = c.toggle();
-    check('a sensorless device throws on the second tap',
-      sent.length === 1 && sent[0].simulated === true && d.simulated === true);
+    check(
+      'a sensorless device throws on the second tap',
+      sent.length === 1 && sent[0].simulated === true && d.simulated === true,
+    );
     check('the simulated throw is typed THROW like any other', sent[0].type === 'THROW');
   }
 
@@ -819,8 +992,7 @@ console.log('\nThrowController: arm, swing, stop');
       onThrow: (p) => sent.push(p),
       aimHz: 1000,
     });
-    check('disarming without arming sends nothing',
-      c.disarm() === null && sent.length === 0);
+    check('disarming without arming sends nothing', c.disarm() === null && sent.length === 0);
   }
 }
 
@@ -858,11 +1030,16 @@ console.log('\nThrowController: live spin on the aim stream');
   await new Promise((resolve) => setTimeout(resolve, 30));
 
   const spun = frames[0];
-  check('a turn below the swing threshold still reaches the aim frame', spun !== undefined,
-    frames.length ? `saw ${frames.length} frame(s)` : 'no frames at all');
-  check('the frame reports the held peak, not the still phone it was sampled on',
+  check(
+    'a turn below the swing threshold still reaches the aim frame',
+    spun !== undefined,
+    frames.length ? `saw ${frames.length} frame(s)` : 'no frames at all',
+  );
+  check(
+    'the frame reports the held peak, not the still phone it was sampled on',
     spun !== undefined && near(spun.spinRate, 500 * Math.exp(-40 / 250), 1e-9),
-    spun && spun.spinRate.toFixed(2));
+    spun && spun.spinRate.toFixed(2),
+  );
 
   c.cancel();
   const settled = frames.length;
@@ -891,8 +1068,7 @@ console.log('\nThrowController: live windup on the aim stream');
 
     // Accelerate for 200ms at 20 m/s^2, which is about 4 m/s of hand speed — a firm swing.
     for (let i = 1; i <= 10; i++) motion.onSample(makeSample(i * 20, 20));
-    check('swinging raises the windup, raw m/s', c._windSpeed > 1,
-      `${c._windSpeed.toFixed(3)}`);
+    check('swinging raises the windup, raw m/s', c._windSpeed > 1, `${c._windSpeed.toFixed(3)}`);
     c.cancel();
   }
 
@@ -910,9 +1086,11 @@ console.log('\nThrowController: live windup on the aim stream');
 
     const live = c._windSpeed;
     const released = computeThrowDescriptor(swing).swingSpeed;
-    check('live windup is on the same scale as the throw\'s swing speed',
+    check(
+      "live windup is on the same scale as the throw's swing speed",
       Math.abs(live - released) < 0.5,
-      `live ${live.toFixed(3)} vs released ${released.toFixed(3)}`);
+      `live ${live.toFixed(3)} vs released ${released.toFixed(3)}`,
+    );
     c.cancel();
   }
 
@@ -924,8 +1102,11 @@ console.log('\nThrowController: live windup on the aim stream');
     const c = new ThrowController(motion, { aimHz: 1000 });
     c.arm();
     for (let i = 1; i <= 60; i++) motion.onSample(makeSample(i * 20, 1));
-    check('a long calm hold does not accumulate phantom windup', c._windSpeed < 0.05,
-      `${c._windSpeed.toFixed(4)}`);
+    check(
+      'a long calm hold does not accumulate phantom windup',
+      c._windSpeed < 0.05,
+      `${c._windSpeed.toFixed(4)}`,
+    );
     c.cancel();
   }
 
@@ -941,14 +1122,18 @@ console.log('\nThrowController: live windup on the aim stream');
       motion.onSample(sample);
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
-    check('the aim frame carries the raw swing speed, not a normalised power',
+    check(
+      'the aim frame carries the raw swing speed, not a normalised power',
       frames.length > 0 && frames[0].swingSpeed > 0 && frames[0].power === undefined,
-      frames.length ? `${frames[0].swingSpeed.toFixed(3)}` : 'no frames');
+      frames.length ? `${frames[0].swingSpeed.toFixed(3)}` : 'no frames',
+    );
     c.cancel();
   }
 }
 
-console.log(failures === 0
-  ? '\nPASS — all controller math checks green'
-  : `\nFAIL — ${failures} check(s) failed`);
+console.log(
+  failures === 0
+    ? '\nPASS — all controller math checks green'
+    : `\nFAIL — ${failures} check(s) failed`,
+);
 process.exit(failures === 0 ? 0 : 1);

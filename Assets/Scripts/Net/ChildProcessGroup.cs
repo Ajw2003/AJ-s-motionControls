@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Debug = UnityEngine.Debug;
@@ -90,6 +90,9 @@ namespace Net
             }
             catch (EntryPointNotFoundException)
             {
+                // Same degradation as DllNotFoundException above: the job-object entry
+                // point is missing, so fall back to graceful-quit cleanup instead of
+                // failing the launch.
             }
 
             return group;

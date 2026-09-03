@@ -450,6 +450,12 @@ internet, no shared network, and the host needs no uplink either.
    certificate can be obtained. *Mitigation:* cached certificates give up to 90 days of grace;
    make the provider an interface with `traefik.me` / `local-ip.co` as alternates rather than a
    hardcoded URL. **Phase 4.3 halves this** by removing the dependency on their *resolution*.
+
+   > **Superseded — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+   > `local-ip.sh` did disappear — verified dead at the DNS layer, with `local-ip.co`, `traefik.me`,
+   > `sslip.io` and `nip.io` all checked and rejected as replacements. The mitigation here (a
+   > multi-provider interface) is dead on arrival; the actual fix is a single-name certificate for
+   > an owned domain (`play.skiprocking.ca`), renewed by a serverless GitHub Actions job.
 2. **The certificate's private key is published on purpose, so it may be revoked.** CA policy
    requires revocation within 24h of a key-compromise disclosure; mobile browsers largely do not
    hard-fail on revocation today, which is the only reason this works. *Mitigation:* the

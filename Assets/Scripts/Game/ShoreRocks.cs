@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using EventSystems;
 using EventTypes.MatchEvents;
@@ -45,6 +45,7 @@ namespace Game
         private GUIStyle _nameStyle;
         private GUIStyle _blurbStyle;
         private GUIStyle _tickStyle;
+        private Camera _camera;
 
         private class Stone
         {
@@ -201,9 +202,9 @@ namespace Game
             _client.PickRockReceived += OnPickRock;
         }
 
-        private void SetVisible(bool visible)
+        private void SetVisible(bool isVisible)
         {
-            if (gameObject.activeSelf != visible) gameObject.SetActive(visible);
+            if (gameObject.activeSelf != isVisible) gameObject.SetActive(isVisible);
         }
 
         private void PruneStalePointers()
@@ -408,19 +409,22 @@ namespace Game
         {
             if (!gameObject.activeSelf) return;
 
-            var camera = Camera.main;
-            if (camera == null) return;
+            // Resolved lazily rather than only in Awake: Camera.main can still be
+            // null when this component wakes, and a one-shot lookup would leave the
+            // labels permanently blank. Mirrors RockLauncher's retry.
+            if (_camera == null) _camera = Camera.main;
+            if (_camera == null) return;
 
             EnsureStyles();
 
             foreach (var stone in _stones)
             {
-                DrawWorldLabel(camera, stone.Transform.position + Vector3.up * 0.8f,
+                DrawWorldLabel(_camera, stone.Transform.position + Vector3.up * 0.8f,
                     stone.Definition.DisplayName, _nameStyle);
 
                 if (!string.IsNullOrEmpty(stone.Definition.Blurb))
                 {
-                    DrawWorldLabel(camera, stone.Transform.position + Vector3.up * 0.5f,
+                    DrawWorldLabel(_camera, stone.Transform.position + Vector3.up * 0.5f,
                         stone.Definition.Blurb, _blurbStyle);
                 }
             }
@@ -432,7 +436,7 @@ namespace Game
                 var index = pair.Value.ConfirmedIndex;
                 if (index < 0 || index >= _stones.Length) continue;
 
-                DrawWorldLabel(camera, _stones[index].Transform.position + Vector3.up * 1.1f,
+                DrawWorldLabel(_camera, _stones[index].Transform.position + Vector3.up * 1.1f,
                     $"✓ {pair.Key}", _tickStyle);
             }
         }

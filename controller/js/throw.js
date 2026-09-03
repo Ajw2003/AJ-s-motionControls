@@ -12,7 +12,10 @@
  */
 
 import {
-  normalize01, screenSpinRate, quaternionFromRotationVector, MAX_SAMPLE_GAP_MS,
+  normalize01,
+  screenSpinRate,
+  quaternionFromRotationVector,
+  MAX_SAMPLE_GAP_MS,
 } from './sensors.js';
 
 /** Identity — the phone as it was held at the tap. A flat stone facing forward. */
@@ -112,10 +115,12 @@ export function computeSimulatedThrowDescriptor(holdMs, random = Math.random) {
   const attitude = quaternionFromRotationVector(
     jitterRad(SimulatedThrow.pitchJitterDeg),
     jitterRad(SimulatedThrow.yawJitterDeg),
-    0);
+    0,
+  );
 
   return {
-    swingSpeed: SimulatedThrow.minSwingSpeed +
+    swingSpeed:
+      SimulatedThrow.minSwingSpeed +
       charge * (SimulatedThrow.maxSwingSpeed - SimulatedThrow.minSwingSpeed),
     ...attitudeFields(attitude),
     spinRate: SimulatedThrow.spinRate,
@@ -237,7 +242,10 @@ export function peakSwingSpeed(samples, tuning = ThrowTuning) {
   let start = peakIdx;
   while (start > 0 && samples[start - 1].power > tuning.stopAccel) start--;
 
-  let vx = 0, vy = 0, vz = 0, best = 0;
+  let vx = 0,
+    vy = 0,
+    vz = 0,
+    best = 0;
   for (let i = start + 1; i < samples.length; i++) {
     // Stop at the release. Past the peak, a calm sample means the phone has been let
     // go of and anything after it is the hand settling — integrating through that
@@ -273,7 +281,12 @@ export function peakSwingSpeed(samples, tuning = ThrowTuning) {
  * plain max() would have let a decaying positive peak win over a genuine negative one,
  * so a counter-clockwise flick following a clockwise one would read as clockwise.
  */
-export function decaySpinEnvelope(previous, instantaneous, dtMs, tauMs = ThrowTuning.spinEnvelopeTauMs) {
+export function decaySpinEnvelope(
+  previous,
+  instantaneous,
+  dtMs,
+  tauMs = ThrowTuning.spinEnvelopeTauMs,
+) {
   const decayed = previous * Math.exp(-Math.max(dtMs, 0) / tauMs);
   return Math.abs(instantaneous) > Math.abs(decayed) ? instantaneous : decayed;
 }
@@ -301,7 +314,12 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
   for (const sample of samples) {
     const dtMs = prevT === null ? 0 : sample.t - prevT;
     prevT = sample.t;
-    spin = decaySpinEnvelope(spin, screenSpinRate(sample.rotationRate), dtMs, tuning.spinEnvelopeTauMs);
+    spin = decaySpinEnvelope(
+      spin,
+      screenSpinRate(sample.rotationRate),
+      dtMs,
+      tuning.spinEnvelopeTauMs,
+    );
   }
 
   return spin;
@@ -406,8 +424,7 @@ export class ThrowController {
     this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {
-      const payload = buildAimPayload(
-        this.motion.latest, ++this.seq, this._spin, this._windSpeed);
+      const payload = buildAimPayload(this.motion.latest, ++this.seq, this._spin, this._windSpeed);
       if (payload) this.onAim(payload);
     }, this.aimIntervalMs);
 
@@ -472,7 +489,12 @@ export class ThrowController {
     // Held briefly so the arc does not snap back to nothing between swings, and so a
     // 20Hz aim frame lands on the peak rather than on whatever the phone was doing 50ms
     // later. Same envelope as spin, same reason.
-    this._windSpeed = decaySpinEnvelope(this._windSpeed, speed, dtMs, this.tuning.spinEnvelopeTauMs);
+    this._windSpeed = decaySpinEnvelope(
+      this._windSpeed,
+      speed,
+      dtMs,
+      this.tuning.spinEnvelopeTauMs,
+    );
   }
 
   // ---------------------------------------------------------------- detection
@@ -486,7 +508,11 @@ export class ThrowController {
     const dtMs = this._spinT === null ? 0 : sample.t - this._spinT;
     this._spinT = sample.t;
     this._spin = decaySpinEnvelope(
-      this._spin, screenSpinRate(sample.rotationRate), dtMs, this.tuning.spinEnvelopeTauMs);
+      this._spin,
+      screenSpinRate(sample.rotationRate),
+      dtMs,
+      this.tuning.spinEnvelopeTauMs,
+    );
 
     this._trackWindup(sample, dtMs);
 
@@ -516,8 +542,8 @@ export class ThrowController {
 
   _fire() {
     // Spin is read from the absolute peak during the swing, rather than the live decayed envelope.
-    // A fast wrist flick peaks and decays hundreds of milliseconds before the phone finally comes 
-    // to a halt (which is what triggers this release). Using the live envelope meant the rock 
+    // A fast wrist flick peaks and decays hundreds of milliseconds before the phone finally comes
+    // to a halt (which is what triggers this release). Using the live envelope meant the rock
     // left the hand with barely any spin.
     let peakSpin = 0;
     const samples = this.motion.buffer.toArray();
@@ -526,12 +552,10 @@ export class ThrowController {
       if (Math.abs(s) > Math.abs(peakSpin)) peakSpin = s;
     }
 
-    const descriptor = computeThrowDescriptor(
-      samples, this.tuning, peakSpin);
+    const descriptor = computeThrowDescriptor(samples, this.tuning, peakSpin);
     this.cancel();
 
     if (!descriptor) return null; // a twitch, not a throw — stay armed-off and let them retry
-
 
     this.onThrow({ type: 'THROW', ...descriptor });
     return descriptor;

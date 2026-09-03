@@ -6,8 +6,10 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node test-relay.js && node test-dns.js",
-    "loadtest": "node loadtest.js"
+    "test": "node --test test-relay.js test-dns.js",
+    "loadtest": "node loadtest.js",
+    "lint": "eslint .",
+    "format": "prettier --write ."
   },
   "engines": {
     "node": ">=20"
@@ -15,5 +17,10 @@
   "dependencies": {
     "qrcode-generator": "^2.0.4",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.19.0",
+    "eslint": "^9.19.0",
+    "prettier": "^3.4.2"
   }
 }
