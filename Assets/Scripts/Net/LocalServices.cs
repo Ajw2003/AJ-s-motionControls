@@ -380,7 +380,7 @@ namespace Net
         private struct HealthDns
         {
             public bool enabled;
-            public bool bound;
+            public bool isBound;
         }
 
         [Serializable]
@@ -420,7 +420,7 @@ namespace Net
             try
             {
                 var payload = JsonUtility.FromJson<HealthPayload>(request.downloadHandler.text);
-                onResult(payload.ok && payload.dns.bound);
+                onResult(payload.ok && payload.dns.isBound);
             }
             catch
             {

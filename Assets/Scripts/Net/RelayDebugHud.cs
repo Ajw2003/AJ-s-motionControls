@@ -15,7 +15,7 @@ namespace Net
     /// </remarks>
     public class RelayDebugHud : MonoBehaviour
     {
-        [SerializeField] private bool visible = true;
+        [SerializeField] private bool isVisible = true;
         [SerializeField] private int historySize = 6;
         [SerializeField] private KeyCode toggleKey = KeyCode.F1;
 
@@ -54,7 +54,7 @@ namespace Net
 
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey)) visible = !visible;
+            if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
             EnsureBound();
 
             // Measured, not assumed: if this reads well under 20 the phone or the
@@ -108,7 +108,7 @@ namespace Net
 
         private void OnGUI()
         {
-            if (!visible) return;
+            if (!isVisible) return;
 
             GUILayout.BeginArea(new Rect(10, 10, 460, 460), GUI.skin.box);
 

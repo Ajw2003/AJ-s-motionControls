@@ -49,7 +49,9 @@ function firstOfType(ws, type) {
     const on = (raw) => {
       const m = JSON.parse(raw);
       if (m.type !== type) return;
-      clearTimeout(t); ws.off('message', on); resolve(m);
+      clearTimeout(t);
+      ws.off('message', on);
+      resolve(m);
     };
     ws.on('message', on);
   });
@@ -83,25 +85,37 @@ function firstOfType(ws, type) {
   console.log('done');
   await wait(1000);
 
-  const before = await fetch(`${HTTP}/health`).then((r) => r.json());
+  const beforeResponse = await fetch(`${HTTP}/health`);
+  const before = await beforeResponse.json();
   const t0 = Date.now();
 
   // Only the active player aims — the game is turn-based.
   let seq = 0;
   for (const room of rooms) {
     const aimer = room.players[0];
-    timers.push(setInterval(() => {
-      aimer.send(JSON.stringify({
-        type: 'AIM', roomCode: room.roomCode, seq: seq++,
-        aimDeg: -8.5, attackAngleDeg: 22.0, rollDeg: 4.0, windup: 0.35, spinRate: 412.6,
-      }));
-    }, 50));
+    timers.push(
+      setInterval(() => {
+        aimer.send(
+          JSON.stringify({
+            type: 'AIM',
+            roomCode: room.roomCode,
+            seq: seq++,
+            aimDeg: -8.5,
+            attackAngleDeg: 22.0,
+            rollDeg: 4.0,
+            windup: 0.35,
+            spinRate: 412.6,
+          }),
+        );
+      }, 50),
+    );
   }
 
   await wait(SECONDS * 1000);
   for (const t of timers) clearInterval(t);
 
-  const after = await fetch(`${HTTP}/health`).then((r) => r.json());
+  const afterResponse = await fetch(`${HTTP}/health`);
+  const after = await afterResponse.json();
   const elapsed = (Date.now() - t0) / 1000;
 
   const inRate = (after.messagesIn - before.messagesIn) / elapsed;
@@ -115,9 +129,12 @@ rss            ${after.rssMb} MB   (heap ${after.heapMb} MB)
 msg in         ${inRate.toFixed(0)}/s
 msg out        ${outRate.toFixed(0)}/s
 per room       ${(inRate / after.rooms).toFixed(1)} in, ${(outRate / after.rooms).toFixed(1)} out
-rss per room   ${(after.rssMb / after.rooms * 1024).toFixed(0)} KB`);
+rss per room   ${((after.rssMb / after.rooms) * 1024).toFixed(0)} KB`);
 
   for (const s of sockets) s.close();
   await wait(500);
   process.exit(0);
-})().catch((e) => { console.error('FAILED', e.message); process.exit(1); });
+})().catch((e) => {
+  console.error('FAILED', e.message);
+  process.exit(1);
+});

@@ -261,7 +261,9 @@ function handleJoinRoom(ws, data) {
 
   send(ws, { type: 'JOINED', roomCode: code, playerId, reconnected: isReconnect });
   send(room.host, { type: 'PLAYER_JOINED', playerId, reconnected: isReconnect });
-  log(`room ${code}: ${playerId} ${isReconnect ? 'reconnected' : 'joined'} (${room.players.size} players)`);
+  log(
+    `room ${code}: ${playerId} ${isReconnect ? 'reconnected' : 'joined'} (${room.players.size} players)`,
+  );
 }
 
 /** Player -> host. */
@@ -334,7 +336,8 @@ function serveStatic(req, res) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
       return;
     }
-    const type = CONTENT_TYPES[nodePath.extname(resolved).toLowerCase()] || 'application/octet-stream';
+    const type =
+      CONTENT_TYPES[nodePath.extname(resolved).toLowerCase()] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' }).end(data);
   });
 }
@@ -351,7 +354,8 @@ function serveQr(req, res, query) {
   const data = query.get('data');
 
   if (!data || data.length > MAX_QR_DATA_LENGTH) {
-    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res
+      .writeHead(400, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: `data must be 1..${MAX_QR_DATA_LENGTH} characters` }));
     return;
   }
@@ -371,10 +375,12 @@ function serveQr(req, res, query) {
       rows.push(bits);
     }
 
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
+    res
+      .writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
       .end(JSON.stringify({ size, rows }));
   } catch (err) {
-    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res
+      .writeHead(400, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: String(err.message || err) }));
   }
 }
@@ -421,8 +427,8 @@ function handleRequest(req, res) {
 
     const memory = process.memoryUsage();
 
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+      JSON.stringify({
         ok: true,
         rooms: rooms.size,
         players,
@@ -434,7 +440,8 @@ function handleRequest(req, res) {
         heapMb: Math.round(memory.heapUsed / 1048576),
         uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
         dns: { enabled: useDns, bound: dnsBound },
-      }));
+      }),
+    );
     return;
   }
 
@@ -451,7 +458,8 @@ function handleRequest(req, res) {
 const httpServer = useTls
   ? require('https').createServer(
       { cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) },
-      handleRequest)
+      handleRequest,
+    )
   : http.createServer(handleRequest);
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
@@ -584,7 +592,10 @@ function shutdown() {
 
   // Released explicitly so a restart can rebind it. Leaving :53 held by a dying process
   // is exactly how the race against ICS gets lost on the next run.
-  if (dnsResponder) { dnsResponder.stop().catch(() => {}); dnsResponder = null; }
+  if (dnsResponder) {
+    dnsResponder.stop().catch(() => {});
+    dnsResponder = null;
+  }
   dnsBound = false;
 
   wss.close(() => httpServer.close(() => process.exit(0)));
@@ -605,7 +616,7 @@ httpServer.listen(PORT, BIND_HOST, () => {
   if (useDns) startDns();
 });
 
-function startDns() {
+async function startDns() {
   try {
     dnsResponder = createResponder({
       ip: DNS_RESPOND_IP,
@@ -623,9 +634,10 @@ function startDns() {
     return;
   }
 
-  dnsResponder.start().then(() => {
+  try {
+    await dnsResponder.start();
     dnsBound = true;
-  }).catch((err) => {
+  } catch (err) {
     // EADDRINUSE here almost certainly means ICS got :53 first, which breaks name
     // resolution for every phone on the hotspot. Loud, because the symptom at the phone
     // is an unrelated-looking "server not found".
@@ -633,5 +645,5 @@ function startDns() {
     log('  Phones on the hotspot will not resolve the game address.');
     log('  The responder must bind :53 before tethering starts.');
     dnsResponder = null;
-  });
+  }
 }

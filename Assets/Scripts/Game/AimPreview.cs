@@ -284,12 +284,12 @@ namespace Game
             // claim this happened; it did not, because _line.enabled was set true
             // unconditionally just before the early return below.
             var flying = _launcher != null && _launcher.ActiveRock != null && _launcher.ActiveRock.IsFlying;
-            var visible = HasSignal && !flying;
+            var isVisible = HasSignal && !flying;
 
-            _line.enabled = visible;
-            _ghost.gameObject.SetActive(visible);
+            _line.enabled = isVisible;
+            _ghost.gameObject.SetActive(isVisible);
 
-            if (!visible) return;
+            if (!isVisible) return;
 
             UpdateGhost();
             UpdateArc();

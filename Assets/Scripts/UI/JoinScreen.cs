@@ -27,7 +27,7 @@ namespace Ui
     /// </remarks>
     public class JoinScreen : MonoBehaviour
     {
-        [SerializeField] private bool visible = true;
+        [SerializeField] private bool isVisible = true;
         [SerializeField] private KeyCode toggleKey = KeyCode.F2;
 
         [Tooltip("Shrink to a corner card once the match is under way, so the lake is visible. " +
@@ -76,7 +76,7 @@ namespace Ui
 
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey)) visible = !visible;
+            if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
 
             if (_services == null && LocalServices.HasInstance) _services = LocalServices.Instance;
             if (_client == null && RelayClient.HasInstance) _client = RelayClient.Instance;
@@ -303,7 +303,7 @@ namespace Ui
 
         private void OnGUI()
         {
-            if (!visible) return;
+            if (!isVisible) return;
 
             EnsureStyles();
 

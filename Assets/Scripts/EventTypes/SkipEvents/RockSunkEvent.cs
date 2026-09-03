@@ -27,7 +27,7 @@ namespace EventTypes.SkipEvents
         /// <remarks>
         /// Valid on a sinking step, which is worth stating because it looks like it might
         /// not be: SkipPhysics.Step assigns result.ImpactSpeed before either of the two
-        /// branches that can set Sank, so both reach here with a real number rather than a
+        /// branches that can set HasSunk, so both reach here with a real number rather than a
         /// default. Scale a splash off it.
         /// </remarks>
         public float ImpactSpeed { get; }

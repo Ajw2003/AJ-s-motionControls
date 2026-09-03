@@ -172,7 +172,10 @@ export class RelayConnection {
   close() {
     this.closedByUs = true;
     this.rejoinUntil = 0;
-    if (this.rejoinTimer) { clearTimeout(this.rejoinTimer); this.rejoinTimer = null; }
+    if (this.rejoinTimer) {
+      clearTimeout(this.rejoinTimer);
+      this.rejoinTimer = null;
+    }
     this.socket?.close();
   }
 

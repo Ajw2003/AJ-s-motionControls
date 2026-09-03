@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  },
+  "include": ["relay/**/*.js", "controller/**/*.js", "tools/**/*.js"],
+  "exclude": ["**/node_modules/**", "Assets/**", "Library/**", "Temp/**"]
+}

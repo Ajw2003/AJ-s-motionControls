@@ -100,7 +100,7 @@ namespace Net
 
             var cached = Inspect(certPath, keyPath);
 
-            if (cached.Usable && cached.DaysLeft > RenewWithinDays)
+            if (cached.IsUsable && cached.DaysLeft > RenewWithinDays)
             {
                 Debug.Log($"[CertificateProvider] Cached certificate valid until " +
                           $"{cached.NotAfter:yyyy-MM-dd} ({cached.DaysLeft} days) — no download needed.");
@@ -108,7 +108,7 @@ namespace Net
                 yield break;
             }
 
-            var reason = !cached.Usable ? cached.Reason : $"expires in {cached.DaysLeft} days";
+            var reason = !cached.IsUsable ? cached.Reason : $"expires in {cached.DaysLeft} days";
             Debug.Log($"[CertificateProvider] Fetching from local-ip.sh ({reason}).");
 
             string downloadError = null;
@@ -119,7 +119,7 @@ namespace Net
                 // A host with no internet is an ordinary case, not an error, and the cached
                 // copy is good for the rest of its 90 days. Only a stale cache AND an
                 // unreachable service is fatal.
-                if (cached.Usable)
+                if (cached.IsUsable)
                 {
                     Debug.LogWarning($"[CertificateProvider] Download failed, using the cached " +
                                      $"certificate ({cached.DaysLeft} days left): {downloadError}");
@@ -139,7 +139,7 @@ namespace Net
             }
 
             var fresh = Inspect(certPath, keyPath);
-            if (!fresh.Usable)
+            if (!fresh.IsUsable)
             {
                 onResult(new Result
                 {
@@ -317,7 +317,7 @@ namespace Net
 
         private struct CacheState
         {
-            public bool Usable;
+            public bool IsUsable;
             public DateTime NotAfter;
             public int DaysLeft;
             public string Reason;   // why not usable
@@ -369,7 +369,7 @@ namespace Net
                         Reason = $"cached certificate does not cover *{Suffix}",
                     };
 
-                return new CacheState { Usable = true, NotAfter = cert.NotAfter, DaysLeft = daysLeft };
+                return new CacheState { IsUsable = true, NotAfter = cert.NotAfter, DaysLeft = daysLeft };
             }
             catch (Exception e)
             {

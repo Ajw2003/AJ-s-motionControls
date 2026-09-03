@@ -198,3 +198,24 @@ not authored clips checked in as assets.
   should go through.
 - **`mesh.vertices` is unavailable** on the rock meshes (`RocksRemeshed.fbx.meta` sets
   `isReadable: 0`) — use `mesh.bounds`/`mesh.vertexCount` for any mesh-derived logic.
+
+## Documented deviations from the coding standards
+
+Recorded so a future pass doesn't "fix" these back — each is a deliberate call, not an oversight.
+
+- **`[SerializeField] private` fields keep bare camelCase** (plain privates use `_camelCase`) —
+  renaming risks silently dropping Inspector-set values across 70 fields for a naming-taste win.
+- **`EventManager.Instance?.` is kept deliberately** — `SingletonBase.Instance`'s getter already
+  uses Unity's overloaded `==` internally, so the fake-null window is narrow: only the
+  `_isQuitting` teardown path can hand back a destroyed instance.
+- **The `*Manager` class names stay** (`AudioManager`, `EventManager`, `ScoreManager`,
+  `TurnManager`) — referenced by name across this file, `docs/PLAN.md`, and the `Bootstrap`
+  ordering comments; renaming is docs-wide churn for a naming-taste win.
+- **`ok` / `resumed` / `reconnected` / `randomRocks` keep their non-question names** — they are
+  wire-format field names (matched by string between `Assets/Scripts/Net/Messages.cs` and
+  `relay/server.js`) and a persisted `match-settings.json` key, not internal identifiers;
+  renaming them is a coordinated cross-stack change with a save-file migration.
+- **The heavy comment density (roughly 30% of C# lines) is INTENTIONAL and must not be
+  trimmed.** It is this codebase's best asset — comments explain *why*, not *what* — and a
+  future pass reading "comment why, not what" could otherwise misread density as bloat and
+  delete the gotcha notes that document real footguns.

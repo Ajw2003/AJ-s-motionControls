@@ -297,7 +297,7 @@ namespace Verification
             /// report previously could not see, because it stopped counting at the preview's
             /// horizon and reported whatever number it had reached.
             /// </summary>
-            public bool Terminated;
+            public bool HasTerminated;
         }
 
         /// <summary>
@@ -341,14 +341,14 @@ namespace Verification
                     apex = state.Position.y;
                 }
 
-                if (state.Sunk) break;
+                if (state.HasSunk) break;
             }
 
             var run = new Shape
             {
                 Skips = state.SkipCount,
                 Distance = Vector3.Distance(Vector3.zero, state.Position),
-                Terminated = state.Sunk,
+                HasTerminated = state.HasSunk,
             };
 
             if (contacts.Count > 0)
@@ -389,8 +389,8 @@ namespace Verification
             // A run that does not end is not a long run, it is a broken solver, and the old
             // report could not tell the difference because it stopped counting at the aim
             // preview's horizon and printed whatever number it had reached by then.
-            var everyRunEnds = soft.Terminated && mid.Terminated && hard.Terminated
-                               && offPitch.Terminated && offRoll.Terminated && strong.Terminated;
+            var everyRunEnds = soft.HasTerminated && mid.HasTerminated && hard.HasTerminated
+                               && offPitch.HasTerminated && offRoll.HasTerminated && strong.HasTerminated;
             Check("every throw sinks — no runaway",
                 everyRunEnds,
                 everyRunEnds

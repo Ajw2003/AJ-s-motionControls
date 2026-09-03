@@ -78,8 +78,9 @@ function showScreen(name) {
   for (const screen of [ui.joinScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
     screen.classList.remove('active');
   }
-  ({ join: ui.joinScreen, choose: ui.chooseScreen, wait: ui.waitScreen, throw: ui.throwScreen })[name]
-    .classList.add('active');
+  ({ join: ui.joinScreen, choose: ui.chooseScreen, wait: ui.waitScreen, throw: ui.throwScreen })[
+    name
+  ].classList.add('active');
 }
 
 function setStatus(text, kind = '') {
@@ -563,7 +564,9 @@ function renderSpectate(message) {
     const winner = leader(message.scores);
     ui.waitTitle.textContent = 'Final scores';
     ui.waitDetail.textContent = winner
-      ? (winner === myPlayerId ? 'You win!' : `${winner} wins`)
+      ? winner === myPlayerId
+        ? 'You win!'
+        : `${winner} wins`
       : 'It is a tie.';
   } else {
     ui.waitTitle.textContent = message.activePlayer
@@ -678,7 +681,10 @@ async function join() {
   }
 
   const waitForOpen = setInterval(() => {
-    if (connection.status === ConnectionStatus.CONNECTED || connection.status === ConnectionStatus.JOINED) {
+    if (
+      connection.status === ConnectionStatus.CONNECTED ||
+      connection.status === ConnectionStatus.JOINED
+    ) {
       clearInterval(waitForOpen);
       connection.joinRoom(code, name);
     }
@@ -692,13 +698,19 @@ async function requestWakeLock() {
   // their phone every round. Unsupported on some browsers; harmless when it fails.
   try {
     if ('wakeLock' in navigator) await navigator.wakeLock.request('screen');
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function tryLockPortrait() {
   // Best effort only — most browsers refuse outside fullscreen. sensors.js
   // compensates for screen rotation regardless, which is the real fix.
-  try { screen.orientation?.lock?.('portrait').catch(() => {}); } catch { /* ignore */ }
+  try {
+    screen.orientation?.lock?.('portrait').catch(() => {});
+  } catch {
+    /* ignore */
+  }
 }
 
 function updateDebug() {
@@ -713,16 +725,21 @@ function updateDebug() {
     // that is genuinely what is on the wire now — printing a decomposition here would
     // be inventing a representation the rest of the system does not use. All-zeros with
     // qw at 1 means the phone is exactly where it was at the tap.
-    s ? `attitude w ${s.attitude.w.toFixed(3).padStart(6)}  x ${s.attitude.x.toFixed(3).padStart(6)}` +
+    s
+      ? `attitude w ${s.attitude.w.toFixed(3).padStart(6)}  x ${s.attitude.x.toFixed(3).padStart(6)}` +
         `  y ${s.attitude.y.toFixed(3).padStart(6)}  z ${s.attitude.z.toFixed(3).padStart(6)}`
       : 'no samples yet — is this page on HTTPS?',
     // How stale the last real orientation reading is. A number that keeps climbing
     // means the aim is running on gyro integration alone, which is the tell for a
     // device whose deviceorientation stream is slower than its devicemotion one.
-    s ? `orient   ${s.orientationAgeMs === null ? 'none' : `${s.orientationAgeMs.toFixed(0)}ms old`}` : '',
+    s
+      ? `orient   ${s.orientationAgeMs === null ? 'none' : `${s.orientationAgeMs.toFixed(0)}ms old`}`
+      : '',
     // gravitySource is the one to read before trusting any power tuning: 'hardware'
     // and 'exact' are clean, 'filter' still has the rotation artefact in it.
-    s ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}` : '',
+    s
+      ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}`
+      : '',
     lastThrow
       ? `throw  speed ${lastThrow.swingSpeed.toFixed(2)} m/s  spin ${lastThrow.spinRate.toFixed(0)}  ` +
         `q ${lastThrow.qw.toFixed(2)} ${lastThrow.qx.toFixed(2)} ${lastThrow.qy.toFixed(2)} ${lastThrow.qz.toFixed(2)}`

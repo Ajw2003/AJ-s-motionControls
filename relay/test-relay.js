@@ -27,7 +27,11 @@ function connect() {
     ws.waiters = [];
     ws.on('message', (raw) => {
       let msg;
-      try { msg = JSON.parse(raw); } catch { return; }
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        return;
+      }
       const waiter = ws.waiters.shift();
       if (waiter) waiter(msg);
       else ws.inbox.push(msg);
@@ -41,7 +45,10 @@ function next(ws, timeoutMs = 2000) {
   if (ws.inbox.length) return Promise.resolve(ws.inbox.shift());
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timed out waiting for a message')), timeoutMs);
-    ws.waiters.push((msg) => { clearTimeout(timer); resolve(msg); });
+    ws.waiters.push((msg) => {
+      clearTimeout(timer);
+      resolve(msg);
+    });
   });
 }
 
@@ -51,11 +58,15 @@ function send(ws, obj) {
 
 function httpGet(pathAndQuery) {
   return new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: PORT, path: pathAndQuery }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body }));
-    }).on('error', reject);
+    http
+      .get({ host: '127.0.0.1', port: PORT, path: pathAndQuery }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      })
+      .on('error', reject);
   });
 }
 
@@ -78,8 +89,11 @@ async function run() {
   const stranger = await connect();
   send(stranger, { type: 'JOIN_ROOM', roomCode: 'ZZZZ', playerId: 'NOBODY' });
   const rejected = await next(stranger);
-  check('join to unknown room is rejected', rejected.type === 'ERROR' && rejected.code === 'ROOM_NOT_FOUND',
-    `${rejected.type}/${rejected.code}`);
+  check(
+    'join to unknown room is rejected',
+    rejected.type === 'ERROR' && rejected.code === 'ROOM_NOT_FOUND',
+    `${rejected.type}/${rejected.code}`,
+  );
   stranger.close();
 
   // ---- normal join --------------------------------------------------------
@@ -90,13 +104,20 @@ async function run() {
   check('player id is normalised to uppercase', joined.playerId === 'AJ', joined.playerId);
 
   const hostSawJoin = await next(host);
-  check('host is told PLAYER_JOINED', hostSawJoin.type === 'PLAYER_JOINED' && hostSawJoin.playerId === 'AJ');
+  check(
+    'host is told PLAYER_JOINED',
+    hostSawJoin.type === 'PLAYER_JOINED' && hostSawJoin.playerId === 'AJ',
+  );
 
   // ---- player -> host, with server-side identity stamping ------------------
   send(player, { type: 'THROW', playerId: 'SOMEONE_ELSE', power: 0.72 });
   const throwMsg = await next(host);
   check('THROW reaches the host', throwMsg.type === 'THROW' && throwMsg.power === 0.72);
-  check('spoofed playerId is overwritten by the server', throwMsg.playerId === 'AJ', throwMsg.playerId);
+  check(
+    'spoofed playerId is overwritten by the server',
+    throwMsg.playerId === 'AJ',
+    throwMsg.playerId,
+  );
 
   // ---- host -> players ----------------------------------------------------
   send(host, { type: 'SPECTATE', liveSkips: 3 });
@@ -114,7 +135,10 @@ async function run() {
 
   send(player, { type: 'THROW', power: 0.5 });
   const stillAlive = await next(host);
-  check('server still routing after malformed input', stillAlive.type === 'THROW' && stillAlive.power === 0.5);
+  check(
+    'server still routing after malformed input',
+    stillAlive.type === 'THROW' && stillAlive.power === 0.5,
+  );
 
   // ---- reconnect reclaims the same slot -----------------------------------
   const rejoin = await connect();
@@ -129,15 +153,21 @@ async function run() {
   check('/qr answers 200', qr.status === 200, String(qr.status));
 
   const grid = JSON.parse(qr.body);
-  check('/qr returns a square matrix',
+  check(
+    '/qr returns a square matrix',
     Number.isInteger(grid.size) && grid.size >= 21 && grid.rows.length === grid.size,
-    `${grid.size}x${grid.size}`);
-  check('/qr rows are 0/1 strings of the right width',
-    grid.rows.every((r) => r.length === grid.size && /^[01]+$/.test(r)));
+    `${grid.size}x${grid.size}`,
+  );
+  check(
+    '/qr rows are 0/1 strings of the right width',
+    grid.rows.every((r) => r.length === grid.size && /^[01]+$/.test(r)),
+  );
   // The finder pattern is what a scanner locks onto; an all-white corner means
   // the matrix came back empty or transposed into nonsense.
-  check('/qr has a dark finder pattern in the top-left corner',
-    grid.rows[0][0] === '1' && grid.rows[6][6] === '1' && grid.rows[1][1] === '0');
+  check(
+    '/qr has a dark finder pattern in the top-left corner',
+    grid.rows[0][0] === '1' && grid.rows[6][6] === '1' && grid.rows[1][1] === '0',
+  );
 
   const tooLong = await httpGet(`/qr?data=${'x'.repeat(600)}`);
   check('/qr rejects oversized data', tooLong.status === 400, String(tooLong.status));
@@ -155,19 +185,27 @@ async function run() {
   host.close();
 
   const hostLeft = await next(rejoin, 3000);
-  check('players are told HOST_LEFT, not ROOM_CLOSED, on a host drop',
-    hostLeft.type === 'HOST_LEFT', hostLeft.type);
+  check(
+    'players are told HOST_LEFT, not ROOM_CLOSED, on a host drop',
+    hostLeft.type === 'HOST_LEFT',
+    hostLeft.type,
+  );
 
   const returning = await connect();
   returning.send(JSON.stringify({ type: 'CREATE_ROOM', preferredCode: heldCode }));
 
   const resumed = await next(returning);
-  check('a reconnecting host reclaims the same room code',
-    resumed.type === 'ROOM_CREATED' && resumed.roomCode === heldCode, resumed.roomCode);
+  check(
+    'a reconnecting host reclaims the same room code',
+    resumed.type === 'ROOM_CREATED' && resumed.roomCode === heldCode,
+    resumed.roomCode,
+  );
   check('the room is resumed rather than recreated', resumed.resumed === true);
-  check('players were kept across the drop',
+  check(
+    'players were kept across the drop',
     Array.isArray(resumed.players) && resumed.players.includes('AJ'),
-    JSON.stringify(resumed.players));
+    JSON.stringify(resumed.players),
+  );
 
   const resumeNotice = await next(rejoin, 3000);
   check('players are told HOST_RESUMED', resumeNotice.type === 'HOST_RESUMED', resumeNotice.type);
@@ -175,7 +213,10 @@ async function run() {
   // Routing must work again without anyone rejoining.
   rejoin.send(JSON.stringify({ type: 'THROW', power: 0.5 }));
   const afterResume = await next(returning);
-  check('input routes to the resumed host', afterResume.type === 'THROW' && afterResume.playerId === 'AJ');
+  check(
+    'input routes to the resumed host',
+    afterResume.type === 'THROW' && afterResume.playerId === 'AJ',
+  );
 
   // ---- a host that never comes back does close the room --------------------
   // The grace period holds the room, it does not keep it forever: players must not
@@ -183,12 +224,18 @@ async function run() {
   returning.close();
 
   const secondDrop = await next(rejoin, 3000);
-  check('a second host drop is announced the same way',
-    secondDrop.type === 'HOST_LEFT', secondDrop.type);
+  check(
+    'a second host drop is announced the same way',
+    secondDrop.type === 'HOST_LEFT',
+    secondDrop.type,
+  );
 
   const eventuallyClosed = await next(rejoin, 6000);
-  check('the room closes once the grace period expires without the host returning',
-    eventuallyClosed.type === 'ROOM_CLOSED', eventuallyClosed.type);
+  check(
+    'the room closes once the grace period expires without the host returning',
+    eventuallyClosed.type === 'ROOM_CLOSED',
+    eventuallyClosed.type,
+  );
 
   player.close();
   rejoin.close();
@@ -209,19 +256,24 @@ server.on('exit', (code, signal) => {
   }
 });
 
-sleep(600)
-  .then(run)
-  .catch((err) => {
+(async () => {
+  await sleep(600);
+  try {
+    await run();
+  } catch (err) {
     console.error('\nTest run threw:', err.message);
     exitCode = 1;
-  })
-  .then(() => {
-    // A run that threw has not passed, however many individual checks did — the
-    // checks after the throw never ran. Reporting PASS there is worse than useless.
-    console.log(
-      exitCode !== 0 ? '\nFAIL — the run threw before finishing'
-        : failures === 0 ? '\nPASS — all relay checks green'
-          : `\nFAIL — ${failures} check(s) failed`);
-    server.kill('SIGKILL');
-    process.exit(failures === 0 ? exitCode : 1);
-  });
+  }
+
+  // A run that threw has not passed, however many individual checks did — the
+  // checks after the throw never ran. Reporting PASS there is worse than useless.
+  console.log(
+    exitCode !== 0
+      ? '\nFAIL — the run threw before finishing'
+      : failures === 0
+        ? '\nPASS — all relay checks green'
+        : `\nFAIL — ${failures} check(s) failed`,
+  );
+  server.kill('SIGKILL');
+  process.exit(failures === 0 ? exitCode : 1);
+})();
