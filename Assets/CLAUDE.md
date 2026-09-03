@@ -24,7 +24,7 @@ Three independently-run pieces, only one of which lives under `Assets/`:
 | `Assets/` (this directory) | Unity 6 project (`6000.3.10f1`) — the game/TV screen |
 | `../relay/` | Node WebSocket relay + HTTP server that also serves the controller page |
 | `../controller/` | Phone controller web app (vanilla JS): sensors, throw gesture, join/choose screens |
-| `../deploy/` | `setup-offline.ps1` — one-time elevated machine setup for Hotspot mode; `LocalServices` hosts the relay+controller over HTTPS itself, on Play |
+| `../deploy/` | `setup-offline.ps1` — one-time elevated machine setup for Hotspot mode, run automatically by `HotspotService` on first use (one UAC prompt, no manual step); `LocalServices` hosts the relay+controller over HTTPS itself, on Play |
 | `../docs/` | Design docs, plans, findings — check dates/"Superseded" notes, this project changes hosting/physics decisions often |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
@@ -38,10 +38,13 @@ items and the relay's own Node test scripts.
 
 **Play the game** — just press Play on `Bootstrap` in Unity. `LocalServices` obtains a
 certificate (`Assets/Scripts/Net/CertificateProvider.cs`, `MagicDomain.cs`) and starts the
-relay itself; no setup script needs to run first. One elevated one-time step per machine is
-still required for Hotspot mode — `./deploy/setup-offline.ps1` — see
-[`../deploy/README.md`](../deploy/README.md) and
-[`../docs/plans/magic-domain-replacement.md`](../docs/plans/magic-domain-replacement.md).
+relay itself; no setup script needs to run first, including for Hotspot mode —
+`HotspotService.EnsureOfflineSetup` runs `deploy/setup-offline.ps1` itself, elevated, the first
+time this machine ever starts a hotspot (one UAC prompt; every session after that skips
+straight past it). See [`../deploy/README.md`](../deploy/README.md) and
+[`../docs/plans/magic-domain-replacement.md`](../docs/plans/magic-domain-replacement.md) if
+that automatic run ever needs to be run by hand instead (e.g. to `-DryRun` it, or to
+`-Uninstall` a test machine).
 Desktop-only testing (no real sensors, two browser tabs) is documented in
 [`../README.md`](../README.md).
 

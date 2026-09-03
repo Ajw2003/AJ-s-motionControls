@@ -226,9 +226,20 @@ What turns this into "download one thing". Inno Setup (single script, no toolcha
   and the seed cert.
 - Runs the elevated one-time work now in [setup-offline.ps1](../../deploy/setup-offline.ps1) — firewall
   rules for TCP 8443, TCP 80, UDP 53, the IP-forwarding scheduled task, the hosts entry — **at
-  install time**, where elevation already exists. This is the single largest remaining source of
-  manual intervention; [network-mode-selection.md:4](network-mode-selection.md:4)
-  still lists it as needing to be run by hand.
+  install time**, where elevation already exists.
+
+  > **Superseded — the "run by hand" gap this bullet described is closed.**
+  > `HotspotService.EnsureOfflineSetup` (`Assets/Scripts/Net/HotspotService.cs`) now runs
+  > `setup-offline.ps1` itself, elevated, the first time a machine ever reaches Hotspot mode —
+  > triggered by pressing Start, not a separate command someone has to already know to run. It
+  > checks unelevated whether the forwarding-disable scheduled task already exists (the common
+  > case after the first run) and only launches the elevated script when it doesn't. Windows
+  > still shows exactly one UAC prompt — that boundary cannot be removed, and should not be —
+  > but there is no longer a manual step before it. `network-mode-selection.md`'s "run by hand"
+  > line is stale for the same reason. This installer bullet is still worth doing eventually
+  > (running it at install time removes even that one UAC prompt from party night), but it is
+  > no longer the blocker "single largest remaining source of manual intervention" made it
+  > sound like.
 - Nothing else: `LocalServices` already spawns the relay and fetches the cert on launch.
 
 ### Cleanups folded in
