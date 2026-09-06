@@ -371,6 +371,16 @@
       <p>Enter the code shown on the TV.</p>
     </section>
 
+    <!-- A returning phone with a stored identity and a matching room code skips the join
+         form entirely, but iOS still requires a user gesture before requestMotionPermission
+         will grant anything — so this is the single tap that stands in for it. Android has
+         no such requirement and app.js never shows this screen there; see rejoinSilently. -->
+    <section id="tapScreen" class="screen">
+      <h1>ROCK SKIPPING</h1>
+      <button id="tapToPlayBtn">TAP TO PLAY</button>
+      <p>Welcome back — tap to reconnect.</p>
+    </section>
+
     <!-- Choosing a stone -->
     <section id="chooseScreen" class="screen">
       <h2>Choose your stone</h2>
