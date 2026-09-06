@@ -209,6 +209,36 @@ namespace Net
 
         private IEnumerator LaunchSequence()
         {
+            // First, before a certificate is fetched or a relay is spawned, because in LAN mode
+            // none of it can lead anywhere and every later step succeeds anyway.
+            //
+            // LAN mode has been unusable since the magic-domain replacement, and the shape of
+            // that failure is what makes it worth a hard stop rather than a warning: the
+            // certificate is single-name for MagicDomain.HostName, so ObtainCertificate hands
+            // back play.skiprocking.ca REGARDLESS of mode. In LAN mode nothing ever makes that
+            // name point at this machine — no hotspot runs, so the hosts entry
+            // deploy/setup-offline.ps1 writes points at 192.168.137.1, an address that only
+            // exists while tethering is on. So LocalServices reaches Ready with a working
+            // relay, HotspotService reports NotApplicable, nothing logs an error, and
+            // RelayClient retries a name that resolves to nowhere forever.
+            //
+            // NetworkModeStore.Load's fallback is Hotspot, but a fallback only applies when the
+            // file is MISSING. Any machine that ran a build before 2026-09-03 still has a
+            // network-mode.txt saying Lan, written when that was the default, and is pinned to
+            // the dead path with nothing on screen to say why. That is not a hand-edited
+            // escape hatch, it is a leftover — but the two are indistinguishable from the file,
+            // so this reports rather than rewrites. See NetworkMode.Lan's remarks and
+            // StartScreen's, which deliberately leaves the file alone for the same reason.
+            if (Mode != NetworkMode.Hotspot)
+            {
+                Fail("LAN mode can't host this game any more.",
+                     "network-mode.txt beside the executable says \"Lan\", which is deprecated: " +
+                     "the certificate is issued for one fixed name and there is no way to point " +
+                     "it at a LAN address that changes per network. Delete network-mode.txt, or " +
+                     "put \"Hotspot\" in it, and relaunch.");
+                yield break;
+            }
+
             var relayDir = ResolveRelayDirectory();
             if (relayDir == null)
             {

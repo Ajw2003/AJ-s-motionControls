@@ -31,14 +31,27 @@
     Leave the relay running at the end instead of stopping it, so a phone or a browser can be
     pointed at it by hand. Stop it with Ctrl+C or by killing the reported PID.
 
+.PARAMETER ProjectRoot
+    Where the game's own runtime files live - network-mode.txt, relay-url.txt, magic-domain.txt.
+    Defaults to the folder above this script, which is right when the checkout being verified is
+    the one Unity has open.
+
+    It is NOT right when running from a git worktree: the worktree holds the source, but Unity
+    is open on the main checkout and reads its files, not the worktree's. Point this at the
+    Unity project root in that case, or the mode check silently verifies the wrong machine
+    state - which is exactly how a clean 13/13 run coexisted with a game that could not connect.
+
 .EXAMPLE
     ./verify-stack.ps1
 .EXAMPLE
     ./verify-stack.ps1 -KeepRunning
+.EXAMPLE
+    ./verify-stack.ps1 -ProjectRoot C:\Users\aj\Desktop\GameDev\RockSkipping
 #>
 [CmdletBinding()]
 param(
-    [switch] $KeepRunning
+    [switch] $KeepRunning,
+    [string] $ProjectRoot
 )
 
 Set-StrictMode -Version Latest
@@ -49,6 +62,7 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------- constants
 
 $Root           = Split-Path -Parent $PSScriptRoot
+if (-not $ProjectRoot) { $ProjectRoot = $Root }
 $RelayDir       = Join-Path $Root 'relay'
 $DnsQuery       = Join-Path $PSScriptRoot 'spike\dns-query.js'
 $HotspotAddress = '192.168.137.1'
@@ -174,6 +188,34 @@ function Resolve-Certificate {
 
     Write-Pass "downloaded certificate covers $HostName, $($info.Days) days left (issuer $($info.Cert.Issuer))"
     return @{ Cert = $cert; Key = $key }
+}
+
+function Test-NetworkMode {
+    <#
+        Checked because everything else in this script can pass while the game still cannot
+        connect - which is exactly what happened once. All the machine-level plumbing below is
+        Hotspot plumbing; in LAN mode none of it is used, no hotspot brings up 192.168.137.1,
+        and Unity spends forever retrying a name that resolves to an address nothing owns.
+    #>
+    Write-Step 'Network mode'
+
+    $path = Join-Path $ProjectRoot 'network-mode.txt'
+    Write-Info "reading $path"
+
+    if (-not (Test-Path $path)) {
+        Write-Pass 'network-mode.txt absent - NetworkModeStore.Load falls back to Hotspot'
+        return $true
+    }
+
+    $mode = (Get-Content $path -Raw).Trim()
+    if ($mode -eq 'Hotspot') { Write-Pass "network-mode.txt = Hotspot"; return $true }
+
+    Write-Bad "network-mode.txt = '$mode' - the game cannot host in this mode"
+    Write-Info 'LAN mode is deprecated: the certificate is issued for one fixed name and there'
+    Write-Info 'is no way to point it at a LAN address that changes per network. Every check'
+    Write-Info 'below still passes, because they all test Hotspot plumbing this mode never uses.'
+    Write-Info "Fix:  Set-Content -Path `"$path`" -Value 'Hotspot' -Encoding ASCII"
+    return $false
 }
 
 function Test-HostResolution {
@@ -342,6 +384,10 @@ Write-Host ''
 Write-Host '  Rock Skipping - local hosting stack verification' -ForegroundColor White
 Write-Host '  ------------------------------------------------' -ForegroundColor DarkGray
 Write-Host "  magic domain: $HostName" -ForegroundColor DarkGray
+Write-Host "  project root: $ProjectRoot" -ForegroundColor DarkGray
+if ($ProjectRoot -ne $Root) {
+    Write-Host "  source tree : $Root" -ForegroundColor DarkGray
+}
 
 $relay = $null
 try {
@@ -350,6 +396,7 @@ try {
     $certificate = Resolve-Certificate
     if (-not $certificate) { throw 'certificate' }
 
+    Test-NetworkMode    | Out-Null
     Test-HostResolution | Out-Null
     Test-MachineSetup   | Out-Null
 
