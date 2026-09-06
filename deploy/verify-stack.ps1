@@ -32,7 +32,7 @@
     pointed at it by hand. Stop it with Ctrl+C or by killing the reported PID.
 
 .PARAMETER ProjectRoot
-    Where the game's own runtime files live - network-mode.txt, relay-url.txt, magic-domain.txt.
+    Where the game's own runtime files live - relay-url.txt, magic-domain.txt.
     Defaults to the folder above this script, which is right when the checkout being verified is
     the one Unity has open.
 
@@ -190,33 +190,8 @@ function Resolve-Certificate {
     return @{ Cert = $cert; Key = $key }
 }
 
-function Test-NetworkMode {
-    <#
-        Checked because everything else in this script can pass while the game still cannot
-        connect - which is exactly what happened once. All the machine-level plumbing below is
-        Hotspot plumbing; in LAN mode none of it is used, no hotspot brings up 192.168.137.1,
-        and Unity spends forever retrying a name that resolves to an address nothing owns.
-    #>
-    Write-Step 'Network mode'
 
-    $path = Join-Path $ProjectRoot 'network-mode.txt'
-    Write-Info "reading $path"
 
-    if (-not (Test-Path $path)) {
-        Write-Pass 'network-mode.txt absent - NetworkModeStore.Load falls back to Hotspot'
-        return $true
-    }
-
-    $mode = (Get-Content $path -Raw).Trim()
-    if ($mode -eq 'Hotspot') { Write-Pass "network-mode.txt = Hotspot"; return $true }
-
-    Write-Bad "network-mode.txt = '$mode' - the game cannot host in this mode"
-    Write-Info 'LAN mode is deprecated: the certificate is issued for one fixed name and there'
-    Write-Info 'is no way to point it at a LAN address that changes per network. Every check'
-    Write-Info 'below still passes, because they all test Hotspot plumbing this mode never uses.'
-    Write-Info "Fix:  Set-Content -Path `"$path`" -Value 'Hotspot' -Encoding ASCII"
-    return $false
-}
 
 function Test-HostResolution {
     Write-Step "This PC resolving $HostName"
@@ -396,7 +371,6 @@ try {
     $certificate = Resolve-Certificate
     if (-not $certificate) { throw 'certificate' }
 
-    Test-NetworkMode    | Out-Null
     Test-HostResolution | Out-Null
     Test-MachineSetup   | Out-Null
 

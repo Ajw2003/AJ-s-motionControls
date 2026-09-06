@@ -18,7 +18,8 @@ const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
 const nodePath = require('path');
-const { createResponder } = require('./dns');
+const { createResponder, makeSubnetTest } = require('./dns');
+const { createFunnel, Stage } = require('./funnel');
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -48,6 +49,14 @@ const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_LENGTH = 4;
 const MAX_PLAYER_ID_LENGTH = 16;
+
+// Application close code for "a newer connection took this same player/host slot".
+// Distinct from the ordinary 1000 on purpose: the displaced socket's client-side
+// onclose cannot tell 1000 apart from the host itself vanishing, and reconnecting
+// in response is exactly the join ping-pong documented in
+// docs/Findings-DirectTransportFlapping.md. Exported so net.js can compare against
+// the same literal rather than drifting to a second one.
+const REPLACED_CLOSE_CODE = 4001;
 
 // A join URL is well under this. The endpoint is reachable through the public
 // tunnel, so it takes a bound rather than trusting the caller.
@@ -176,6 +185,7 @@ function createRoom(ws, code, reclaimed) {
   ws.meta.roomCode = code;
 
   send(ws, { type: 'ROOM_CREATED', roomCode: code, resumed: false });
+  sendFunnelSnapshot(ws);
   log(`room ${code} created${reclaimed ? ' (code reclaimed after host restart)' : ''}`);
 }
 
@@ -197,7 +207,7 @@ function resumeRoom(room, ws) {
   // decide whether the host left, and must not now think it did.
   if (previous && previous.meta) previous.meta.roomCode = null;
   if (previous && previous.readyState === WebSocket.OPEN) {
-    previous.close(1000, 'Replaced by a reconnecting host');
+    previous.close(REPLACED_CLOSE_CODE, 'Replaced by a reconnecting host');
   }
 
   send(ws, {
@@ -206,6 +216,8 @@ function resumeRoom(room, ws) {
     resumed: true,
     players: [...room.players.keys()],
   });
+
+  sendFunnelSnapshot(ws);
 
   for (const [, playerWs] of room.players) send(playerWs, { type: 'HOST_RESUMED' });
 
@@ -249,7 +261,7 @@ function handleJoinRoom(ws, data) {
   // Reconnect: a phone that slept or dropped Wi-Fi reclaims its slot by name.
   if (isReconnect && existing !== ws) {
     if (existing.meta) existing.meta.roomCode = null;
-    existing.close(1000, 'Replaced by a new connection');
+    existing.close(REPLACED_CLOSE_CODE, 'Replaced by a new connection');
   }
 
   room.players.set(playerId, ws);
@@ -258,6 +270,8 @@ function handleJoinRoom(ws, data) {
   ws.meta.role = 'player';
   ws.meta.roomCode = code;
   ws.meta.playerId = playerId;
+
+  if (funnel) funnel.record(ws.meta.remoteAddress, Stage.PLAYING);
 
   send(ws, { type: 'JOINED', roomCode: code, playerId, reconnected: isReconnect });
   send(room.host, { type: 'PLAYER_JOINED', playerId, reconnected: isReconnect });
@@ -336,6 +350,14 @@ function serveStatic(req, res) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
       return;
     }
+
+    // The controller document itself, not its assets: a phone that fetched only a stylesheet
+    // has not opened the game, and counting that as PAGE_OPEN would switch the captive-portal
+    // answers back to "there is internet here" before the nudge had done its job.
+    if (funnel && relative === 'index.html') {
+      funnel.record(req.socket.remoteAddress, Stage.PAGE_OPEN);
+    }
+
     const type =
       CONTENT_TYPES[nodePath.extname(resolved).toLowerCase()] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' }).end(data);
@@ -435,6 +457,44 @@ const CAPTIVE_PROBE_DOMAINS = [
 let dnsResponder = null;
 let http80Server = null;
 
+/**
+ * The join funnel (funnel.js), or null outside Hotspot mode.
+ *
+ * Gated on `useDns` because every stage of it is a statement about a phone on the hotspot
+ * subnet: without a hotspot there is no DNS_ALLOW to confine tracking to, every request on
+ * a developer's machine arrives from 127.0.0.1, and reporting that as "a phone is waiting
+ * to scan" would be worse than reporting nothing.
+ */
+const funnel = useDns && DNS_ALLOW
+  ? createFunnel({
+      isTracked: makeSubnetTest(DNS_ALLOW),
+      onChange: (counts) => broadcastFunnelToHosts(counts),
+    })
+  : null;
+
+/**
+ * Tells every connected host what the funnel currently sees. Sent to hosts rather than to a
+ * room, because the funnel is keyed by IP and has no idea which room a device would land
+ * in — in practice a local relay serves exactly one host, and a second one is a developer's
+ * second Editor rather than a stranger.
+ */
+function broadcastFunnelToHosts(counts) {
+  for (const room of rooms.values()) {
+    send(room.host, { type: 'DEVICE_FUNNEL', ...counts });
+  }
+}
+
+/**
+ * Hands one host the funnel as it stands right now. `onChange` only fires on a change, so
+ * without this a host that connects (or restarts, which is routine — stopping and starting
+ * the Unity Editor) sees nothing at all until the next phone does something, even with
+ * three already sitting on the Wi-Fi waiting to be told to scan.
+ */
+function sendFunnelSnapshot(ws) {
+  if (!funnel) return;
+  send(ws, { type: 'DEVICE_FUNNEL', ...funnel.counts() });
+}
+
 // True only once the UDP :53 bind has actually resolved — the listen() callback below only
 // *initiates* the bind, it doesn't wait for it, so a caller that needs to know DNS is really
 // listening (HotspotService, before it starts tethering — the responder must win the race
@@ -474,23 +534,99 @@ function handleRequest(req, res) {
     return;
   }
 
-  // Android's captive-portal check treats anything other than a bare 204 as "there is a
-  // portal here, show it in a webview" — so this must be an empty body, not JSON, not even
-  // an empty JSON object.
-  if (url.pathname === '/generate_204') {
-    res.writeHead(204).end();
-    return;
-  }
-
-  // Apple's captive-portal check looks for this exact literal body (no whitespace, no
-  // trailing newline) on a plain page load; anything else and the phone assumes a portal
-  // needs signing into and pops its captive-portal browser instead of just joining.
-  if (url.pathname === '/hotspot-detect.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end('Success');
-    return;
-  }
+  if (serveCaptiveProbe(req, res, url.pathname)) return;
 
   serveStatic(req, res);
+}
+
+/** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */
+const GAME_URL = `https://${DNS_NAME}:${PORT}/`;
+
+/**
+ * The page the phone's own OS opens, unprompted, when the probes below report a portal.
+ * Deliberately not the controller: iOS's CNA sheet and Android's portal webview are
+ * sandboxed, and `DeviceMotion.requestPermission()` is unreliable-to-impossible inside
+ * them, so a controller loaded here would look like it worked and then read no sensors.
+ * One tap out to the real browser is the whole job.
+ */
+function portalPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rock Skipping</title>
+<style>
+  body { margin: 0; display: grid; place-items: center; min-height: 100vh;
+         font: 16px/1.5 system-ui, sans-serif; background: #0d1220; color: #f2f5ff; }
+  main { padding: 2rem; text-align: center; max-width: 22rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  p { color: #9fb0d0; margin: 0 0 1.75rem; }
+  a { display: block; padding: 1rem; border-radius: .75rem; background: #4f7cff;
+      color: #fff; font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>You're on the game's Wi-Fi</h1>
+  <p>Open this in your browser to play. If the button does nothing, use this page's menu
+     and choose &ldquo;Open in Browser&rdquo;.</p>
+  <a href="${GAME_URL}">Play Rock Skipping</a>
+</main>
+</body>
+</html>`;
+}
+
+/**
+ * Answers Android's and iOS's captive-portal probes, and returns true if it handled the
+ * request. Returns false for anything else so the caller keeps routing.
+ *
+ * The answer is deliberately conditional on the requesting device's funnel stage, which is
+ * the whole of P2 in docs/plans/join-failure-reduction.md:
+ *
+ *   Below PAGE_OPEN — report a portal. The OS then opens a sheet on the phone by itself,
+ *   with no scanning, which is the strongest nudge available to a host that cannot reach
+ *   the phone any other way.
+ *
+ *   PAGE_OPEN or above — answer exactly as Phase 4 always did, so the phone stops flagging
+ *   "No internet" and stops preferring cellular. This half is not optional: leaving the
+ *   portal signal on for a device that is already playing would trade a join failure for a
+ *   mid-match disconnect, which is the failure Phase 4 was written to prevent.
+ *
+ * With no funnel (any non-Hotspot run) there is nobody to nudge and no subnet to confine
+ * tracking to, so it degrades to the unconditional Phase 4 behaviour.
+ */
+function serveCaptiveProbe(req, res, pathname) {
+  const isProbe = pathname === '/generate_204' || pathname === '/hotspot-detect.html';
+  if (!isProbe && pathname !== '/portal') return false;
+
+  if (pathname === '/portal') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(portalPage());
+    return true;
+  }
+
+  const stage = funnel ? funnel.stageOf(req.socket.remoteAddress) : Stage.PAGE_OPEN;
+  const nudge = stage < Stage.PAGE_OPEN;
+
+  if (pathname === '/generate_204') {
+    // Android treats anything other than a bare 204 as "there is a portal here, show it" —
+    // so the satisfied answer must be an empty body, not JSON, not even an empty object,
+    // and the nudge is a plain redirect to the page we want it to show.
+    if (nudge) {
+      res.writeHead(302, { Location: `http://${DNS_NAME}/portal` }).end();
+    } else {
+      res.writeHead(204).end();
+    }
+    return true;
+  }
+
+  // Apple looks for this exact literal body (no whitespace, no trailing newline) on a plain
+  // page load; anything else and the phone pops its captive-portal browser — which here is
+  // the point, so the nudge simply answers with the portal page itself.
+  res
+    .writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    .end(nudge ? portalPage() : 'Success');
+  return true;
 }
 
 // The WebSocket server attaches to either kind of listener unchanged, so wss://
@@ -504,7 +640,7 @@ const httpServer = useTls
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   ws.meta = {
     role: null,
     roomCode: null,
@@ -512,6 +648,9 @@ wss.on('connection', (ws) => {
     isAlive: true,
     rateWindowStart: Date.now(),
     rateCount: 0,
+    // Captured here rather than read at JOIN time: by then the socket may be mid-close and
+    // remoteAddress reads back undefined. Only the funnel uses it, and only to count devices.
+    remoteAddress: req && req.socket ? req.socket.remoteAddress : null,
   };
 
   ws.on('pong', () => {
@@ -680,6 +819,9 @@ async function startDns() {
       allow: DNS_ALLOW,
       upstream: DNS_UPSTREAM,
       log,
+      onQuery: (address) => {
+        if (funnel) funnel.record(address, Stage.ASSOCIATED);
+      },
     });
   } catch (err) {
     // Thrown for a missing DNS_ALLOW, which is a configuration mistake rather than a
@@ -705,9 +847,26 @@ async function startDns() {
 }
 
 /**
- * Plain-HTTP listener on :80 for the captive-portal probes only — the game itself is never
- * served here, /generate_204 and /hotspot-detect.html are the only routes that matter, and
- * both are already in handleRequest's table alongside /health and /qr.
+ * What :80 answers. It has its own handler rather than reusing `handleRequest`, and that is
+ * a bug fix, not tidying: `handleRequest` ends in `serveStatic`, so this listener used to
+ * serve the ENTIRE CONTROLLER over plain HTTP on every interface the host has, despite the
+ * comment below claiming it served the probes only. A guest who typed the host name without
+ * `https://` got a controller page that loaded, looked correct, and could not read a single
+ * sensor — a secure context is required for DeviceMotion and there is none here. Redirecting
+ * instead turns that silent dead end into the right page. See
+ * docs/plans/join-failure-reduction.md §1.
+ */
+function handleProbeRequest(req, res) {
+  const url = new URL(req.url || '/', 'http://localhost');
+
+  if (serveCaptiveProbe(req, res, url.pathname)) return;
+
+  res.writeHead(302, { Location: GAME_URL }).end();
+}
+
+/**
+ * Plain-HTTP listener on :80 for the captive-portal probes and the portal page — the game
+ * itself is never served here (see handleProbeRequest), only redirected to.
  *
  * Per the plan's resolved open question: some machines already have :80 taken (IIS, Docker
  * Desktop, Skype's old binding), and a failed launch is a worse outcome than a phone that
@@ -717,7 +876,7 @@ async function startDns() {
  * problem rather than a cosmetic one.
  */
 function startHttpProbeListener() {
-  http80Server = http.createServer(handleRequest);
+  http80Server = http.createServer(handleProbeRequest);
 
   http80Server.on('error', (err) => {
     log(`Captive-portal probe listener on :80 FAILED to bind: ${err.code || err.message}`);
@@ -727,6 +886,7 @@ function startHttpProbeListener() {
   });
 
   http80Server.listen(80, BIND_HOST, () => {
-    log(`Captive-portal probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html)`);
+    log(`Captive-portal probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html, portal)`);
+    log(`  everything else on :80 redirects to ${GAME_URL}`);
   });
 }

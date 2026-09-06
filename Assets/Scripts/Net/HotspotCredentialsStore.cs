@@ -12,7 +12,7 @@ namespace Net
     /// </summary>
     /// <remarks>
     /// Same <c>JsonUtility</c> + file-beside-the-executable convention as
-    /// <see cref="Managers.MatchSettingsStore"/> and <see cref="NetworkModeStore"/>: not
+    /// <see cref="Managers.MatchSettingsStore"/> and <see cref="RoomCodeStore"/>: not
     /// PlayerPrefs, because on Windows that writes into the registry, which is invisible and
     /// isn't cleared by deleting the game folder, and a host can open this file by hand to read
     /// the passphrase off a stuck TV.
@@ -110,7 +110,7 @@ namespace Net
             return new string(chars);
         }
 
-        /// <summary>Same resolution as NetworkModeStore.ResolvePath / MatchSettingsStore.ResolvePath.</summary>
+        /// <summary>Same resolution as MatchSettingsStore.ResolvePath / HotspotCredentialsStore.ResolvePath.</summary>
         private static string ResolvePath() =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", FileName));
     }

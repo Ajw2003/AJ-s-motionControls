@@ -88,15 +88,17 @@ Two properties of that certificate worth knowing:
   `docs/plans/magic-domain-replacement.md`'s security note for the constraint that comes
   with that.
 
-## LAN mode is deprecated
+## LAN mode has been removed
 
-`NetworkMode.Lan` still exists and is still selectable by hand-editing `network-mode.txt` to
-`Lan`, but `StartScreen` no longer offers it, and its certificate no longer validates — the
-replacement certificate is single-name for a fixed hostname, which a LAN address's varying
-name can never match. See `Assets/Scripts/Net/NetworkMode.cs` and
+LAN mode used to be selectable by hand-editing `network-mode.txt` to `Lan`, but its
+certificate had already stopped validating — the replacement certificate is single-name for a
+fixed hostname, which a LAN address's varying name can never match — and
+[docs/plans/remove-direct-transport.md](../docs/plans/remove-direct-transport.md) removed the
+dead code path outright rather than leaving it deprecated. Hotspot is the only mode there is
+now; `network-mode.txt` is inert if one is still lying around from an older install. See
 [docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md) Phase 3
-for the full reasoning. Everything below that mentions "the venue's network" or a LAN address
-describes the deprecated path.
+for why the certificate stopped working in the first place. Everything below that mentions
+"the venue's network" or a LAN address describes that removed path, kept here as history.
 
 ## What this costs, and who cannot play
 

@@ -77,7 +77,7 @@ describe('Relay integration', () => {
 
   // Shared connections/state threaded across the tests below, in the same order
   // the original single run() function used them.
-  let host, code, stranger, player, rejoin, returning, heldCode;
+  let host, code, stranger, player, rejoin, returning, heldCode, playerCloseCode;
 
   before(async () => {
     server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
@@ -122,6 +122,10 @@ describe('Relay integration', () => {
 
   test('normal join', async () => {
     player = await connect();
+    playerCloseCode = null;
+    player.on('close', (closeCode) => {
+      playerCloseCode = closeCode;
+    });
     send(player, { type: 'JOIN_ROOM', roomCode: code, playerId: 'aj' });
     const joined = await next(player);
     check('player receives JOINED', joined.type === 'JOINED');
@@ -174,6 +178,34 @@ describe('Relay integration', () => {
     const rejoined = await next(rejoin);
     check('reconnect is accepted', rejoined.type === 'JOINED');
     check('reconnect is flagged as such', rejoined.reconnected === true);
+  });
+
+  // Regression test for the join ping-pong: the displaced socket (`player`, the
+  // original AJ connection just evicted by `rejoin` above) must receive a close
+  // code the client can tell apart from an ordinary server close, and must never
+  // send another JOIN_ROOM in response. See docs/Findings-DirectTransportFlapping.md.
+  test('fix: a displaced player socket is closed with 4001 and does not rejoin', async () => {
+    // The close event (listened for since 'normal join', above) may already have
+    // fired by the time this test body runs; poll briefly rather than racing it.
+    for (let i = 0; i < 20 && playerCloseCode === null; i++) await sleep(50);
+    check(
+      'the displaced socket is closed with the REPLACED_CLOSE_CODE (4001), not 1000',
+      playerCloseCode === 4001,
+      String(playerCloseCode),
+    );
+
+    // If the old client code were still in place, the displaced socket would treat
+    // this as an ordinary close and reconnect, sending a fresh JOIN_ROOM — which
+    // would evict `rejoin` in turn. Prove that never happens: `rejoin` must still
+    // hold the seat, and no further PLAYER_JOINED for AJ should reach the host.
+    await sleep(300);
+    send(host, { type: 'SPECTATE', liveSkips: 7, targetPlayerId: 'AJ' });
+    const stillOnRejoin = await next(rejoin, 2000);
+    check(
+      'the socket that displaced it still holds the seat',
+      stillOnRejoin.type === 'SPECTATE' && stillOnRejoin.liveSkips === 7,
+      JSON.stringify(stillOnRejoin),
+    );
   });
 
   test('QR endpoint: the join URL players actually scan', async () => {

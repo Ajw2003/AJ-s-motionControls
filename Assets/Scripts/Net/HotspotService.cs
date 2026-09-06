@@ -49,7 +49,7 @@ namespace Net
         /// <summary>
         /// The address Windows ICS always gives the hotspot, and therefore the only answer
         /// <see cref="MagicDomain.HostName"/> may resolve to on this machine. Asserted the same
-        /// way in LocalServices.EffectiveLanAddressOverride and deploy/setup-offline.ps1.
+        /// way in LocalServices.HotspotHostAddress and deploy/setup-offline.ps1.
         /// </summary>
         private const string HotspotAddress = "192.168.137.1";
 
@@ -116,12 +116,6 @@ namespace Net
             if (state != ServiceState.Ready) return; // still settling
 
             LocalServices.Instance.StateChanged -= OnLocalServicesStateChanged;
-
-            if (LocalServices.Instance.Mode != NetworkMode.Hotspot)
-            {
-                SetState(HotspotState.NotApplicable, "LAN mode — no hotspot needed.");
-                return;
-            }
 
             StartCoroutine(BeginTethering());
         }

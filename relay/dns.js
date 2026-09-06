@@ -208,6 +208,13 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
  * @param {number}  [options.rate]     max queries per second per source
  * @param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
+ * @param {function} [options.onQuery] called with the source address of every query that
+ *                                     passes the allow-list and rate limit, whatever name it
+ *                                     asked for. This is the earliest evidence a phone is on
+ *                                     the hotspot at all — both platforms probe for a captive
+ *                                     portal within about a second of associating, unprompted —
+ *                                     so it is what the join funnel keys ASSOCIATED off.
+ *                                     See funnel.js.
  */
 function createResponder(options) {
   const {
@@ -222,6 +229,7 @@ function createResponder(options) {
     ttl = 60,
     upstream = null,
     log = () => {},
+    onQuery = () => {},
   } = options;
 
   if (!ip) throw new Error('ip is required');
@@ -259,6 +267,16 @@ function createResponder(options) {
     if (isRateLimited(remote.address)) {
       stats.dropped += 1;
       return;
+    }
+
+    // Deliberately before decodeQuery: a packet this responder cannot parse is still proof
+    // a device is on the hotspot, which is the only thing the funnel wants from here. The
+    // try/catch is because this runs inside a UDP handler, where an exception from a
+    // caller's callback would take the whole relay down over a bookkeeping error.
+    try {
+      onQuery(remote.address);
+    } catch (err) {
+      log(`dns onQuery callback threw (ignored): ${err.message}`);
     }
 
     let query;

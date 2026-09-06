@@ -99,9 +99,10 @@ namespace Net
         /// A message waiting for the main thread, and who it is known to be from.
         /// </summary>
         /// <remarks>
-        /// TrustedPlayerId is null for relay traffic, because the relay already stamps
-        /// identity server-side. It is set for peer traffic, where there is no relay in
-        /// the path to do it — see IngestFromPeer.
+        /// TrustedPlayerId is always null now that the relay is the only transport — the
+        /// relay already stamps identity server-side, so nothing else needs to. The field
+        /// survives because Dispatch's signature still takes it (see the parameter's own
+        /// remarks); a direct-transport caller used to pass a non-null value here.
         /// </remarks>
         private readonly struct Inbound
         {
@@ -411,24 +412,6 @@ namespace Net
             }
 
             _nextRetryTime = Time.time + _retryDelay;
-        }
-
-        /// <summary>
-        /// Hand a message that arrived over a peer connection into the same dispatch path
-        /// as relay traffic, so nothing downstream can tell the two apart.
-        /// </summary>
-        /// <param name="trustedPlayerId">
-        /// Which peer it came from. This <b>overrides</b> any playerId in the payload,
-        /// reproducing the server-side stamping in the relay's relayToHost — without it a
-        /// phone could label its own throws with somebody else's name, which is exactly
-        /// the spoof the relay was hardened against. The peer connection is per-player, so
-        /// the caller always knows the real answer.
-        /// </param>
-        /// <remarks>Safe to call from any thread; the queue is drained on the main one.</remarks>
-        public void IngestFromPeer(string json, string trustedPlayerId)
-        {
-            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(trustedPlayerId)) return;
-            _inbound.Enqueue(new Inbound(json, trustedPlayerId));
         }
 
         private void Dispatch(string json, string trustedPlayerId)

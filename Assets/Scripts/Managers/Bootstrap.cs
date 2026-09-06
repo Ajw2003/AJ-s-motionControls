@@ -50,11 +50,6 @@ namespace Managers
                  "sound hangs off events rather than off gameplay code.")]
         [SerializeField] private bool enableAudio = true;
 
-        [Tooltip("Carry aim and throw over a direct WebRTC channel to each phone instead of " +
-                 "through the hosted relay. Falls back to the relay per-phone if it cannot " +
-                 "connect, so turning it off only costs latency. HostingPlan.md §5.")]
-        [SerializeField] private bool usePeerConnections = true;
-
         private void Awake()
         {
             EventManager.DebugLoggingEnabled = eventDebugLogging;
@@ -89,15 +84,9 @@ namespace Managers
             // join screen. That reads as a networking bug but is a lifecycle one.
             _ = Net.RelayClient.Instance;
 
-            // After RelayClient, whose signalling it rides and whose dispatch it feeds.
-            // Failing to establish is not fatal — a phone without a peer connection keeps
-            // sending over the relay, which is what makes this safe to enable by default.
-            if (usePeerConnections) _ = Net.PeerLink.Instance;
-
-            // Created unconditionally, like RelayClient — LocalServices.Mode isn't set until
-            // its own Start() runs, so this can't read it synchronously here either. It waits
-            // for LocalServices.Ready and self-selects out (HotspotState.NotApplicable)
-            // whenever the mode turns out to be Lan, or LocalServices isn't running at all.
+            // Created unconditionally, like RelayClient. It waits for LocalServices.Ready
+            // and self-selects out (HotspotState.NotApplicable) whenever LocalServices isn't
+            // running at all — there is no other mode left for it to gate on.
             _ = Net.HotspotService.Instance;
 
             // Before TurnManager, whose broadcast path will ask it for each player's rock
