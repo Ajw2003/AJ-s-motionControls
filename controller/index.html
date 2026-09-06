@@ -371,16 +371,6 @@
       <p>Enter the code shown on the TV.</p>
     </section>
 
-    <!-- A returning phone with a stored identity and a matching room code skips the join
-         form entirely, but iOS still requires a user gesture before requestMotionPermission
-         will grant anything — so this is the single tap that stands in for it. Android has
-         no such requirement and app.js never shows this screen there; see rejoinSilently. -->
-    <section id="tapScreen" class="screen">
-      <h1>ROCK SKIPPING</h1>
-      <button id="tapToPlayBtn">TAP TO PLAY</button>
-      <p>Welcome back — tap to reconnect.</p>
-    </section>
-
     <!-- Choosing a stone -->
     <section id="chooseScreen" class="screen">
       <h2>Choose your stone</h2>
@@ -435,6 +425,11 @@
          on final scores it is the only thing left to do. -->
       <button id="againBtn" hidden>PLAY AGAIN</button>
       <div id="scores" class="scores"></div>
+      <!-- Renaming reachable without a rejoin — the seat is keyed by device id, not by
+         name, so this is a cosmetic SET_NAME rather than a new join. Styled as a .link
+         like RE-CENTRE: a secondary action, not something to compete with PLAY AGAIN. -->
+      <button id="nameBtn" class="link"></button>
+      <input id="nameEditInput" type="text" placeholder="YOUR NAME" maxlength="12" autocomplete="off" hidden />
     </section>
 
     <!-- Your turn -->
