@@ -23,21 +23,18 @@ namespace Net
     }
 
     /// <summary>
-    /// Runs a relay on this machine, for development only.
+    /// Runs the relay on this machine. This is how the game is hosted — not a dev convenience.
     /// </summary>
     /// <remarks>
-    /// OFF BY DEFAULT, and deliberately so. Hosts connect out to the deployed service
-    /// (see RelayClient and HostingPlan.md), which is what makes hosting require no setup
-    /// at all — there is nothing to install, nothing to configure and nothing listening.
+    /// ON BY DEFAULT, and there is nothing to fall back to: the hosted Fly.io relay this used
+    /// to be an alternative to was deliberately torn down. Bootstrap's startLocalServices
+    /// creates this, and RelayClient takes its address from SecureSocketUrl rather than
+    /// needing a relay-url.txt — that file is now only the manual escape hatch for pointing a
+    /// build at a relay somebody started by hand.
     ///
-    /// This exists for the local edit-test loop, where deploying on every change would be
-    /// absurd. Turning it on is only half the job: RelayClient must also be pointed at the
-    /// local instance, by putting `ws://localhost:3000` in a relay-url.txt beside the
-    /// executable. Enabling this alone starts a relay that nothing connects to.
-    ///
-    /// That plain-http origin is not a secure context, so motion sensors stay dark on it.
-    /// For a loop that does unlock them, deploy/local-https.ps1 writes both that file and a
-    /// relay-env.txt, and this class picks up whichever of the two it finds.
+    /// HTTPS is not optional in practice. Phone motion-sensor APIs only unlock on a secure
+    /// origin, so the certificate step (CertificateProvider, MagicDomain) runs before the
+    /// relay and hands it TLS material through the environment.
     ///
     /// This class used to also spawn a cloudflared tunnel and scrape the assigned hostname
     /// out of its stderr, because a quick tunnel offers no machine-readable channel for it.
@@ -47,12 +44,13 @@ namespace Net
     {
         /// <summary>
         /// Optional per-machine environment for the relay child, beside relay-url.txt.
-        /// Gitignored. Written by deploy/local-https.ps1; absent otherwise.
+        /// Gitignored, and absent on almost every machine — a hand-written escape hatch for
+        /// pinning TLS material or a port, not something any script writes any more.
         /// </summary>
         private const string EnvFileName = "relay-env.txt";
 
-        [Tooltip("Start a relay on this machine. Development only — you must also point " +
-                 "RelayClient at it with a relay-url.txt containing ws://localhost:3000.")]
+        [Tooltip("Start the relay on this machine. Off leaves phones with nothing to connect " +
+                 "to unless a relay-url.txt points RelayClient at one started by hand.")]
         [SerializeField] private bool launchOnStart = true;
 
         [Tooltip("Fallback only — the port from the relay-url.txt override wins when there is one.")]
@@ -184,7 +182,7 @@ namespace Net
         {
             if (!launchOnStart)
             {
-                SetState(ServiceState.Idle, "Local relay off — using the deployed service.");
+                SetState(ServiceState.Idle, "Local relay off — nothing is hosting the game.");
                 return;
             }
 

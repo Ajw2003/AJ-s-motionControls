@@ -44,6 +44,31 @@ TCP 80), the scheduled task that disables IP forwarding each session so guests s
 and a hosts entry so the *host* can resolve its own relay while offline. See
 [docs/OfflineSetup.md](../docs/OfflineSetup.md) for the full reasoning behind each item.
 
+`HotspotService` runs this for you, elevated, the first time this machine starts a hotspot — so
+in practice you only run it by hand to `-DryRun` it or to `-Uninstall` a test machine. Its exit
+codes are a contract, not decoration: **0** already correct, **1** something genuinely wrong,
+**2** needs Administrator, **3** (`-DryRun` only) not set up yet.
+
+## Checking the stack without Unity
+
+```powershell
+./deploy/verify-stack.ps1              # needs no elevation
+./deploy/verify-stack.ps1 -KeepRunning # leave the relay up to point a phone at it
+```
+
+Starts the relay with the exact environment `LocalServices` gives it and then *does* each
+thing rather than inspecting config: fetches the certificate, checks `/health` really reports
+`dns.bound`, and sends four real DNS queries to the running responder.
+
+**The check worth knowing about is "This PC resolving play.skiprocking.ca".** There are two
+independent halves to name resolution here and they fail nothing alike — a phone resolves the
+game through `relay/dns.js`, but the *host* takes no DHCP from itself and so never asks its own
+responder. It asks a public resolver, and `play.skiprocking.ca` is a registered name whose
+public record is the registrar's parking page. Without the hosts entry above, Unity therefore
+connects to a stranger's web server on the internet and retries there forever — which looks
+like anything except a DNS problem. See
+[docs/Findings-DnsAudit.md](../docs/Findings-DnsAudit.md).
+
 ## Why HTTPS at all, rather than plain `ws://`
 
 Phone motion sensors require a secure context, and an HTTPS page cannot open a plain `ws://`

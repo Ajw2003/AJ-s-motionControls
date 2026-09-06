@@ -21,8 +21,9 @@ namespace Managers
         [Tooltip("Verbose EventManager logging. Turn on while wiring new events.")]
         [SerializeField] private bool eventDebugLogging;
 
-        [Tooltip("Run a relay on this machine. Development only — hosts connect out to the " +
-                 "deployed service. Also needs a relay-url.txt pointing RelayClient at it.")]
+        [Tooltip("Host the relay and controller page on this machine. This is how the game is " +
+                 "played — there is no deployed service to fall back to. Off runs the game with " +
+                 "nothing for phones to connect to.")]
         [SerializeField] private bool startLocalServices;
 
         [Tooltip("TV screen showing the room code, join URL and QR. This is what guests read.")]
@@ -77,10 +78,10 @@ namespace Managers
             // round, the winning throw would be missing from the results screen.
             _ = ScoreManager.Instance;
 
-            // Development only, and off by default — a normal host connects out to the
-            // deployed service and runs nothing locally. Created before RelayClient so a
-            // local relay is listening before the client tries it; the client retries with
-            // backoff regardless, so the ordering only avoids a guaranteed first failure.
+            // On, because local hosting is the only hosting: the Fly.io deployment this used
+            // to fall back to was torn down for good. Created before RelayClient so a local
+            // relay is listening before the client tries it; the client retries with backoff
+            // regardless, so the ordering only avoids a guaranteed first failure.
             if (startLocalServices) _ = Net.LocalServices.Instance;
 
             // RelayClient must be created here, never per-scene: a scene-local socket

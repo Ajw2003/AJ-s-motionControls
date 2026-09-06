@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Security.Cryptography;
 using Singleton;
 using UnityEngine;
@@ -31,6 +32,12 @@ namespace Net
     /// actually finished binding :53 (LocalServices.ProbeDnsBound — Ready alone only proves the
     /// HTTP listener is up), before starting tethering. The responder must hold :53 before ICS
     /// starts, or phones on the hotspot cannot resolve the game's address at all.
+    ///
+    /// Name resolution has two halves and this class gates on both, because they fail
+    /// independently and look nothing alike. The responder above is how a PHONE resolves
+    /// MagicDomain.HostName; VerifyHostNameResolves is how the HOST does, via the hosts entry
+    /// deploy/setup-offline.ps1 writes. Phones working while the host does not is the normal
+    /// shape of this being broken.
     /// </remarks>
     public class HotspotService : SingletonBase<HotspotService>
     {
@@ -43,6 +50,20 @@ namespace Net
         // Excludes visually ambiguous characters (0/O, 1/l/I) — the passphrase may need to be
         // typed by hand if a QR scan fails.
         private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+
+        /// <summary>
+        /// The address Windows ICS always gives the hotspot, and therefore the only answer
+        /// <see cref="MagicDomain.HostName"/> may resolve to on this machine. Asserted the same
+        /// way in LocalServices.EffectiveLanAddressOverride and deploy/setup-offline.ps1.
+        /// </summary>
+        private const string HotspotAddress = "192.168.137.1";
+
+        /// <summary>
+        /// How long to keep asking /health whether the DNS responder has finished binding.
+        /// Short: the bind is a local UDP socket that either takes microseconds or fails
+        /// outright, so this is covering a scheduling gap, not waiting on real work.
+        /// </summary>
+        private const float DnsBindTimeout = 5f;
 
         public HotspotState State { get; private set; } = HotspotState.NotApplicable;
 
@@ -114,8 +135,18 @@ namespace Net
         {
             SetState(HotspotState.Starting, "Confirming the local DNS responder…");
 
+            // Polled, not asked once. server.js starts the :53 bind inside its listen()
+            // callback without awaiting it, so /health can answer — which is all
+            // LocalServices waits for before reporting Ready — while dns.bound is still
+            // false for another tick or two. A single probe turns that ordinary startup
+            // gap into a hard failure roughly whenever the machine is busy.
             var dnsBound = false;
-            yield return LocalServices.Instance.ProbeDnsBound(ok => dnsBound = ok);
+            var dnsDeadline = Time.realtimeSinceStartup + DnsBindTimeout;
+            while (!dnsBound && Time.realtimeSinceStartup < dnsDeadline)
+            {
+                yield return LocalServices.Instance.ProbeDnsBound(ok => dnsBound = ok);
+                if (!dnsBound) yield return new WaitForSecondsRealtime(0.25f);
+            }
 
             if (!dnsBound)
             {
@@ -146,6 +177,8 @@ namespace Net
             yield return EnsureOfflineSetup(powershell, ok => setupOk = ok);
             if (!setupOk) yield break; // EnsureOfflineSetup already called Fail with the specific reason
 
+            if (!VerifyHostNameResolves()) yield break; // ditto
+
             Ssid = GenerateSsid();
             Passphrase = GeneratePassphrase();
 
@@ -170,7 +203,7 @@ namespace Net
                 yield return new WaitForSecondsRealtime(0.1f);
             }
 
-            LogStderr(stderr);
+            LogLines(stderr);
 
             if (!process.HasExited)
             {
@@ -220,22 +253,36 @@ namespace Net
         /// triggered by pressing Start, rather than being a separate manual step nobody is
         /// told about until hotspot-control.ps1 fails four steps later with a cryptic
         /// scheduled-task error. Every later Play session on this machine skips straight past
-        /// this: the cheap unelevated check below finds the task already registered.
+        /// this: the cheap unelevated -DryRun below reports nothing left to change.
         /// </remarks>
         private IEnumerator EnsureOfflineSetup(string powershell, Action<bool> onResult)
         {
-            // Cheap and unelevated — just asks whether deploy/setup-offline.ps1's own
-            // Sync-ForwardingTask step has ever run on this machine. Checking for the task
-            // specifically, not some other marker, keeps this in lockstep with what
-            // setup-offline.ps1 itself considers "already set up" (see its own
-            // Get-ScheduledTask probe).
-            var checkStdout = new ConcurrentQueue<string>();
-            var checkArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command " +
-                "\"if (Get-ScheduledTask -TaskName 'RockSkippingDisableForwarding' " +
-                "-ErrorAction SilentlyContinue) { 'present' }\"";
-            var checkProcess = ProcessUtil.Spawn(powershell, checkArgs, Application.dataPath,
-                null, _group, checkStdout);
-            if (checkProcess == null)
+            var scriptPath = Path.GetFullPath(
+                Path.Combine(Application.dataPath, "..", "deploy", "setup-offline.ps1"));
+            if (!File.Exists(scriptPath))
+            {
+                Fail("Can't find deploy/setup-offline.ps1.", "Expected a 'deploy' folder next to Assets/.");
+                onResult(false);
+                yield break;
+            }
+
+            // Ask the script itself whether this machine is set up, rather than re-implementing
+            // the question here. -DryRun writes nothing and needs no elevation, and answers via
+            // its exit code: 0 already correct, 3 setup needed, anything else a real problem.
+            //
+            // This used to ask a cheaper proxy instead — "does the RockSkippingDisableForwarding
+            // scheduled task exist?" — and that proxy is what broke Hotspot mode on every machine
+            // set up before the magic-domain replacement. The task was registered in the
+            // local-ip.sh era and is still there, so setup was skipped, so the hosts entry for
+            // MagicDomain.HostName was never added, so the host resolved its own relay via public
+            // DNS to a parked address and retried against it forever. A proxy that stops implying
+            // what it used to imply fails silently, which is the worst way for this to fail.
+            var probeOutput = new ConcurrentQueue<string>();
+            var probeArgs = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " +
+                            $"\"{scriptPath}\" -DryRun";
+            var probe = ProcessUtil.Spawn(powershell, probeArgs, Path.GetDirectoryName(scriptPath),
+                null, _group, probeOutput);
+            if (probe == null)
             {
                 Fail("Could not check one-time machine setup.", "See the console for the underlying error.");
                 onResult(false);
@@ -243,28 +290,39 @@ namespace Net
             }
 
             var deadline = Time.realtimeSinceStartup + startTimeout;
-            while (!checkProcess.HasExited && Time.realtimeSinceStartup < deadline)
+            while (!probe.HasExited && Time.realtimeSinceStartup < deadline)
             {
                 yield return new WaitForSecondsRealtime(0.1f);
             }
 
-            var present = false;
-            while (checkStdout.TryDequeue(out var line))
+            if (!probe.HasExited)
             {
-                if (line.Trim() == "present") present = true;
+                ProcessUtil.TryKill(probe);
+                Fail("Checking one-time machine setup timed out.",
+                     $"setup-offline.ps1 -DryRun did not finish within {startTimeout:F0}s. " +
+                     "Run it yourself from the deploy folder to see where it stalls.");
+                onResult(false);
+                yield break;
             }
 
-            if (present)
+            const int alreadySetUp = 0;
+            const int setupNeeded = 3;
+
+            if (probe.ExitCode == alreadySetUp)
             {
                 onResult(true);
                 yield break;
             }
 
-            var scriptPath = Path.GetFullPath(
-                Path.Combine(Application.dataPath, "..", "deploy", "setup-offline.ps1"));
-            if (!File.Exists(scriptPath))
+            if (probe.ExitCode != setupNeeded)
             {
-                Fail("Can't find deploy/setup-offline.ps1.", "Expected a 'deploy' folder next to Assets/.");
+                // Exit 1 means the script found something genuinely wrong that elevation would
+                // not fix (no Node, a hosts file it cannot read). Echoing its own output is the
+                // only way the reason reaches anyone — it went to a pipe, not a console.
+                LogLines(probeOutput);
+                Fail($"One-time machine setup cannot run (check exited {probe.ExitCode}).",
+                     "setup-offline.ps1 -DryRun reported a problem it will not fix by elevating. " +
+                     "See the console for what it said.");
                 onResult(false);
                 yield break;
             }
@@ -339,6 +397,57 @@ namespace Net
             onResult(true);
         }
 
+        /// <summary>
+        /// Confirms this machine resolves <see cref="MagicDomain.HostName"/> to the hotspot
+        /// address, which is what the hosts entry setup-offline.ps1 writes is for.
+        /// </summary>
+        /// <remarks>
+        /// The single most misleading failure in this design, and the reason it is checked
+        /// explicitly rather than left to fail downstream. The host never consults the DNS
+        /// responder on its own :53 — it takes no DHCP from itself — so it asks a public
+        /// resolver instead, and play.skiprocking.ca is a real registered name whose public
+        /// record is the registrar's parking page. A missing hosts entry therefore does not
+        /// look like "unknown host". It looks like the relay is up but rejecting the
+        /// connection, because Unity is talking to a stranger's web server on the internet.
+        /// RelayClient retries that forever without ever saying anything is wrong.
+        ///
+        /// Run after EnsureOfflineSetup, so the entry it writes is already in place, and
+        /// before tethering, so a wrong answer is reported instead of a hotspot nobody can
+        /// use. Deliberately not gated on the address existing yet — the hosts file is
+        /// consulted whether or not the hotspot adapter is up.
+        /// </remarks>
+        private bool VerifyHostNameResolves()
+        {
+            var hostName = MagicDomain.HostName;
+            SetState(HotspotState.Starting, $"Checking this PC can resolve {hostName}…");
+
+            IPAddress[] addresses;
+            try
+            {
+                addresses = Dns.GetHostAddresses(hostName);
+            }
+            catch (Exception e)
+            {
+                Fail($"This PC cannot resolve {hostName}.",
+                     $"The hosts entry pointing it at {HotspotAddress} is missing, and there is " +
+                     $"no network to ask instead. Run deploy/setup-offline.ps1 as Administrator. " +
+                     $"Underlying error: {e.Message}");
+                return false;
+            }
+
+            foreach (var address in addresses)
+            {
+                if (address.ToString() == HotspotAddress) return true;
+            }
+
+            var got = addresses.Length == 0 ? "nothing" : string.Join(", ", (object[])addresses);
+            Fail($"{hostName} resolves to the wrong address.",
+                 $"Expected {HotspotAddress}, got {got} — that is the public record for this " +
+                 $"domain, not this PC. The hosts entry is missing or stale. Run " +
+                 $"deploy/setup-offline.ps1 as Administrator, then relaunch.");
+            return false;
+        }
+
         // ------------------------------------------------------------------ generation
 
         private static string GenerateSsid() => $"Rock Skipping {RandomAlphanumeric(4)}";
@@ -365,9 +474,14 @@ namespace Net
             return File.Exists(candidate) ? candidate : null;
         }
 
-        private static void LogStderr(ConcurrentQueue<string> stderr)
+        /// <summary>
+        /// Drains a child's output into the console. Used for hotspot-control.ps1's stderr
+        /// progress and for setup-offline.ps1 -DryRun's report — both went to a pipe rather
+        /// than a console, so this is the only place a reader ever sees either.
+        /// </summary>
+        private static void LogLines(ConcurrentQueue<string> lines)
         {
-            while (stderr.TryDequeue(out var line)) Debug.Log($"[HotspotService] {line}");
+            while (lines.TryDequeue(out var line)) Debug.Log($"[HotspotService] {line}");
         }
 
         private static ScriptResult? ParseResult(ConcurrentQueue<string> stdout)

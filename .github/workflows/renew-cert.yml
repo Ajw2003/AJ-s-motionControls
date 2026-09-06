@@ -109,6 +109,33 @@ jobs:
           echo "--- SAN check ---"
           openssl x509 -in out/server.pem -noout -text | grep -A1 'Subject Alternative Name' || true
 
+      # A staging certificate is signed by "(STAGING) Pretend Pear"/"(STAGING) Bogus Broccoli"
+      # and is trusted by nothing. Publishing one over the production asset does not fail
+      # anywhere in this workflow - it fails days later, on somebody's phone, as an untrusted
+      # certificate warning on a page that used to work.
+      #
+      # That is not hypothetical. The endpoint above defaults to STAGING on BOTH paths,
+      # including the weekly cron, and nothing persists acme.sh state between runs - each run
+      # issues fresh. So the next scheduled run would clobber the production certificate now
+      # published under this tag with a staging one, with no signal until a party.
+      #
+      # This gate does not decide which endpoint is right (see the endpoint step's own note -
+      # that default is deliberate, so that a cron cannot burn production rate limits on a
+      # workflow nobody has validated). It only refuses to PUBLISH what cannot work. A staging
+      # run still proves the whole pipeline end to end and still fails visibly, here, instead
+      # of silently in the field.
+      - name: Refuse to publish a staging certificate
+        run: |
+          set -euo pipefail
+          ISSUER=$(openssl x509 -in out/server.pem -noout -issuer)
+          echo "issuer: $ISSUER"
+          if echo "$ISSUER" | grep -qi 'staging\|pretend\|bogus'; then
+            echo "::error::Refusing to publish a Let's Encrypt STAGING certificate - no device will trust it."
+            echo "::error::The pipeline itself worked. Re-run via workflow_dispatch with environment=production to publish."
+            exit 1
+          fi
+          echo "Production certificate - safe to publish."
+
       # Publishing target: a release asset on a SEPARATE PUBLIC repo, not Cloudflare R2.
       # R2 was the first choice and was rejected for a concrete reason — enabling R2 requires
       # a payment method on file even to stay inside its free tier, and this project's whole
