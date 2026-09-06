@@ -185,6 +185,7 @@ namespace Game
 
             EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnTurnStarted);
             EventManager.Instance?.Subscribe<PlayerColourChangedEvent>(this, OnPlayerColourChanged);
+            EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnPlayerJoined);
         }
 
         private void OnDestroy()
@@ -261,6 +262,32 @@ namespace Game
         private void OnPlayerColourChanged(PlayerColourChangedEvent e)
         {
             if (TurnManager.HasInstance && e.PlayerId == TurnManager.Instance.ActivePlayer) TintGhost(e.PlayerId);
+        }
+
+        /// <summary>
+        /// A phone that joins has a brand new ThrowController, whose sequence counter starts
+        /// at zero again — so the ordering guard in <see cref="OnAim"/> must forget the number
+        /// it was holding for that player, or every frame they send is older than what it
+        /// already saw and the preview starves.
+        /// </summary>
+        /// <remarks>
+        /// This is what left the ghost and arc hidden for the rest of a session after a player
+        /// closed their tab and came back. The guard rejected each frame before
+        /// <c>_lastAimTime</c> was updated, so HasSignal went stale and Update hid both.
+        /// See docs/Findings-AimPreviewAfterRejoin.md.
+        ///
+        /// Deliberately NOT gated on <see cref="PlayerJoinedEvent.Reconnected"/>. The relay
+        /// deletes a player from the room on socket close (relay/server.js, the 'close'
+        /// handler), so closing a tab and coming back arrives as a fresh join with that flag
+        /// false — which is precisely the case being fixed. Any join at all means a phone with
+        /// a sequence counter back at zero, and that is the fact this depends on.
+        ///
+        /// Only the player the guard is currently tracking matters. For anyone else the reset
+        /// already happens in OnAim, the moment the aiming player changes.
+        /// </remarks>
+        private void OnPlayerJoined(PlayerJoinedEvent e)
+        {
+            if (e.PlayerId == _lastAimPlayer) _lastSeq = -1;
         }
 
         private void Update()
