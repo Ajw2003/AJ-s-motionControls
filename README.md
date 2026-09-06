@@ -14,7 +14,7 @@ what currently exists.
 | `Assets/` | Unity 6 project (6000.3.10f1) — the game screen |
 | `relay/` | Node WebSocket relay, and the HTTP server for the controller page |
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
-| `deploy/` | Hosting runbook and `local-https.ps1`, which serves the controller over HTTPS |
+| `deploy/` | Hosting runbook and `setup-offline.ps1`, the one-time elevated machine setup for Hotspot mode |
 | `docs/` | Project documentation and plans |
 | `docs/PLAN.md` | Full design and implementation plan |
 | `docs/HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
@@ -39,31 +39,29 @@ exercised scoring, turn rotation, late-join and lobby-rejoin, and all four behav
 was M3, and it landed ahead of the remaining M2 work above.
 
 > **Hosting has changed and this matters before you press Play.** There is no longer a
-> deployed relay. The Fly.io deployment was torn down and its files deleted, but
-> `RelayClient.relayUrl` still *compiles in* `wss://rockskipping-relay.fly.dev` as its
-> default — that address is dead, and pressing Play without overriding it will simply fail
-> to connect. You run the relay on this machine now; see **Running the game** below.
+> deployed relay. The Fly.io deployment was torn down and its files deleted, and
+> `RelayClient.relayUrl` compiles in `ws://localhost:3000` as its default — a relay
+> `LocalServices` starts on this machine, not a public address. You run the relay on this
+> machine now; see **Running the game** below.
 
 ## Running the game
 
-Start the relay on this machine first, then press Play. One command does the whole setup:
+The game runs its own relay and fetches its own certificate — there is nothing to run by
+hand any more. Tick **Start Local Services** on `Bootstrap` (on by default), press Play, and
+pick **Hotspot** on the main menu. `LocalServices` obtains a certificate for
+`play.skiprocking.ca` (see `Assets/Scripts/Net/CertificateProvider.cs` and
+`docs/plans/magic-domain-replacement.md`), starts the relay over TLS, and `HotspotService`
+brings up a Wi-Fi hotspot phones join with no router or internet needed.
 
-```bash
-pwsh ./deploy/local-https.ps1
-```
-
-It detects this machine's LAN IP, borrows the published `*.local-ip.sh` certificate for the
-matching IP-encoded name (`10.0.0.213` → `10-0-0-213.local-ip.sh`), writes `relay-url.txt`
-and `relay-env.txt` for you, starts the relay over TLS, and verifies the chain before you
-pick up the phone. **Ctrl+C undoes all of it.** Full runbook:
-[deploy/README.md](deploy/README.md).
-
-⚠️ **Its last verification step is broken** — it calls `node test-deployed.js`, a file deleted
-along with the Fly config, so the script aborts at the end of an otherwise successful setup
-(the relay is already up by then). **If the game currently plays for you, you are not running
-this script** — the config and certificate from an earlier run persist outside the repo and
-Unity starts the relay from them. It becomes blocking the moment that state expires or the
-machine's IP changes. Details and workaround: [deploy/README.md](deploy/README.md).
+> **LAN mode is deprecated.** It is no longer offered on the main menu, and its certificate
+> no longer validates now that the certificate is single-name rather than a wildcard keyed
+> to a varying LAN address. It stays reachable only by hand-editing `network-mode.txt` to
+> `Lan`. See `Assets/Scripts/Net/NetworkMode.cs` and
+> `docs/plans/magic-domain-replacement.md` Phase 3.
+>
+> One-time elevated machine setup (firewall rules, the forwarding-disable task, a hosts
+> entry) is still required for Hotspot mode — run `deploy/setup-offline.ps1` once as
+> Administrator. See [docs/OfflineSetup.md](docs/OfflineSetup.md).
 
 Then open **Bootstrap** and press Play:
 
@@ -105,10 +103,10 @@ Connections** on `Bootstrap`, or per-phone with `?direct=0` on the controller UR
 
 ### Plain HTTP, for desktop-only testing
 
-`local-https.ps1` is the path for anything involving a real phone. If you only need two
-desktop browsers, you can skip the certificate entirely:
+The HTTPS path above (Hotspot mode, `CertificateProvider`) is for anything involving a real
+phone. If you only need two desktop browsers, you can skip the certificate entirely:
 
-1. Tick **Start Local Services** on `Bootstrap`. It is **off by default**.
+1. **Start Local Services** on `Bootstrap` is ticked by default.
 2. Put `ws://localhost:3000` in a `relay-url.txt` beside the executable, so `RelayClient`
    actually points at it. The file is gitignored, so it stays a per-machine choice.
 
@@ -153,7 +151,8 @@ cd relay && npm install && npm start
 
 Listens on `:3000`, or `$PORT` if set, serving the controller page, the WebSocket, `/health`
 and `/qr`. Set `TLS_CERT` and `TLS_KEY` and it serves HTTPS instead — which is what
-`local-https.ps1` does for you. Running it for real play is [deploy/README.md](deploy/README.md).
+`LocalServices` does for you automatically on Play. Running it for real play is
+[deploy/README.md](deploy/README.md).
 
 Integration tests — routing, identity stamping, reconnect, the QR endpoint, and each
 hardening fix:

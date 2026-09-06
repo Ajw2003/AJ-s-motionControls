@@ -140,7 +140,7 @@ function ipToInt(ip) {
     if (!/^\d{1,3}$/.test(part)) return null;
     const octet = Number(part);
     if (octet > 255) return null;
-    value = (value * 256) + octet;
+    value = value * 256 + octet;
   }
   return value;
 }
@@ -155,14 +155,14 @@ function makeSubnetTest(cidr) {
     throw new Error(`not a valid CIDR: ${cidr}`);
   }
 
-  const mask = bits === 0 ? 0 : (2 ** 32 - 2 ** (32 - bits));
+  const mask = bits === 0 ? 0 : 2 ** 32 - 2 ** (32 - bits);
   const masked = (base & mask) >>> 0;
 
   return (address) => {
-    if (address === '127.0.0.1') return true;   // local testing, never a remote source
+    if (address === '127.0.0.1') return true; // local testing, never a remote source
     const value = ipToInt(String(address).replace(/^::ffff:/, ''));
     if (value === null) return false;
-    return ((value & mask) >>> 0) === masked;
+    return (value & mask) >>> 0 === masked;
   };
 }
 
@@ -202,6 +202,9 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  * @param {string}   options.ip        address to answer with
  * @param {string}  [options.suffix]   answer anything ending in this
  * @param {string}  [options.name]     or answer exactly this name
+ * @param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
+ *                                     hostname plus the captive-portal probe domains —
+ *                                     see docs/plans/magic-domain-replacement.md Phase 4)
  * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
  * @param {number}  [options.rate]     max queries per second per source
  * @param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
@@ -211,6 +214,7 @@ function createResponder(options) {
     ip,
     suffix = null,
     name = null,
+    names = null,
     port = 53,
     bind = '0.0.0.0',
     allow,
@@ -221,26 +225,41 @@ function createResponder(options) {
   } = options;
 
   if (!ip) throw new Error('ip is required');
-  if (!suffix && !name) throw new Error('one of suffix or name is required');
+  if (!suffix && !name && !(names && names.length)) {
+    throw new Error('one of suffix, name or names is required');
+  }
   if (!allow) throw new Error('allow is required — see SecurityReview.md §4');
 
   const isAllowed = makeSubnetTest(allow);
   const isRateLimited = makeRateLimiter(rate);
   const stats = { answered: 0, forwarded: 0, refused: 0, dropped: 0 };
 
+  // `name` folds into `names` so the matching logic has exactly one exact-match path to
+  // reason about, whether the caller asked for one name or several.
+  const exactNames = new Set(
+    [...(names || []), name].filter(Boolean).map((n) => n.toLowerCase()),
+  );
+
   let socket = null;
 
   const matches = (queried) => {
     const lower = queried.toLowerCase();
-    return name ? lower === name.toLowerCase() : lower.endsWith(suffix.toLowerCase());
+    if (exactNames.size > 0 && exactNames.has(lower)) return true;
+    return suffix ? lower.endsWith(suffix.toLowerCase()) : false;
   };
 
   function handle(message, remote) {
     // Both guards DROP rather than reply. Answering a source outside the hotspot — even
     // with REFUSED — still sends a packet to a possibly-forged address, which is the
     // amplification behaviour being prevented. Silence is the correct answer.
-    if (!isAllowed(remote.address)) { stats.dropped += 1; return; }
-    if (isRateLimited(remote.address)) { stats.dropped += 1; return; }
+    if (!isAllowed(remote.address)) {
+      stats.dropped += 1;
+      return;
+    }
+    if (isRateLimited(remote.address)) {
+      stats.dropped += 1;
+      return;
+    }
 
     let query;
     try {
@@ -252,7 +271,11 @@ function createResponder(options) {
 
     if (query.class !== CLASS_IN) {
       stats.refused += 1;
-      socket.send(buildReply(query, message, { rcode: RCODE_REFUSED }), remote.port, remote.address);
+      socket.send(
+        buildReply(query, message, { rcode: RCODE_REFUSED }),
+        remote.port,
+        remote.address,
+      );
       return;
     }
 
@@ -271,7 +294,10 @@ function createResponder(options) {
       return;
     }
 
-    if (upstream) { forward(message, remote); return; }
+    if (upstream) {
+      forward(message, remote);
+      return;
+    }
 
     stats.refused += 1;
     socket.send(buildReply(query, message, { rcode: RCODE_NXDOMAIN }), remote.port, remote.address);
@@ -279,14 +305,34 @@ function createResponder(options) {
 
   function forward(message, remote) {
     const client = dgram.createSocket('udp4');
-    const timer = setTimeout(() => { try { client.close(); } catch {} }, 3000);
+    const timer = setTimeout(() => {
+      try {
+        client.close();
+      } catch {
+        // Socket may already be closing/closed by the time we call close();
+        // nothing to recover from, safe to ignore.
+      }
+    }, 3000);
 
-    client.on('error', () => { clearTimeout(timer); try { client.close(); } catch {} });
+    client.on('error', () => {
+      clearTimeout(timer);
+      try {
+        client.close();
+      } catch {
+        // Socket may already be closing/closed by the time we call close();
+        // nothing to recover from, safe to ignore.
+      }
+    });
     client.on('message', (reply) => {
       clearTimeout(timer);
       stats.forwarded += 1;
       socket.send(reply, remote.port, remote.address);
-      try { client.close(); } catch {}
+      try {
+        client.close();
+      } catch {
+        // Socket may already be closing/closed by the time we call close();
+        // nothing to recover from, safe to ignore.
+      }
     });
 
     client.send(message, 53, upstream);
@@ -296,11 +342,19 @@ function createResponder(options) {
     start() {
       return new Promise((resolve, reject) => {
         socket = dgram.createSocket('udp4');
-        socket.on('error', (err) => { socket = null; reject(err); });
+        socket.on('error', (err) => {
+          socket = null;
+          reject(err);
+        });
         socket.on('message', handle);
         socket.bind(port, bind, () => {
-          log(`dns responder on ${bind}:${port}, answering ${name || `*${suffix}`} -> ${ip}, ` +
-              `accepting ${allow} only, max ${rate}/s per source`);
+          const described = exactNames.size > 0
+            ? [...exactNames].join(', ')
+            : `*${suffix}`;
+          log(
+            `dns responder on ${bind}:${port}, answering ${described} -> ${ip}, ` +
+              `accepting ${allow} only, max ${rate}/s per source`,
+          );
           resolve();
         });
       });

@@ -3,10 +3,11 @@
 **Goal:** a player downloads the game, runs it, and hosts a party. No commands, no installs, no
 certificate management, no configuration. Setup — including certificate renewal — is automatic.
 
-**Status: designed and de-risked; not yet implemented.** Every mechanism this plan depends on has
-been proven by a working spike ([deploy/spike/](../deploy/spike/)), including two that were expected
-to fail. **No production code has been written.** The game today still cannot be handed to anyone
-else — see *The four blockers*.
+**Status: de-risked, and partly built.** Every mechanism this plan depends on has been proven by a
+working spike ([deploy/spike/](../deploy/spike/)), including two that were expected to fail. Phase 2
+is now built and its certificate source has been replaced wholesale — see the box on that section.
+Phase 5's installer script exists and now bakes in a seed certificate. Phases 1, 3 and 4 remain
+design only, so the game still cannot be handed to anyone else — see *The four blockers*.
 
 Companion documents: [SecurityReview.md](SecurityReview.md) for what this design asks of a
 player, and [HostingPlan.md](HostingPlan.md) for the history of how the architecture got here.
@@ -56,7 +57,7 @@ The real blockers are that **a downloaded build cannot currently start a relay a
 | 1 | **Node.js is not bundled** | Hard failure: "Install Node 20 or newer from nodejs.org and relaunch" | [LocalServices.cs:175](Assets/Scripts/Net/LocalServices.cs:175) |
 | 2 | **Dependencies install at runtime** | First run shells out to `npm install`, needing npm and internet, 180s timeout | [LocalServices.cs:219](Assets/Scripts/Net/LocalServices.cs:219) |
 | 3 | **`relay/` and `controller/` are not in the build** | Looks for `<exe folder>/relay/server.js`; both live outside `Assets/`, so Unity never copies them | [LocalServices.cs:420](Assets/Scripts/Net/LocalServices.cs:420) |
-| 4 | **The certificate is manual and expires** | Only `deploy/local-https.ps1` obtains it; the current copy expires **2026-09-18** | [local-https.ps1:283](../deploy/local-https.ps1:283) |
+| 4 | ~~**The certificate is manual and expires**~~ **CLOSED** | Was: only `deploy/local-https.ps1` obtained it. That script is deleted; `CertificateProvider` fetches and caches on every launch, and `renew-cert.yml` renews unattended | [CertificateProvider.cs](../Assets/Scripts/Net/CertificateProvider.cs) |
 
 A build handed to somebody else today fails at #3 before it ever reaches #1. This is invisible
 because the developer's machine has Node, a populated `node_modules`, both directories from the
@@ -153,7 +154,22 @@ the repo performs it today.
 > because `HttpListener` HTTPS needs `netsh http add sslcert` — an admin operation, which is
 > precisely what this plan is avoiding. Revisit once bundling proves annoying.
 
-# Phase 2 — automatic certificates 🟡 IN PROGRESS
+# Phase 2 — automatic certificates ✅ BUILT
+
+> **The certificate source below is dead — see
+> [plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).** `local-ip.sh` went
+> offline at the DNS layer with no drop-in replacement, so steps 1, 2 and 5 no longer describe what
+> runs: there is no LAN-IP-derived hostname any more. The name is the fixed, owned
+> `play.skiprocking.ca`, held in [MagicDomain.cs](../Assets/Scripts/Net/MagicDomain.cs) as a single
+> repointable source of truth and served by a single-name certificate that
+> [.github/workflows/renew-cert.yml](../.github/workflows/renew-cert.yml) renews unattended. LAN mode
+> is deprecated in favour of Hotspot-only, which is what removed the need for wildcard DNS at all.
+> Steps 3, 4 and 6 — the cache, the expiry check and the `TLS_CERT`/`TLS_KEY` handoff — are still
+> accurate, and the reasoning under *Renewal becomes structural* still holds.
+>
+> The failure mode described under *Failure handling* is no longer fatal either: a stale cache plus
+> an unreachable download now falls back to a seed certificate shipped with the build (Phase 5),
+> rather than stopping at "could not get a certificate."
 
 **Built:** [CertificateProvider.cs](../Assets/Scripts/Net/CertificateProvider.cs) — detection,
 caching, expiry check, download, SAN verification — wired into `LocalServices` ahead of the
@@ -162,8 +178,8 @@ developer escape hatch survives. Phase 4.3's DNS responder landed at the same ti
 [relay/dns.js](../relay/dns.js), env-gated behind `DNS_RESPOND_IP`, with 26 tests in
 [relay/test-dns.js](../relay/test-dns.js).
 
-**Not done:** confirming the C# path end to end in the editor, and deleting
-`deploy/local-https.ps1` once it is. The script is marked deprecated meanwhile.
+**Not done:** confirming the C# path end to end in the editor. `deploy/local-https.ps1` is gone —
+deleted rather than kept broken, which is what retired its dead `test-deployed.js` call.
 
 > **The deadline moved, and the reason is worth recording.** This section previously said the
 > cached certificate expires 2026-09-18. That was true of *that copy* — `%TEMP%` has since been
@@ -328,7 +344,14 @@ not refuse), the per-source rate limit, and the safe-by-default bind.
 **Scope limit:** hotspot mode only. On a normal LAN phones use the router's DNS, which we do not
 control, so the responder must not run there at all. Two modes, deliberately.
 
-# Phase 5 — the installer
+# Phase 5 — the installer 🟡 SCRIPT WRITTEN
+
+**Built so far:** [deploy/installer.iss](../deploy/installer.iss), which lays down the build,
+`relay/`, the Node runtime and `setup-offline.ps1`, plus
+[deploy/fetch-seed-cert.ps1](../deploy/fetch-seed-cert.ps1) for the seed certificate below. The
+script's own header comment carries the packaging prerequisites, which are the honest measure of
+what is left: a Unity Windows build, a staged Node runtime, and code signing. Untested end to end —
+nothing has compiled it with ISCC on a clean machine yet.
 
 **The distribution format is decided: an installer, not a zip.** A zip is not a lighter
 alternative; it is a build that fails on first launch for everyone who is not the developer,
@@ -347,6 +370,18 @@ Wrap the build (Inno Setup or MSIX) so install time absorbs:
   scoped only to the hotspot subnet leaves ordinary LAN play broken by this identical failure.
   `LocalSubnet` covers both modes while still keeping the rule off the internet. Scope to
   specific ports rather than allowing `node.exe` wholesale either way.
+- **The seed certificate**, so a brand-new install still reaches `Ready` on a first launch that
+  cannot reach the download URL — the exact failure that took the project down when `local-ip.sh`
+  went offline, where an empty cache plus an unreachable service was fatal rather than merely
+  degraded. It is **fetched at packaging time, never committed**:
+  `deploy/fetch-seed-cert.ps1` stages it under the gitignored `deploy/seed-cert/` and the installer
+  copies it into the build's `StreamingAssets` folder, where `CertificateProvider.TrySeedCache`
+  reads it. Committing it instead would put a private key in git history permanently — removable
+  only by a history rewrite, and liable to be rejected outright by GitHub push protection. That the
+  key is *published on purpose* does not change this: the risk being managed is permanence, not
+  disclosure. The fetch script refuses anything expired, within 30 days of expiry, issued by Let's
+  Encrypt staging, or whose SAN does not cover `play.skiprocking.ca` — a bad seed otherwise fails in
+  the worst possible place, on a player's machine, offline, with nobody able to diagnose it.
 - **A scheduled task with highest privileges** that disables IP forwarding on the hotspot
   interface, so the game can call it per session without a UAC prompt (Phase 4.2). **No
   parameters** — hardcode the interface match, or it becomes a local privilege-escalation vector.
@@ -450,10 +485,19 @@ internet, no shared network, and the host needs no uplink either.
    certificate can be obtained. *Mitigation:* cached certificates give up to 90 days of grace;
    make the provider an interface with `traefik.me` / `local-ip.co` as alternates rather than a
    hardcoded URL. **Phase 4.3 halves this** by removing the dependency on their *resolution*.
+
+   > **Superseded — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+   > `local-ip.sh` did disappear — verified dead at the DNS layer, with `local-ip.co`, `traefik.me`,
+   > `sslip.io` and `nip.io` all checked and rejected as replacements. The mitigation here (a
+   > multi-provider interface) is dead on arrival; the actual fix is a single-name certificate for
+   > an owned domain (`play.skiprocking.ca`), renewed by a serverless GitHub Actions job.
 2. **The certificate's private key is published on purpose, so it may be revoked.** CA policy
    requires revocation within 24h of a key-compromise disclosure; mobile browsers largely do not
-   hard-fail on revocation today, which is the only reason this works. *Mitigation:* the
-   multi-provider interface above. Treat it as a dependency that can vanish.
+   hard-fail on revocation today, which is the only reason this works. *Mitigation:* not the
+   multi-provider interface in risk 1 — that idea died with `local-ip.sh`. The domain is ours now,
+   so a revocation is answered by issuing a replacement from `renew-cert.yml` rather than by hoping
+   another operator still exists; `MagicDomain`'s repointable hostname is the escape hatch if the
+   name itself ever has to move.
 3. **Router DNS rebinding protection.** **Downgraded — not observed in practice.** A two-router
    home setup carried a 5-player iOS/Android session with phones joining from either network.
    *Mitigation:* detect at the resolution check and say so plainly, then fall back to hotspot mode.

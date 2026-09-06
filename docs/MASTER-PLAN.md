@@ -89,20 +89,30 @@ licensed pack, commissioned, or generated (§9 of the plan). M1/M2/M4 don't need
 Goal: someone who isn't the developer can run the game on their own PC with no manual setup.
 This depends on the offline-hosting groundwork below (§5) already being solid, which it is.
 
-**Authoritative doc:** [`ZeroSetupPlan.md`](ZeroSetupPlan.md) — "designed and de-risked, not yet
-implemented" as of its last spikes (2026-08-20/21).
+**Authoritative doc:** [`ZeroSetupPlan.md`](ZeroSetupPlan.md), whose certificate story is
+superseded by [`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md) — read that
+second doc before trusting anything Phase 2 says about hostnames.
 
 | Phase | What it covers | Status |
 |---|---|---|
 | Phase 1 | Bundle a working relay inside the build | Not started |
-| Phase 2 | Automatic certificates | 🟡 In progress |
+| Phase 2 | Automatic certificates | ✅ Built — source replaced, see below |
 | Phase 3 | Make the game's own defaults correct | Not started |
 | Phase 4 | Hotspot mode | Not started |
-| Phase 5 | The installer | Not started |
+| Phase 5 | The installer | 🟡 `installer.iss` + seed-cert fetch written, never compiled |
 
-Related, additive-only insurance doc: [`MagicDnsFallback.md`](MagicDnsFallback.md) — a
-self-operated DNS/cert fallback in case the free `local-ip.sh` service Track C's certs depend on
-disappears. Design sketch only, not built, not blocking anything.
+**Phase 2's dependency is gone, and that is settled rather than pending.** `local-ip.sh` died at
+the DNS layer with no drop-in replacement (`local-ip.co`, `traefik.me`, `sslip.io` and `nip.io` were
+each checked and rejected). The replacement, shipped 2026-09-03: a single-name certificate for the
+owned `play.skiprocking.ca`, renewed unattended by `.github/workflows/renew-cert.yml`, with
+`MagicDomain.cs` as a repointable single source of truth. LAN mode is deprecated in favour of
+Hotspot-only, which is what removed the need for public wildcard DNS at all. A missing certificate
+is also no longer fatal: a seed shipped with the build (Phase 5) covers a first launch that cannot
+reach the download URL.
+
+Because of that, [`MagicDnsFallback.md`](MagicDnsFallback.md) — the insurance sketch for exactly
+this disappearance — is now **historical**. The event it hedged against happened and was answered
+differently; don't build against it.
 
 Also unresolved before Track C can ship: [`SecurityReview.md`](SecurityReview.md) §6 (relay
 hardening) and §7 (distribution risks) are still 🟡 open — its priority table at the bottom is
@@ -124,8 +134,8 @@ build on. Read in this order to avoid citing dead sections:
    Direct for fully-offline hosting (a bug in `hotspot-control.ps1`, not a Windows limit).
 3. [`OfflineSetup.md`](OfflineSetup.md) — current state of fully-offline hosting (no
    internet/router at all): prerequisites, `setup-offline.ps1`, remaining gaps.
-4. [`../deploy/README.md`](../deploy/README.md) — the day-to-day one-command runbook
-   (`local-https.ps1`).
+4. [`../deploy/README.md`](../deploy/README.md) — the day-to-day runbook. Note it no longer documents
+   `local-https.ps1`: that script is deleted, and launching the game is now the whole procedure.
 5. [`../deploy/LOCAL-HTTPS-SPIKE.md`](../deploy/LOCAL-HTTPS-SPIKE.md) — history/measurements
    behind why local-HTTPS was adopted; still-open risks (cellular guests impossible, firewall
    prompt, key-distribution) are recorded here and remain true.
@@ -136,8 +146,11 @@ Abandoned along the way, kept only as records — do not build against these:
 
 - [`Findings-WiFiDirect.md`](Findings-WiFiDirect.md) — Wi-Fi Direct got a phone connected but hit
   DNS/validation dead ends; lost to Mobile Hotspot on operational grounds (see Decision doc above).
-- The `skiprocking.ca` dynamic-DNS domain mentioned in some older docs — confirmed dead/unused in
-  both `HostingPlan.md` and `deploy/README.md`. Nothing in the repo depends on it.
+- The `skiprocking.ca` **dynamic-DNS** setup mentioned in some older docs — that *use* of the domain
+  is dead, confirmed in both `HostingPlan.md` and `deploy/README.md`. **The domain itself is no
+  longer unused, and this line used to say nothing depends on it:** as of 2026-09-03 the certificate
+  everything runs on is issued for `play.skiprocking.ca` (§4). Dynamic DNS is what was abandoned,
+  not the name.
 - `PLAN.md`'s Cloudflare Pages / Fly.io hosting sections, its "URP from day 1" claim, and its
   `NativeWebSocket` recommendation — each has an inline "Superseded" box pointing at the doc that
   replaced it (`HostingPlan.md`, [`Migration-URP.md`](Migration-URP.md), and `RelayClient.cs`'s
@@ -157,8 +170,9 @@ against current source before assuming either is fixed.
 |---|---|---|
 | [`PLAN.md`](PLAN.md) | Current, with dead sections flagged inline | Original full design doc — motion pipeline, physics, event system, scoring sections still live |
 | [`HostingPlan.md`](HostingPlan.md) | Current, authoritative | Local-relay hosting architecture |
-| [`ZeroSetupPlan.md`](ZeroSetupPlan.md) | Current — Track C | Zero-config distributable build |
-| [`MagicDnsFallback.md`](MagicDnsFallback.md) | Current — proposal, not built | DNS/cert fallback insurance |
+| [`ZeroSetupPlan.md`](ZeroSetupPlan.md) | Current — Track C, Phase 2's cert source superseded | Zero-config distributable build |
+| [`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md) | Current, executed | Replaces dead `local-ip.sh` with an owned domain + self-renewed cert |
+| [`MagicDnsFallback.md`](MagicDnsFallback.md) | Historical — hedged an event that has since happened | DNS/cert fallback insurance, answered differently |
 | [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) | Current, resolved decision | Mobile Hotspot over Wi-Fi Direct |
 | [`OfflineSetup.md`](OfflineSetup.md) | Current | Fully-offline hosting, no internet |
 | [`Migration-URP.md`](Migration-URP.md) | Mostly executed | Built-in→URP migration runbook |

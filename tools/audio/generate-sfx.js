@@ -23,14 +23,14 @@
  * drop with no code change.
  */
 
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
 const SAMPLE_RATE = 48000;
 
-const OUT_DIR = process.argv.includes('--out')
-  ? process.argv[process.argv.indexOf('--out') + 1]
-  : path.resolve(__dirname, '..', '..', 'Assets', 'Audio');
+const OUT_DIR = process.argv.includes("--out")
+  ? process.argv[process.argv.indexOf("--out") + 1]
+  : path.resolve(__dirname, "..", "..", "Assets", "Audio");
 
 // ---------------------------------------------------------------- primitives
 
@@ -58,7 +58,8 @@ function ad(t, attack, release) {
 }
 
 /** Exponential glide between two frequencies — how pitch is actually heard. */
-const glide = (from, to, k) => from * Math.pow(to / from, Math.min(1, Math.max(0, k)));
+const glide = (from, to, k) =>
+  from * Math.pow(to / from, Math.min(1, Math.max(0, k)));
 
 /**
  * An oscillator whose frequency may change per sample.
@@ -107,7 +108,12 @@ function mallet(seconds, freq, { release = 0.45, partials = null } = {}) {
   // instead of fusing into one sterile tone. Deliberately not a marimba's true 1 : 3.9 :
   // 9.2 — those upper partials are what make a real marimba bright, and bright is the
   // thing being avoided.
-  const voices = partials ?? [[1, 1], [2.01, 0.2], [3.02, 0.07], [4.03, 0.02]];
+  const voices = partials ?? [
+    [1, 1],
+    [2.01, 0.2],
+    [3.02, 0.07],
+    [4.03, 0.02],
+  ];
 
   const out = buffer(seconds);
 
@@ -121,14 +127,14 @@ function mallet(seconds, freq, { release = 0.45, partials = null } = {}) {
   }
 
   // A final low-pass with a ceiling, so even a high note cannot get spiky.
-  return svf(out, () => Math.min(freq * 7, 4000), 0.7, 'low');
+  return svf(out, () => Math.min(freq * 7, 4000), 0.7, "low");
 }
 
 /**
  * Chamberlin state-variable filter. One pass, cutoff and Q may move per sample.
  * `mode` picks which of the three simultaneous outputs to keep.
  */
-function svf(input, cutoffAt, q = 1, mode = 'low') {
+function svf(input, cutoffAt, q = 1, mode = "low") {
   const out = new Float32Array(input.length);
   let low = 0;
   let band = 0;
@@ -144,7 +150,7 @@ function svf(input, cutoffAt, q = 1, mode = 'low') {
     band += f * high;
     low += f * band;
 
-    out[i] = mode === 'low' ? low : mode === 'band' ? band : high;
+    out[i] = mode === "low" ? low : mode === "band" ? band : high;
   }
 
   return out;
@@ -207,7 +213,8 @@ function reverb(input, { amount = 0.25, room = 0.82 } = {}) {
   }
 
   const out = new Float32Array(input.length);
-  for (let i = 0; i < input.length; i++) out[i] = input[i] * (1 - amount) + wet[i] * amount;
+  for (let i = 0; i < input.length; i++)
+    out[i] = input[i] * (1 - amount) + wet[i] * amount;
 
   return out;
 }
@@ -227,7 +234,10 @@ function normalize(buf, peak = 0.89) {
  * step is a click — on the skip sound that click would be louder than the sound.
  */
 function deClick(buf, ms = 2) {
-  const n = Math.min(Math.round((ms / 1000) * SAMPLE_RATE), Math.floor(buf.length / 3));
+  const n = Math.min(
+    Math.round((ms / 1000) * SAMPLE_RATE),
+    Math.floor(buf.length / 3),
+  );
   for (let i = 0; i < n; i++) {
     const k = i / n;
     buf[i] *= k;
@@ -239,10 +249,10 @@ function deClick(buf, ms = 2) {
 function writeWav(file, buf) {
   const bytes = Buffer.alloc(44 + buf.length * 2);
 
-  bytes.write('RIFF', 0);
+  bytes.write("RIFF", 0);
   bytes.writeUInt32LE(36 + buf.length * 2, 4);
-  bytes.write('WAVE', 8);
-  bytes.write('fmt ', 12);
+  bytes.write("WAVE", 8);
+  bytes.write("fmt ", 12);
   bytes.writeUInt32LE(16, 16);
   bytes.writeUInt16LE(1, 20); // PCM
   bytes.writeUInt16LE(1, 22); // mono
@@ -250,7 +260,7 @@ function writeWav(file, buf) {
   bytes.writeUInt32LE(SAMPLE_RATE * 2, 28);
   bytes.writeUInt16LE(2, 32);
   bytes.writeUInt16LE(16, 34);
-  bytes.write('data', 36);
+  bytes.write("data", 36);
   bytes.writeUInt32LE(buf.length * 2, 40);
 
   for (let i = 0; i < buf.length; i++) {
@@ -279,12 +289,12 @@ function writeWav(file, buf) {
 function skip(seed, tune = 1) {
   const plop = shape(
     osc(0.2, (t) => glide(820 * tune, 300 * tune, Math.min(1, t / 0.025))),
-    (t) => ad(t, 0.003, 0.05)
+    (t) => ad(t, 0.003, 0.05),
   );
 
   const water = shape(
-    svf(noise(0.18, seed), (life) => glide(820, 280, life), 1.0, 'low'),
-    (t) => ad(t, 0.004, 0.042)
+    svf(noise(0.18, seed), (life) => glide(820, 280, life), 1.0, "low"),
+    (t) => ad(t, 0.004, 0.042),
   );
 
   const mixed = mix(0.24, [
@@ -297,8 +307,14 @@ function skip(seed, tune = 1) {
   // The final low-pass is a backstop: the pitch ladder resamples this clip upward by as
   // much as fourteen semitones, which drags its whole spectrum with it.
   return normalize(
-    deClick(reverb(svf(mixed, () => 2800, 0.7, 'low'), { amount: 0.16, room: 0.78 }), 3),
-    0.72
+    deClick(
+      reverb(
+        svf(mixed, () => 2800, 0.7, "low"),
+        { amount: 0.16, room: 0.78 },
+      ),
+      3,
+    ),
+    0.72,
   );
 }
 
@@ -306,12 +322,15 @@ function skip(seed, tune = 1) {
 function skipMilestone(seed, tune = 1) {
   return normalize(
     deClick(
-      reverb(mix(0.6, [
-        { source: mallet(0.55, 1046 * tune, { release: 0.3 }), gain: 0.7 },
-        { source: mallet(0.55, 1568 * tune, { release: 0.18 }), gain: 0.22 },
-      ]), { amount: 0.34, room: 0.88 })
+      reverb(
+        mix(0.6, [
+          { source: mallet(0.55, 1046 * tune, { release: 0.3 }), gain: 0.7 },
+          { source: mallet(0.55, 1568 * tune, { release: 0.18 }), gain: 0.22 },
+        ]),
+        { amount: 0.34, room: 0.88 },
+      ),
     ),
-    0.62
+    0.62,
   );
 }
 
@@ -325,17 +344,17 @@ function skipMilestone(seed, tune = 1) {
 function sink(seed) {
   const body = shape(
     osc(0.65, (t) => glide(380, 70, Math.min(1, t / 0.32))),
-    (t) => ad(t, 0.012, 0.18)
+    (t) => ad(t, 0.012, 0.18),
   );
 
   const gulp = shape(
-    svf(noise(0.5, seed), (life) => glide(620, 150, life), 1.1, 'low'),
-    (t) => ad(t, 0.04, 0.14)
+    svf(noise(0.5, seed), (life) => glide(620, 150, life), 1.1, "low"),
+    (t) => ad(t, 0.04, 0.14),
   );
 
   const wash = shape(
-    svf(noise(0.7, seed + 3), () => 700, 0.7, 'low'),
-    (t) => decay(t / 0.7, 5) * 0.5
+    svf(noise(0.7, seed + 3), () => 700, 0.7, "low"),
+    (t) => decay(t / 0.7, 5) * 0.5,
   );
 
   const mixed = mix(0.78, [
@@ -345,8 +364,14 @@ function sink(seed) {
   ]);
 
   return normalize(
-    deClick(reverb(svf(mixed, () => 2000, 0.7, 'low'), { amount: 0.3, room: 0.88 }), 3),
-    0.8
+    deClick(
+      reverb(
+        svf(mixed, () => 2000, 0.7, "low"),
+        { amount: 0.3, room: 0.88 },
+      ),
+      3,
+    ),
+    0.8,
   );
 }
 
@@ -361,12 +386,12 @@ function sink(seed) {
 function throwFailed(seed) {
   const thud = shape(
     osc(0.24, (t) => glide(210, 115, Math.min(1, t / 0.07))),
-    (t) => ad(t, 0.006, 0.06)
+    (t) => ad(t, 0.006, 0.06),
   );
 
   const damp = shape(
-    svf(noise(0.16, seed), () => 420, 0.9, 'low'),
-    (t) => decay(t / 0.16, 22)
+    svf(noise(0.16, seed), () => 420, 0.9, "low"),
+    (t) => decay(t / 0.16, 22),
   );
 
   const mixed = mix(0.28, [
@@ -375,16 +400,27 @@ function throwFailed(seed) {
   ]);
 
   return normalize(
-    deClick(reverb(svf(mixed, () => 1100, 0.7, 'low'), { amount: 0.12, room: 0.7 }), 3),
-    0.66
+    deClick(
+      reverb(
+        svf(mixed, () => 1100, 0.7, "low"),
+        { amount: 0.12, room: 0.7 },
+      ),
+      3,
+    ),
+    0.66,
   );
 }
 
 /** The throw itself. Air, not pitch — bandpassed noise sweeping up then away. */
 function throwRelease(seed) {
   const air = shape(
-    svf(noise(0.34, seed), (life) => glide(320, 2600, Math.min(1, life * 1.6)), 1.3, 'band'),
-    (t) => ad(t, 0.09, 0.09)
+    svf(
+      noise(0.34, seed),
+      (life) => glide(320, 2600, Math.min(1, life * 1.6)),
+      1.3,
+      "band",
+    ),
+    (t) => ad(t, 0.09, 0.09),
   );
 
   return normalize(deClick(reverb(air, { amount: 0.12, room: 0.7 })), 0.7);
@@ -399,8 +435,11 @@ function throwRelease(seed) {
  */
 function scoreTick(seed, tune = 1) {
   return normalize(
-    deClick(svf(mallet(0.1, 920 * tune, { release: 0.05 }), () => 2200, 0.7, 'low'), 2),
-    0.4
+    deClick(
+      svf(mallet(0.1, 920 * tune, { release: 0.05 }), () => 2200, 0.7, "low"),
+      2,
+    ),
+    0.4,
   );
 }
 
@@ -411,20 +450,26 @@ function scoreTick(seed, tune = 1) {
  * work here rather than decorating: it softens each note's onset by smearing it into the
  * tail of the one before, which is most of why a warm phrase sounds warm.
  */
-function phrase(notes, { seconds, release = 0.4, amount = 0.36, room = 0.88 } = {}) {
+function phrase(
+  notes,
+  { seconds, release = 0.4, amount = 0.36, room = 0.88 } = {},
+) {
   return normalize(
     deClick(
       reverb(
-        mix(seconds, notes.map(({ hz, at, gain = 1 }) => ({
-          source: mallet(seconds - at, hz, { release }),
-          gain,
-          at,
-        }))),
-        { amount, room }
+        mix(
+          seconds,
+          notes.map(({ hz, at, gain = 1 }) => ({
+            source: mallet(seconds - at, hz, { release }),
+            gain,
+            at,
+          })),
+        ),
+        { amount, room },
       ),
-      3
+      3,
     ),
-    0.78
+    0.78,
   );
 }
 
@@ -433,103 +478,159 @@ function phrase(notes, { seconds, release = 0.4, amount = 0.36, room = 0.88 } = 
 const CATALOGUE = [
   // Four variants so a thirty-skip run never repeats the same sample back to back. The
   // tuning offsets are small on purpose: they must read as the same stone, not four stones.
-  ['skip_01', () => skip(101, 1.0)],
-  ['skip_02', () => skip(202, 1.06)],
-  ['skip_03', () => skip(303, 0.94)],
-  ['skip_04', () => skip(404, 1.02)],
+  ["skip_01", () => skip(101, 1.0)],
+  ["skip_02", () => skip(202, 1.06)],
+  ["skip_03", () => skip(303, 0.94)],
+  ["skip_04", () => skip(404, 1.02)],
 
-  ['skip_milestone_01', () => skipMilestone(501, 1.0)],
-  ['skip_milestone_02', () => skipMilestone(502, 1.05)],
+  ["skip_milestone_01", () => skipMilestone(501, 1.0)],
+  ["skip_milestone_02", () => skipMilestone(502, 1.05)],
 
-  ['sink_01', () => sink(601)],
-  ['sink_02', () => sink(602)],
+  ["sink_01", () => sink(601)],
+  ["sink_02", () => sink(602)],
 
-  ['throw_failed_01', () => throwFailed(701)],
+  ["throw_failed_01", () => throwFailed(701)],
 
-  ['throw_release_01', () => throwRelease(801)],
-  ['throw_release_02', () => throwRelease(802)],
-  ['throw_release_03', () => throwRelease(803)],
+  ["throw_release_01", () => throwRelease(801)],
+  ["throw_release_02", () => throwRelease(802)],
+  ["throw_release_03", () => throwRelease(803)],
 
-  ['score_tick_01', () => scoreTick(901, 1.0)],
-  ['score_tick_02', () => scoreTick(902, 1.04)],
-  ['score_tick_03', () => scoreTick(903, 0.97)],
+  ["score_tick_01", () => scoreTick(901, 1.0)],
+  ["score_tick_02", () => scoreTick(902, 1.04)],
+  ["score_tick_03", () => scoreTick(903, 0.97)],
 
   // Rising and landing on the octave — the ka-ching shape. Dropped a fourth from the
   // first pass: the shape is what reads as a reward, and it reads just as clearly an
   // octave down without any note poking out of the mix.
-  ['throw_scored_01', () => phrase(
-    [{ hz: 523, at: 0 }, { hz: 659, at: 0.085 }, { hz: 988, at: 0.17, gain: 0.9 }],
-    { seconds: 0.8, release: 0.34 }
-  )],
+  [
+    "throw_scored_01",
+    () =>
+      phrase(
+        [
+          { hz: 523, at: 0 },
+          { hz: 659, at: 0.085 },
+          { hz: 988, at: 0.17, gain: 0.9 },
+        ],
+        { seconds: 0.8, release: 0.34 },
+      ),
+  ],
 
   // Two notes, short. This fires on every handover, so it cannot outstay its welcome.
-  ['turn_start_01', () => phrase(
-    [{ hz: 523, at: 0 }, { hz: 784, at: 0.075, gain: 0.85 }],
-    { seconds: 0.42, release: 0.18, amount: 0.28 }
-  )],
+  [
+    "turn_start_01",
+    () =>
+      phrase(
+        [
+          { hz: 523, at: 0 },
+          { hz: 784, at: 0.075, gain: 0.85 },
+        ],
+        { seconds: 0.42, release: 0.18, amount: 0.28 },
+      ),
+  ],
 
-  ['match_start_01', () => phrase(
-    [{ hz: 392, at: 0 }, { hz: 523, at: 0.1 }, { hz: 659, at: 0.2 }],
-    { seconds: 0.75, release: 0.36 }
-  )],
+  [
+    "match_start_01",
+    () =>
+      phrase(
+        [
+          { hz: 392, at: 0 },
+          { hz: 523, at: 0.1 },
+          { hz: 659, at: 0.2 },
+        ],
+        { seconds: 0.75, release: 0.36 },
+      ),
+  ],
 
   // The only sound in the set that resolves: four notes up to the octave, with a low
   // sustained note under it so it lands rather than merely stopping.
-  ['match_win_01', () => normalize(
-    mix(1.7, [
-      {
-        source: phrase(
-          [{ hz: 392, at: 0 }, { hz: 523, at: 0.13 }, { hz: 659, at: 0.26 }, { hz: 784, at: 0.39 }],
-          { seconds: 1.7, release: 0.6, amount: 0.42 }
-        ),
-        gain: 0.9,
-      },
-      {
-        // Low-passed rather than a bare sine, so the pad sits under the melody as warmth
-        // instead of as a separate audible tone.
-        source: svf(
-          shape(osc(1.7, () => 131), (t) => ad(t, 0.08, 0.75) * 0.5),
-          () => 500, 0.7, 'low'
-        ),
-        gain: 0.4,
-        at: 0.34,
-      },
-    ]),
-    0.82
-  )],
+  [
+    "match_win_01",
+    () =>
+      normalize(
+        mix(1.7, [
+          {
+            source: phrase(
+              [
+                { hz: 392, at: 0 },
+                { hz: 523, at: 0.13 },
+                { hz: 659, at: 0.26 },
+                { hz: 784, at: 0.39 },
+              ],
+              { seconds: 1.7, release: 0.6, amount: 0.42 },
+            ),
+            gain: 0.9,
+          },
+          {
+            // Low-passed rather than a bare sine, so the pad sits under the melody as warmth
+            // instead of as a separate audible tone.
+            source: svf(
+              shape(
+                osc(1.7, () => 131),
+                (t) => ad(t, 0.08, 0.75) * 0.5,
+              ),
+              () => 500,
+              0.7,
+              "low",
+            ),
+            gain: 0.4,
+            at: 0.34,
+          },
+        ]),
+        0.82,
+      ),
+  ],
 
   // Two notes that do NOT resolve — the second falls. A tie is not a win and the sound
   // must not claim otherwise. See MatchEndedEvent.
-  ['match_tie_01', () => phrase(
-    [{ hz: 466, at: 0 }, { hz: 440, at: 0.16, gain: 0.8 }],
-    { seconds: 0.75, release: 0.34, amount: 0.3 }
-  )],
+  [
+    "match_tie_01",
+    () =>
+      phrase(
+        [
+          { hz: 466, at: 0 },
+          { hz: 440, at: 0.16, gain: 0.8 },
+        ],
+        { seconds: 0.75, release: 0.34, amount: 0.3 },
+      ),
+  ],
 
-  ['player_joined_01', () => phrase(
-    [{ hz: 659, at: 0 }, { hz: 880, at: 0.065, gain: 0.8 }],
-    { seconds: 0.34, release: 0.15, amount: 0.24 }
-  )],
+  [
+    "player_joined_01",
+    () =>
+      phrase(
+        [
+          { hz: 659, at: 0 },
+          { hz: 880, at: 0.065, gain: 0.8 },
+        ],
+        { seconds: 0.34, release: 0.15, amount: 0.24 },
+      ),
+  ],
 
-  ['ui_confirm_01', () => phrase(
-    [{ hz: 784, at: 0 }],
-    { seconds: 0.2, release: 0.08, amount: 0.16 }
-  )],
+  [
+    "ui_confirm_01",
+    () =>
+      phrase([{ hz: 784, at: 0 }], {
+        seconds: 0.2,
+        release: 0.08,
+        amount: 0.16,
+      }),
+  ],
 ];
 
 // ---------------------------------------------------------------- run
 
 function main() {
-  console.log('Rock Skipping — SFX generator');
+  console.log("Rock Skipping — SFX generator");
   console.log(`  sample rate : ${SAMPLE_RATE} Hz, 16-bit mono`);
   console.log(`  output      : ${OUT_DIR}`);
-  console.log('');
+  console.log("");
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   let failures = 0;
 
   CATALOGUE.forEach(([name, build], i) => {
-    const step = String(i + 1).padStart(2, ' ');
+    const step = String(i + 1).padStart(2, " ");
 
     let buf;
     try {
@@ -541,7 +642,8 @@ function main() {
     }
 
     let peak = 0;
-    for (let s = 0; s < buf.length; s++) peak = Math.max(peak, Math.abs(buf[s]));
+    for (let s = 0; s < buf.length; s++)
+      peak = Math.max(peak, Math.abs(buf[s]));
 
     const file = path.join(OUT_DIR, `${name}.wav`);
     const bytes = writeWav(file, buf);
@@ -553,22 +655,24 @@ function main() {
     if (!ok) failures++;
 
     console.log(
-      `  ${step}. ${ok ? 'ok  ' : 'FAIL'}  ${name.padEnd(20)} ` +
-      `${seconds.toFixed(2)}s  peak ${peak.toFixed(2)}  ${(bytes / 1024).toFixed(1)} KB`
+      `  ${step}. ${ok ? "ok  " : "FAIL"}  ${name.padEnd(20)} ` +
+        `${seconds.toFixed(2)}s  peak ${peak.toFixed(2)}  ${(bytes / 1024).toFixed(1)} KB`,
     );
   });
 
-  console.log('');
+  console.log("");
   if (failures > 0) {
-    console.log(`FAILED — ${failures} sound(s) came out silent, clipped, or threw.`);
+    console.log(
+      `FAILED — ${failures} sound(s) came out silent, clipped, or threw.`,
+    );
     process.exit(1);
   }
 
   console.log(`PASS — ${CATALOGUE.length} sounds written to ${OUT_DIR}`);
-  console.log('');
-  console.log('Next: in Unity, let the files import, then run');
-  console.log('  RockSkipping > Rebuild Audio Bank');
-  console.log('to point Resources/AudioBank.asset at them.');
+  console.log("");
+  console.log("Next: in Unity, let the files import, then run");
+  console.log("  RockSkipping > Rebuild Audio Bank");
+  console.log("to point Resources/AudioBank.asset at them.");
 }
 
 main();

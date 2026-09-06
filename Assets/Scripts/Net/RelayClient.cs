@@ -228,8 +228,11 @@ namespace Net
                 // deliberately torn down (docs/DOCUMENTATION_AUDIT.md) and this silently
                 // pointed at a dead name for months.
                 Debug.LogWarning($"[RelayClient] No {OverrideFileName} and no derived address — " +
-                                 $"falling back to {relayUrl}. Phones cannot reach this; run " +
-                                 "deploy/local-https.ps1 to host properly.");
+                                 $"falling back to {relayUrl}. Phones cannot reach this. " +
+                                 "LocalServices is what normally supplies the address, so check " +
+                                 "why it did not reach Ready (deploy/local-https.ps1, named here " +
+                                 "until 2026-09-06, no longer exists — it was replaced by " +
+                                 "CertificateProvider doing the same work on every launch).");
                 RelayUrl = relayUrl;
             }
 

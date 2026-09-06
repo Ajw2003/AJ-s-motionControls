@@ -1,165 +1,145 @@
-# Hosting runbook — run the relay on this machine
+# Hosting runbook — the relay runs on this machine automatically
 
-Gets the controller page served from **this PC** over HTTPS, so a phone on the same network
-gets a secure context and its motion sensors unlock. Design and reasoning:
-[HostingPlan.md](../docs/HostingPlan.md) §2.
+Gets the controller page served from **this PC** over HTTPS, so a phone gets a secure
+context and its motion sensors unlock. Design and reasoning:
+[HostingPlan.md](../docs/HostingPlan.md) §2. Certificate design:
+[docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md).
 
 > **This replaces the Fly.io deployment.** The hosted relay is gone: `fly.toml`, `Dockerfile`,
 > `.dockerignore`, `deploy/Caddyfile`, `deploy/rockskip-relay.service` and
-> `relay/test-deployed.js` were all deleted in `1cd7647`, and the Fly app was torn down. The
-> VPS route that used to sit at the bottom of this file is abandoned with it. Nothing in the
-> game connects to a hosted service any more.
+> `relay/test-deployed.js` were all deleted in `1cd7647`, and the Fly app was torn down.
+> Nothing in the game connects to a hosted service any more.
+>
+> **`deploy/local-https.ps1` is also gone**, deleted rather than kept broken. It automated
+> exactly what `Assets/Scripts/Net/CertificateProvider.cs` and `Assets/Scripts/Net/
+> LocalServices.cs` now do at launch with nobody having to remember to run anything — see
+> those files' own remarks for the certificate/relay lifecycle. Its last verification step
+> called `relay/test-deployed.js`, itself deleted in `1cd7647`, so the script had been unable
+> to complete a clean run since that commit.
 
 ---
 
-## The one command
+## The one step: press Play
 
-```bash
-pwsh ./deploy/local-https.ps1
+There is no longer a setup script to run before Play. `LocalServices` (on `Bootstrap`,
+`Start Local Services` ticked by default) does the whole thing on launch:
+
+1. `CertificateProvider` obtains a certificate for `MagicDomain.HostName`
+   (`play.skiprocking.ca` by default — see `Assets/Scripts/Net/MagicDomain.cs`), from the
+   cache, a fresh download, or the seed bundled in `StreamingAssets` if both fail.
+2. It starts the relay (`relay/server.js`) over TLS with that certificate.
+3. In Hotspot mode, `HotspotService` brings up a Wi-Fi hotspot on `192.168.137.1` once the
+   relay and its DNS responder (`relay/dns.js`) are ready.
+4. `JoinScreen` renders the Wi-Fi and game QR codes once everything is up.
+
+**One thing still needs doing once per machine, elevated:**
+
+```powershell
+./deploy/setup-offline.ps1            # apply — needs Administrator
+./deploy/setup-offline.ps1 -DryRun    # inspect first — needs no elevation
 ```
 
-Windows PowerShell works too — `powershell -File .\deploy\local-https.ps1`, or right-click →
-*Run with PowerShell*. `pwsh` is only the spelling that is also right on macOS and Linux.
+This registers the firewall rules (relay TCP 8443, hotspot DNS UDP 53, captive-portal probe
+TCP 80), the scheduled task that disables IP forwarding each session so guests stay isolated,
+and a hosts entry so the *host* can resolve its own relay while offline. See
+[docs/OfflineSetup.md](../docs/OfflineSetup.md) for the full reasoning behind each item.
 
-That is the whole setup. In order, it:
+`HotspotService` runs this for you, elevated, the first time this machine starts a hotspot — so
+in practice you only run it by hand to `-DryRun` it or to `-Uninstall` a test machine. Its exit
+codes are a contract, not decoration: **0** already correct, **1** something genuinely wrong,
+**2** needs Administrator, **3** (`-DryRun` only) not set up yet.
 
-1. detects this machine's LAN IP (`Resolve-LanAddress`)
-2. converts it to the IP-encoded name `local-ip.sh` publishes a wildcard certificate for —
-   `10.0.0.213` becomes `10-0-0-213.local-ip.sh`
-3. downloads that certificate and key to `%TEMP%\rockskip-local-https`, **never into the repo**
-4. checks the name actually resolves to that IP from this machine
-5. writes `relay-url.txt` (`wss://<name>:8443`) and `relay-env.txt` (`PORT`, `TLS_CERT`,
-   `TLS_KEY`) at the repo root — both gitignored
-6. starts the relay with TLS and proves `/health` and the `wss://` upgrade both work
+## Checking the stack without Unity
 
-**Ctrl+C puts everything back** — stops the relay, deletes the borrowed key, restores or
-removes both config files.
+```powershell
+./deploy/verify-stack.ps1              # needs no elevation
+./deploy/verify-stack.ps1 -KeepRunning # leave the relay up to point a phone at it
+```
 
-> ⚠️ **Step 6 is broken — but latent, so read this before concluding the game is broken.**
-> `Test-Chain` shells out to `node test-deployed.js` (`local-https.ps1:465`), but
-> `relay/test-deployed.js` was deleted in `1cd7647` along with the Fly config. Node exits 1,
-> so the script calls `Fail` and stops — *after* `Start-Relay` has already run. The same dead
-> reference survives in `relay/package.json` as the `test:deployed` script.
->
-> **Why the game still plays today anyway.** Nothing in the play path goes through this
-> script once the setup exists. A run on 2026-08-13 — hours before the deletion — left behind
-> `relay-url.txt`, `relay-env.txt` and the certificate in `%TEMP%`, all gitignored or outside
-> the repo, so no checkout disturbs them. Unity's `LocalServices` reads `relay-env.txt` and
-> starts the relay itself on Play. The script is only needed to *establish* that state.
->
-> **When it will start mattering**, i.e. when the persisted state stops being valid:
->
-> | Trigger | Effect |
-> |---|---|
-> | The borrowed certificate expires (**Sep 18 2026** on the current copy) | TLS fails; a re-run is required, and the re-run aborts |
-> | DHCP moves the PC off its current IP | `relay-url.txt` names the wrong host |
-> | `%TEMP%` is cleared — Storage Sense does this unprompted | Certificate and key are gone |
-> | A new machine, or a teammate's first setup | Nothing to inherit |
->
-> **Workaround until it is fixed:** the relay is already up and serving when the script bails,
-> so a run is still usable — or start it yourself with the values `-SetupOnly` writes (see
-> [RECONNECT-TEST.md](RECONNECT-TEST.md) Test B for the exact command). The fix is either to
-> restore a smoke test under that name or to drop the call.
+Starts the relay with the exact environment `LocalServices` gives it and then *does* each
+thing rather than inspecting config: fetches the certificate, checks `/health` really reports
+`dns.bound`, and sends four real DNS queries to the running responder.
 
-| Flag | For |
-|---|---|
-| `-Ip 10.0.0.213` | The machine has more than one plausible interface, so detection refuses to guess |
-| `-Port 9443` | Something already owns 8443 |
-| `-SetupOnly` | Verify, then exit leaving the config in place so Unity's `LocalServices` starts the relay itself |
+**The check worth knowing about is "This PC resolving play.skiprocking.ca".** There are two
+independent halves to name resolution here and they fail nothing alike — a phone resolves the
+game through `relay/dns.js`, but the *host* takes no DHCP from itself and so never asks its own
+responder. It asks a public resolver, and `play.skiprocking.ca` is a registered name whose
+public record is the registrar's parking page. Without the hosts entry above, Unity therefore
+connects to a stranger's web server on the internet and retries there forever — which looks
+like anything except a DNS problem. See
+[docs/Findings-DnsAudit.md](../docs/Findings-DnsAudit.md).
 
-Then press Play in `Bootstrap` and scan the QR. `RelayClient` reads `relay-url.txt` and
-derives the page origin from it, so the join URL and the QR follow automatically.
-
-## Why a borrowed certificate rather than a plain LAN address
+## Why HTTPS at all, rather than plain `ws://`
 
 Phone motion sensors require a secure context, and an HTTPS page cannot open a plain `ws://`
-socket — so `http://10.0.0.213:3000` fails twice over. A publicly-trusted certificate needs a
-public name, and `local-ip.sh` publishes exactly that: a real Let's Encrypt wildcard for
-`*.local-ip.sh`, plus DNS that maps IP-encoded labels back to the address they encode. That
-gives a private LAN address a name the phone's trust store already accepts, with no domain and
-no certificate of our own.
+socket — so a bare `http://192.168.137.1:3000` fails twice over. `CertificateProvider`
+downloads a publicly-trusted certificate for a domain we own
+(`play.skiprocking.ca`, renewed weekly by `.github/workflows/renew-cert.yml`) so the fixed
+hotspot address gets a name the phone's trust store already accepts, with no manual
+certificate wrangling.
 
-Two properties of that certificate to respect:
+Two properties of that certificate worth knowing:
 
-- The SAN is `*.local-ip.sh` and covers **one** label only. `10-0-0-213.local-ip.sh` works;
-  `x.y.local-ip.sh` does not.
-- **Its private key is published on purpose.** Anyone can impersonate anything served under
-  it. This is a test-and-play rig on your own network and can never be a distribution path —
-  which is why the script keeps the key in `%TEMP%` and deletes it on exit.
+- It is **single-name**, not a wildcard — it covers exactly `play.skiprocking.ca` (or
+  whatever `magic-domain.txt` overrides it to), not a whole subdomain space. Windows ICS
+  always assigns the hotspot `192.168.137.1`, so one fixed name is all Hotspot mode ever
+  needs.
+- **Its private key is published on purpose**, same as local-ip.sh's was — see
+  `docs/plans/magic-domain-replacement.md`'s security note for the constraint that comes
+  with that.
+
+## LAN mode is deprecated
+
+`NetworkMode.Lan` still exists and is still selectable by hand-editing `network-mode.txt` to
+`Lan`, but `StartScreen` no longer offers it, and its certificate no longer validates — the
+replacement certificate is single-name for a fixed hostname, which a LAN address's varying
+name can never match. See `Assets/Scripts/Net/NetworkMode.cs` and
+[docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md) Phase 3
+for the full reasoning. Everything below that mentions "the venue's network" or a LAN address
+describes the deprecated path.
 
 ## What this costs, and who cannot play
 
-**A guest on mobile data cannot join.** The name resolves to a private address, which is
-unroutable from the internet. Everyone plays from the same network, or nobody plays.
+**A guest on mobile data cannot join.** Hotspot mode's address is private and unroutable from
+the internet; everyone plays on the PC's own hotspot, or nobody plays.
 
-**A firewall prompt is likely the first time**, because unlike the old outbound-only design
-something now listens on this machine. The script deliberately reports firewall state and
-never changes it — see [LOCAL-HTTPS-SPIKE.md](LOCAL-HTTPS-SPIKE.md) Step 3 for why that
-measurement is one-shot per machine and worth not spending by accident.
-
-**Some routers may break it, though none has yet.** DNS rebinding protection strips private-IP
-answers from public names, and AP isolation stops two clients on the same Wi-Fi reaching each
-other at all. Step 4 of the script catches the first; nothing can catch the second except
-trying.
-
-In practice this has held up better than expected. A home setup running an ISP router **plus a
-second unit in AP mode with its own SSID** served a 5-player iOS/Android session with phones
-joining from *either* network — so neither rebinding protection nor the AP hop caused trouble.
-
-**If guests cannot get onto the venue's network, host a mobile hotspot from the PC and have
-phones join that.** It makes the PC the access point for those phones, which removes AP
-isolation, guest-network segmentation, and any need for *guests* to hold network credentials in
-one move.
-
-Confirmed on a school network — and note which device was stuck, because it is the opposite of
-what it sounds like: **the PC was connected and stayed connected**; the *phone* was the device
-that could not join. The PC bridged it. That is the common case at a party too, where guests
-lack the Wi-Fi password and the host does not. Treat it as the standard fallback rather than a
-last resort.
+**A firewall prompt is likely the first time**, because something now listens on this
+machine. `setup-offline.ps1` reports firewall state and creates the rules it needs; it does
+not silently widen anything beyond that.
 
 ## When something goes wrong
 
 | Symptom | Almost always | Check |
 |---|---|---|
-| Script stops at interface detection | Several interfaces with a default gateway; guessing wrong fails exactly like a bad certificate | Re-run with `-Ip <the right one>` |
-| `Could not reach local-ip.sh` | TLS 1.2 not enabled in Windows PowerShell, or the service is down | The script sets the protocol itself; a cached copy in `%TEMP%` is used if present |
-| Name does not resolve to the IP | **Router DNS rebinding protection** stripping the private answer | Host a hotspot from the PC and rerun; if that works, it is the router |
-| `/health` fails over `https://` | Certificate expired, or the wrong IP was chosen | Re-run — the script re-downloads and re-checks the SAN |
-| Phone cannot load the page, PC can | AP isolation, guest-network segmentation, or the firewall | Open `https://<pc-ip>:8443/health` by **raw IP** on the phone: a *certificate name mismatch* means the network is fine and only DNS was at fault; a *timeout* means isolation. **The fix for isolation is a PC-hosted hotspot** |
-| Guests cannot join the venue's network | Enterprise Wi-Fi needing per-user credentials, a captive portal, or nobody knows the password | Host a hotspot from the PC and have phones join that. The PC stays on the venue network and bridges them — confirmed on enterprise Wi-Fi a phone could not join |
-| Page loads, sensors dead | Not a secure context | In the phone's browser console: `window.isSecureContext` |
-| Unity connects nowhere | `relay-url.txt` stale, or the relay is not running | The file should hold `wss://<dashed-ip>.local-ip.sh:8443`, and the IP must be current |
-| Everything worked yesterday, not today | **The LAN IP changed** — DHCP moved the machine | Re-run the script; it rewrites the name and the config |
+| `[LocalServices] Could not get a certificate.` on a fresh install | No network, no cache, and no seed certificate in `StreamingAssets` | Connect this machine to the internet once, or ship a seed cert — see `CertificateProvider.TrySeedCache` |
+| `/health` fails over `https://` | Certificate expired and the renewal workflow hasn't published a fresh one, or a stale cache | Check `.github/workflows/renew-cert.yml`'s last run |
+| Phone shows "No internet" but the game works | Expected on an isolated hotspot unless the captive-portal probes are answered — see `relay/dns.js`/`relay/server.js`'s `/generate_204` and `/hotspot-detect.html` | Confirm the plain HTTP `:80` listener bound; it degrades quietly and logs loudly if `:80` is already taken (IIS, Docker Desktop, etc.) |
+| Phone cannot load the page, PC can | The isolation `setup-offline.ps1`'s scheduled task enforces is working as intended for guest-to-guest traffic; check the guest can still reach the host itself | Open `https://192.168.137.1:8443/health` by raw IP on the phone |
+| Unity connects nowhere | `relay-url.txt` stale (leftover from local development), or the relay is not running | Delete `relay-url.txt` to let `LocalServices` resolve its own origin, or check the relay process is alive |
+| The host itself can't resolve its own relay while offline | The host does not take DHCP from itself, so it never consults its own DNS responder | Confirm `setup-offline.ps1`'s hosts entry is present: `MagicDomain.HostName  192.168.137.1` |
 
 ## Day-to-day
 
 | Task | How |
 |---|---|
-| Start hosting | `pwsh ./deploy/local-https.ps1` |
-| Stop and clean up | Ctrl+C in that window |
-| Let Unity own the relay | `-SetupOnly`, then press Play |
-| Watch relay output | The script's own window, or Unity's Console when `LocalServices` owns it |
+| Play | Press Play in `Bootstrap` |
+| One-time machine setup | `./deploy/setup-offline.ps1` (Administrator) |
+| Watch relay output | Unity's Console |
 | Relay integration tests | `cd relay && npm test` |
-
-`LocalServices` reuses a relay that is already answering rather than starting a second one, so
-running the script and pressing Play do not fight: the script owns the relay and Unity borrows
-it.
 
 ## The domain
 
-`skiprocking.ca` is registered and resolves, but it currently points at **registrar parking**
-(`play.skiprocking.ca` is a CNAME to `pixie.porkbun.com`) — it is not wired to this machine or
-to anything else, and **no code or config in this repo references it**. It was bought as a
-cosmetic vanity name for the Fly deployment that no longer exists. Pointing it at a host is a
-possible future step, not part of how the game runs today.
+`skiprocking.ca` is registered on Porkbun. `play.skiprocking.ca` is the hostname the
+certificate covers and the DNS responder answers in Hotspot mode — see
+[docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md) for the
+full design, including why it needs no public A record at all.
 
 ---
 
 ## Operating notes
 
 - **Abuse surface:** anyone who can reach the relay can send `CREATE_ROOM`; there is
-  per-socket rate limiting but none per IP. On a home LAN this is a non-issue, and it is the
-  main thing that would need revisiting if the relay were ever exposed publicly again.
+  per-socket rate limiting but none per IP. On an isolated hotspot this is a non-issue.
 - **Nothing survives a restart.** Rooms live in a per-process `Map`, so restarting the relay
   drops every room — the host reclaims its code and phones rejoin on their own. That path is
   tested in [RECONNECT-TEST.md](RECONNECT-TEST.md).

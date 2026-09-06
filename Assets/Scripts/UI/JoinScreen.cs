@@ -27,7 +27,7 @@ namespace Ui
     /// </remarks>
     public class JoinScreen : MonoBehaviour
     {
-        [SerializeField] private bool visible = true;
+        [SerializeField] private bool isVisible = true;
         [SerializeField] private KeyCode toggleKey = KeyCode.F2;
 
         [Tooltip("Shrink to a corner card once the match is under way, so the lake is visible. " +
@@ -76,7 +76,7 @@ namespace Ui
 
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey)) visible = !visible;
+            if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
 
             if (_services == null && LocalServices.HasInstance) _services = LocalServices.Instance;
             if (_client == null && RelayClient.HasInstance) _client = RelayClient.Instance;
@@ -303,7 +303,7 @@ namespace Ui
 
         private void OnGUI()
         {
-            if (!visible) return;
+            if (!isVisible) return;
 
             EnsureStyles();
 
@@ -341,7 +341,24 @@ namespace Ui
                 return;
             }
 
-            if (_services != null && _services.State == ServiceState.Failed) DrawFailure();
+            // Hotspot failures are checked first and separately. A hotspot that never came up
+            // leaves LocalServices sitting at Ready — its relay really is running — so keying
+            // this only off LocalServices showed the ordinary "connecting…" progress forever,
+            // under a hint blaming the internet connection, while the actual cause (no hosts
+            // entry, :53 taken, UAC declined) was sitting in HotspotService.FailureHint with
+            // nothing on the TV to say so.
+            var hotspotFailed = HotspotService.HasInstance &&
+                                HotspotService.Instance.State == HotspotState.Failed;
+
+            if (hotspotFailed)
+            {
+                DrawFailure(HotspotService.Instance.StatusMessage,
+                            HotspotService.Instance.FailureHint);
+            }
+            else if (_services != null && _services.State == ServiceState.Failed)
+            {
+                DrawFailure(_services.StatusMessage, _services.FailureHint);
+            }
             else if (!string.IsNullOrEmpty(_client.RoomCode)) DrawJoinDetails(joined);
             else DrawProgress();
 
@@ -351,7 +368,16 @@ namespace Ui
         private void DrawProgress()
         {
             GUILayout.FlexibleSpace();
-            GUILayout.Label(_services?.StatusMessage ?? "Connecting to the game service…", _status);
+
+            // Prefer whichever service is still working. Once LocalServices reaches Ready its
+            // message stops changing, and the wait that remains belongs to HotspotService —
+            // showing the stale one made a live hotspot start look like a hang.
+            var status = HotspotService.HasInstance &&
+                         HotspotService.Instance.State == HotspotState.Starting
+                ? HotspotService.Instance.StatusMessage
+                : _services?.StatusMessage;
+
+            GUILayout.Label(status ?? "Connecting to the game service…", _status);
             GUILayout.Space(20);
 
             // Named explicitly so a long wait is legible as progress rather than a hang.
@@ -369,17 +395,17 @@ namespace Ui
             GUILayout.Label($"{(done ? "✓" : "…")}  {label}", _body);
         }
 
-        private void DrawFailure()
+        private void DrawFailure(string message, string hint)
         {
             GUILayout.FlexibleSpace();
 
             var previous = GUI.color;
             GUI.color = new Color(1f, 0.5f, 0.45f);
-            GUILayout.Label(_services.StatusMessage, _status);
+            GUILayout.Label(message ?? string.Empty, _status);
             GUI.color = previous;
 
             GUILayout.Space(16);
-            GUILayout.Label(_services.FailureHint ?? string.Empty, _hint);
+            GUILayout.Label(hint ?? string.Empty, _hint);
             GUILayout.FlexibleSpace();
         }
 

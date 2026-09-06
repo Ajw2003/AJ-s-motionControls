@@ -13,8 +13,10 @@
          that without a UAC prompt at party time.
       2. Firewall rules for the relay (TCP 8443) and the DNS responder (UDP 53).
       3. A hosts entry so the HOST can resolve its own relay. Unity connects to
-         wss://192-168-137-1.local-ip.sh:8443; with no network there is no resolver to answer,
-         and the game fails while the hotspot itself is working perfectly.
+         wss://play.skiprocking.ca:8443, and the host never consults the DNS responder running
+         on its own :53 - so without this line it asks a public resolver instead, which answers
+         with Porkbun's parked address rather than 192.168.137.1. The game then fails against a
+         stranger's server while the hotspot itself is working perfectly.
 
     Everything else - Node, npm install, the certificate, the network mode - needs no elevation
     and is only checked here, not changed.
@@ -34,7 +36,15 @@
 
 .PARAMETER DryRun
     Report what would change without changing anything. Needs no elevation, because it writes
-    nothing - which makes it the right way to check a machine's state before committing to it.
+    nothing - which makes it the right way to check a machine's state before committing to it,
+    and it is how HotspotService.cs decides whether to raise a UAC prompt at all.
+
+.NOTES
+    Exit codes:
+      0  already correct (or the apply/uninstall run finished cleanly)
+      1  something is genuinely wrong - see the [FAIL] lines
+      2  needs Administrator (apply runs only; -DryRun never needs it)
+      3  -DryRun only: nothing wrong, but this machine is not set up yet
 
 .EXAMPLE
     ./setup-offline.ps1 -DryRun
@@ -63,21 +73,34 @@ $RelayPort        = 8443
 $ForwardingTask   = 'RockSkippingDisableForwarding'
 $HostsPath        = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 
-# local-ip.sh names encode their own address, so this is what public DNS answers too. That is
-# what makes a static hosts entry safe: it cannot drift from the truth, and it stays correct
-# whether or not the hotspot is running.
-$RelayHostName    = ($HotspotAddress -replace '\.', '-') + '.local-ip.sh'
+# The certificate is single-name now (play.skiprocking.ca, renewed by
+# .github/workflows/renew-cert.yml), not a wildcard keyed to this machine's address - see
+# docs/plans/magic-domain-replacement.md. Reads the same optional override file
+# Assets/Scripts/Net/MagicDomain.cs does, sited the same way as relay-url.txt/
+# network-mode.txt, so hand-editing one file repoints both the game and this script
+# instead of the literal drifting out of sync with C# the way $RelayHostName used to.
+. (Join-Path $PSScriptRoot 'MagicDomain.ps1')
+
+$RelayHostName    = Get-MagicDomainHostName
 
 $FirewallRules = @(
     @{ Name = 'RockSkipping relay';       Protocol = 'TCP'; Port = "$RelayPort"; Remote = 'LocalSubnet'
        Why = 'phones reach the relay and the controller page' }
     @{ Name = 'RockSkipping hotspot DNS'; Protocol = 'UDP'; Port = '53';         Remote = $HotspotSubnet
        Why = 'phones resolve the relay address; hotspot subnet only, never a normal LAN' }
+    @{ Name = 'RockSkipping captive portal'; Protocol = 'TCP'; Port = '80';      Remote = $HotspotSubnet
+       Why = 'answers Android/iOS captive-portal probes so phones do not flag "No internet"; hotspot subnet only, see docs/plans/magic-domain-replacement.md Phase 4' }
 )
 
 # Added by the spikes, never used by the game. Removed so a machine set up by this script does
 # not carry a wider firewall surface than it needs.
 $ObsoleteRules = @('RockSkipping spike HTTP', 'RockSkipping spike DNS')
+
+# Hosts entries this script used to add, for names the game no longer uses. Sync-HostsEntry only
+# ever looks for $RelayHostName, so without this the dead local-ip.sh lines survive every re-run
+# and every -Uninstall on machines set up before 2026-09-03 - and a stale line pointing at
+# 192.168.137.1 is exactly the sort of thing that derails a later debugging session.
+$ObsoleteHostNames = @('local-ip.sh')
 
 # ---------------------------------------------------------------- output
 
@@ -203,6 +226,13 @@ function Sync-HostsEntry {
     Write-Info 'The host does not take DHCP from itself, so it never consults the DNS responder'
     Write-Info 'running on its own :53. Offline, without this line, Unity cannot resolve the'
     Write-Info 'relay it just started - the symptom that looked like "hotspot mode is broken".'
+    Write-Info ''
+    Write-Info 'Unlike the old local-ip.sh name, this hostname does not encode 192.168.137.1 in'
+    Write-Info 'itself - it is an ordinary domain (play.skiprocking.ca by default), so this'
+    Write-Info 'entry is what makes it resolve to the hotspot address at all when this machine'
+    Write-Info 'has no internet to ask a real resolver. It only ever matters in Hotspot mode,'
+    Write-Info 'where the address is the fixed constant above - this would be wrong to add for'
+    Write-Info 'LAN mode, whose address varies per network.'
 
     $lines = Get-HostsLines
     # Match the hostname, not the whole line: whitespace and comments vary, and a stale entry
@@ -228,6 +258,28 @@ function Sync-HostsEntry {
         $kept = $lines | Where-Object { -not ($_ -match [regex]::Escape($RelayHostName) -and $_ -notmatch '^\s*#') }
         $out = @($kept) + @($desired)
         Set-Content -Path $HostsPath -Value $out -Encoding ASCII
+    }
+}
+
+function Remove-ObsoleteHostsEntries {
+    Write-Step 'Obsolete hosts entries'
+    Write-Info 'Names this script added for an earlier design and the game no longer resolves.'
+
+    $lines = Get-HostsLines
+    foreach ($name in $ObsoleteHostNames) {
+        $matching = @($lines | Where-Object { $_ -match [regex]::Escape($name) -and $_ -notmatch '^\s*#' })
+        if (-not $matching.Count) { Write-Same "'$name' not present"; continue }
+
+        Set-Or-Would "removed $($matching.Count) obsolete '$name' hosts entr(y/ies)" {
+            $backup = "$HostsPath.rockskipping.bak"
+            if (-not (Test-Path $backup)) { Copy-Item -Path $HostsPath -Destination $backup -Force }
+            $kept = Get-HostsLines |
+                Where-Object { -not ($_ -match [regex]::Escape($name) -and $_ -notmatch '^\s*#') }
+            Set-Content -Path $HostsPath -Value $kept -Encoding ASCII
+        }
+
+        # Re-read: under -DryRun nothing changed, so the next name must still see the old file.
+        if (-not $DryRun) { $lines = Get-HostsLines }
     }
 }
 
@@ -280,8 +332,22 @@ function Test-Prerequisites {
         try {
             $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 (Resolve-Path $certPath)
             $days = [int]($cert.NotAfter - (Get-Date)).TotalDays
-            if ($days -gt 14) { Write-Same "certificate valid $days more days (to $($cert.NotAfter.ToString('yyyy-MM-dd')))" }
-            else { Write-Bad "certificate expires in $days days - connect this machine to the internet once to renew" }
+
+            # The name matters as much as the date, and checking only the date is how a cache
+            # left over from the local-ip.sh era reports as healthy for another 72 days while
+            # covering a hostname nothing resolves any more. CertificateProvider.Inspect() makes
+            # the same two checks before it will use a cached copy - this mirrors them so the
+            # script and the game agree on what "usable" means.
+            $san = ($cert.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.17' } |
+                ForEach-Object { $_.Format($false) }) -join ' '
+
+            if ($san -notmatch [regex]::Escape($RelayHostName)) {
+                Write-Info "cached certificate is for '$($cert.Subject)', not $RelayHostName - the next online launch replaces it"
+            } elseif ($days -gt 14) {
+                Write-Same "certificate valid $days more days (to $($cert.NotAfter.ToString('yyyy-MM-dd')))"
+            } else {
+                Write-Bad "certificate expires in $days days - connect this machine to the internet once to renew"
+            }
         } catch { Write-Info "could not read the cached certificate: $($_.Exception.Message)" }
     } else {
         Write-Info 'no cached certificate yet - the first online launch fetches one'
@@ -304,8 +370,14 @@ function Test-Result {
     # The real test of the hosts entry is not that the line exists but that the resolver honours
     # it. Resolve-DnsName consults the hosts file first, so this passes offline too.
     try {
+        # PSObject.Properties, not a bare $_.IPAddress: an A lookup returns the whole chain, and
+        # a CNAME record in it has no IPAddress property, which Set-StrictMode turns into a
+        # terminating error reported below as "does not resolve". Only reachable when the hosts
+        # entry is absent and a public resolver answers instead - i.e. exactly the failure this
+        # check exists to describe accurately.
         $answer = Resolve-DnsName -Name $RelayHostName -Type A -ErrorAction Stop |
-            Where-Object { $_.IPAddress } | Select-Object -First 1
+            Where-Object { $_.PSObject.Properties.Name -contains 'IPAddress' -and $_.IPAddress } |
+            Select-Object -First 1
         if ($answer -and $answer.IPAddress -eq $HotspotAddress) {
             Write-Same "$RelayHostName resolves to $($answer.IPAddress)"
         } elseif ($answer) {
@@ -353,6 +425,7 @@ try {
         }
 
         Remove-HostsEntry
+        Remove-ObsoleteHostsEntries
     }
     else {
         Sync-ForwardingTask
@@ -365,6 +438,7 @@ try {
         Remove-ObsoleteRules
 
         Sync-HostsEntry
+        Remove-ObsoleteHostsEntries
         Test-Prerequisites
         if (-not $DryRun) { Test-Result }
     }
@@ -386,8 +460,23 @@ if ($script:Failed) {
     exit 1
 }
 
+# Exit 3 = "nothing is wrong, but this machine is not set up yet". HotspotService.cs runs this
+# script with -DryRun (which needs no elevation) purely to ask that question before deciding
+# whether to raise a UAC prompt, so it needs an answer it can read from an exit code.
+#
+# It used to ask a cheaper proxy question instead - "does the scheduled task exist?" - and that
+# proxy went stale the moment this script grew steps the task does not imply. On every machine
+# set up before 2026-09-03 the task was present while the play.skiprocking.ca hosts entry was
+# not, so setup was skipped, the host could not resolve its own relay, and the game sat retrying
+# forever. One question, answered by the script that defines the answer.
+if ($DryRun -and $script:Changed) {
+    Write-Host '   Setup needed. Re-run without -DryRun, as Administrator, to apply.' -ForegroundColor Magenta
+    Write-Host ''
+    exit 3
+}
+
 if ($DryRun) {
-    Write-Host '   Re-run without -DryRun, as Administrator, to apply.' -ForegroundColor Magenta
+    Write-Host '   Already set up - nothing to change.' -ForegroundColor Green
 } elseif (-not $Uninstall) {
     Write-Host '   This machine is set up for offline play.' -ForegroundColor Green
     Write-Host '   Verify the mechanism without unplugging anything:' -ForegroundColor Gray

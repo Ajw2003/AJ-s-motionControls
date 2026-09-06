@@ -34,6 +34,8 @@ const ui = {
   scores: el('scores'),
   colourPicker: el('colourPicker'),
   colourSwatches: el('colourSwatches'),
+  colourDefaultBtn: el('colourDefaultBtn'),
+  colourDefaultDot: el('colourDefaultDot'),
   colourInput: el('colourInput'),
   throwResult: el('throwResult'),
   debug: el('debug'),
@@ -76,8 +78,9 @@ function showScreen(name) {
   for (const screen of [ui.joinScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
     screen.classList.remove('active');
   }
-  ({ join: ui.joinScreen, choose: ui.chooseScreen, wait: ui.waitScreen, throw: ui.throwScreen })[name]
-    .classList.add('active');
+  ({ join: ui.joinScreen, choose: ui.chooseScreen, wait: ui.waitScreen, throw: ui.throwScreen })[
+    name
+  ].classList.add('active');
 }
 
 function setStatus(text, kind = '') {
@@ -290,6 +293,20 @@ function bindColour() {
   // Cheap: PICK_COLOUR is tiny, it is not on the throw path, and the relay's rate limit
   // is 60/s against an AIM stream that only runs at 20.
   ui.colourInput.addEventListener('input', () => pickColour(ui.colourInput.value));
+
+  ui.colourDefaultBtn.addEventListener('click', () => setSwatchesOpen(ui.colourSwatches.hidden));
+}
+
+/**
+ * Opens or closes the palette sub-menu.
+ *
+ * One function so the row's visibility and the button's ring can never disagree —
+ * aria-expanded is what the CSS keys the ring off, so a stray `hidden` assignment
+ * elsewhere would leave a closed menu wearing an open button.
+ */
+function setSwatchesOpen(open) {
+  ui.colourSwatches.hidden = !open;
+  ui.colourDefaultBtn.setAttribute('aria-expanded', String(open));
 }
 
 /** Paints this phone's own accent, so the player sees their colour on their device. */
@@ -328,11 +345,27 @@ function renderSwatches(palette) {
     swatch.dataset.colour = String(colour).toLowerCase();
     swatch.style.background = colour;
     swatch.setAttribute('aria-label', `Colour ${colour}`);
-    swatch.addEventListener('click', () => pickColour(colour));
+    // Closing on the pick, not on pickColour itself: the OS wheel fires pickColour on
+    // every frame of a drag, and a menu that shut mid-drag would be its own bug.
+    swatch.addEventListener('click', () => {
+      pickColour(colour);
+      setSwatchesOpen(false);
+    });
     ui.colourSwatches.appendChild(swatch);
   }
 
+  // The Default button previews what is behind it — a slice per palette colour, so it
+  // reads as "the presets" rather than as a second copy of the Custom swatch.
+  ui.colourDefaultDot.style.background = paletteGradient(palette);
+
   applyMyColour(myColour ?? requestedColour);
+}
+
+/** Equal conic slices, one per palette colour, as a CSS background value. */
+function paletteGradient(palette) {
+  const slice = 360 / palette.length;
+  const stops = palette.map((colour, i) => `${colour} ${i * slice}deg ${(i + 1) * slice}deg`);
+  return `conic-gradient(${stops.join(', ')})`;
 }
 
 function bindGrip() {
@@ -521,14 +554,19 @@ function renderSpectate(message) {
   if (!myTurn) stopPreviewAim();
 
   // Off the choose screen the picker has nowhere to be — a mid-throw colour change is
-  // allowed by the host but there is no screen real estate for it here.
+  // allowed by the host but there is no screen real estate for it here. Collapsed as
+  // well as hidden, so a mid-match re-pick opens on the compact two-button row rather
+  // than restoring a sub-menu left open several minutes ago.
   ui.colourPicker.hidden = true;
+  setSwatchesOpen(false);
 
   if (phase === 'RESULTS') {
     const winner = leader(message.scores);
     ui.waitTitle.textContent = 'Final scores';
     ui.waitDetail.textContent = winner
-      ? (winner === myPlayerId ? 'You win!' : `${winner} wins`)
+      ? winner === myPlayerId
+        ? 'You win!'
+        : `${winner} wins`
       : 'It is a tie.';
   } else {
     ui.waitTitle.textContent = message.activePlayer
@@ -643,7 +681,10 @@ async function join() {
   }
 
   const waitForOpen = setInterval(() => {
-    if (connection.status === ConnectionStatus.CONNECTED || connection.status === ConnectionStatus.JOINED) {
+    if (
+      connection.status === ConnectionStatus.CONNECTED ||
+      connection.status === ConnectionStatus.JOINED
+    ) {
       clearInterval(waitForOpen);
       connection.joinRoom(code, name);
     }
@@ -657,13 +698,19 @@ async function requestWakeLock() {
   // their phone every round. Unsupported on some browsers; harmless when it fails.
   try {
     if ('wakeLock' in navigator) await navigator.wakeLock.request('screen');
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function tryLockPortrait() {
   // Best effort only — most browsers refuse outside fullscreen. sensors.js
   // compensates for screen rotation regardless, which is the real fix.
-  try { screen.orientation?.lock?.('portrait').catch(() => {}); } catch { /* ignore */ }
+  try {
+    screen.orientation?.lock?.('portrait').catch(() => {});
+  } catch {
+    /* ignore */
+  }
 }
 
 function updateDebug() {
@@ -678,16 +725,21 @@ function updateDebug() {
     // that is genuinely what is on the wire now — printing a decomposition here would
     // be inventing a representation the rest of the system does not use. All-zeros with
     // qw at 1 means the phone is exactly where it was at the tap.
-    s ? `attitude w ${s.attitude.w.toFixed(3).padStart(6)}  x ${s.attitude.x.toFixed(3).padStart(6)}` +
+    s
+      ? `attitude w ${s.attitude.w.toFixed(3).padStart(6)}  x ${s.attitude.x.toFixed(3).padStart(6)}` +
         `  y ${s.attitude.y.toFixed(3).padStart(6)}  z ${s.attitude.z.toFixed(3).padStart(6)}`
       : 'no samples yet — is this page on HTTPS?',
     // How stale the last real orientation reading is. A number that keeps climbing
     // means the aim is running on gyro integration alone, which is the tell for a
     // device whose deviceorientation stream is slower than its devicemotion one.
-    s ? `orient   ${s.orientationAgeMs === null ? 'none' : `${s.orientationAgeMs.toFixed(0)}ms old`}` : '',
+    s
+      ? `orient   ${s.orientationAgeMs === null ? 'none' : `${s.orientationAgeMs.toFixed(0)}ms old`}`
+      : '',
     // gravitySource is the one to read before trusting any power tuning: 'hardware'
     // and 'exact' are clean, 'filter' still has the rotation artefact in it.
-    s ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}` : '',
+    s
+      ? `accel ${s.power.toFixed(2).padStart(6)} m/s²  via ${s.gravitySource}  samples ${motion.buffer.length}`
+      : '',
     lastThrow
       ? `throw  speed ${lastThrow.swingSpeed.toFixed(2)} m/s  spin ${lastThrow.spinRate.toFixed(0)}  ` +
         `q ${lastThrow.qw.toFixed(2)} ${lastThrow.qx.toFixed(2)} ${lastThrow.qy.toFixed(2)} ${lastThrow.qz.toFixed(2)}`

@@ -22,7 +22,7 @@ namespace Ui
     public class ResultsScreen : MonoBehaviour
     {
         [SerializeField] private KeyCode toggleKey = KeyCode.F3;
-        [SerializeField] private bool visible = true;
+        [SerializeField] private bool isVisible = true;
 
         private TurnManager _turns;
         private IReadOnlyList<PlayerStanding> _standings;
@@ -32,7 +32,7 @@ namespace Ui
 
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey)) visible = !visible;
+            if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
 
             if (_turns == null && TurnManager.HasInstance) _turns = TurnManager.Instance;
             if (_turns == null || _turns.Phase != MatchPhase.Results) return;
@@ -87,7 +87,7 @@ namespace Ui
 
         private void OnGUI()
         {
-            if (!visible) return;
+            if (!isVisible) return;
             if (_turns == null || _turns.Phase != MatchPhase.Results) return;
 
             EnsureStyles();

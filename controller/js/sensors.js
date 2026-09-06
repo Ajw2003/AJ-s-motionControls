@@ -53,13 +53,16 @@ const DEG2RAD = Math.PI / 180;
  * bug that survives desk testing and only shows up mid-throw.
  */
 export function orientationToQuaternion(alpha = 0, beta = 0, gamma = 0) {
-  const halfZ = (alpha ?? 0) * DEG2RAD / 2;
-  const halfX = (beta ?? 0) * DEG2RAD / 2;
-  const halfY = (gamma ?? 0) * DEG2RAD / 2;
+  const halfZ = ((alpha ?? 0) * DEG2RAD) / 2;
+  const halfX = ((beta ?? 0) * DEG2RAD) / 2;
+  const halfY = ((gamma ?? 0) * DEG2RAD) / 2;
 
-  const cZ = Math.cos(halfZ), sZ = Math.sin(halfZ);
-  const cX = Math.cos(halfX), sX = Math.sin(halfX);
-  const cY = Math.cos(halfY), sY = Math.sin(halfY);
+  const cZ = Math.cos(halfZ),
+    sZ = Math.sin(halfZ);
+  const cX = Math.cos(halfX),
+    sX = Math.sin(halfX);
+  const cY = Math.cos(halfY),
+    sY = Math.sin(halfY);
 
   return {
     w: cX * cY * cZ - sX * sY * sZ,
@@ -240,9 +243,10 @@ export class GravityFilter {
       this.gravity = { x: accel.x, y: accel.y, z: accel.z };
     } else {
       // Time-based, so the response no longer depends on how fast the device reports.
-      const dtMs = tMs === null || this.lastT === null
-        ? 1000 / SAMPLE_HZ
-        : Math.min(Math.max(tMs - this.lastT, 0), MAX_SAMPLE_GAP_MS);
+      const dtMs =
+        tMs === null || this.lastT === null
+          ? 1000 / SAMPLE_HZ
+          : Math.min(Math.max(tMs - this.lastT, 0), MAX_SAMPLE_GAP_MS);
       const k = Math.exp(-dtMs / this.tauMs);
 
       this.gravity.x = k * this.gravity.x + (1 - k) * accel.x;
@@ -378,7 +382,7 @@ const BUFFER_SECONDS = 1.5;
 
 /** Monotonic clock, with a Date fallback so this module can be driven from tests. */
 const now = () =>
-  (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 
 /**
  * Streams normalized samples from the device's motion and orientation sensors.
@@ -477,7 +481,10 @@ export class MotionSource {
     };
 
     this.orientationQuaternion = orientationToQuaternion(
-      this.latestOrientation.alpha, this.latestOrientation.beta, this.latestOrientation.gamma);
+      this.latestOrientation.alpha,
+      this.latestOrientation.beta,
+      this.latestOrientation.gamma,
+    );
 
     // A real reading supersedes whatever the gyro had carried forward, which is what
     // stops integration drift accumulating.
@@ -509,11 +516,11 @@ export class MotionSource {
     const step = quaternionFromRotationVector(
       (rate.beta ?? 0) * DEG2RAD * dt,
       (rate.gamma ?? 0) * DEG2RAD * dt,
-      (rate.alpha ?? 0) * DEG2RAD * dt);
+      (rate.alpha ?? 0) * DEG2RAD * dt,
+    );
 
     // Right-multiplied: the turn happens about the device's own axes, not the world's.
-    this._fusedQuaternion = quaternionNormalize(
-      quaternionMultiply(this._fusedQuaternion, step));
+    this._fusedQuaternion = quaternionNormalize(quaternionMultiply(this._fusedQuaternion, step));
   }
 
   /**

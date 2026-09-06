@@ -1,5 +1,14 @@
 # Network mode selection (LAN vs Hotspot) — ZeroSetupPlan Phase 4
 
+> **Update — see [docs/plans/magic-domain-replacement.md](magic-domain-replacement.md) Phase 3.**
+> LAN mode is now deprecated, not offered. `StartScreen` no longer shows the picker described
+> below — it always launches Hotspot — and `NetworkModeStore.Load`'s fallback flipped from
+> `Lan` to `Hotspot`. LAN stays selectable only by hand-editing `network-mode.txt` to `Lan`,
+> and even then its certificate no longer validates: the replacement certificate is
+> single-name for a fixed hostname (`MagicDomain.HostName`), not a wildcard keyed to LAN's
+> varying address. Everything else below — the elevated setup, the DNS-bound race fix, the
+> Hotspot mechanics — is unaffected and still accurate.
+
 **Status:** implemented, compiles clean. Not yet tested end-to-end — see Verification below.
 Elevated one-time setup (scheduled task + firewall rule) still needs to be run by hand.
 

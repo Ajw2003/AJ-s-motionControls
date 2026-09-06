@@ -23,21 +23,18 @@ namespace Net
     }
 
     /// <summary>
-    /// Runs a relay on this machine, for development only.
+    /// Runs the relay on this machine. This is how the game is hosted — not a dev convenience.
     /// </summary>
     /// <remarks>
-    /// OFF BY DEFAULT, and deliberately so. Hosts connect out to the deployed service
-    /// (see RelayClient and HostingPlan.md), which is what makes hosting require no setup
-    /// at all — there is nothing to install, nothing to configure and nothing listening.
+    /// ON BY DEFAULT, and there is nothing to fall back to: the hosted Fly.io relay this used
+    /// to be an alternative to was deliberately torn down. Bootstrap's startLocalServices
+    /// creates this, and RelayClient takes its address from SecureSocketUrl rather than
+    /// needing a relay-url.txt — that file is now only the manual escape hatch for pointing a
+    /// build at a relay somebody started by hand.
     ///
-    /// This exists for the local edit-test loop, where deploying on every change would be
-    /// absurd. Turning it on is only half the job: RelayClient must also be pointed at the
-    /// local instance, by putting `ws://localhost:3000` in a relay-url.txt beside the
-    /// executable. Enabling this alone starts a relay that nothing connects to.
-    ///
-    /// That plain-http origin is not a secure context, so motion sensors stay dark on it.
-    /// For a loop that does unlock them, deploy/local-https.ps1 writes both that file and a
-    /// relay-env.txt, and this class picks up whichever of the two it finds.
+    /// HTTPS is not optional in practice. Phone motion-sensor APIs only unlock on a secure
+    /// origin, so the certificate step (CertificateProvider, MagicDomain) runs before the
+    /// relay and hands it TLS material through the environment.
     ///
     /// This class used to also spawn a cloudflared tunnel and scrape the assigned hostname
     /// out of its stderr, because a quick tunnel offers no machine-readable channel for it.
@@ -47,12 +44,13 @@ namespace Net
     {
         /// <summary>
         /// Optional per-machine environment for the relay child, beside relay-url.txt.
-        /// Gitignored. Written by deploy/local-https.ps1; absent otherwise.
+        /// Gitignored, and absent on almost every machine — a hand-written escape hatch for
+        /// pinning TLS material or a port, not something any script writes any more.
         /// </summary>
         private const string EnvFileName = "relay-env.txt";
 
-        [Tooltip("Start a relay on this machine. Development only — you must also point " +
-                 "RelayClient at it with a relay-url.txt containing ws://localhost:3000.")]
+        [Tooltip("Start the relay on this machine. Off leaves phones with nothing to connect " +
+                 "to unless a relay-url.txt points RelayClient at one started by hand.")]
         [SerializeField] private bool launchOnStart = true;
 
         [Tooltip("Fallback only — the port from the relay-url.txt override wins when there is one.")]
@@ -107,8 +105,9 @@ namespace Net
         public NetworkMode Mode { get; private set; }
 
         /// <summary>
-        /// The name the certificate covers for this machine, once one has been obtained —
-        /// 10-0-0-213.local-ip.sh. Null when HTTPS is off or the certificate step failed.
+        /// The name the certificate covers, once one has been obtained — MagicDomain.HostName
+        /// (e.g. play.skiprocking.ca), fixed regardless of this machine's address. Null when
+        /// HTTPS is off or the certificate step failed.
         /// </summary>
         /// <remarks>
         /// This is what a phone must use. The raw IP would not match the certificate, and a
@@ -183,7 +182,7 @@ namespace Net
         {
             if (!launchOnStart)
             {
-                SetState(ServiceState.Idle, "Local relay off — using the deployed service.");
+                SetState(ServiceState.Idle, "Local relay off — nothing is hosting the game.");
                 return;
             }
 
@@ -210,6 +209,36 @@ namespace Net
 
         private IEnumerator LaunchSequence()
         {
+            // First, before a certificate is fetched or a relay is spawned, because in LAN mode
+            // none of it can lead anywhere and every later step succeeds anyway.
+            //
+            // LAN mode has been unusable since the magic-domain replacement, and the shape of
+            // that failure is what makes it worth a hard stop rather than a warning: the
+            // certificate is single-name for MagicDomain.HostName, so ObtainCertificate hands
+            // back play.skiprocking.ca REGARDLESS of mode. In LAN mode nothing ever makes that
+            // name point at this machine — no hotspot runs, so the hosts entry
+            // deploy/setup-offline.ps1 writes points at 192.168.137.1, an address that only
+            // exists while tethering is on. So LocalServices reaches Ready with a working
+            // relay, HotspotService reports NotApplicable, nothing logs an error, and
+            // RelayClient retries a name that resolves to nowhere forever.
+            //
+            // NetworkModeStore.Load's fallback is Hotspot, but a fallback only applies when the
+            // file is MISSING. Any machine that ran a build before 2026-09-03 still has a
+            // network-mode.txt saying Lan, written when that was the default, and is pinned to
+            // the dead path with nothing on screen to say why. That is not a hand-edited
+            // escape hatch, it is a leftover — but the two are indistinguishable from the file,
+            // so this reports rather than rewrites. See NetworkMode.Lan's remarks and
+            // StartScreen's, which deliberately leaves the file alone for the same reason.
+            if (Mode != NetworkMode.Hotspot)
+            {
+                Fail("LAN mode can't host this game any more.",
+                     "network-mode.txt beside the executable says \"Lan\", which is deprecated: " +
+                     "the certificate is issued for one fixed name and there is no way to point " +
+                     "it at a LAN address that changes per network. Delete network-mode.txt, or " +
+                     "put \"Hotspot\" in it, and relaunch.");
+                yield break;
+            }
+
             var relayDir = ResolveRelayDirectory();
             if (relayDir == null)
             {
@@ -380,6 +409,10 @@ namespace Net
         private struct HealthDns
         {
             public bool enabled;
+            // Wire name from server.js's /health handler is "bound", not "isBound".
+            // JsonUtility does not fail or even warn on an unmatched field name — it just
+            // leaves this at its default (false) — so a mismatch here reads as a permanent,
+            // silent DNS-bind failure regardless of what the relay actually reports.
             public bool bound;
         }
 
@@ -452,7 +485,12 @@ namespace Net
             {
                 env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", "192.168.137.1"));
                 env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));
-                env.Add(new KeyValuePair<string, string>("DNS_SUFFIX", CertificateProvider.Suffix));
+                // DNS_NAME, not DNS_SUFFIX — the certificate is single-name now
+                // (MagicDomain.HostName), so dns.js is told to answer exactly this name
+                // rather than a wildcard suffix. See relay/dns.js's `name` option and
+                // docs/plans/magic-domain-replacement.md Phase 1 for why a wildcard is no
+                // longer needed once the hotspot's address is a fixed constant.
+                env.Add(new KeyValuePair<string, string>("DNS_NAME", MagicDomain.HostName));
                 Debug.Log("[LocalServices] Hotspot mode: DNS responder will bind on 192.168.137.0/24.");
             }
 

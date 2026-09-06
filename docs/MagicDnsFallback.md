@@ -1,5 +1,10 @@
 # A self-operated fallback for `local-ip.sh`
 
+> **Superseded — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+> `local-ip.sh` is gone for good and LAN mode (the only mode that needed public wildcard DNS at
+> all) is deprecated in favour of Hotspot-only. The VPS-operated nameserver design below is moot —
+> Hotspot mode answers DNS locally, offline, on the host itself.
+
 **Status: design sketch, not built.** Answers the question "can we recreate `local-ip.sh`'s
 logic ourselves, on our own Porkbun domain, as a backup if it disappears?" — yes, and it slots
 directly into the risk [ZeroSetupPlan.md](ZeroSetupPlan.md) already logged rather than opening a

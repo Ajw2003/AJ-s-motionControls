@@ -1,4 +1,3 @@
-using Net;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Utils;
@@ -15,38 +14,38 @@ namespace Ui
     /// <remarks>
     /// That scene boundary is the whole gate: no relay spawns, no certificate is fetched, and
     /// in particular no hotspot starts — nothing happens on this PC's network — until a person
-    /// standing at it deliberately presses Start. The mode picker here writes straight to
-    /// NetworkModeStore with no "restart to apply" caveat, because nothing has started yet to
-    /// need one; every later visit to this screen (there is no other way back into Bootstrap)
-    /// shows the same picker again, so it is never harder than one click to change.
+    /// standing at it deliberately presses Start.
+    ///
+    /// The LAN/Hotspot picker that used to live here is gone — see
+    /// docs/plans/magic-domain-replacement.md Phase 3. LAN mode is deprecated (its
+    /// certificate no longer validates, now that local-ip.sh's wildcard is replaced by a
+    /// single-name certificate; see NetworkMode.Lan's remarks), so this screen shows no
+    /// choice and writes nothing to network-mode.txt at all — LocalServices' call to
+    /// NetworkModeStore.Load() is what decides the mode, falling back to Hotspot on a fresh
+    /// install. LAN stays reachable only by hand-editing network-mode.txt to the literal
+    /// string "Lan" before launching; this screen leaves that file alone either way.
     /// </remarks>
     public class StartScreen : MonoBehaviour
     {
-        [SerializeField] private KeyCode lanKey = KeyCode.Alpha1;
-        [SerializeField] private KeyCode hotspotKey = KeyCode.Alpha2;
         [SerializeField] private KeyCode startKey = KeyCode.Return;
 
-        private NetworkMode _mode;
-
-        private GUIStyle _title, _sectionLabel, _modeButton, _startButton, _hint;
+        private GUIStyle _title, _sectionLabel, _startButton, _hint;
         private Texture2D _panelTexture;
 
         private void Awake()
         {
-            _mode = NetworkModeStore.Load();
+            // Deliberately does not touch network-mode.txt at all any more — writing Hotspot
+            // here unconditionally would stomp a hand-edited "Lan" the moment this scene
+            // loads, before Bootstrap even reads it, which is exactly the escape hatch Phase 3
+            // is supposed to leave open. NetworkModeStore.Load() (called by LocalServices in
+            // Bootstrap) is what actually decides the mode, and its fallback — used only when
+            // the file is missing or unreadable — is Hotspot, so a fresh install still gets
+            // Hotspot with nothing written here.
         }
 
         private void Update()
         {
-            if (Input.GetKeyDown(lanKey)) SetMode(NetworkMode.Lan);
-            else if (Input.GetKeyDown(hotspotKey)) SetMode(NetworkMode.Hotspot);
-            else if (Input.GetKeyDown(startKey)) BeginMatch();
-        }
-
-        private void SetMode(NetworkMode mode)
-        {
-            _mode = mode;
-            NetworkModeStore.Save(mode);
+            if (Input.GetKeyDown(startKey)) BeginMatch();
         }
 
         private void BeginMatch() => SceneManager.LoadScene(SceneNames.Bootstrap);
@@ -69,12 +68,6 @@ namespace Ui
             {
                 fontSize = Mathf.RoundToInt(24 * scale),
                 alignment = TextAnchor.MiddleCenter,
-                wordWrap = true,
-            };
-            _modeButton = new GUIStyle(GUI.skin.button)
-            {
-                fontSize = Mathf.RoundToInt(22 * scale),
-                fixedHeight = 64 * scale,
                 wordWrap = true,
             };
             _startButton = new GUIStyle(GUI.skin.button)
@@ -114,17 +107,10 @@ namespace Ui
             GUILayout.Label("ROCK SKIPPING", _title);
             GUILayout.Space(40);
 
-            GUILayout.Label("How should guests join?", _sectionLabel);
+            GUILayout.Label("Guests join over a Wi-Fi hotspot this PC creates —\n" +
+                             "no router or internet needed.", _sectionLabel);
             GUILayout.Space(12);
-
-            GUILayout.BeginHorizontal();
-            DrawModeOption(NetworkMode.Lan, $"LAN  [{lanKey}]\nsame Wi-Fi or router");
-            GUILayout.Space(16);
-            DrawModeOption(NetworkMode.Hotspot, $"Hotspot  [{hotspotKey}]\nno router or internet needed");
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(10);
-            GUILayout.Label("Remembered for next time — change it here whenever you like.", _hint);
+            GUILayout.Label("(LAN mode is deprecated; hand-edit network-mode.txt to use it.)", _hint);
 
             GUILayout.Space(40);
 
@@ -132,16 +118,6 @@ namespace Ui
 
             GUILayout.FlexibleSpace();
             GUILayout.EndArea();
-        }
-
-        private void DrawModeOption(NetworkMode mode, string label)
-        {
-            var previousColor = GUI.backgroundColor;
-            if (_mode == mode) GUI.backgroundColor = new Color(0.55f, 0.85f, 0.6f);
-
-            if (GUILayout.Button(label, _modeButton)) SetMode(mode);
-
-            GUI.backgroundColor = previousColor;
         }
     }
 }

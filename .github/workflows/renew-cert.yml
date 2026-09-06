@@ -1,0 +1,192 @@
+name: Renew play.skiprocking.ca certificate
+
+# Serverless renewal for the certificate CertificateProvider.cs downloads at launch.
+# See docs/plans/magic-domain-replacement.md Phase 1 for the full rationale — the short
+# version: local-ip.sh (the previous free-wildcard-cert service) is permanently dead, and
+# there is no drop-in replacement, so the certificate story moves to a domain we own
+# (play.skiprocking.ca) with an unattended renewal job instead of a third party.
+#
+# DNS-01 rather than HTTP-01 deliberately: play.skiprocking.ca needs no public A record at
+# all — nothing on the internet ever answers on that name — so there is no public listener
+# to stand up or keep alive. dns_porkbun proves domain ownership entirely via Porkbun's API.
+#
+# This issues a SINGLE-NAME certificate, not a wildcard. LAN mode (which needed a wildcard
+# to cover an arbitrary IP-encoded label) is deprecated in favour of Hotspot-only, where the
+# hotspot address is always the fixed 192.168.137.1 — one name is all that is ever needed,
+# and a single-name cert keeps the blast radius of the deliberately-published private key
+# to that one name rather than every possible subdomain.
+
+on:
+  schedule:
+    # Weekly. Let's Encrypt certs are ~90 days; acme.sh's own --days check (see below) is
+    # what actually decides whether to issue, so a missed week is harmless — the next run
+    # tries again with no gap large enough to matter against a 90-day certificate.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: >-
+          Let's Encrypt endpoint. Defaults to STAGING so a first run (or a run after
+          changing this workflow) cannot exhaust the tight production rate limits while
+          still proving the whole pipeline end to end. Switch to "production" deliberately,
+          once a staging run has published two files and they look right.
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+env:
+  # The one hostname this workflow will ever issue for. Single source of truth for this
+  # file; Assets/Scripts/Net/MagicDomain.cs is the equivalent source of truth on the Unity
+  # side, and the two are expected to agree by hand, not by any shared config — the domain
+  # changes rarely enough that this is not worth building machinery for.
+  DOMAIN: play.skiprocking.ca
+
+  # Where the finished certificate is published. Must be a PUBLIC repo — see the publish
+  # step's comment for why this cannot be the repo this workflow lives in. It holds no source,
+  # only the release the game downloads from.
+  CERT_REPO: Ajw2003/rockskipping-cert
+
+  # Fixed forever. MagicDomain.cs's download URL embeds this tag, so changing it silently
+  # breaks every already-shipped build that cannot be rebuilt to match.
+  CERT_TAG: current
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine Let's Encrypt endpoint
+        id: le
+        run: |
+          # workflow_dispatch carries the choice; a scheduled run has no input at all, and
+          # defaults to staging too — a cron firing into production unattended, the very
+          # first time this file is wrong in some small way, is a worse failure mode than a
+          # cron firing that quietly does nothing in production until someone flips it by
+          # hand via workflow_dispatch.
+          MODE="${{ github.event.inputs.environment || 'staging' }}"
+          if [ "$MODE" = "production" ]; then
+            echo "server=letsencrypt" >> "$GITHUB_OUTPUT"
+          else
+            echo "server=letsencrypt_test" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Issuing against: $MODE ($( [ "$MODE" = production ] && echo letsencrypt || echo letsencrypt_test ))"
+
+      - name: Install acme.sh
+        run: |
+          curl -s https://get.acme.sh | sh -s email=noreply@skiprocking.ca
+          echo "$HOME/.acme.sh" >> "$GITHUB_PATH"
+
+      - name: Issue certificate (DNS-01, dns_porkbun)
+        env:
+          # Porkbun requires API access to be switched on per-domain in its panel before
+          # these credentials work at all — a one-time manual step, done outside this repo.
+          PORKBUN_API_KEY: ${{ secrets.PORKBUN_API_KEY }}
+          PORKBUN_SECRET_API_KEY: ${{ secrets.PORKBUN_SECRET_API_KEY }}
+        run: |
+          "$HOME/.acme.sh/acme.sh" --issue \
+            --dns dns_porkbun \
+            -d "$DOMAIN" \
+            --server ${{ steps.le.outputs.server }} \
+            --keylength ec-256
+
+      # acme.sh's install-cert writes to caller-chosen paths in one shot, which sidesteps
+      # having to know its internal per-domain storage layout (~/.acme.sh/<domain>_ecc/...,
+      # which differs by key type) — the two files this produces are exactly what
+      # CertificateProvider.Inspect() expects: a fullchain PEM and a bare key, named
+      # server.pem/server.key. Get exact filenames and the fullchain shape wrong and Unity's
+      # hand-rolled PEM parser (CertificateProvider.cs, SAN OID 2.5.29.17) fails silently
+      # rather than loudly, which is why this step is a single trusted acme.sh call rather
+      # than hand-copying files out of its store.
+      - name: Export server.pem / server.key
+        run: |
+          mkdir -p out
+          "$HOME/.acme.sh/acme.sh" --install-cert \
+            -d "$DOMAIN" \
+            --ecc \
+            --fullchain-file "$PWD/out/server.pem" \
+            --key-file "$PWD/out/server.key"
+          echo "--- SAN check ---"
+          openssl x509 -in out/server.pem -noout -text | grep -A1 'Subject Alternative Name' || true
+
+      # A staging certificate is signed by "(STAGING) Pretend Pear"/"(STAGING) Bogus Broccoli"
+      # and is trusted by nothing. Publishing one over the production asset does not fail
+      # anywhere in this workflow - it fails days later, on somebody's phone, as an untrusted
+      # certificate warning on a page that used to work.
+      #
+      # That is not hypothetical. The endpoint above defaults to STAGING on BOTH paths,
+      # including the weekly cron, and nothing persists acme.sh state between runs - each run
+      # issues fresh. So the next scheduled run would clobber the production certificate now
+      # published under this tag with a staging one, with no signal until a party.
+      #
+      # This gate does not decide which endpoint is right (see the endpoint step's own note -
+      # that default is deliberate, so that a cron cannot burn production rate limits on a
+      # workflow nobody has validated). It only refuses to PUBLISH what cannot work. A staging
+      # run still proves the whole pipeline end to end and still fails visibly, here, instead
+      # of silently in the field.
+      - name: Refuse to publish a staging certificate
+        run: |
+          set -euo pipefail
+          ISSUER=$(openssl x509 -in out/server.pem -noout -issuer)
+          echo "issuer: $ISSUER"
+          if echo "$ISSUER" | grep -qi 'staging\|pretend\|bogus'; then
+            echo "::error::Refusing to publish a Let's Encrypt STAGING certificate - no device will trust it."
+            echo "::error::The pipeline itself worked. Re-run via workflow_dispatch with environment=production to publish."
+            exit 1
+          fi
+          echo "Production certificate - safe to publish."
+
+      # Publishing target: a release asset on a SEPARATE PUBLIC repo, not Cloudflare R2.
+      # R2 was the first choice and was rejected for a concrete reason — enabling R2 requires
+      # a payment method on file even to stay inside its free tier, and this project's whole
+      # premise is infrastructure with no recurring cost or upkeep. GitHub release assets are
+      # free, need no card, and are CDN-backed, which is all this needs.
+      #
+      # Why a separate repo rather than this one: THIS repo is private, and a release asset on
+      # a private repo needs an Authorization header to download. CertificateProvider.cs does a
+      # plain unauthenticated UnityWebRequest GET from a player's machine, so the asset has to
+      # live somewhere anonymous. A dedicated public repo holding only the certificate keeps
+      # the game source private while giving the download a public URL.
+      #
+      # Deliberately NOT committing server.pem/server.key as repo FILES anywhere, even though
+      # the key is meant to be public (see docs/plans/magic-domain-replacement.md's security
+      # note) — committing puts them in git history forever, unremovable without a history
+      # rewrite, and trips GitHub's push-protection secret scanner on every later push. A
+      # release asset is neither a commit nor a tree object, so it sidesteps both: --clobber
+      # replaces the file in place, leaving no history to rewrite.
+      #
+      # UNTESTED: this step has never been run.
+      - name: Publish to the public certificate repo
+        env:
+          # Fine-grained PAT with Contents: read+write on CERT_REPO ONLY. Scoped to that one
+          # repo deliberately: it is the sole credential in this workflow that can write
+          # anywhere, and the blast radius of a leak should stop at a repo whose entire
+          # contents are already public by design.
+          GH_TOKEN: ${{ secrets.CERT_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          # A fixed tag, reused forever. The URL MagicDomain.cs points at must never change,
+          # so the release is a stable container that gets new assets rather than a new
+          # release per renewal — which would move the URL every 90 days and defeat the point.
+          # Check-then-create rather than `create || echo`. The first version swallowed every
+          # failure, which hid a real HTTP 422 ("Repository is empty" — a release needs a
+          # commit to tag, and a freshly created repo has none) and surfaced it two lines
+          # later as a baffling "release not found" from the upload. Anything other than a
+          # genuinely-already-exists release must now fail loudly, where it happened.
+          if gh release view "$CERT_TAG" --repo "$CERT_REPO" >/dev/null 2>&1; then
+            echo "Release $CERT_TAG exists; uploading into it."
+          else
+            echo "Release $CERT_TAG does not exist yet; creating it."
+            gh release create "$CERT_TAG" \
+              --repo "$CERT_REPO" \
+              --title 'Current certificate' \
+              --notes 'Auto-published by renew-cert.yml. The private key here is public by design; see docs/plans/magic-domain-replacement.md.'
+          fi
+          gh release upload "$CERT_TAG" \
+            --repo "$CERT_REPO" \
+            --clobber \
+            out/server.pem out/server.key
+        # Needed repo secrets (create before enabling this job):
+        #   PORKBUN_API_KEY, PORKBUN_SECRET_API_KEY  — Porkbun API, per-domain toggle required
+        #   CERT_REPO_TOKEN                          — fine-grained PAT, Contents: read+write,
+        #                                              scoped to CERT_REPO alone

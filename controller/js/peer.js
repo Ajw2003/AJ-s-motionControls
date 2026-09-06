@@ -80,7 +80,10 @@ export class PeerLink {
     };
 
     this.pc.onconnectionstatechange = () => {
-      if (this.pc && (this.pc.connectionState === 'failed' || this.pc.connectionState === 'closed')) {
+      if (
+        this.pc &&
+        (this.pc.connectionState === 'failed' || this.pc.connectionState === 'closed')
+      ) {
         this._setTransport(Transport.RELAY);
       }
     };
@@ -113,8 +116,16 @@ export class PeerLink {
   }
 
   close() {
-    try { this.channel?.close(); } catch { /* already gone */ }
-    try { this.pc?.close(); } catch { /* already gone */ }
+    try {
+      this.channel?.close();
+    } catch {
+      /* already gone */
+    }
+    try {
+      this.pc?.close();
+    } catch {
+      /* already gone */
+    }
 
     this.channel = null;
     this.pc = null;
