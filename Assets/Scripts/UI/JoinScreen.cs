@@ -424,7 +424,11 @@ namespace Ui
             var hotspotReady = HotspotService.HasInstance && HotspotService.Instance.State == HotspotState.Ready;
 
             GUILayout.Label(hotspotReady
-                ? "Scan 1: join Wi-Fi     Scan 2: open the game"
+                // The SSID is now stable across restarts (HotspotCredentialsStore), so a phone
+                // that has joined it before has it saved — "pick it from Wi-Fi settings" is a
+                // real, faster option now, not just a fallback for a broken scanner.
+                ? "Scan 1: join Wi-Fi     Scan 2: open the game — or already on this " +
+                  "network? Pick it from Wi-Fi settings, no scan needed"
                 : "Scan to play — or open the address and type the code", _status);
             GUILayout.Space(12);
 
@@ -441,6 +445,14 @@ namespace Ui
                 DrawQr(_gameQr, side);
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
+
+                // Printed under the Wi-Fi QR so a returning player can find this exact
+                // network by name in their phone's own Wi-Fi settings instead of scanning —
+                // that only became worth doing once the SSID stopped changing every session
+                // (see docs/plans/seamless-rejoin-round2.md Fix C). The passphrase stays off
+                // screen text; it's still in the QR for the manual/first-time case.
+                GUILayout.Space(4);
+                GUILayout.Label($"Wi-Fi network: {HotspotService.Instance.Ssid}", _hint);
             }
             else if (_gameQr.Texture != null)
             {

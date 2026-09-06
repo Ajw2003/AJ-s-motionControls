@@ -5,7 +5,7 @@
  * tagged `UNVERIFIED (iOS)` — see PLAN.md "Test device policy".
  */
 
-import { MotionSource, requestMotionPermission, isSecureContextOk, needsMotionGesture } from './sensors.js';
+import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
 import { ThrowController, ThrowState, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { PeerLink, Transport } from './peer.js';
@@ -16,8 +16,6 @@ const el = (id) => document.getElementById(id);
 const ui = {
   status: el('status'),
   joinScreen: el('joinScreen'),
-  tapScreen: el('tapScreen'),
-  tapToPlayBtn: el('tapToPlayBtn'),
   chooseScreen: el('chooseScreen'),
   waitScreen: el('waitScreen'),
   throwScreen: el('throwScreen'),
@@ -25,6 +23,8 @@ const ui = {
   advanceBtn: el('advanceBtn'),
   againBtn: el('againBtn'),
   recentreBtn: el('recentreBtn'),
+  nameBtn: el('nameBtn'),
+  nameEditInput: el('nameEditInput'),
   chooseRock: el('chooseRock'),
   joinError: el('joinError'),
   nameInput: el('nameInput'),
@@ -92,12 +92,11 @@ function sendInput(payload) {
 }
 
 function showScreen(name) {
-  for (const screen of [ui.joinScreen, ui.tapScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
+  for (const screen of [ui.joinScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
     screen.classList.remove('active');
   }
   ({
     join: ui.joinScreen,
-    tap: ui.tapScreen,
     choose: ui.chooseScreen,
     wait: ui.waitScreen,
     throw: ui.throwScreen,
@@ -285,6 +284,49 @@ function renderAdvance(phase, message) {
   ui.againBtn.hidden = phase !== 'RESULTS';
 }
 
+// ---------------------------------------------------------------- renaming
+
+/**
+ * Renaming from the wait screen (Fix B, docs/plans/seamless-rejoin-round2.md). No rejoin,
+ * no reconnect: the seat is keyed by device id, so this is a cosmetic SET_NAME on the live
+ * connection, exactly like the one JOINED already sends — see handleMessage's JOINED case.
+ */
+function bindRename() {
+  ui.nameBtn.addEventListener('click', () => {
+    ui.nameEditInput.value = myName;
+    ui.nameBtn.hidden = true;
+    ui.nameEditInput.hidden = false;
+    ui.nameEditInput.focus();
+  });
+
+  const commit = () => {
+    if (ui.nameEditInput.hidden) return; // already committed by the other event
+
+    const name = ui.nameEditInput.value.trim();
+    ui.nameEditInput.hidden = true;
+    ui.nameBtn.hidden = false;
+
+    if (!name || name === myName) {
+      renderNameBtn();
+      return;
+    }
+
+    myName = name;
+    updateIdentity({ name });
+    renderNameBtn();
+    connection?.send({ type: 'SET_NAME', name: myName });
+  };
+
+  ui.nameEditInput.addEventListener('blur', commit);
+  ui.nameEditInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') ui.nameEditInput.blur(); // triggers commit via blur
+  });
+}
+
+function renderNameBtn() {
+  ui.nameBtn.textContent = myName;
+}
+
 function bindChoose() {
   ui.confirmBtn.addEventListener('click', () => sendInput({ type: 'PICK_ROCK' }));
   ui.recentreBtn.addEventListener('click', () => motion.calibrate());
@@ -426,6 +468,7 @@ function handleMessage(message) {
       stopPreviewAim(); // and no standing stream either; the next SPECTATE/TURN starts one
       hasJoinedOnce = true; // a later ERROR/ROOM_CLOSED now means "get back in", not "unknown player"
       setStatus(`Connected as ${myPlayerId}`, 'ok');
+      renderNameBtn();
       showScreen('wait');
       motion.start();
       requestWakeLock();
@@ -765,31 +808,6 @@ async function join() {
   joinOnceConnected(code, deviceId);
 }
 
-/**
- * The silent-rejoin path: a stored identity plus a room code that matches what's in the
- * URL. Still needs requestMotionPermission called inside a user gesture on iOS — callers
- * check needsMotionGesture() first and route through the "Tap to play" screen there;
- * Android has no such requirement and can call this straight from init().
- */
-async function attemptRejoin(identity, code) {
-  ui.joinError.textContent = '';
-
-  const permission = await requestMotionPermission();
-  if (!permission.granted) {
-    // Can't get sensors without the gesture after all — fall back to the ordinary form
-    // rather than getting stuck on a screen with no way forward.
-    ui.nameInput.value = identity.name ?? '';
-    ui.codeInput.value = code;
-    ui.joinError.textContent = 'Motion access denied. Enable it and try again.';
-    showScreen('join');
-    return;
-  }
-
-  myName = identity.name ?? '';
-  ensureConnection();
-  joinOnceConnected(code, identity.deviceId);
-}
-
 // ---------------------------------------------------------------- misc
 
 async function requestWakeLock() {
@@ -857,6 +875,7 @@ function init() {
   bindChoose();
   bindAdvance();
   bindGrip();
+  bindRename();
   renderGripButton(thrower.state); // see renderGripButton — nothing else paints the initial label
   tryLockPortrait();
 
@@ -866,25 +885,20 @@ function init() {
     setStatus('Ready to join');
   }
 
-  // A returning phone: a stored identity whose last-joined room matches the code the URL
-  // carries right now (the QR/history link the player used to get back here, or Workstream
-  // B keeping the same code across a host restart). Anything else — first visit, or a
-  // stored identity for a room this URL doesn't name — falls through to the ordinary join
-  // form untouched.
+  // Prefill the join form from a stored identity rather than skipping the form entirely —
+  // a skipped form is a dead end for a phone that can never see the naming/renaming UI
+  // again (docs/plans/seamless-rejoin-round2.md Fix A). Same on both platforms:
+  // requestMotionPermission still runs inside the JOIN tap's own gesture either way, so
+  // there is nothing iOS needs that Android doesn't also get here.
+  //
+  // The name comes back whenever one is stored, deliberately NOT gated on the room
+  // matching. A player who reaches the page from a bookmark, a stale QR, or a bare URL
+  // with no ?room= at all has the same name they always had, and re-typing it is exactly
+  // the friction this work exists to remove. The room code is prefilled from the URL
+  // above, and stays the URL's business.
   const identity = loadIdentity();
-  if (identity?.name && roomFromUrl && identity.room === roomFromUrl) {
-    const rejoin = () => attemptRejoin(identity, roomFromUrl);
-    ui.tapToPlayBtn.addEventListener('click', rejoin);
-
-    if (needsMotionGesture()) {
-      // iOS: requestMotionPermission must run inside a user gesture, so this single tap
-      // stands in for the form's JOIN button rather than auto-connecting.
-      showScreen('tap');
-    } else {
-      // Android: no such gate — reconnect the instant the page loads, no interaction at all.
-      rejoin();
-    }
-  }
+  if (identity?.name) ui.nameInput.value = identity.name;
+  if (!ui.codeInput.value && identity?.room) ui.codeInput.value = identity.room;
 
   setInterval(updateDebug, 100);
   document.addEventListener('visibilitychange', () => {

@@ -377,20 +377,6 @@ export function isSecureContextOk() {
   return typeof window !== 'undefined' && window.isSecureContext === true;
 }
 
-/**
- * True on iOS, where requestMotionPermission must run inside a user gesture — so a silent
- * auto-rejoin (no form, no tap) cannot call it. False on Android, where there is no such
- * gate and a stored identity can reconnect the instant the page loads. Same feature-detection
- * requestMotionPermission itself uses, exposed separately so callers can decide whether to
- * show a gesture screen before ever calling requestMotionPermission.
- */
-export function needsMotionGesture() {
-  return (
-    typeof DeviceMotionEvent?.requestPermission === 'function' ||
-    typeof DeviceOrientationEvent?.requestPermission === 'function'
-  );
-}
-
 const SAMPLE_HZ = 60;
 const BUFFER_SECONDS = 1.5;
 
