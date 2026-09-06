@@ -61,6 +61,15 @@ network-mode.txt
 # F4 host panel. Same reasoning as network-mode.txt.
 match-settings.json
 
+# Per-machine hotspot SSID/passphrase, written by HotspotCredentialsStore so a returning
+# phone can remember this network. Each host's own credentials, not something one checkout
+# should impose on everyone else's.
+hotspot-credentials.json
+
+# Per-machine room code, written by RoomCodeStore so a returning phone can rejoin the same
+# room after a restart. Same reasoning as hotspot-credentials.json.
+room-code.txt
+
 # Spike output. Records one machine's run, so it is evidence rather than source.
 deploy/spike/*.log
 

@@ -491,6 +491,21 @@ namespace Managers
         }
 
         /// <summary>
+        /// Every connected player's display name, id → name, for the SPECTATE "names" field —
+        /// see PlayerNames and docs/plans/seamless-rejoin.md Workstream C. Same shape as
+        /// BuildPlayerRocks: the wire key stays the opaque device id, only the value is the
+        /// human-readable name.
+        /// </summary>
+        private IEnumerable<KeyValuePair<string, string>> BuildPlayerNames()
+        {
+            foreach (var player in _players)
+            {
+                var name = PlayerNames.HasInstance ? PlayerNames.Instance.DisplayNameFor(player) : player;
+                yield return new KeyValuePair<string, string>(player, name);
+            }
+        }
+
+        /// <summary>
         /// Match state for the idle phones, sent on change only.
         /// </summary>
         /// <remarks>
@@ -518,7 +533,8 @@ namespace Managers
                 BuildPlayerRocks(),
                 Phase == MatchPhase.Choosing,
                 PlayerColours.HasInstance ? PlayerColours.Instance.All : null,
-                PlayerColours.HasInstance ? PlayerColours.Instance.Palette?.Swatches : null));
+                PlayerColours.HasInstance ? PlayerColours.Instance.Palette?.Swatches : null,
+                BuildPlayerNames()));
         }
 
         protected override void OnDestroy()

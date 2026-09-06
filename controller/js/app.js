@@ -5,16 +5,19 @@
  * tagged `UNVERIFIED (iOS)` — see PLAN.md "Test device policy".
  */
 
-import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
+import { MotionSource, requestMotionPermission, isSecureContextOk, needsMotionGesture } from './sensors.js';
 import { ThrowController, ThrowState, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { PeerLink, Transport } from './peer.js';
+import { loadIdentity, ensureDeviceId, updateIdentity } from './identity.js';
 
 const el = (id) => document.getElementById(id);
 
 const ui = {
   status: el('status'),
   joinScreen: el('joinScreen'),
+  tapScreen: el('tapScreen'),
+  tapToPlayBtn: el('tapToPlayBtn'),
   chooseScreen: el('chooseScreen'),
   waitScreen: el('waitScreen'),
   throwScreen: el('throwScreen'),
@@ -55,6 +58,20 @@ let peer = null;
 let lastThrow = null;
 let myPlayerId = '';
 
+// Sent as a SET_NAME the moment JOINED comes back — see handleMessage. Set from whichever
+// path joined (typed in the form, or read back from the stored identity on a silent
+// rejoin), so identity.js's stored name and the relay's copy of it never diverge.
+let myName = '';
+
+// True from the moment this phone has ever actually held a seat this page-load, onward.
+// Distinguishes an ERROR/ROOM_CLOSED worth retrying forever (a seat that exists somewhere
+// and is worth getting back into — a mid-match Wi-Fi blip, a host restart) from one that
+// means exactly what it says: a room code that was never valid, typed wrong on the very
+// first join attempt, which must still show the form rather than retry a room that never
+// existed. See handleMessage's ERROR/ROOM_CLOSED cases and
+// docs/plans/seamless-rejoin.md "the repeated tap to play" §2-3.
+let hasJoinedOnce = false;
+
 // The phone's own belief about whose turn it is, sourced only from TURN — the message
 // TurnManager sends personalised per-player and only while Phase is genuinely Playing (see
 // TurnManager.StartTurn/SendTurnStates). SPECTATE also carries a phase field, but it is
@@ -75,12 +92,16 @@ function sendInput(payload) {
 }
 
 function showScreen(name) {
-  for (const screen of [ui.joinScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
+  for (const screen of [ui.joinScreen, ui.tapScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
     screen.classList.remove('active');
   }
-  ({ join: ui.joinScreen, choose: ui.chooseScreen, wait: ui.waitScreen, throw: ui.throwScreen })[
-    name
-  ].classList.add('active');
+  ({
+    join: ui.joinScreen,
+    tap: ui.tapScreen,
+    choose: ui.chooseScreen,
+    wait: ui.waitScreen,
+    throw: ui.throwScreen,
+  })[name].classList.add('active');
 }
 
 function setStatus(text, kind = '') {
@@ -403,10 +424,17 @@ function handleMessage(message) {
       myPlayerId = message.playerId;
       myTurn = false; // a fresh join/rejoin has no standing TURN yet — wait for one
       stopPreviewAim(); // and no standing stream either; the next SPECTATE/TURN starts one
+      hasJoinedOnce = true; // a later ERROR/ROOM_CLOSED now means "get back in", not "unknown player"
       setStatus(`Connected as ${myPlayerId}`, 'ok');
       showScreen('wait');
       motion.start();
       requestWakeLock();
+
+      // playerId is now the device id, not the typed name (docs/plans/seamless-rejoin.md
+      // Workstream C) — the relay has no idea what to display until this arrives. Sent on
+      // every JOINED, not just a first-time join, so a rename mid-match (myName updated,
+      // then this same path re-runs on a reconnect) reaches the host too.
+      if (myName) connection.send({ type: 'SET_NAME', name: myName });
 
       // Only after JOINED: the relay routes by room membership, so an offer sent any
       // earlier has nowhere to go. Failure here is silent by design — the throw path
@@ -415,6 +443,15 @@ function handleMessage(message) {
       break;
 
     case 'ERROR':
+      // Once this phone has ever actually held a seat, an ERROR means "get back in", not
+      // "unknown player" — retry rather than bouncing to a form that would mint a second
+      // seat under a fresh id. Before the first successful JOINED (a bad/mistyped room
+      // code, say), hasJoinedOnce is still false and the form is exactly the right
+      // response. See docs/plans/seamless-rejoin.md "the repeated tap to play" §2.
+      if (hasJoinedOnce && connection?.credentials) {
+        connection.retryJoin();
+        break;
+      }
       ui.joinError.textContent = message.message ?? 'Something went wrong.';
       showScreen('join');
       ui.joinBtn.disabled = false;
@@ -464,13 +501,23 @@ function handleMessage(message) {
       if (PEER_ENABLED && peer) peer.start().catch(() => {});
       break;
 
-    // Only reaches here once the rejoin window has expired — RelayConnection
-    // swallows this while it still has a chance of getting back in.
     case 'ROOM_CLOSED':
-      setStatus('Game ended', 'bad');
       myTurn = false; // before cancel(), whose IDLE transition would otherwise re-start the stream
       thrower.cancel();
       stopPreviewAim();
+
+      // Workstream B's stable room code means a host restart hands back the same code, so
+      // a phone that already held a seat should retry rather than eject — it looks
+      // identical to the host never having left. The join form stays the response to an
+      // actual, permanent end of match for a phone that never held a seat here.
+      if (hasJoinedOnce && connection?.credentials) {
+        setStatus('Host restarting…', 'bad');
+        peer?.close();
+        connection.retryJoin();
+        break;
+      }
+
+      setStatus('Game ended', 'bad');
       peer?.close();
       showScreen('join');
       ui.joinBtn.disabled = false;
@@ -498,7 +545,11 @@ function renderLastThrow(message, phase) {
   if (phase !== 'PLAYING') return '';
   if (!message.lastPlayer || typeof message.lastSkips !== 'number') return '';
 
-  const who = message.lastPlayer === myPlayerId ? 'You' : message.lastPlayer;
+  // Comparison stays against the id; only the rendered label changes. message.names is the
+  // id -> display-name map TurnManager sends alongside scores/rocks — see
+  // docs/plans/seamless-rejoin.md Workstream C. Falls back to the raw id so a build without
+  // PlayerNames running (or a name that hasn't arrived yet) still shows something.
+  const who = message.lastPlayer === myPlayerId ? 'You' : (message.names?.[message.lastPlayer] ?? message.lastPlayer);
   const parts = [`${who}: ${message.lastSkips} skip${message.lastSkips === 1 ? '' : 's'}`];
   if (typeof message.lastDistance === 'number') parts.push(`${message.lastDistance.toFixed(1)} m`);
   return parts.join(' · ');
@@ -561,16 +612,18 @@ function renderSpectate(message) {
   setSwatchesOpen(false);
 
   if (phase === 'RESULTS') {
+    // leader() still operates on the id-keyed scores dict — the comparison below stays
+    // against the id, and only the rendered label swaps in the display name.
     const winner = leader(message.scores);
     ui.waitTitle.textContent = 'Final scores';
     ui.waitDetail.textContent = winner
       ? winner === myPlayerId
         ? 'You win!'
-        : `${winner} wins`
+        : `${message.names?.[winner] ?? winner} wins`
       : 'It is a tie.';
   } else {
     ui.waitTitle.textContent = message.activePlayer
-      ? `${message.activePlayer} is throwing`
+      ? `${message.names?.[message.activePlayer] ?? message.activePlayer} is throwing`
       : 'Waiting for the next turn';
 
     const parts = [];
@@ -591,11 +644,12 @@ function renderSpectate(message) {
     const row = document.createElement('div');
     row.className = 'score-row' + (player === message.activePlayer ? ' active' : '');
 
-    // textContent, never innerHTML. A player name is attacker-controlled text that every
-    // other phone renders, and the relay only trims/uppercases it - uppercasing is not
-    // sanitisation, because HTML tags are case-insensitive. Interpolating it as markup
-    // let a name like <H1>OWNED</H1> render as markup on everyone else's screen, held
-    // back from worse only by the 16-character cap in sanitizePlayerId.
+    // textContent, never innerHTML. A display name is attacker-controlled text that every
+    // other phone renders, exactly as the typed name used to be before Workstream C moved
+    // it off playerId and into SET_NAME/message.names — the relay's sanitizePlayerId
+    // uppercase+16-char cap no longer applies to it. Interpolating it as markup let a name
+    // like <H1>OWNED</H1> render as markup on everyone else's screen; textContent is what
+    // still rules that out.
     const name = document.createElement('span');
     name.className = 'name';
 
@@ -611,8 +665,11 @@ function renderSpectate(message) {
       name.appendChild(dot);
     }
 
+    // `player` is still the dict key — an opaque device id, kept that way so two players
+    // with the same typed name never collide as one scores entry (see BuildSpectate's
+    // remarks on playerNames). Only the rendered label swaps in the display name.
     const label = document.createElement('span');
-    label.textContent = player;
+    label.textContent = message.names?.[player] ?? player;
     name.appendChild(label);
 
     const points = document.createElement('span');
@@ -624,6 +681,47 @@ function renderSpectate(message) {
 }
 
 // ---------------------------------------------------------------- join
+
+/** Builds the RelayConnection/PeerLink pair the first time either join path needs one. */
+function ensureConnection() {
+  if (connection) return;
+
+  connection = new RelayConnection({
+    onMessage: handleMessage,
+    onStatus: (status) => {
+      if (status === ConnectionStatus.RECONNECTING) setStatus('Reconnecting…', 'bad');
+      else if (status === ConnectionStatus.CONNECTING) setStatus('Connecting…');
+    },
+  });
+  connection.connect();
+
+  if (PEER_ENABLED && 'RTCPeerConnection' in window) {
+    peer = new PeerLink({
+      connection,
+      onTransportChange: (transport) => {
+        setStatus(
+          transport === Transport.DIRECT
+            ? `Connected as ${myPlayerId} · direct`
+            : `Connected as ${myPlayerId}`,
+          'ok',
+        );
+      },
+    });
+  }
+}
+
+/** Sends JOIN_ROOM the moment the socket is actually open — shared by both join paths. */
+function joinOnceConnected(code, deviceId) {
+  const waitForOpen = setInterval(() => {
+    if (
+      connection.status === ConnectionStatus.CONNECTED ||
+      connection.status === ConnectionStatus.JOINED
+    ) {
+      clearInterval(waitForOpen);
+      connection.joinRoom(code, deviceId);
+    }
+  }, 100);
+}
 
 async function join() {
   const name = ui.nameInput.value.trim();
@@ -655,40 +753,41 @@ async function join() {
     return;
   }
 
-  if (!connection) {
-    connection = new RelayConnection({
-      onMessage: handleMessage,
-      onStatus: (status) => {
-        if (status === ConnectionStatus.RECONNECTING) setStatus('Reconnecting…', 'bad');
-        else if (status === ConnectionStatus.CONNECTING) setStatus('Connecting…');
-      },
-    });
-    connection.connect();
+  // The wire playerId is the device id, not the typed name (docs/plans/seamless-rejoin.md
+  // Workstream C) — the name travels separately as SET_NAME once JOINED comes back, so
+  // renaming later never looks like a new player. ensureDeviceId mints one on this
+  // device's very first join and returns the same one on every join after that.
+  const deviceId = ensureDeviceId();
+  myName = name;
+  updateIdentity({ name, room: code });
 
-    if (PEER_ENABLED && 'RTCPeerConnection' in window) {
-      peer = new PeerLink({
-        connection,
-        onTransportChange: (transport) => {
-          setStatus(
-            transport === Transport.DIRECT
-              ? `Connected as ${myPlayerId} · direct`
-              : `Connected as ${myPlayerId}`,
-            'ok',
-          );
-        },
-      });
-    }
+  ensureConnection();
+  joinOnceConnected(code, deviceId);
+}
+
+/**
+ * The silent-rejoin path: a stored identity plus a room code that matches what's in the
+ * URL. Still needs requestMotionPermission called inside a user gesture on iOS — callers
+ * check needsMotionGesture() first and route through the "Tap to play" screen there;
+ * Android has no such requirement and can call this straight from init().
+ */
+async function attemptRejoin(identity, code) {
+  ui.joinError.textContent = '';
+
+  const permission = await requestMotionPermission();
+  if (!permission.granted) {
+    // Can't get sensors without the gesture after all — fall back to the ordinary form
+    // rather than getting stuck on a screen with no way forward.
+    ui.nameInput.value = identity.name ?? '';
+    ui.codeInput.value = code;
+    ui.joinError.textContent = 'Motion access denied. Enable it and try again.';
+    showScreen('join');
+    return;
   }
 
-  const waitForOpen = setInterval(() => {
-    if (
-      connection.status === ConnectionStatus.CONNECTED ||
-      connection.status === ConnectionStatus.JOINED
-    ) {
-      clearInterval(waitForOpen);
-      connection.joinRoom(code, name);
-    }
-  }, 100);
+  myName = identity.name ?? '';
+  ensureConnection();
+  joinOnceConnected(code, identity.deviceId);
 }
 
 // ---------------------------------------------------------------- misc
@@ -750,7 +849,8 @@ function updateDebug() {
 function init() {
   const params = new URLSearchParams(location.search);
   const prefill = params.get('room');
-  if (prefill) ui.codeInput.value = prefill.toUpperCase();
+  const roomFromUrl = prefill ? prefill.toUpperCase() : '';
+  if (prefill) ui.codeInput.value = roomFromUrl;
 
   ui.joinBtn.addEventListener('click', join);
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));
@@ -764,6 +864,26 @@ function init() {
     setStatus('Insecure context — sensors will not work', 'bad');
   } else {
     setStatus('Ready to join');
+  }
+
+  // A returning phone: a stored identity whose last-joined room matches the code the URL
+  // carries right now (the QR/history link the player used to get back here, or Workstream
+  // B keeping the same code across a host restart). Anything else — first visit, or a
+  // stored identity for a room this URL doesn't name — falls through to the ordinary join
+  // form untouched.
+  const identity = loadIdentity();
+  if (identity?.name && roomFromUrl && identity.room === roomFromUrl) {
+    const rejoin = () => attemptRejoin(identity, roomFromUrl);
+    ui.tapToPlayBtn.addEventListener('click', rejoin);
+
+    if (needsMotionGesture()) {
+      // iOS: requestMotionPermission must run inside a user gesture, so this single tap
+      // stands in for the form's JOIN button rather than auto-connecting.
+      showScreen('tap');
+    } else {
+      // Android: no such gate — reconnect the instant the page loads, no interaction at all.
+      rejoin();
+    }
   }
 
   setInterval(updateDebug, 100);

@@ -5,7 +5,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Security.Cryptography;
 using Singleton;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -46,10 +45,6 @@ namespace Net
 
         [Tooltip("Seconds to wait for -Action Stop before killing it outright on the way out.")]
         [SerializeField] private float stopTimeout = 3f;
-
-        // Excludes visually ambiguous characters (0/O, 1/l/I) — the passphrase may need to be
-        // typed by hand if a QR scan fails.
-        private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
 
         /// <summary>
         /// The address Windows ICS always gives the hotspot, and therefore the only answer
@@ -179,8 +174,9 @@ namespace Net
 
             if (!VerifyHostNameResolves()) yield break; // ditto
 
-            Ssid = GenerateSsid();
-            Passphrase = GeneratePassphrase();
+            var credentials = HotspotCredentialsStore.LoadOrCreate();
+            Ssid = credentials.Ssid;
+            Passphrase = credentials.Passphrase;
 
             SetState(HotspotState.Starting, "Starting the hotspot…");
 
@@ -449,21 +445,6 @@ namespace Net
         }
 
         // ------------------------------------------------------------------ generation
-
-        private static string GenerateSsid() => $"Rock Skipping {RandomAlphanumeric(4)}";
-
-        /// <summary>WPA2 allows 8-63 chars; 12 is comfortably strong and still typeable.</summary>
-        private static string GeneratePassphrase() => RandomAlphanumeric(12);
-
-        private static string RandomAlphanumeric(int length)
-        {
-            var bytes = new byte[length];
-            using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
-
-            var chars = new char[length];
-            for (var i = 0; i < length; i++) chars[i] = Alphabet[bytes[i] % Alphabet.Length];
-            return new string(chars);
-        }
 
         // ------------------------------------------------------------------ process plumbing
 

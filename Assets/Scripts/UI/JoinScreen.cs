@@ -459,9 +459,22 @@ namespace Ui
 
             var turns = TurnManager.HasInstance ? TurnManager.Instance : null;
 
+            // Display names, not raw device ids — see PlayerNames and
+            // docs/plans/seamless-rejoin.md Workstream C.
+            var names = "";
+            if (turns != null)
+            {
+                var list = new System.Collections.Generic.List<string>();
+                foreach (var id in turns.Players)
+                {
+                    list.Add(PlayerNames.HasInstance ? PlayerNames.Instance.DisplayNameFor(id) : id);
+                }
+                names = string.Join(", ", list);
+            }
+
             GUILayout.Label(joined == 0
                 ? "No players yet"
-                : $"{joined} player{(joined == 1 ? "" : "s")}: {string.Join(", ", turns.Players)}",
+                : $"{joined} player{(joined == 1 ? "" : "s")}: {names}",
                 _body);
 
             GUILayout.Space(10);

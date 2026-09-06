@@ -135,7 +135,10 @@ namespace Ui
                 if (isWinner) GUI.color = new Color(1f, 0.85f, 0.4f);
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{i + 1}.  {standing.PlayerId}", style);
+                var displayName = PlayerNames.HasInstance
+                    ? PlayerNames.Instance.DisplayNameFor(standing.PlayerId)
+                    : standing.PlayerId;
+                GUILayout.Label($"{i + 1}.  {displayName}", style);
                 GUILayout.FlexibleSpace();
                 GUILayout.Label(standing.Score.ToString(), style);
                 GUILayout.EndHorizontal();

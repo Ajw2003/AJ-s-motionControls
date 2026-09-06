@@ -77,6 +77,9 @@ namespace Net
         /// <summary>A phone choosing the colour it is drawn in. See PickColourMessage.</summary>
         public event Action<PickColourMessage> PickColourReceived;
 
+        /// <summary>A phone announcing/changing its display name. See SetNameMessage.</summary>
+        public event Action<SetNameMessage> SetNameReceived;
+
         /// <summary>A phone asking the match to move on. See AdvanceMessage.</summary>
         public event Action<AdvanceMessage> AdvanceReceived;
 
@@ -160,6 +163,12 @@ namespace Net
         {
             persistBetweenScenes = true;
             base.Awake();
+
+            // Seed from disk before the first CREATE_ROOM so a cold start still asks for
+            // last session's code via preferredCode below, instead of leaving RoomCode empty
+            // and always getting handed a fresh one. RoomCodeStore.Save (in the ROOM_CREATED
+            // handler) keeps this current for the next launch.
+            RoomCode = RoomCodeStore.Load();
 
             if (LocalServices.HasInstance)
             {
@@ -447,6 +456,7 @@ namespace Net
                     var created = JsonUtility.FromJson<RoomCreatedMessage>(json);
                     var sameCode = created.roomCode == RoomCode;
                     RoomCode = created.roomCode;
+                    RoomCodeStore.Save(RoomCode);
 
                     // `resumed` means the relay still had the room and its players; nothing
                     // was lost. A reclaimed code without resume means the relay restarted,
@@ -504,6 +514,14 @@ namespace Net
                     var colour = JsonUtility.FromJson<PickColourMessage>(json);
                     if (trustedPlayerId != null) colour.playerId = trustedPlayerId;
                     PickColourReceived?.Invoke(colour);
+                    break;
+                }
+
+                case MessageType.SetName:
+                {
+                    var named = JsonUtility.FromJson<SetNameMessage>(json);
+                    if (trustedPlayerId != null) named.playerId = trustedPlayerId;
+                    SetNameReceived?.Invoke(named);
                     break;
                 }
 

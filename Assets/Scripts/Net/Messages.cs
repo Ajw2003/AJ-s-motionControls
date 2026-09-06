@@ -25,6 +25,7 @@ namespace Net
         public const string Throw = "THROW";
         public const string PickRock = "PICK_ROCK";
         public const string PickColour = "PICK_COLOUR";
+        public const string SetName = "SET_NAME";
         public const string Advance = "ADVANCE";
         public const string Turn = "TURN";
         public const string Spectate = "SPECTATE";
@@ -165,6 +166,26 @@ namespace Net
     }
 
     /// <summary>
+    /// A phone announcing (or changing) the display name for its seat. See
+    /// docs/plans/seamless-rejoin.md Workstream C: playerId is now the device's stable
+    /// identity, not the typed name, so the name has to travel as its own message rather
+    /// than being read out of playerId — Managers.PlayerNames is the one place it lands.
+    /// </summary>
+    /// <remarks>
+    /// Sent every time this device's controller reaches JOINED, first join or rejoin
+    /// alike, and again whenever the player edits their name mid-match — a rename, not a
+    /// new player, since playerId does not change. relayToHost stamps playerId
+    /// server-side exactly as it does for PickColourMessage, so a phone cannot claim to
+    /// be renaming someone else.
+    /// </remarks>
+    [Serializable]
+    public class SetNameMessage
+    {
+        public string playerId;
+        public string name;
+    }
+
+    /// <summary>
     /// A phone asking the match to move on — start from the lobby, resume from a re-pick,
     /// or begin the next match from the results screen.
     /// </summary>
@@ -251,6 +272,14 @@ namespace Net
         /// (see TurnManager.BroadcastSpectate) because a choose screen behaves identically
         /// either way, but the advance button on it must not offer to "start" a match that
         /// is already half played.</param>
+        /// <param name="playerNames">Every connected player's display name, id → name — see
+        /// docs/plans/seamless-rejoin.md Workstream C. Deliberately a parallel field rather
+        /// than a substitution into <paramref name="activePlayer"/>/<paramref name="lastPlayer"/>
+        /// or the <paramref name="scores"/> keys: those stay opaque device ids on the wire so
+        /// app.js's identity comparisons (`=== myPlayerId`) keep working, and so two players
+        /// who happen to type the same display name never collide as one dictionary key. Null
+        /// is fine; the "names" object is simply empty, the same tolerance
+        /// <paramref name="playerRocks"/> and <paramref name="playerColours"/> have.</param>
         public static string BuildSpectate(
             string activePlayer, string rockName,
             string lastPlayer, int lastSkips, float lastDistance,
@@ -259,7 +288,8 @@ namespace Net
             IEnumerable<(string PlayerId, string RockId, string RockName)> playerRocks = null,
             bool choosing = false,
             IEnumerable<KeyValuePair<string, UnityEngine.Color>> playerColours = null,
-            IEnumerable<UnityEngine.Color> palette = null)
+            IEnumerable<UnityEngine.Color> palette = null,
+            IEnumerable<KeyValuePair<string, string>> playerNames = null)
         {
             var sb = new StringBuilder(288);
             sb.Append('{')
@@ -282,6 +312,19 @@ namespace Net
                 {
                     if (!first) sb.Append(',');
                     sb.Append($"\"{Escape(pair.Key)}\":{pair.Value}");
+                    first = false;
+                }
+            }
+
+            sb.Append("},\"names\":{");
+
+            if (playerNames != null)
+            {
+                var first = true;
+                foreach (var pair in playerNames)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append($"\"{Escape(pair.Key)}\":\"{Escape(pair.Value)}\"");
                     first = false;
                 }
             }

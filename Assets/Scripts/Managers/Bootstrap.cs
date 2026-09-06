@@ -112,6 +112,12 @@ namespace Managers
             // unlike PICK_ROCK there is no highlight owner to resolve it first.
             _ = PlayerColours.Instance;
 
+            // Before TurnManager for the same reason PlayerColours is above: the roster
+            // line and scoreboard both ask it for a display name. After RelayClient
+            // because it subscribes to SetNameReceived directly, the same shape as
+            // PlayerColours and PickColourReceived.
+            _ = PlayerNames.Instance;
+
             // After RelayClient so it can subscribe before any phone joins, and after
             // ScoreManager for the delivery-order reason above.
             _ = TurnManager.Instance;

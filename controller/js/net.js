@@ -130,6 +130,19 @@ export class RelayConnection {
     this._sendJoin();
   }
 
+  /**
+   * Re-open the rejoin window and retry, for a caller that received an ERROR or
+   * ROOM_CLOSED after this class's own REJOIN_WINDOW_MS had already elapsed but still has
+   * a reason to keep trying — a durable stored device identity (see identity.js), which
+   * unlike a typed name is worth reconnecting for indefinitely rather than bouncing to the
+   * join form. No-op without existing credentials: there is nothing to rejoin yet.
+   */
+  retryJoin() {
+    if (!this.credentials) return;
+    this.expectHostBack();
+    this._scheduleRejoin();
+  }
+
   _sendJoin() {
     if (!this.credentials) return;
     this.send({ type: 'JOIN_ROOM', ...this.credentials });

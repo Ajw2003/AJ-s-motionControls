@@ -150,7 +150,11 @@ namespace Net
                             $"room <b>{(string.IsNullOrEmpty(_client.RoomCode) ? "----" : _client.RoomCode)}</b>", rich);
 
             var turns = Managers.TurnManager.HasInstance ? Managers.TurnManager.Instance : null;
-            GUILayout.Label($"<b>Turn</b>   {turns?.ActivePlayer ?? "nobody"}   " +
+            var activeName = turns?.ActivePlayer == null ? "nobody"
+                : Managers.PlayerNames.HasInstance
+                    ? Managers.PlayerNames.Instance.DisplayNameFor(turns.ActivePlayer)
+                    : turns.ActivePlayer;
+            GUILayout.Label($"<b>Turn</b>   {activeName}   " +
                             $"players {turns?.Players.Count ?? 0}   (press N for next)", rich);
 
             // Which transport each phone's input is on. Direct means peer-to-peer over the
