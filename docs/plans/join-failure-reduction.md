@@ -1,6 +1,7 @@
 # Making join failure hard to achieve
 
-**Status:** analysis + proposal. No code changed. Written 2026-09-06 in response to two
+**Status:** P1, P2 and the `:80` fix are **implemented** — see the Build log at the end. P3 and
+P4 are still proposals. Written 2026-09-06 in response to two
 questions: (1) if the host has Wi-Fi at boot, can the game reach phones on that same network and
 push them onto the hotspot? (2) since LAN mode worked, can we nudge someone who scans QR #1 and
 then fails?
@@ -159,4 +160,75 @@ blame the host's internet for a phone-side problem.
 3. **P3's firewall widening** — worth it, or is the house-LAN guest better served by simply
    walking to the TV?
 
-Nothing above has been implemented, and none of it should be until these are answered.
+Question 3 (P3's firewall widening) is still open. Questions 1 and 2 were answered by building
+them — see below.
+
+---
+
+## Build log
+
+**2026-09-06 — P1, P2 and the `:80` fix landed together.** P4 was not built; the funnel it needs
+now exists, so it stays a small follow-up.
+
+### New
+
+**`relay/funnel.js`** — the per-device funnel from §2. `createFunnel({ isTracked, onChange, now })`
+returns `record(address, stage)` / `stageOf(address)` / `counts()`. Keyed by IP, normalized so
+`::ffff:192.168.137.5` and `192.168.137.5` are one device. Three decisions worth keeping:
+
+- **Stages never regress.** The signals arrive out of order in practice — a phone rejoining a
+  known network sends its captive probes *after* the browser has restored the controller — and a
+  late `ASSOCIATED` pulling a playing device back down would make the TV nag someone mid-throw.
+- **No `reset()`.** A host restart (stopping and starting the Editor) moves no phone off the
+  hotspot, so the recorded stages are still true. Devices leave by going quiet for
+  `IDLE_TIMEOUT_MS` (10 min), which is the only event that actually means "that phone is gone".
+- **Tracking is confined to `DNS_ALLOW`.** Without it every request on a developer's machine
+  comes from `127.0.0.1` and the TV would report a phantom phone waiting to scan.
+
+**`relay/test-funnel.js`** — 16 tests, wired into `npm test`. Covers the regression guard, the
+subnet confinement, expiry, and the change-notification debounce.
+
+### Changed
+
+- **`relay/dns.js`** — new `onQuery(address)` option, called for every query that passes the
+  allow-list and rate limit, deliberately *before* `decodeQuery`: a packet the responder cannot
+  parse is still proof a device is on the hotspot. Wrapped in try/catch because it runs inside a
+  UDP handler, where a callback throw would take the relay down over a bookkeeping error.
+- **`relay/server.js`** — funnel wired to all three stages (`onQuery` → `ASSOCIATED`,
+  `serveStatic` of `index.html` → `PAGE_OPEN`, `handleJoinRoom` → `PLAYING`; the websocket's
+  `remoteAddress` is captured at connection time, since by JOIN the socket may be mid-close and
+  read back undefined). Counts go to hosts as `DEVICE_FUNNEL`, on change and once on
+  `ROOM_CREATED`/resume so a restarted host is not blind until the next phone moves.
+- **P2** is `serveCaptiveProbe`: below `PAGE_OPEN` the probes report a portal (302 → `/portal`
+  for Android, the portal page itself for Apple); at `PAGE_OPEN` and above they answer exactly as
+  Phase 4 always did. `/portal` is an instruction page with one link out, **not** the controller —
+  iOS's CNA sheet and Android's portal webview are sandboxed and `DeviceMotion.requestPermission()`
+  is unreliable inside them.
+- **The `:80` bug** is fixed by giving that listener its own `handleProbeRequest` instead of
+  reusing `handleRequest`. Everything that is not a probe or `/portal` now 302s to the HTTPS
+  origin, so the controller can no longer be served over plain HTTP.
+- **`Assets/Scripts/Net/Messages.cs`** — `MessageType.DeviceFunnel` + `DeviceFunnelMessage`.
+- **`Assets/Scripts/Net/RelayClient.cs`** — a `DeviceFunnel` dispatch case setting
+  `DevicesAwaitingPage` / `DevicesAwaitingJoin`. Stored as properties rather than published as an
+  event: the only consumer redraws every frame anyway, so a property is less machinery than an
+  event type plus a subscription to unwind.
+- **`Assets/Scripts/UI/JoinScreen.cs`** — when `DevicesAwaitingPage > 0`, the instruction line
+  becomes "*A phone is on the Wi-Fi — now scan the second code*", the game QR grows to 1.3×, and
+  the Wi-Fi QR shrinks to 0.7× and fades to 35% alpha. Total row width is unchanged, so the pair
+  still fits the panel.
+
+### Verified
+
+- `cd relay && npm test` — 38/38 pass (22 pre-existing + 16 new). `npx eslint .` clean.
+- **P2 end-to-end against a spawned relay:** before the controller page is fetched,
+  `/generate_204` → `302 http://play.skiprocking.ca/portal` and `/hotspot-detect.html` → the
+  portal HTML. After fetching `/`, the same two → `204` and the literal `Success`. `/portal` → 200.
+- **The `:80` fix end-to-end:** with the listener bound, `GET /` and `GET /controller.js` on `:80`
+  both return `302` to the HTTPS origin instead of serving the file.
+
+### Not verified here
+
+The Unity half has not been compiled or run — Unity holds an exclusive project lock, so there is
+no out-of-band compile check (`Assets/CLAUDE.md`). Check the Editor Console, then confirm on real
+hardware: a phone that joins the Wi-Fi and stops should raise the nudge on the TV within a second
+or two, and should stop flagging "No internet" once it is playing.

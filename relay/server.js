@@ -465,12 +465,13 @@ let http80Server = null;
  * a developer's machine arrives from 127.0.0.1, and reporting that as "a phone is waiting
  * to scan" would be worse than reporting nothing.
  */
-const funnel = useDns && DNS_ALLOW
-  ? createFunnel({
-      isTracked: makeSubnetTest(DNS_ALLOW),
-      onChange: (counts) => broadcastFunnelToHosts(counts),
-    })
-  : null;
+const funnel =
+  useDns && DNS_ALLOW
+    ? createFunnel({
+        isTracked: makeSubnetTest(DNS_ALLOW),
+        onChange: (counts) => broadcastFunnelToHosts(counts),
+      })
+    : null;
 
 /**
  * Tells every connected host what the funnel currently sees. Sent to hosts rather than to a
@@ -886,7 +887,9 @@ function startHttpProbeListener() {
   });
 
   http80Server.listen(80, BIND_HOST, () => {
-    log(`Captive-portal probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html, portal)`);
+    log(
+      `Captive-portal probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html, portal)`,
+    );
     log(`  everything else on :80 redirects to ${GAME_URL}`);
   });
 }

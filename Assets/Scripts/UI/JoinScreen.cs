@@ -423,13 +423,33 @@ namespace Ui
 
             var hotspotReady = HotspotService.HasInstance && HotspotService.Instance.State == HotspotState.Ready;
 
-            GUILayout.Label(hotspotReady
-                // The SSID is now stable across restarts (HotspotCredentialsStore), so a phone
-                // that has joined it before has it saved — "pick it from Wi-Fi settings" is a
-                // real, faster option now, not just a fallback for a broken scanner.
-                ? "Scan 1: join Wi-Fi     Scan 2: open the game — or already on this " +
-                  "network? Pick it from Wi-Fi settings, no scan needed"
-                : "Scan to play — or open the address and type the code", _status);
+            // Phones that made it onto the Wi-Fi and then stopped — the drop-off the relay's
+            // join funnel exists to expose (relay/funnel.js, docs/plans/join-failure-reduction.md).
+            // Before this, that failure and "nobody has picked up their phone yet" looked
+            // identical from the couch: the player count just did not move.
+            var awaitingSecondScan = hotspotReady && _client != null ? _client.DevicesAwaitingPage : 0;
+
+            if (awaitingSecondScan > 0)
+            {
+                var previous = GUI.color;
+                GUI.color = new Color(1f, 0.85f, 0.4f);
+                GUILayout.Label(awaitingSecondScan == 1
+                    ? "A phone is on the Wi-Fi — now scan the second code"
+                    : $"{awaitingSecondScan} phones are on the Wi-Fi — now scan the second code",
+                    _status);
+                GUI.color = previous;
+            }
+            else
+            {
+                GUILayout.Label(hotspotReady
+                    // The SSID is now stable across restarts (HotspotCredentialsStore), so a phone
+                    // that has joined it before has it saved — "pick it from Wi-Fi settings" is a
+                    // real, faster option now, not just a fallback for a broken scanner.
+                    ? "Scan 1: join Wi-Fi     Scan 2: open the game — or already on this " +
+                      "network? Pick it from Wi-Fi settings, no scan needed"
+                    : "Scan to play — or open the address and type the code", _status);
+            }
+
             GUILayout.Space(12);
 
             if (hotspotReady)
@@ -438,11 +458,19 @@ namespace Ui
                 // a page, and no single QR does both. Smaller than the single-QR size below
                 // so the pair fits the panel side by side.
                 var side = Mathf.Min(Screen.height * 0.24f, Screen.width * 0.16f);
+
+                // Once somebody is stuck between the two scans, the second code is the only
+                // one that helps them: grow it, and fade the one they have already used, so
+                // the right thing to point a camera at is obvious from across the room.
+                var wifiSide = awaitingSecondScan > 0 ? side * 0.7f : side;
+                var gameSide = awaitingSecondScan > 0 ? side * 1.3f : side;
+                var wifiAlpha = awaitingSecondScan > 0 ? 0.35f : 1f;
+
                 GUILayout.BeginHorizontal();
                 GUILayout.FlexibleSpace();
-                DrawQr(_wifiQr, side);
+                DrawQr(_wifiQr, wifiSide, wifiAlpha);
                 GUILayout.Space(20);
-                DrawQr(_gameQr, side);
+                DrawQr(_gameQr, gameSide);
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
 
@@ -555,11 +583,24 @@ namespace Ui
         /// claims the whole row's width to center a single item, this reserves exactly
         /// `side` so two of these can sit side by side inside one GUILayout.BeginHorizontal.
         /// </summary>
-        private void DrawQr(QrSlot slot, float side)
+        /// <param name="alpha">
+        /// Fades a code that is no longer the one to scan. Applied to the texture only — the
+        /// "(building…)" placeholder stays fully legible, because a faded one reads as a
+        /// rendering fault rather than as a deliberately de-emphasised code.
+        /// </param>
+        private void DrawQr(QrSlot slot, float side, float alpha = 1f)
         {
             var rect = GUILayoutUtility.GetRect(side, side, GUILayout.Width(side), GUILayout.Height(side));
-            if (slot.Texture != null) GUI.DrawTexture(rect, slot.Texture, ScaleMode.ScaleToFit);
-            else GUI.Label(rect, "(building…)", _hint);
+            if (slot.Texture == null)
+            {
+                GUI.Label(rect, "(building…)", _hint);
+                return;
+            }
+
+            var previous = GUI.color;
+            GUI.color = new Color(previous.r, previous.g, previous.b, previous.a * alpha);
+            GUI.DrawTexture(rect, slot.Texture, ScaleMode.ScaleToFit);
+            GUI.color = previous;
         }
     }
 }
