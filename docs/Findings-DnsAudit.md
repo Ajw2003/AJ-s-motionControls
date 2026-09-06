@@ -115,6 +115,50 @@ the hosts entry, which needs one elevated `setup-offline.ps1` run to clear.
 Also verified: relay `npm test` 21/21, `npm run lint` clean, and the full C# source set compiles
 against Unity 6000.3.10f1's reference assemblies (out of band, with the Editor closed).
 
+## 4b. Second root cause — found after the first fix landed
+
+With the hosts entry applied, `verify-stack.ps1` reported 13/13 and Unity still could not
+connect: `Unable to connect to the remote server`, retrying forever, **zero errors in the
+console**.
+
+`network-mode.txt` at the Unity project root said `Lan`.
+
+In LAN mode no hotspot starts, so `192.168.137.1` never exists on the machine — but
+`ObtainCertificate` hands back `MagicDomain.HostName` *regardless of mode*, because the
+certificate is single-name. So `RelayClient` still targets `wss://play.skiprocking.ca:8443`,
+which now resolves — via the hosts entry — to an address only the hotspot brings up. Before the
+hosts entry it resolved to the parking page. Both fail identically:
+
+- `LocalServices` reaches **Ready** (its relay genuinely is running, on `0.0.0.0:8443`)
+- `HotspotService` reports **NotApplicable** ("LAN mode — no hotspot needed")
+- nothing calls `Fail()`, so nothing logs an error
+- `RelayClient` retries a name pointing at nobody, forever
+
+`NetworkModeStore.Load`'s Hotspot fallback **only applies when the file is missing**. Every
+machine that ran a build before 2026-09-03 still has a `network-mode.txt` saying `Lan`, written
+back when that was the default, and is pinned to the dead path with nothing on screen to say
+why. `StartScreen` deliberately stopped writing that file so it could not stomp a hand-edited
+`Lan` — which is correct, but means the deprecation shipped a default change with no migration.
+
+**Fixed:** `LocalServices.LaunchSequence` now refuses LAN mode up front, before a certificate is
+fetched or a relay spawned, naming the file and the fix. It reports rather than rewrites — a
+leftover and a deliberate hand-edit are indistinguishable from the file alone.
+
+### Why the verifier passed anyway — and what changed
+
+Every other check in `verify-stack.ps1` tests **Hotspot plumbing that LAN mode never uses**, so
+all of it passed while the game was dead. Two additions close that:
+
+- a network-mode check, which fails on anything but `Hotspot`
+- `-ProjectRoot`, because run from a git worktree the script read the *worktree's* config while
+  Unity reads the **main checkout's**. That is the second half of how a clean run coexisted with
+  a broken game.
+
+> **Worktree note.** Unity is open on `C:\Users\aj\Desktop\GameDev\RockSkipping` (branch
+> `DocsRewrite`). The source fixes here live on `claude/dns-local-network-audit-eecc36` and do
+> **not** affect that Editor until merged. The machine-level fixes — hosts entry, firewall
+> rules, `network-mode.txt` — are machine-wide and apply immediately.
+
 ## 5. Still open — not fixed, needs a decision
 
 - **The docs index points at deleted files.** `0b7c500` removed 39 docs (archived to `.7z`,
