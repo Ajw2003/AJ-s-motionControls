@@ -35,11 +35,27 @@ const Stage = {
 };
 
 /**
- * How long a silent device stays counted. Long enough to cover someone who joins the
- * Wi-Fi and then spends a while finding the game, short enough that a guest who leaves
- * stops being reported as "waiting to scan" for the rest of the night.
+ * How long a silent device stays counted, per stage it reached.
+ *
+ * One timeout cannot serve both ends of the funnel. A device that reached PAGE_OPEN or
+ * PLAYING may legitimately go quiet for a long time — someone mid-match is not sending DNS
+ * queries, and dropping them would make the TV nag a player who is holding a rock. A device
+ * that only ever appeared in a DNS log is different: both platforms re-probe every 30–60s
+ * while associated, so one that has said nothing for two minutes has almost certainly left
+ * the network, and every second it stays counted is a second the TV tells the room to scan a
+ * code for a phone that is not there.
+ *
+ * That asymmetry is what makes the stale-count symptom self-correct in about two minutes
+ * instead of ten. It does not make the count trustworthy — IP keying rules that out, which is
+ * why the TV no longer prints it — it just stops the nudge outliving the phone that caused it.
  */
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+const ASSOCIATED_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+
+/** The idle timeout that applies to a device at `stage`. */
+function idleTimeoutFor(stage) {
+  return stage >= Stage.PAGE_OPEN ? IDLE_TIMEOUT_MS : ASSOCIATED_IDLE_TIMEOUT_MS;
+}
 
 /**
  * Strips the IPv4-mapped IPv6 prefix Node reports on a dual-stack socket
@@ -75,9 +91,9 @@ function createFunnel(options) {
   let lastReported = null;
 
   function sweep() {
-    const cutoff = now() - IDLE_TIMEOUT_MS;
+    const at = now();
     for (const [ip, device] of devices) {
-      if (device.lastSeen < cutoff) devices.delete(ip);
+      if (device.lastSeen < at - idleTimeoutFor(device.stage)) devices.delete(ip);
     }
   }
 
@@ -143,4 +159,10 @@ function createFunnel(options) {
   return { record, stageOf, counts };
 }
 
-module.exports = { createFunnel, normalizeAddress, Stage, IDLE_TIMEOUT_MS };
+module.exports = {
+  createFunnel,
+  normalizeAddress,
+  Stage,
+  IDLE_TIMEOUT_MS,
+  ASSOCIATED_IDLE_TIMEOUT_MS,
+};

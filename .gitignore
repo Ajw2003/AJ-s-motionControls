@@ -129,3 +129,9 @@ Assets/Audio/throw_scored_01.wav.meta
 Assets/Audio/turn_start_01.wav
 Assets/Audio/turn_start_01.wav.meta
 Assets/Audio/ui_confirm_01.wav
+
+# Runtime diagnostic written by the relay's :80 probe listener (see server.js).
+relay/probe-access.log
+relay/probe-capture.etl
+relay/probe-capture.txt
+relay/probe-capture-report.txt

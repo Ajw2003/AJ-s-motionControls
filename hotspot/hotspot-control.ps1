@@ -157,18 +157,53 @@ if ($Action -eq 'Start') {
             }
         }
 
-        Write-Progress2 'Tethering is on. Disabling IP forwarding on the hotspot interface…'
+        Write-Progress2 'Tethering is on. Disabling IP forwarding on the hotspot interface...'
         # ICS re-enables forwarding on every tethering start, so this must run fresh each
-        # session — the scheduled task exists precisely to do that without a UAC prompt per
+        # session - the scheduled task exists precisely to do that without a UAC prompt per
         # party (docs/ZeroSetupPlan.md Phase 4.2 / 5). A missing/failed task means the hotspot
         # is up but NOT isolated: HotspotService treats a non-null warning here as a failure,
         # not a soft caveat, and stops tethering rather than leave that state running.
+        #
+        # VERIFY THE FACT, NOT THE LAUNCH. This used to report success when Start-ScheduledTask
+        # returned, which proves only that a task was started - not that forwarding changed, and
+        # not that it stayed changed. It reported isolation on a machine that measurably had
+        # none, for as long as the task existed, which is the worst way for this to fail. The
+        # state is read back below instead, and it needs no elevation to read.
+        #
+        # Polled rather than read once, because this is a race: the task runs asynchronously and
+        # ICS may re-assert forwarding after it. If the flag will not stay down within the
+        # window, that is the honest answer and the caller should act on it.
         $warning = $null
         try {
             Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction Stop
         } catch {
-            $warning = "forwarding-not-disabled: $($_.Exception.Message)"
+            $warning = "forwarding-task-failed: $($_.Exception.Message)"
             Write-Progress2 "  [warn] $warning"
+        }
+
+        if (-not $warning) {
+            $deadline = (Get-Date).AddSeconds(10)
+            $stillOn = @()
+
+            do {
+                Start-Sleep -Milliseconds 500
+                $stillOn = @(
+                    Get-NetIPAddress -AddressFamily IPv4 -IPAddress 192.168.137.* -ErrorAction SilentlyContinue |
+                        ForEach-Object {
+                            Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                        } |
+                        Where-Object { $_.Forwarding -eq 'Enabled' }
+                )
+            } while ($stillOn.Count -gt 0 -and (Get-Date) -lt $deadline)
+
+            if ($stillOn.Count -gt 0) {
+                $names = ($stillOn | ForEach-Object { $_.InterfaceAlias }) -join ', '
+                $warning = "forwarding-still-enabled: the disable task ran but forwarding is " +
+                           "still Enabled on $names after 10s. Guests are NOT isolated."
+                Write-Progress2 "  [warn] $warning"
+            } else {
+                Write-Progress2 '  forwarding confirmed Disabled.'
+            }
         }
 
         # profile is additive and purely diagnostic — it answers "did we tether from the

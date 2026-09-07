@@ -319,6 +319,10 @@ function createResponder(options) {
 
     stats.refused += 1;
     socket.send(buildReply(query, message, { rcode: RCODE_NXDOMAIN }), remote.port, remote.address);
+    // Logged like an answer, because "what else did the phone ask for?" is as diagnostic as
+    // "what did we answer" — a captive-portal check probes several names and only some of
+    // them are ours, so a log of matches alone cannot show what the platform was doing.
+    log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> NXDOMAIN`);
   }
 
   function forward(message, remote) {

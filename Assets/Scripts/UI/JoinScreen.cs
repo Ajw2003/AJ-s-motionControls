@@ -433,10 +433,13 @@ namespace Ui
             {
                 var previous = GUI.color;
                 GUI.color = new Color(1f, 0.85f, 0.4f);
-                GUILayout.Label(awaitingSecondScan == 1
-                    ? "A phone is on the Wi-Fi — now scan the second code"
-                    : $"{awaitingSecondScan} phones are on the Wi-Fi — now scan the second code",
-                    _status);
+                // Deliberately count-free. The funnel is keyed by IP, which makes it a hint and
+                // never a roster: a phone that rejoins gets a fresh DHCP lease and counts twice,
+                // and two phones behind one address count once. Printing the number put that
+                // unreliability on a TV, where "2 phones are on the Wi-Fi" read as fact to
+                // everyone in the room and was simply false. The nudge is equally true at any
+                // count, so the count decides only WHETHER to show this, never what it says.
+                GUILayout.Label("A phone is on the Wi-Fi — now scan the second code", _status);
                 GUI.color = previous;
             }
             else

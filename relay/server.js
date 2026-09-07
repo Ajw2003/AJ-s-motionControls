@@ -439,13 +439,20 @@ const useDns = Boolean(DNS_RESPOND_IP);
 
 // Android and iOS each probe a domain of their choosing right after joining a network, to
 // decide whether to show "No internet" and whether to keep cellular as the default route.
-// setup-offline.ps1 deliberately disables IP forwarding every session so guests are
-// isolated from each other and from the host's own internet — which means these probes
-// always fail on their own, and "it just stopped working" reports are very likely a phone
-// that decided this network was useless rather than an actual game bug. Answering them
-// ourselves (this list, plus /generate_204 and /hotspot-detect.html below) fixes the
-// symptom without re-enabling forwarding and undoing the isolation decision — see
-// docs/plans/magic-domain-replacement.md Phase 4 and docs/Decision-OfflineHosting.md.
+// Guests are isolated from the host's own internet by design, so these probes always fail on
+// their own, and "it just stopped working" reports are very likely a phone that decided this
+// network was useless rather than an actual game bug. Answering them ourselves (this list, plus
+// /generate_204 and /hotspot-detect.html below) fixes the symptom without re-enabling
+// forwarding and undoing the isolation decision — see docs/plans/magic-domain-replacement.md
+// Phase 4 and docs/Decision-OfflineHosting.md.
+//
+// Every name here is one we intend to SERVE: the phone's plain-HTTP probe reaches :80 and gets
+// our portal redirect or a 204. Adding a name in order to have it refused is a different idea
+// and does not belong here — `www.google.com`, Android's HTTPS probe host, was added on exactly
+// that reasoning and removed again when hardware testing falsified it. Android resolved it, got
+// our address, and still issued no HTTP probe. The captive-portal nudge is closed as
+// platform-dependent and P1's TV nudge carries that drop-off instead; see the CLOSED section of
+// docs/plans/join-failure-reduction.md before re-litigating this list.
 const CAPTIVE_PROBE_DOMAINS = [
   'connectivitycheck.gstatic.com',
   'connectivitycheck.android.com',
@@ -543,6 +550,15 @@ function handleRequest(req, res) {
 /** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */
 const GAME_URL = `https://${DNS_NAME}:${PORT}/`;
 
+// Where a probe redirect points, and deliberately an IP literal rather than DNS_NAME. The
+// portal lives on plain :80, but browsers upgrade http:// URLs for registrable names to
+// HTTPS — which targets :443, where nothing listens, so the portal page fails to load and the
+// platform can fall back to "no internet", the exact symptom the portal exists to remove.
+// Private IP literals are exempt from that upgrade heuristic, so the request stays on the
+// port the portal is actually served from. Off-hotspot runs have no DNS_RESPOND_IP and no
+// captive portal to reach, so the name is a harmless fallback there.
+const PORTAL_URL = `http://${DNS_RESPOND_IP || DNS_NAME}/portal`;
+
 /**
  * The page the phone's own OS opens, unprompted, when the probes below report a portal.
  * Deliberately not the controller: iOS's CNA sheet and Android's portal webview are
@@ -614,7 +630,7 @@ function serveCaptiveProbe(req, res, pathname) {
     // so the satisfied answer must be an empty body, not JSON, not even an empty object,
     // and the nudge is a plain redirect to the page we want it to show.
     if (nudge) {
-      res.writeHead(302, { Location: `http://${DNS_NAME}/portal` }).end();
+      res.writeHead(302, { Location: PORTAL_URL }).end();
     } else {
       res.writeHead(204).end();
     }
@@ -819,7 +835,9 @@ async function startDns() {
       names: [DNS_NAME, ...CAPTIVE_PROBE_DOMAINS],
       allow: DNS_ALLOW,
       upstream: DNS_UPSTREAM,
-      log,
+      // Teed into probe-access.log as well as stdout: which names the phone asks for is
+      // the half of the join picture the :80 log cannot show.
+      log: logDnsLine,
       onQuery: (address) => {
         if (funnel) funnel.record(address, Stage.ASSOCIATED);
       },
@@ -857,12 +875,61 @@ async function startDns() {
  * instead turns that silent dead end into the right page. See
  * docs/plans/join-failure-reduction.md §1.
  */
+/**
+ * Appends one line to probe-access.log, beside this file.
+ *
+ * The :80 listener and the DNS responder are the only parts of the relay a phone touches
+ * before it has joined, and they are the parts nobody can see: the relay is a child of the
+ * Unity Editor, so its stdout reaches the Console only when LocalServices.verboseLogging is
+ * on. Three separate diagnoses in this project were blind exactly here — netstat proves a
+ * connection arrived but not what it asked for, and "the phone shows no portal" looks
+ * identical whether the probe never came, came for a path we do not answer, or was answered
+ * correctly and ignored by the platform. A file sidesteps the Unity plumbing entirely, and
+ * survives the session that produced it.
+ *
+ * Best-effort by design: a logging failure must never take down a listener a guest is
+ * mid-request on, so every error here is swallowed.
+ */
+function appendAccessLog(line) {
+  try {
+    fs.appendFileSync(nodePath.join(__dirname, 'probe-access.log'), `${line}\n`);
+  } catch {
+    // Diagnostics are never worth failing a request over.
+  }
+}
+
+/** One line per :80 request: who asked, for what, with which Host, and what we answered. */
+function logProbeRequest(req, pathname, outcome) {
+  const address = req.socket.remoteAddress || '?';
+  const host = req.headers.host || '?';
+  appendAccessLog(
+    [new Date().toISOString(), address, req.method, pathname, `Host=${host}`, outcome].join(' '),
+  );
+}
+
+/**
+ * The DNS responder's log line, teed to stdout and to the access log.
+ *
+ * Which names a phone asks for is the other half of the picture the :80 log gives, and the
+ * half that distinguishes "the phone never probed" from "the phone probed someone else's
+ * resolver" — a distinction that decides whether the fix is ours at all.
+ */
+function logDnsLine(...args) {
+  log(...args);
+  const line = args.join(' ');
+  if (line.startsWith('dns ')) appendAccessLog(`${new Date().toISOString()} ${line}`);
+}
+
 function handleProbeRequest(req, res) {
   const url = new URL(req.url || '/', 'http://localhost');
 
-  if (serveCaptiveProbe(req, res, url.pathname)) return;
+  if (serveCaptiveProbe(req, res, url.pathname)) {
+    logProbeRequest(req, url.pathname, `answered ${res.statusCode}`);
+    return;
+  }
 
   res.writeHead(302, { Location: GAME_URL }).end();
+  logProbeRequest(req, url.pathname, `302 -> ${GAME_URL}`);
 }
 
 /**

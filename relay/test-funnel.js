@@ -15,7 +15,13 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { createFunnel, normalizeAddress, Stage, IDLE_TIMEOUT_MS } = require('./funnel');
+const {
+  createFunnel,
+  normalizeAddress,
+  Stage,
+  IDLE_TIMEOUT_MS,
+  ASSOCIATED_IDLE_TIMEOUT_MS,
+} = require('./funnel');
 
 /** Tracks the hotspot subnet only, exactly as server.js does via makeSubnetTest. */
 const isTracked = (ip) => ip.startsWith('192.168.137.');
@@ -123,20 +129,46 @@ describe('captive-portal branch', () => {
 });
 
 describe('expiry', () => {
-  test('a device that goes quiet stops being counted', () => {
+  test('a device that only ever associated is dropped after the short timeout', () => {
     const { funnel, advance } = makeFunnel();
     funnel.record('192.168.137.5', Stage.ASSOCIATED);
-    advance(IDLE_TIMEOUT_MS + 1);
+    advance(ASSOCIATED_IDLE_TIMEOUT_MS + 1);
     assert.equal(funnel.counts().associated, 0);
   });
 
-  test('activity keeps a device alive past the timeout', () => {
+  test('activity keeps a device alive past its timeout', () => {
     const { funnel, advance } = makeFunnel();
     funnel.record('192.168.137.5', Stage.ASSOCIATED);
-    advance(IDLE_TIMEOUT_MS - 1);
+    advance(ASSOCIATED_IDLE_TIMEOUT_MS - 1);
     funnel.record('192.168.137.5', Stage.ASSOCIATED);
     advance(2);
     assert.equal(funnel.counts().associated, 1);
+  });
+
+  // The asymmetry Defect 1 turned on: a phone mid-match sends nothing for minutes at a time,
+  // so holding it for ten is right; a phone seen only in a DNS log re-probes every 30-60s, so
+  // silence for two means it left, and holding it makes the TV nag for a phone that is gone.
+  test('a device that opened the controller survives the short timeout', () => {
+    const { funnel, advance } = makeFunnel();
+    funnel.record('192.168.137.5', Stage.PAGE_OPEN);
+    advance(ASSOCIATED_IDLE_TIMEOUT_MS + 1);
+    assert.equal(funnel.counts().pageOpen, 1, 'a player mid-match must not be swept');
+  });
+
+  test('a playing device is still dropped once it passes the long timeout', () => {
+    const { funnel, advance } = makeFunnel();
+    funnel.record('192.168.137.5', Stage.PLAYING);
+    advance(IDLE_TIMEOUT_MS + 1);
+    assert.equal(funnel.counts().playing, 0);
+  });
+
+  test('reaching PAGE_OPEN extends a device that was about to expire', () => {
+    const { funnel, advance } = makeFunnel();
+    funnel.record('192.168.137.5', Stage.ASSOCIATED);
+    advance(ASSOCIATED_IDLE_TIMEOUT_MS - 1);
+    funnel.record('192.168.137.5', Stage.PAGE_OPEN);
+    advance(ASSOCIATED_IDLE_TIMEOUT_MS + 1);
+    assert.equal(funnel.counts().pageOpen, 1, 'the longer timeout applies from the new stage');
   });
 });
 
