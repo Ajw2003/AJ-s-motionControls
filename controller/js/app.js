@@ -1,8 +1,9 @@
 /**
  * Controller app wiring: network + sensors + gesture + UI.
  *
- * TEST STATUS: verified on Android (Chrome). iOS paths are written from spec and
- * tagged `UNVERIFIED (iOS)` — see PLAN.md "Test device policy".
+ * TEST STATUS: verified on real hardware across multiple iPhone generations (Safari)
+ * and multiple Samsung and Pixel generations (Chrome) — see docs/DeviceMatrix.md for
+ * per-device results and for what "verified" requires.
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
@@ -750,7 +751,7 @@ async function join() {
   ui.joinBtn.disabled = true;
   ui.joinError.textContent = '';
 
-  // UNVERIFIED (iOS): must be called inside the user gesture that is this tap.
+  // Confirmed on device: must be called inside the user gesture that is this tap.
   // Deferring it behind an await of anything else loses gesture context and iOS
   // rejects the request. Android has no prompt and returns granted immediately.
   const permission = await requestMotionPermission();

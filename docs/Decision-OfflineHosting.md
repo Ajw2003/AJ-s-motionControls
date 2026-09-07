@@ -61,7 +61,7 @@ provable without unplugging anything.
 
 Wi-Fi Direct did what it was asked: a group owner starts with **no network attached whatsoever**,
 lands on `192.168.137.1`, and a real phone joins it and loads a page. That result stands and is
-recorded in [Findings-WiFiDirect.md](Findings-WiFiDirect.md).
+recorded in `Findings-WiFiDirect.md` (since deleted — recover from git history if needed).
 
 It loses on what it does *not* build:
 

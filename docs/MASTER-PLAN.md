@@ -9,16 +9,23 @@ points to) wins.
 Update this file when a phase below changes status. It is an index, not a duplicate — put detail
 in the sub-document, not here.
 
+> **Some documents this index lists no longer exist.** A round of deletions (commits `0b7c500`,
+> `77a44f1`) removed `PLAN.md`, `HostingPlan.md`, `SecurityReview.md`, `Findings-WiFiDirect.md`,
+> `Plan-SfxVfx.md`, `Migration-URP.md`, `plans/rock-choosing-system.md` and others. Their entries
+> below are marked `(deleted)` and are no longer links, so nothing here 404s — the content is
+> recoverable from git history. Restoring or rewriting the ones still worth having is outstanding
+> work; see `grant/09-fundability-roadmap.md`, week 1.
+
 ---
 
 ## 1. Where the project stands
 
 Couch party game: Unity PC drives the TV, phones are motion controllers reached through a web
-page. Full design context: [`PLAN.md`](PLAN.md) — but read its inline "Superseded — see X" boxes
+page. Full design context: `PLAN.md` (deleted) — but read its inline "Superseded — see X" boxes
 before trusting any one section; three sections (hosted-relay architecture, URP timing,
 WebSocket library choice) are flagged dead there and covered by newer docs instead.
 
-Build milestones, per [`PLAN.md`](PLAN.md) §Milestones and confirmed against `README.md`:
+Build milestones, per `PLAN.md` (deleted) §Milestones and confirmed against `README.md`:
 
 | Milestone | Status | Notes |
 |---|---|---|
@@ -39,7 +46,7 @@ Three tracks are open in parallel — they don't block each other and aren't a s
 
 ## 2. Track A — Rock variety & selection (closes out M2)
 
-**Authoritative doc:** [`plans/rock-choosing-system.md`](plans/rock-choosing-system.md) — the
+**Authoritative doc:** `plans/rock-choosing-system.md` (deleted) — the
 plan the current `RockChoosing` branch implements. Check its **Build log** section before
 assuming a part is finished; as of the last log entry, Part 1's C# had been written but not yet
 confirmed compiled (Unity holds the project lock, so verify via the open Editor's Console, not a
@@ -54,19 +61,19 @@ batch build).
 | Part 5 | Host settings panel — `MatchSettings`, `MatchSettingsScreen` |
 | Part 6 | Verification — offline (`SkipCurve.cs`) and in-play (`RockTelemetry.cs`) comparison |
 
-**Dependency, not yet resolved:** [`Findings-TuningAudit.md`](Findings-TuningAudit.md) found 11
+**Dependency, not yet resolved:** `Findings-TuningAudit.md` (deleted) found 11
 of 19 `SkipTuning` fields have drifted between code and assets, and recommends reconciling that
 drift (its Tier A/B/C/D migration) **before** leaning on per-rock tuning data in Parts 1 and 6 —
 otherwise Track A work risks encoding the drift into six new rocks instead of one. The commissioning
-doc for that finding, [`plans/tuning-audit.md`](plans/tuning-audit.md), is otherwise closed —
+doc for that finding, `plans/tuning-audit.md` (deleted), is otherwise closed —
 its ask has been answered.
 
 ---
 
 ## 3. Track B — Audio / VFX polish (part of M4)
 
-**Authoritative doc:** [`Plan-SfxVfx.md`](Plan-SfxVfx.md), amended by
-[`Plan-SfxVfx-Delta.md`](Plan-SfxVfx-Delta.md). Status as of the plan's own tracker
+**Authoritative doc:** `Plan-SfxVfx.md` (deleted), amended by
+`Plan-SfxVfx-Delta.md` (deleted). Status as of the plan's own tracker
 (2026-08-25):
 
 | Phase | What it covers | Status |
@@ -114,7 +121,7 @@ Because of that, [`MagicDnsFallback.md`](MagicDnsFallback.md) — the insurance 
 this disappearance — is now **historical**. The event it hedged against happened and was answered
 differently; don't build against it.
 
-Also unresolved before Track C can ship: [`SecurityReview.md`](SecurityReview.md) §6 (relay
+Also unresolved before Track C can ship: `SecurityReview.md` (deleted) §6 (relay
 hardening) and §7 (distribution risks) are still 🟡 open — its priority table at the bottom is
 the live checklist. §2–§5 (hotspot isolation, DNS open-resolver, HTML injection) are already
 ✅ fixed/resolved.
@@ -126,7 +133,7 @@ the live checklist. §2–§5 (hotspot isolation, DNS open-resolver, HTML inject
 Not an active track — this is already-decided, already-shipped infrastructure that Tracks A–C
 build on. Read in this order to avoid citing dead sections:
 
-1. [`HostingPlan.md`](HostingPlan.md) — current, authoritative architecture: relay + WebRTC
+1. `HostingPlan.md` (deleted) — current, authoritative architecture: relay + WebRTC
    signaling run locally on the host PC, reached via a local-HTTPS cert (required because phone
    motion-sensor APIs only unlock in a secure context). Explicitly supersedes `PLAN.md`'s
    "Why a hosted relay" section — the Fly.io-hosted design described there is gone for good.
@@ -144,7 +151,7 @@ build on. Read in this order to avoid citing dead sections:
 
 Abandoned along the way, kept only as records — do not build against these:
 
-- [`Findings-WiFiDirect.md`](Findings-WiFiDirect.md) — Wi-Fi Direct got a phone connected but hit
+- `Findings-WiFiDirect.md` (deleted; in git history) — Wi-Fi Direct got a phone connected but hit
   DNS/validation dead ends; lost to Mobile Hotspot on operational grounds (see Decision doc above).
 - The `skiprocking.ca` **dynamic-DNS** setup mentioned in some older docs — that *use* of the domain
   is dead, confirmed in both `HostingPlan.md` and `deploy/README.md`. **The domain itself is no
@@ -153,11 +160,11 @@ Abandoned along the way, kept only as records — do not build against these:
   not the name.
 - `PLAN.md`'s Cloudflare Pages / Fly.io hosting sections, its "URP from day 1" claim, and its
   `NativeWebSocket` recommendation — each has an inline "Superseded" box pointing at the doc that
-  replaced it (`HostingPlan.md`, [`Migration-URP.md`](Migration-URP.md), and `RelayClient.cs`'s
+  replaced it (`HostingPlan.md`, `Migration-URP.md` (deleted), and `RelayClient.cs`'s
   own deviation note, respectively).
 
 One incidental finding not yet resolved (call it Track A/B/C-adjacent, not urgent):
-[`Findings-PhoneUnreachable.md`](Findings-PhoneUnreachable.md) root-caused a firewall bug
+`Findings-PhoneUnreachable.md` (deleted) root-caused a firewall bug
 (fixed) plus two related code issues — dual-homed LAN interface selection, and a
 `RelayClient`/`CertificateProvider` desync — that were still open as of the finding. Verify
 against current source before assuming either is fixed.
@@ -168,29 +175,29 @@ against current source before assuming either is fixed.
 
 | Doc | Status | One line |
 |---|---|---|
-| [`PLAN.md`](PLAN.md) | Current, with dead sections flagged inline | Original full design doc — motion pipeline, physics, event system, scoring sections still live |
-| [`HostingPlan.md`](HostingPlan.md) | Current, authoritative | Local-relay hosting architecture |
+| `PLAN.md` (deleted) | Current, with dead sections flagged inline | Original full design doc — motion pipeline, physics, event system, scoring sections still live |
+| `HostingPlan.md` (deleted) | Current, authoritative | Local-relay hosting architecture |
 | [`ZeroSetupPlan.md`](ZeroSetupPlan.md) | Current — Track C, Phase 2's cert source superseded | Zero-config distributable build |
 | [`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md) | Current, executed | Replaces dead `local-ip.sh` with an owned domain + self-renewed cert |
 | [`MagicDnsFallback.md`](MagicDnsFallback.md) | Historical — hedged an event that has since happened | DNS/cert fallback insurance, answered differently |
 | [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) | Current, resolved decision | Mobile Hotspot over Wi-Fi Direct |
 | [`OfflineSetup.md`](OfflineSetup.md) | Current | Fully-offline hosting, no internet |
-| [`Migration-URP.md`](Migration-URP.md) | Mostly executed | Built-in→URP migration runbook |
-| [`Findings-URPVisuals.md`](Findings-URPVisuals.md) | Historical — fixes applied | Post-URP rendering bugs, root-caused and fixed |
-| [`Plan-SfxVfx.md`](Plan-SfxVfx.md) | Current — Track B | Audio/VFX design and build order |
-| [`Plan-SfxVfx-Delta.md`](Plan-SfxVfx-Delta.md) | Current — amends Plan-SfxVfx.md | Revisions to the SFX/VFX plan |
-| [`SecurityReview.md`](SecurityReview.md) | Mixed — checklist per section | Threat model for local-hosting design |
-| [`Findings-PhoneUnreachable.md`](Findings-PhoneUnreachable.md) | Partially resolved | Firewall bug (fixed) + 2 code issues (verify) |
-| [`Findings-TuningAudit.md`](Findings-TuningAudit.md) | Current, not yet acted on | Tuning field drift across code/assets — feeds Track A |
-| [`Findings-WiFiDirect.md`](Findings-WiFiDirect.md) | Superseded | Wi-Fi Direct path, lost to Mobile Hotspot |
-| [`Rule-RenderQR.md`](Rule-RenderQR.md) | Standing rule, binding project-wide | Always render a QR for joining, never ask someone to type/hunt |
+| `Migration-URP.md` (deleted) | Mostly executed | Built-in→URP migration runbook |
+| `Findings-URPVisuals.md` (deleted) | Historical — fixes applied | Post-URP rendering bugs, root-caused and fixed |
+| `Plan-SfxVfx.md` (deleted) | Current — Track B | Audio/VFX design and build order |
+| `Plan-SfxVfx-Delta.md` (deleted) | Current — amends Plan-SfxVfx.md | Revisions to the SFX/VFX plan |
+| `SecurityReview.md` (deleted) | Mixed — checklist per section | Threat model for local-hosting design |
+| `Findings-PhoneUnreachable.md` (deleted) | Partially resolved | Firewall bug (fixed) + 2 code issues (verify) |
+| `Findings-TuningAudit.md` (deleted) | Current, not yet acted on | Tuning field drift across code/assets — feeds Track A |
+| `Findings-WiFiDirect.md` (deleted) | Superseded | Wi-Fi Direct path, lost to Mobile Hotspot |
+| `Rule-RenderQR.md` (deleted) | Standing rule, binding project-wide | Always render a QR for joining, never ask someone to type/hunt |
 | [`plans/network-mode-selection.md`](plans/network-mode-selection.md) | Current, largely done+verified | LAN vs Hotspot mode selection UI |
-| [`plans/rock-choosing-system.md`](plans/rock-choosing-system.md) | Current — Track A | Rock catalog, selection, tuning comparison |
-| [`plans/tuning-audit.md`](plans/tuning-audit.md) | Closed | Commissioned Findings-TuningAudit.md; inert now |
-| [`history/feature_documentation.md`](history/feature_documentation.md) | Historical, accurate | `DynamicSpeedRetention` design (shipped) |
-| [`history/research_log.md`](history/research_log.md) | Explicitly superseded | Old fixed-retention investigation |
-| [`history/rigidbody_physics_analysis.md`](history/rigidbody_physics_analysis.md) | Reference | Why not to migrate off custom `SkipPhysics` |
-| [`DOCUMENTATION_AUDIT.md`](DOCUMENTATION_AUDIT.md) | Historical | 2026-08-20 audit that drove most of the above rewrites; superseded by this file as the entry point |
+| `plans/rock-choosing-system.md` (deleted) | Current — Track A | Rock catalog, selection, tuning comparison |
+| `plans/tuning-audit.md` (deleted) | Closed | Commissioned Findings-TuningAudit.md; inert now |
+| `history/feature_documentation.md` (deleted) | Historical, accurate | `DynamicSpeedRetention` design (shipped) |
+| `history/research_log.md` (deleted) | Explicitly superseded | Old fixed-retention investigation |
+| `history/rigidbody_physics_analysis.md` (deleted) | Reference | Why not to migrate off custom `SkipPhysics` |
+| `DOCUMENTATION_AUDIT.md` (deleted) | Historical | 2026-08-20 audit that drove most of the above rewrites; superseded by this file as the entry point |
 
 ---
 
