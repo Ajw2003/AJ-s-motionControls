@@ -10,11 +10,10 @@ namespace Managers
     /// <c>Assets/</c> either way).
     /// </summary>
     /// <remarks>
-    /// Deliberately not PlayerPrefs, for the same reason <see cref="Net.NetworkModeStore"/>
-    /// isn't: on Windows PlayerPrefs writes into the registry, which is invisible, isn't
-    /// cleared by deleting the game folder, and isn't something a host can inspect or edit by
-    /// hand. This follows the identical file-beside-the-exe convention already used for
-    /// <c>relay-url.txt</c>, <c>relay-env.txt</c> and <c>network-mode.txt</c>.
+    /// Deliberately not PlayerPrefs: on Windows PlayerPrefs writes into the registry, which is
+    /// invisible, isn't cleared by deleting the game folder, and isn't something a host can
+    /// inspect or edit by hand. This follows the identical file-beside-the-exe convention
+    /// already used for <c>relay-url.txt</c> and <c>relay-env.txt</c>.
     ///
     /// <c>tuningSet</c> used to live in this file — the Authored/Derived comparison it picked
     /// between is gone (docs/plans/Plan-ThrowDrivenSkipModel.md). SettingsData no longer
@@ -83,7 +82,7 @@ namespace Managers
         private static Loaded FromData(SettingsData data) =>
             new(data.randomRocks, Mathf.Clamp(data.roundsPerMatch, 1, 10));
 
-        /// <summary>Same resolution as NetworkModeStore.ResolvePath / RelayClient.ReadOverride.</summary>
+        /// <summary>Same resolution as RelayClient.ReadOverride / RoomCodeStore.ResolvePath.</summary>
         private static string ResolvePath() =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", FileName));
     }

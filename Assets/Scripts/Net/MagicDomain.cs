@@ -21,11 +21,11 @@ namespace Net
     /// unattended GitHub Actions job (.github/workflows/renew-cert.yml) rather than borrowed
     /// from a third party.
     ///
-    /// Windows ICS always assigns the hotspot address 192.168.137.1, and LAN mode is
-    /// deprecated in favour of Hotspot-only (see NetworkMode.Lan's own remarks), so unlike
-    /// local-ip.sh's wildcard there is now exactly one address that is ever relevant and
-    /// exactly one name is ever needed to cover it — a single-name certificate, not a
-    /// wildcard, and CertificateProvider.CoversWildcard's exact-name check reflects that.
+    /// Windows ICS always assigns the hotspot address 192.168.137.1, and Hotspot is now the
+    /// only mode there is (LAN mode was removed entirely), so unlike local-ip.sh's wildcard
+    /// there is now exactly one address that is ever relevant and exactly one name is ever
+    /// needed to cover it — a single-name certificate, not a wildcard, and
+    /// CertificateProvider.CoversWildcard's exact-name check reflects that.
     /// </remarks>
     public static class MagicDomain
     {
@@ -77,9 +77,9 @@ namespace Net
 
         /// <summary>
         /// Loads the override once per process. Modelled directly on
-        /// <see cref="NetworkModeStore.Load"/>: never throws, falls back to the compiled
-        /// default on any read failure, so a missing or malformed file degrades to "as if it
-        /// were never there" rather than blocking a launch.
+        /// <see cref="Managers.MatchSettingsStore"/>'s own load: never throws, falls back to
+        /// the compiled default on any read failure, so a missing or malformed file degrades
+        /// to "as if it were never there" rather than blocking a launch.
         /// </summary>
         static MagicDomain()
         {
@@ -141,7 +141,7 @@ namespace Net
         }
 
         /// <summary>
-        /// Same resolution NetworkModeStore/RelayClient/LocalServices already use:
+        /// Same resolution MatchSettingsStore/RelayClient/LocalServices already use:
         /// Application.dataPath is Assets/ in the editor and &lt;exe&gt;_Data in a build, so
         /// its parent is beside the executable both times.
         /// </summary>

@@ -123,9 +123,9 @@ Source: "{#SourceSeedCert}\server.pem"; DestDir: "{app}\{#StreamingAssetsDir}"; 
 Source: "{#SourceSeedCert}\server.key"; DestDir: "{app}\{#StreamingAssetsDir}"; Flags: ignoreversion
 
 [Dirs]
-; LocalServices resolves relay-url.txt, network-mode.txt and magic-domain.txt beside the
-; executable (Application.dataPath's parent) — {app} is exactly that location for an
-; installed build, so no path changes are needed on the Unity side for this to work.
+; LocalServices resolves relay-url.txt and magic-domain.txt beside the executable
+; (Application.dataPath's parent) — {app} is exactly that location for an installed build,
+; so no path changes are needed on the Unity side for this to work.
 Name: "{app}"
 
 [Icons]

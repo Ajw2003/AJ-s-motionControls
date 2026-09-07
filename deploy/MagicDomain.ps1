@@ -21,8 +21,7 @@ function Get-MagicDomainDefault { 'play.skiprocking.ca' }
 
 function Get-MagicDomainPath {
     # deploy/ sits beside Assets/, and magic-domain.txt lives at the repo root next to
-    # relay-url.txt and network-mode.txt - the same siting MagicDomain.cs resolves to from
-    # Application.dataPath.
+    # relay-url.txt - the same siting MagicDomain.cs resolves to from Application.dataPath.
     Join-Path (Split-Path -Parent $PSScriptRoot) 'magic-domain.txt'
 }
 

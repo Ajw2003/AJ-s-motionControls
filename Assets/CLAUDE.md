@@ -109,12 +109,14 @@ template rather than writing from scratch. Publish/subscribe always through
 ### Networking (`Scripts/Net/`)
 
 `RelayClient` connects to the Node relay (`ClientWebSocket`, chosen over NativeWebSocket to add
-zero dependencies — sends are thread-affine, hence funneled through one send queue). `AIM`/
-`THROW` traffic prefers a direct WebRTC DataChannel per phone (`PeerLink`) and falls back to the
-relay socket per-phone if negotiation fails; roster/turn/score/spectator state always goes over
-the relay. `LocalServices` owns the relay child process on this machine when hosting locally;
-`HotspotService`/`CertificateProvider` support the PC-hosted-hotspot fallback documented in
-`../deploy/README.md`. `Messages.cs` holds the serializable DTOs mirroring the wire JSON —
+zero dependencies — sends are thread-affine, hence funneled through one send queue). All
+traffic — `AIM`/`THROW` included — goes over that one relay socket now; the direct WebRTC
+DataChannel transport (`PeerLink`, `com.unity.webrtc`) was removed, see
+`../docs/Findings-DirectTransportFlapping.md` for why it bought nothing once the relay and the
+phone were already one hop apart. `LocalServices` owns the relay child process on this machine
+when hosting locally; `HotspotService`/`CertificateProvider` support the PC-hosted-hotspot
+fallback documented in `../deploy/README.md`. `Messages.cs` holds the serializable DTOs
+mirroring the wire JSON —
 extend it (message type + DTO + `RelayClient` event + `Dispatch` case) rather than sniffing new
 fields out of `RawMessageReceived`.
 

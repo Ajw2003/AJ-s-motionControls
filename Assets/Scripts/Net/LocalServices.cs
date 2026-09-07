@@ -65,10 +65,6 @@ namespace Net
                  "a desktop-only loop where no phone is involved.")]
         [SerializeField] private bool useHttps = true;
 
-        [Tooltip("Leave empty to detect. Set only when this machine has several plausible " +
-                 "network interfaces, where detection refuses to guess between them.")]
-        [SerializeField] private string lanAddressOverride;
-
         [Tooltip("Port for the HTTPS relay. Ignored when HTTPS is off.")]
         [SerializeField] private int securePort = 8443;
 
@@ -95,14 +91,6 @@ namespace Net
         private string _origin;
 
         private CertificateProvider.Result _certificate;
-
-        /// <summary>
-        /// The mode this session launched with, read once at Start(). StartScreen (the
-        /// MainMenu scene) is what actually gates this — by the time Bootstrap's scene loads
-        /// at all, a mode has already been chosen and persisted, so there is nothing to wait
-        /// for here.
-        /// </summary>
-        public NetworkMode Mode { get; private set; }
 
         /// <summary>
         /// The name the certificate covers, once one has been obtained — MagicDomain.HostName
@@ -186,11 +174,6 @@ namespace Net
                 return;
             }
 
-            // StartScreen (the MainMenu scene) is the actual gate: nothing here runs until a
-            // player deliberately presses Start, which is also the only place the mode can be
-            // changed, so by the time this scene has loaded a mode is already decided.
-            Mode = NetworkModeStore.Load();
-
             _group = ChildProcessGroup.Create();
             StartCoroutine(LaunchSequence());
         }
@@ -209,36 +192,6 @@ namespace Net
 
         private IEnumerator LaunchSequence()
         {
-            // First, before a certificate is fetched or a relay is spawned, because in LAN mode
-            // none of it can lead anywhere and every later step succeeds anyway.
-            //
-            // LAN mode has been unusable since the magic-domain replacement, and the shape of
-            // that failure is what makes it worth a hard stop rather than a warning: the
-            // certificate is single-name for MagicDomain.HostName, so ObtainCertificate hands
-            // back play.skiprocking.ca REGARDLESS of mode. In LAN mode nothing ever makes that
-            // name point at this machine — no hotspot runs, so the hosts entry
-            // deploy/setup-offline.ps1 writes points at 192.168.137.1, an address that only
-            // exists while tethering is on. So LocalServices reaches Ready with a working
-            // relay, HotspotService reports NotApplicable, nothing logs an error, and
-            // RelayClient retries a name that resolves to nowhere forever.
-            //
-            // NetworkModeStore.Load's fallback is Hotspot, but a fallback only applies when the
-            // file is MISSING. Any machine that ran a build before 2026-09-03 still has a
-            // network-mode.txt saying Lan, written when that was the default, and is pinned to
-            // the dead path with nothing on screen to say why. That is not a hand-edited
-            // escape hatch, it is a leftover — but the two are indistinguishable from the file,
-            // so this reports rather than rewrites. See NetworkMode.Lan's remarks and
-            // StartScreen's, which deliberately leaves the file alone for the same reason.
-            if (Mode != NetworkMode.Hotspot)
-            {
-                Fail("LAN mode can't host this game any more.",
-                     "network-mode.txt beside the executable says \"Lan\", which is deprecated: " +
-                     "the certificate is issued for one fixed name and there is no way to point " +
-                     "it at a LAN address that changes per network. Delete network-mode.txt, or " +
-                     "put \"Hotspot\" in it, and relaunch.");
-                yield break;
-            }
-
             var relayDir = ResolveRelayDirectory();
             if (relayDir == null)
             {
@@ -265,21 +218,22 @@ namespace Net
         }
 
         /// <summary>
-        /// In Hotspot mode the address is not detected — CertificateProvider.ResolveLanAddress
-        /// only considers interfaces with their own default gateway, and the hotspot's own AP
-        /// adapter has none (it hands out 192.168.137.1 as a gateway to its clients but has no
-        /// gateway configured on itself). This forces the one address that is ever correct,
-        /// bypassing detection entirely rather than leaving it to fail or guess wrong.
+        /// The one address a hotspot host is ever reachable at. Forced rather than detected —
+        /// the hotspot's own AP adapter has no default gateway of its own (it hands out this
+        /// same address as a gateway to its clients but has none configured on itself), so any
+        /// attempt to detect it by sweeping network interfaces would fail or guess wrong every
+        /// time. With Hotspot the only mode, this is simply a constant rather than something
+        /// to compute per launch — see CertificateProvider.ValidateHostAddress, which is all
+        /// that is left to check once nothing needs discovering.
         /// </summary>
-        private string EffectiveLanAddressOverride =>
-            Mode == NetworkMode.Hotspot ? "192.168.137.1" : lanAddressOverride;
+        private const string HotspotHostAddress = "192.168.137.1";
 
         private IEnumerator ObtainCertificate()
         {
             SetState(ServiceState.ObtainingCertificate, "Checking the certificate…");
 
             CertificateProvider.Result result = default;
-            yield return CertificateProvider.Ensure(EffectiveLanAddressOverride, r => result = r);
+            yield return CertificateProvider.Ensure(HotspotHostAddress, r => result = r);
 
             if (!result.Ok)
             {
@@ -479,20 +433,17 @@ namespace Net
                 Debug.Log($"[LocalServices] Serving HTTPS for {_certificate.HostName} on :{securePort}.");
             }
 
-            // Hotspot-only, and env-gated the same way on the relay side: server.js's DNS
-            // branch does nothing unless DNS_RESPOND_IP is set, so this is inert in LAN mode.
-            if (Mode == NetworkMode.Hotspot)
-            {
-                env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", "192.168.137.1"));
-                env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));
-                // DNS_NAME, not DNS_SUFFIX — the certificate is single-name now
-                // (MagicDomain.HostName), so dns.js is told to answer exactly this name
-                // rather than a wildcard suffix. See relay/dns.js's `name` option and
-                // docs/plans/magic-domain-replacement.md Phase 1 for why a wildcard is no
-                // longer needed once the hotspot's address is a fixed constant.
-                env.Add(new KeyValuePair<string, string>("DNS_NAME", MagicDomain.HostName));
-                Debug.Log("[LocalServices] Hotspot mode: DNS responder will bind on 192.168.137.0/24.");
-            }
+            // Hotspot is the only mode there is now, so this always applies. Env-gated on the
+            // relay side too: server.js's DNS branch does nothing unless DNS_RESPOND_IP is set.
+            env.Add(new KeyValuePair<string, string>("DNS_RESPOND_IP", HotspotHostAddress));
+            env.Add(new KeyValuePair<string, string>("DNS_ALLOW", "192.168.137.0/24"));
+            // DNS_NAME, not DNS_SUFFIX — the certificate is single-name now
+            // (MagicDomain.HostName), so dns.js is told to answer exactly this name
+            // rather than a wildcard suffix. See relay/dns.js's `name` option and
+            // docs/plans/magic-domain-replacement.md Phase 1 for why a wildcard is no
+            // longer needed once the hotspot's address is a fixed constant.
+            env.Add(new KeyValuePair<string, string>("DNS_NAME", MagicDomain.HostName));
+            Debug.Log("[LocalServices] DNS responder will bind on 192.168.137.0/24.");
 
             var overrides = ReadRelayEnvironment();
             env.AddRange(overrides);

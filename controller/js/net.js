@@ -32,6 +32,11 @@ export function deriveSocketUrl(loc = window.location) {
 const BACKOFF_START_MS = 500;
 const BACKOFF_MAX_MS = 8000;
 
+// The relay's application close code for "a newer connection took this same
+// player/host slot" — distinct from the ordinary 1000 a ping-pong could otherwise
+// be mistaken for. Must match relay/server.js's REPLACED_CLOSE_CODE exactly.
+const REPLACED_CLOSE_CODE = 4001;
+
 export class RelayConnection {
   constructor({ onMessage, onStatus, url } = {}) {
     this.url = url ?? deriveSocketUrl();
@@ -42,6 +47,11 @@ export class RelayConnection {
     this.status = null;
     this.backoff = BACKOFF_START_MS;
     this.closedByUs = false;
+
+    // Held so a scheduled reconnect can be cancelled before another is scheduled —
+    // without this, an orphaned socket's onclose and a fresh connect() could each
+    // queue their own timer, and both would eventually fire.
+    this.reconnectTimer = null;
 
     // Kept so a dropped connection can re-join the same slot without the player
     // retyping anything — phones sleep and lose Wi-Fi constantly at a party.
@@ -69,6 +79,13 @@ export class RelayConnection {
   }
 
   connect() {
+    // Enforce one-socket-at-a-time: detach the previous socket's handlers before
+    // replacing it, so an orphan left over from an earlier connect() cannot still
+    // fire onopen/onclose against this instance and re-trigger a JOIN_ROOM or
+    // another connect() of its own. This was the second half of the join
+    // ping-pong — see docs/Findings-DirectTransportFlapping.md.
+    this._discardSocket();
+
     this.closedByUs = false;
     this._setStatus(this.credentials ? ConnectionStatus.RECONNECTING : ConnectionStatus.CONNECTING);
 
@@ -108,8 +125,15 @@ export class RelayConnection {
       this.onMessage(message);
     };
 
-    this.socket.onclose = () => {
+    this.socket.onclose = (event) => {
       if (this.closedByUs) return;
+
+      // This socket was replaced by a newer connection for the same player/host
+      // slot — the other side of this exact pair holds the seat now. Retaliating
+      // (reconnecting, which would re-send JOIN_ROOM and evict the very socket
+      // that displaced this one) is the join ping-pong; staying down is correct.
+      // See docs/Findings-DirectTransportFlapping.md.
+      if (event && event.code === REPLACED_CLOSE_CODE) return;
 
       // A socket that dies without a HOST_LEFT or ROOM_CLOSED first is the relay
       // itself going away — a redeploy, a crash, the machine being restarted. That
@@ -118,8 +142,7 @@ export class RelayConnection {
       if (this.credentials && !this.isRejoining) this.expectHostBack();
 
       this._setStatus(ConnectionStatus.RECONNECTING);
-      setTimeout(() => this.connect(), this.backoff);
-      this.backoff = Math.min(this.backoff * 2, BACKOFF_MAX_MS);
+      this._scheduleReconnect();
     };
 
     this.socket.onerror = () => this._setStatus(ConnectionStatus.ERROR);
@@ -146,6 +169,27 @@ export class RelayConnection {
   _sendJoin() {
     if (!this.credentials) return;
     this.send({ type: 'JOIN_ROOM', ...this.credentials });
+  }
+
+  /** Detach a socket's handlers before closing/replacing it so an orphan cannot
+   * still act on this instance's behalf — see connect()'s comment. */
+  _discardSocket() {
+    if (!this.socket) return;
+    this.socket.onopen = null;
+    this.socket.onmessage = null;
+    this.socket.onclose = null;
+    this.socket.onerror = null;
+    this.socket.close();
+    this.socket = null;
+  }
+
+  _scheduleReconnect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, this.backoff);
+    this.backoff = Math.min(this.backoff * 2, BACKOFF_MAX_MS);
   }
 
   _scheduleRejoin() {
@@ -188,6 +232,10 @@ export class RelayConnection {
     if (this.rejoinTimer) {
       clearTimeout(this.rejoinTimer);
       this.rejoinTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
     this.socket?.close();
   }

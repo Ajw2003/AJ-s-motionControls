@@ -1,9 +1,6 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.IO;
-using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
@@ -24,8 +21,9 @@ namespace Net
     /// layer — see docs/plans/magic-domain-replacement.md), and there is no drop-in
     /// replacement, so this now downloads a single-name certificate for a domain we own
     /// instead (MagicDomain.HostName, renewed by .github/workflows/renew-cert.yml). LAN mode,
-    /// the only mode that ever needed an address-varying wildcard, is deprecated in favour of
-    /// Hotspot-only, whose address is always the fixed 192.168.137.1 — one name is now enough.
+    /// the only mode that ever needed an address-varying wildcard, has been removed — Hotspot
+    /// is the only mode now, and its address is always the fixed 192.168.137.1
+    /// (LocalServices.HotspotHostAddress) — one name is enough.
     ///
     /// Its private key is published deliberately. That is what makes this possible and also
     /// what caps what it may ever be used for: the certificate proves nothing about who is
@@ -65,11 +63,6 @@ namespace Net
 
         private const int TimeoutSeconds = 20;
 
-        /// <summary>Interfaces that own a gateway but are never the way to reach a phone.</summary>
-        private static readonly Regex VirtualAdapter = new Regex(
-            "vEthernet|VMware|VirtualBox|Hyper-V|Loopback|TAP-|TeamViewer|ZeroTier|Tailscale|Npcap",
-            RegexOptions.IgnoreCase);
-
         public struct Result
         {
             public bool Ok;
@@ -92,26 +85,24 @@ namespace Net
         /// <summary>
         /// Ensures a usable certificate exists and reports where it landed.
         /// </summary>
-        /// <param name="addressOverride">
-        /// Skips detection. For machines with more than one plausible interface, where
-        /// guessing wrong fails at the phone in a way indistinguishable from a broken
+        /// <param name="address">
+        /// The host address, always the fixed Hotspot address now — see
+        /// LocalServices.HotspotHostAddress. Validated rather than trusted blindly, since a
+        /// malformed value here fails at the phone in a way indistinguishable from a broken
         /// certificate.
         /// </param>
-        public static IEnumerator Ensure(string addressOverride, Action<Result> onResult)
+        public static IEnumerator Ensure(string address, Action<Result> onResult)
         {
-            var address = ResolveLanAddress(addressOverride, out var addressError, out var addressDetail);
-            if (address == null)
+            if (!ValidateHostAddress(address, out var addressError, out var addressDetail))
             {
                 onResult(new Result { Ok = false, Error = addressError, Detail = addressDetail });
                 yield break;
             }
 
-            // Fixed, not derived from the address any more. The certificate is single-name
-            // now (MagicDomain.HostName, e.g. play.skiprocking.ca), not a wildcard keyed to
+            // Fixed, not derived from the address. The certificate is single-name now
+            // (MagicDomain.HostName, e.g. play.skiprocking.ca), not a wildcard keyed to
             // whatever address this machine happens to have — see MagicDomain's remarks for
             // why that stopped being necessary once Hotspot's address became a constant.
-            // ToHostName(address) still exists for the deprecated LAN path, which is why
-            // `address` above is still resolved at all — it is otherwise unused here now.
             var hostName = MagicDomain.HostName;
             var certPath = Path.Combine(CacheDir, CertFileName);
             var keyPath = Path.Combine(CacheDir, KeyFileName);
@@ -216,167 +207,36 @@ namespace Net
         // ------------------------------------------------------------------ address
 
         /// <summary>
-        /// The suffix local-ip.sh's now-dead wildcard covered. Kept only so the also-dead
-        /// <see cref="ToHostName"/> still compiles — nothing downloads a certificate for this
-        /// suffix any more, see MagicDomain for what replaced it.
+        /// Confirms the address handed in is a well-formed IPv4 address. This used to be the
+        /// override branch of a larger method (ResolveLanAddress) that could also detect an
+        /// address by sweeping network interfaces — the auto-detection body is gone now that
+        /// Hotspot is the only mode and its address (LocalServices.HotspotHostAddress) is
+        /// always forced rather than discovered. What remains is the one check that was ever
+        /// reachable from that path: a malformed configured address fails at the phone in a
+        /// way indistinguishable from a broken certificate, so it is caught here instead.
         /// </summary>
-        private const string LegacyLanSuffix = ".local-ip.sh";
-
-        /// <summary>10.0.0.213 -&gt; 10-0-0-213.local-ip.sh.</summary>
-        /// <remarks>
-        /// LAN-only, and slated for removal along with the rest of LAN mode — see
-        /// NetworkMode.Lan and docs/plans/magic-domain-replacement.md Phase 3. This produced
-        /// the name local-ip.sh's wildcard covered; there is no equivalent any more, since the
-        /// replacement certificate is single-name for a fixed hostname
-        /// (MagicDomain.HostName), not a wildcard keyed to an address. Nothing in Ensure()
-        /// calls this any more. Left in place, unobsoleted formally, because LAN mode itself
-        /// is deprecated rather than deleted this pass and a hand-editor of network-mode.txt
-        /// may still be relying on the shape of this method existing, even though the
-        /// certificate it would need no longer downloads.
-        /// </remarks>
-        public static string ToHostName(string address) =>
-            address.Replace('.', '-') + LegacyLanSuffix;
-
-        /// <summary>
-        /// Finds the address a phone on this network would use to reach this machine.
-        /// </summary>
-        /// <remarks>
-        /// LAN-only, and slated for removal along with the rest of LAN mode (NetworkMode.Lan,
-        /// docs/plans/magic-domain-replacement.md Phase 3) — Hotspot mode never calls this at
-        /// all, since LocalServices.EffectiveLanAddressOverride forces the fixed
-        /// 192.168.137.1 instead. Kept working for LAN mode's sake while it remains
-        /// hand-selectable via network-mode.txt.
-        ///
-        /// The gateway test is what discards the 169.254.x APIPA addresses that unplugged
-        /// NICs, Bluetooth and virtual switches leave lying around — a plain sweep of every
-        /// unicast address returns those too, and they look entirely plausible.
-        ///
-        /// More than one candidate is not automatically an error: a docked laptop with
-        /// Ethernet and Wi-Fi both up is an ordinary setup, and the routing table already
-        /// knows which one Windows would actually use. That address breaks the tie. Only
-        /// when the preferred route matches none of the candidates — or can't be determined
-        /// at all — does this fall back to refusing to guess, which is a deliberate
-        /// inheritance from the PowerShell version: a wrong address here fails at the phone
-        /// in exactly the same way a broken certificate does, and that is the confusion
-        /// worth spending an error message to avoid.
-        /// </remarks>
-        public static string ResolveLanAddress(string overrideAddress, out string error, out string detail)
+        public static bool ValidateHostAddress(string address, out string error, out string detail)
         {
             error = null;
             detail = null;
 
-            if (!string.IsNullOrWhiteSpace(overrideAddress))
+            var trimmed = address?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
             {
-                var trimmed = overrideAddress.Trim();
-                if (!System.Net.IPAddress.TryParse(trimmed, out var parsed) ||
-                    parsed.AddressFamily != AddressFamily.InterNetwork)
-                {
-                    error = "The configured address is not an IPv4 address.";
-                    detail = $"Got '{trimmed}'.";
-                    return null;
-                }
-
-                Debug.Log($"[CertificateProvider] Using configured address {trimmed}.");
-                return trimmed;
+                error = "No host address configured.";
+                detail = "Expected an IPv4 address (LocalServices.HotspotHostAddress).";
+                return false;
             }
 
-            var candidates = new List<KeyValuePair<string, string>>(); // alias -> address
-
-            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+            if (!System.Net.IPAddress.TryParse(trimmed, out var parsed) ||
+                parsed.AddressFamily != AddressFamily.InterNetwork)
             {
-                if (nic.OperationalStatus != OperationalStatus.Up) continue;
-                if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-                if (nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
-                if (VirtualAdapter.IsMatch(nic.Name) || VirtualAdapter.IsMatch(nic.Description)) continue;
-
-                IPInterfaceProperties properties;
-                try { properties = nic.GetIPProperties(); }
-                catch { continue; }   // A NIC can disappear mid-enumeration.
-
-                var hasGateway = false;
-                foreach (var gateway in properties.GatewayAddresses)
-                {
-                    if (gateway?.Address == null) continue;
-                    if (gateway.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                    if (gateway.Address.ToString() == "0.0.0.0") continue;
-                    hasGateway = true;
-                    break;
-                }
-                if (!hasGateway) continue;
-
-                foreach (var unicast in properties.UnicastAddresses)
-                {
-                    if (unicast?.Address == null) continue;
-                    if (unicast.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-
-                    var text = unicast.Address.ToString();
-                    if (text.StartsWith("169.254.", StringComparison.Ordinal)) continue;
-
-                    candidates.Add(new KeyValuePair<string, string>(nic.Name, text));
-                    break;
-                }
+                error = "The configured address is not an IPv4 address.";
+                detail = $"Got '{trimmed}'.";
+                return false;
             }
 
-            if (candidates.Count == 0)
-            {
-                error = "This machine is not on a network.";
-                detail = "No interface has an IPv4 default gateway. Join a Wi-Fi network or " +
-                         "plug in, then restart.";
-                return null;
-            }
-
-            if (candidates.Count > 1)
-            {
-                var preferred = PreferredRouteAddress();
-                foreach (var c in candidates)
-                {
-                    if (c.Value != preferred) continue;
-                    Debug.Log($"[CertificateProvider] {candidates.Count} candidates; the routing " +
-                              $"table prefers {preferred} ({c.Key}).");
-                    return preferred;
-                }
-
-                var listed = new List<string>();
-                foreach (var c in candidates) listed.Add($"{c.Value} ({c.Key})");
-
-                error = "More than one network to choose from.";
-                detail = "Guessing wrong here fails exactly like a broken certificate, so it " +
-                         "is not guessed. Set the address explicitly. Candidates: " +
-                         string.Join(", ", listed);
-                return null;
-            }
-
-            Debug.Log($"[CertificateProvider] LAN address {candidates[0].Value} on {candidates[0].Key}.");
-            return candidates[0].Value;
-        }
-
-        /// <summary>
-        /// Asks the routing table which local address Windows would actually use to reach
-        /// the outside world, to break a tie between several plausible interfaces.
-        /// </summary>
-        /// <remarks>
-        /// Connecting a UDP socket transmits no packets — it only resolves the route — so
-        /// this asks the question directly instead of guessing from interface metrics, which
-        /// .NET does not expose fully enough to rank interfaces by. 203.0.113.0/24 is
-        /// TEST-NET-3, reserved for documentation and never contacted.
-        ///
-        /// Returns null if the route can't be resolved at all (no default route reachable),
-        /// which the caller treats the same as a preference matching no candidate: fall back
-        /// to refusing to guess.
-        /// </remarks>
-        private static string PreferredRouteAddress()
-        {
-            try
-            {
-                using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-                probe.Connect("203.0.113.1", 9);
-                return (probe.LocalEndPoint as IPEndPoint)?.Address.ToString();
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[CertificateProvider] Could not resolve a preferred route: {e.Message}");
-                return null;
-            }
+            return true;
         }
 
         // -------------------------------------------------------------- cache state

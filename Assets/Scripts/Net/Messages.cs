@@ -29,14 +29,8 @@ namespace Net
         public const string Advance = "ADVANCE";
         public const string Turn = "TURN";
         public const string Spectate = "SPECTATE";
+        public const string DeviceFunnel = "DEVICE_FUNNEL";
         public const string Error = "ERROR";
-
-        // WebRTC signalling. The relay routes these without understanding them — player
-        // messages go to the host with playerId stamped, host messages go to the player in
-        // targetPlayerId — which is why adding peer connections needed no relay change.
-        public const string RtcOffer = "RTC_OFFER";
-        public const string RtcAnswer = "RTC_ANSWER";
-        public const string RtcIce = "RTC_ICE";
     }
 
     /// <summary>Peeked first to decide which concrete type to parse into.</summary>
@@ -69,6 +63,33 @@ namespace Net
     public class PlayerLeftMessage
     {
         public string playerId;
+    }
+
+    /// <summary>
+    /// How far the phones on the hotspot have got through joining — see relay/funnel.js and
+    /// docs/plans/join-failure-reduction.md. Sent unprompted whenever the numbers change, and
+    /// once on ROOM_CREATED so a host that just restarted is not blind until they next do.
+    /// </summary>
+    /// <remarks>
+    /// A count of devices, never a roster of people: the relay can only key this by IP, so
+    /// two phones behind one address count once and a phone that changes address counts
+    /// twice. Fine for deciding what the TV says; never use it as a player count — that is
+    /// TurnManager.Players, which is authoritative.
+    ///
+    /// The counts are cumulative, so <c>associated &gt;= pageOpen &gt;= playing</c> always
+    /// holds and the interesting numbers are the differences between them.
+    /// </remarks>
+    [Serializable]
+    public class DeviceFunnelMessage
+    {
+        /// <summary>Devices on the hotspot Wi-Fi at all.</summary>
+        public int associated;
+
+        /// <summary>Of those, how many have loaded the controller page.</summary>
+        public int pageOpen;
+
+        /// <summary>Of those, how many have actually joined a room.</summary>
+        public int playing;
     }
 
     [Serializable]

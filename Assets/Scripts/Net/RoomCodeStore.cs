@@ -10,10 +10,10 @@ namespace Net
     /// form because the room code changed underneath it.
     /// </summary>
     /// <remarks>
-    /// Deliberately not PlayerPrefs, for the same reason <see cref="NetworkModeStore"/> isn't:
-    /// on Windows that writes into the registry, which is invisible and isn't cleared by
+    /// Deliberately not PlayerPrefs, for the same reason <see cref="Managers.MatchSettingsStore"/>
+    /// isn't: on Windows that writes into the registry, which is invisible and isn't cleared by
     /// deleting the game folder. A plain one-line file beside the executable follows the same
-    /// convention already used for <c>network-mode.txt</c>.
+    /// convention already used for <c>relay-url.txt</c> and <c>relay-env.txt</c>.
     ///
     /// This only seeds <c>preferredCode</c> on <see cref="RelayClient"/>'s first CREATE_ROOM —
     /// the relay (<c>handleCreateRoom</c>) still decides whether the code is actually free and
@@ -52,7 +52,7 @@ namespace Net
             }
         }
 
-        /// <summary>Same resolution as NetworkModeStore.ResolvePath / MatchSettingsStore.ResolvePath.</summary>
+        /// <summary>Same resolution as MatchSettingsStore.ResolvePath / RoomCodeStore.ResolvePath.</summary>
         private static string ResolvePath() =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", FileName));
     }

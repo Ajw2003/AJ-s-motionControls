@@ -8,7 +8,6 @@
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
 import { ThrowController, ThrowState, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
-import { PeerLink, Transport } from './peer.js';
 import { loadIdentity, ensureDeviceId, updateIdentity } from './identity.js';
 
 const el = (id) => document.getElementById(id);
@@ -54,7 +53,6 @@ const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) |
 
 const motion = new MotionSource({ gravityK: GRAVITY_K });
 let connection = null;
-let peer = null;
 let lastThrow = null;
 let myPlayerId = '';
 
@@ -79,16 +77,8 @@ let hasJoinedOnce = false;
 // override what TURN already told this specific phone — see renderSpectate and startLobbyAim.
 let myTurn = false;
 
-// ?direct=0 forces everything through the relay. Worth keeping: it is the only way to
-// compare the two transports on the same phone and network, and to reproduce a
-// relay-only session when a peer connection is suspected of misbehaving.
-const PEER_ENABLED = new URLSearchParams(location.search).get('direct') !== '0';
-
-/** Fastest transport available. Falls back to the relay on its own. */
 function sendInput(payload) {
-  if (peer) return peer.send(payload);
   connection?.send(payload);
-  return Transport.RELAY;
 }
 
 function showScreen(name) {
@@ -458,9 +448,6 @@ function bindGrip() {
 // ---------------------------------------------------------------- messages
 
 function handleMessage(message) {
-  // Signalling is consumed here and never reaches the switch — the peer link owns it.
-  if (peer && peer.handleSignal(message)) return;
-
   switch (message.type) {
     case 'JOINED':
       myPlayerId = message.playerId;
@@ -478,11 +465,6 @@ function handleMessage(message) {
       // every JOINED, not just a first-time join, so a rename mid-match (myName updated,
       // then this same path re-runs on a reconnect) reaches the host too.
       if (myName) connection.send({ type: 'SET_NAME', name: myName });
-
-      // Only after JOINED: the relay routes by room membership, so an offer sent any
-      // earlier has nowhere to go. Failure here is silent by design — the throw path
-      // already works over the relay, and this is only ever an upgrade.
-      if (PEER_ENABLED && peer) peer.start().catch(() => {});
       break;
 
     case 'ERROR':
@@ -536,12 +518,10 @@ function handleMessage(message) {
     case 'HOST_LEFT':
       setStatus('Host reconnecting…', 'bad');
       thrower.cancel();
-      peer?.close();
       break;
 
     case 'HOST_RESUMED':
       setStatus(`Connected as ${myPlayerId}`, 'ok');
-      if (PEER_ENABLED && peer) peer.start().catch(() => {});
       break;
 
     case 'ROOM_CLOSED':
@@ -555,13 +535,11 @@ function handleMessage(message) {
       // actual, permanent end of match for a phone that never held a seat here.
       if (hasJoinedOnce && connection?.credentials) {
         setStatus('Host restarting…', 'bad');
-        peer?.close();
         connection.retryJoin();
         break;
       }
 
       setStatus('Game ended', 'bad');
-      peer?.close();
       showScreen('join');
       ui.joinBtn.disabled = false;
       break;
@@ -725,7 +703,7 @@ function renderSpectate(message) {
 
 // ---------------------------------------------------------------- join
 
-/** Builds the RelayConnection/PeerLink pair the first time either join path needs one. */
+/** Builds the RelayConnection the first time either join path needs one. */
 function ensureConnection() {
   if (connection) return;
 
@@ -737,20 +715,6 @@ function ensureConnection() {
     },
   });
   connection.connect();
-
-  if (PEER_ENABLED && 'RTCPeerConnection' in window) {
-    peer = new PeerLink({
-      connection,
-      onTransportChange: (transport) => {
-        setStatus(
-          transport === Transport.DIRECT
-            ? `Connected as ${myPlayerId} · direct`
-            : `Connected as ${myPlayerId}`,
-          'ok',
-        );
-      },
-    });
-  }
 }
 
 /** Sends JOIN_ROOM the moment the socket is actually open — shared by both join paths. */
@@ -836,7 +800,6 @@ function updateDebug() {
   ui.debug.textContent = [
     `state    ${thrower.state}   seq ${thrower.seq}   windup ${thrower._windSpeed.toFixed(2)} m/s`,
     `socket   ${connection?.status ?? 'not connected'}`,
-    `input    ${peer ? peer.transport : 'relay'}${PEER_ENABLED ? '' : '  (?direct=0)'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
     // The delta quaternion itself. Four numbers rather than three named angles because
     // that is genuinely what is on the wire now — printing a decomposition here would

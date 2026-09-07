@@ -76,9 +76,9 @@ $HostsPath        = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 # The certificate is single-name now (play.skiprocking.ca, renewed by
 # .github/workflows/renew-cert.yml), not a wildcard keyed to this machine's address - see
 # docs/plans/magic-domain-replacement.md. Reads the same optional override file
-# Assets/Scripts/Net/MagicDomain.cs does, sited the same way as relay-url.txt/
-# network-mode.txt, so hand-editing one file repoints both the game and this script
-# instead of the literal drifting out of sync with C# the way $RelayHostName used to.
+# Assets/Scripts/Net/MagicDomain.cs does, sited the same way as relay-url.txt, so
+# hand-editing one file repoints both the game and this script instead of the literal
+# drifting out of sync with C# the way $RelayHostName used to.
 . (Join-Path $PSScriptRoot 'MagicDomain.ps1')
 
 $RelayHostName    = Get-MagicDomainHostName
@@ -315,15 +315,6 @@ function Test-Prerequisites {
     $modules = Join-Path $root 'relay\node_modules'
     if (Test-Path $modules) { Write-Same 'relay/node_modules present' }
     else { Write-Bad "relay/node_modules missing - run: npm install --prefix `"$(Join-Path $root 'relay')`"" }
-
-    $modeFile = Join-Path $root 'network-mode.txt'
-    if (Test-Path $modeFile) {
-        $mode = (Get-Content $modeFile -Raw).Trim()
-        if ($mode -eq 'Hotspot') { Write-Same "network-mode.txt = Hotspot" }
-        else { Write-Info "network-mode.txt = '$mode' - offline play needs Hotspot (pick it on the main menu)" }
-    } else {
-        Write-Info 'network-mode.txt absent - the main menu writes it on first launch'
-    }
 
     # The certificate is cached and works offline, but only until it expires, and nothing warns
     # about that at a party. Surfacing it here is the cheapest place to notice.

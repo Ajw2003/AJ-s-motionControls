@@ -88,15 +88,17 @@ Two properties of that certificate worth knowing:
   `docs/plans/magic-domain-replacement.md`'s security note for the constraint that comes
   with that.
 
-## LAN mode is deprecated
+## LAN mode has been removed
 
-`NetworkMode.Lan` still exists and is still selectable by hand-editing `network-mode.txt` to
-`Lan`, but `StartScreen` no longer offers it, and its certificate no longer validates — the
-replacement certificate is single-name for a fixed hostname, which a LAN address's varying
-name can never match. See `Assets/Scripts/Net/NetworkMode.cs` and
+LAN mode used to be selectable by hand-editing `network-mode.txt` to `Lan`, but its
+certificate had already stopped validating — the replacement certificate is single-name for a
+fixed hostname, which a LAN address's varying name can never match — and
+[docs/plans/remove-direct-transport.md](../docs/plans/remove-direct-transport.md) removed the
+dead code path outright rather than leaving it deprecated. Hotspot is the only mode there is
+now; `network-mode.txt` is inert if one is still lying around from an older install. See
 [docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md) Phase 3
-for the full reasoning. Everything below that mentions "the venue's network" or a LAN address
-describes the deprecated path.
+for why the certificate stopped working in the first place. Everything below that mentions
+"the venue's network" or a LAN address describes that removed path, kept here as history.
 
 ## What this costs, and who cannot play
 
@@ -114,6 +116,8 @@ not silently widen anything beyond that.
 | `[LocalServices] Could not get a certificate.` on a fresh install | No network, no cache, and no seed certificate in `StreamingAssets` | Connect this machine to the internet once, or ship a seed cert — see `CertificateProvider.TrySeedCache` |
 | `/health` fails over `https://` | Certificate expired and the renewal workflow hasn't published a fresh one, or a stale cache | Check `.github/workflows/renew-cert.yml`'s last run |
 | Phone shows "No internet" but the game works | Expected on an isolated hotspot unless the captive-portal probes are answered — see `relay/dns.js`/`relay/server.js`'s `/generate_204` and `/hotspot-detect.html` | Confirm the plain HTTP `:80` listener bound; it degrades quietly and logs loudly if `:80` is already taken (IIS, Docker Desktop, etc.) |
+| Phone pops a sign-in / portal page before anyone has opened the game | Deliberate — `serveCaptiveProbe` reports a portal until that device has loaded the controller, so the phone's OS opens the nudge page itself. See `docs/plans/join-failure-reduction.md` P2 | It must stop once the device is playing. If a phone still flags "No internet" mid-match, check `relay/funnel.js` reached `PAGE_OPEN` for it |
+| Phone opened the game over plain `http://` and no sensors work | Fixed — `:80` redirects everything that is not a probe to the HTTPS origin | If it recurs, check `:80` is served by `handleProbeRequest`, not `handleRequest`: the latter ends in `serveStatic` and would serve the controller insecurely |
 | Phone cannot load the page, PC can | The isolation `setup-offline.ps1`'s scheduled task enforces is working as intended for guest-to-guest traffic; check the guest can still reach the host itself | Open `https://192.168.137.1:8443/health` by raw IP on the phone |
 | Unity connects nowhere | `relay-url.txt` stale (leftover from local development), or the relay is not running | Delete `relay-url.txt` to let `LocalServices` resolve its own origin, or check the relay process is alive |
 | The host itself can't resolve its own relay while offline | The host does not take DHCP from itself, so it never consults its own DNS responder | Confirm `setup-offline.ps1`'s hosts entry is present: `MagicDomain.HostName  192.168.137.1` |

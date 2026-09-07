@@ -47,17 +47,17 @@ was M3, and it landed ahead of the remaining M2 work above.
 ## Running the game
 
 The game runs its own relay and fetches its own certificate — there is nothing to run by
-hand any more. Tick **Start Local Services** on `Bootstrap` (on by default), press Play, and
-pick **Hotspot** on the main menu. `LocalServices` obtains a certificate for
-`play.skiprocking.ca` (see `Assets/Scripts/Net/CertificateProvider.cs` and
-`docs/plans/magic-domain-replacement.md`), starts the relay over TLS, and `HotspotService`
-brings up a Wi-Fi hotspot phones join with no router or internet needed.
+hand any more. Tick **Start Local Services** on `Bootstrap` (on by default) and press Play.
+Hotspot is the only mode there is now — there is no picker on the main menu.
+`LocalServices` obtains a certificate for `play.skiprocking.ca` (see
+`Assets/Scripts/Net/CertificateProvider.cs` and `docs/plans/magic-domain-replacement.md`),
+starts the relay over TLS, and `HotspotService` brings up a Wi-Fi hotspot phones join with no
+router or internet needed.
 
-> **LAN mode is deprecated.** It is no longer offered on the main menu, and its certificate
-> no longer validates now that the certificate is single-name rather than a wildcard keyed
-> to a varying LAN address. It stays reachable only by hand-editing `network-mode.txt` to
-> `Lan`. See `Assets/Scripts/Net/NetworkMode.cs` and
-> `docs/plans/magic-domain-replacement.md` Phase 3.
+> **LAN mode has been removed**, not merely deprecated — see
+> `docs/plans/remove-direct-transport.md`. Its certificate stopped validating once the
+> certificate became single-name rather than a wildcard keyed to a varying LAN address, and
+> there is no hand-edit left that brings it back.
 >
 > One-time elevated machine setup (firewall rules, the forwarding-disable task, a hosts
 > entry) is still required for Hotspot mode — run `deploy/setup-offline.ps1` once as
@@ -92,14 +92,13 @@ itself and why the certificate is worth the trouble.
 
 ### Where aim and throw actually travel
 
-`AIM` and `THROW` ride a **direct WebRTC DataChannel** to each phone by default, so gameplay
-does not round-trip through the service. A phone that cannot negotiate one falls back to the
-relay socket by itself, per phone, and plays normally — only with slightly softer aim
-tracking. Roster, turn state, scores and the spectator view always go over the relay.
-
-**F1** on the TV reports `N/M direct` and names which phones are on which transport, so a
-silent downgrade is visible rather than merely slower. Turn it off with **Use Peer
-Connections** on `Bootstrap`, or per-phone with `?direct=0` on the controller URL.
+Everything — `AIM`, `THROW`, roster, turn state, scores, the spectator view — goes over the
+one relay socket. This project used to carry `AIM`/`THROW` over a direct WebRTC DataChannel
+per phone instead, on the theory that it avoided round-tripping through a hosted relay; once
+the relay moved onto the host PC itself (this same machine, one hop away either way), that
+transport bought nothing but ~510 lines of code and a native dependency, and it was removed —
+see `docs/Findings-DirectTransportFlapping.md` for the full argument and the bug that made
+its cost visible.
 
 ### Plain HTTP, for desktop-only testing
 

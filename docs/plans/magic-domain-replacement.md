@@ -169,6 +169,13 @@ mirror later costs no code.
 
 ### Phase 3 — Deprecate LAN
 
+> **Superseded 2026-09-06:** the "deprecate, don't delete" step below is now completed as a
+> deletion. `docs/plans/remove-direct-transport.md` removed `NetworkMode`/`NetworkModeStore`,
+> `ResolveLanAddress`, `ToHostName` and the LAN hard-stop in `LocalServices` outright — Hotspot
+> is the only mode there is now, and `network-mode.txt` is inert on any machine that still has
+> one from an older install. See `docs/Findings-DirectTransportFlapping.md` for the reasoning
+> that motivated finishing the removal rather than continuing to hold it open.
+
 Deprecate, not delete — keep it reachable for a release in case Hotspot hits a machine it cannot
 work on.
 

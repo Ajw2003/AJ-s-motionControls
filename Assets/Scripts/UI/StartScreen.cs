@@ -17,30 +17,23 @@ namespace Ui
     /// standing at it deliberately presses Start.
     ///
     /// The LAN/Hotspot picker that used to live here is gone — see
-    /// docs/plans/magic-domain-replacement.md Phase 3. LAN mode is deprecated (its
-    /// certificate no longer validates, now that local-ip.sh's wildcard is replaced by a
-    /// single-name certificate; see NetworkMode.Lan's remarks), so this screen shows no
-    /// choice and writes nothing to network-mode.txt at all — LocalServices' call to
-    /// NetworkModeStore.Load() is what decides the mode, falling back to Hotspot on a fresh
-    /// install. LAN stays reachable only by hand-editing network-mode.txt to the literal
-    /// string "Lan" before launching; this screen leaves that file alone either way.
+    /// docs/plans/magic-domain-replacement.md Phase 3 and
+    /// docs/plans/remove-direct-transport.md. Hotspot is the only mode there is now (LAN mode
+    /// was removed outright, not merely deprecated — its certificate stopped validating once
+    /// local-ip.sh's wildcard was replaced by a single-name one), so this screen shows no
+    /// choice at all.
     /// </remarks>
     public class StartScreen : MonoBehaviour
     {
         [SerializeField] private KeyCode startKey = KeyCode.Return;
 
-        private GUIStyle _title, _sectionLabel, _startButton, _hint;
+        private GUIStyle _title, _sectionLabel, _startButton;
         private Texture2D _panelTexture;
 
         private void Awake()
         {
-            // Deliberately does not touch network-mode.txt at all any more — writing Hotspot
-            // here unconditionally would stomp a hand-edited "Lan" the moment this scene
-            // loads, before Bootstrap even reads it, which is exactly the escape hatch Phase 3
-            // is supposed to leave open. NetworkModeStore.Load() (called by LocalServices in
-            // Bootstrap) is what actually decides the mode, and its fallback — used only when
-            // the file is missing or unreadable — is Hotspot, so a fresh install still gets
-            // Hotspot with nothing written here.
+            // Nothing to do here now that Hotspot is the only mode — there is no per-machine
+            // choice left for this screen to read or write.
         }
 
         private void Update()
@@ -76,13 +69,6 @@ namespace Ui
                 fontStyle = FontStyle.Bold,
                 fixedHeight = 80 * scale,
             };
-            _hint = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(18 * scale),
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true,
-            };
-
             _panelTexture = new Texture2D(1, 1);
             _panelTexture.SetPixel(0, 0, new Color(0.05f, 0.07f, 0.12f, 0.92f));
             _panelTexture.Apply();
@@ -109,8 +95,6 @@ namespace Ui
 
             GUILayout.Label("Guests join over a Wi-Fi hotspot this PC creates —\n" +
                              "no router or internet needed.", _sectionLabel);
-            GUILayout.Space(12);
-            GUILayout.Label("(LAN mode is deprecated; hand-edit network-mode.txt to use it.)", _hint);
 
             GUILayout.Space(40);
 

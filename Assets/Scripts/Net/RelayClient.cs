@@ -86,6 +86,23 @@ namespace Net
         public event Action<string> RoomCodeAssigned;
 
         /// <summary>
+        /// How many phones are on the hotspot Wi-Fi but have not yet opened the controller
+        /// page — the people who scanned the Wi-Fi code and then stopped. Zero when there is
+        /// no hotspot, because the relay only tracks this on the hotspot subnet.
+        /// </summary>
+        /// <remarks>
+        /// Devices, not people (see DeviceFunnelMessage). Only ever drives what the TV says;
+        /// never gate anything on it.
+        /// </remarks>
+        public int DevicesAwaitingPage { get; private set; }
+
+        /// <summary>
+        /// Phones with the controller open that have not joined a room — stuck on the name
+        /// or code screen rather than missing the second scan.
+        /// </summary>
+        public int DevicesAwaitingJoin { get; private set; }
+
+        /// <summary>
         /// Every inbound message, as (type, raw json), fired before the typed dispatch below.
         /// </summary>
         /// <remarks>
@@ -99,9 +116,10 @@ namespace Net
         /// A message waiting for the main thread, and who it is known to be from.
         /// </summary>
         /// <remarks>
-        /// TrustedPlayerId is null for relay traffic, because the relay already stamps
-        /// identity server-side. It is set for peer traffic, where there is no relay in
-        /// the path to do it — see IngestFromPeer.
+        /// TrustedPlayerId is always null now that the relay is the only transport — the
+        /// relay already stamps identity server-side, so nothing else needs to. The field
+        /// survives because Dispatch's signature still takes it (see the parameter's own
+        /// remarks); a direct-transport caller used to pass a non-null value here.
         /// </remarks>
         private readonly struct Inbound
         {
@@ -413,24 +431,6 @@ namespace Net
             _nextRetryTime = Time.time + _retryDelay;
         }
 
-        /// <summary>
-        /// Hand a message that arrived over a peer connection into the same dispatch path
-        /// as relay traffic, so nothing downstream can tell the two apart.
-        /// </summary>
-        /// <param name="trustedPlayerId">
-        /// Which peer it came from. This <b>overrides</b> any playerId in the payload,
-        /// reproducing the server-side stamping in the relay's relayToHost — without it a
-        /// phone could label its own throws with somebody else's name, which is exactly
-        /// the spoof the relay was hardened against. The peer connection is per-player, so
-        /// the caller always knows the real answer.
-        /// </param>
-        /// <remarks>Safe to call from any thread; the queue is drained on the main one.</remarks>
-        public void IngestFromPeer(string json, string trustedPlayerId)
-        {
-            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(trustedPlayerId)) return;
-            _inbound.Enqueue(new Inbound(json, trustedPlayerId));
-        }
-
         private void Dispatch(string json, string trustedPlayerId)
         {
             MessageEnvelope envelope;
@@ -482,6 +482,17 @@ namespace Net
                 {
                     var left = JsonUtility.FromJson<PlayerLeftMessage>(json);
                     EventManager.Instance?.Publish(new PlayerLeftEvent(left.playerId));
+                    break;
+                }
+
+                case MessageType.DeviceFunnel:
+                {
+                    // Stored rather than published as an event: the only consumer is JoinScreen,
+                    // which redraws every frame anyway, so a property it reads is less machinery
+                    // than an event type plus a subscription to unwind in OnDestroy.
+                    var funnel = JsonUtility.FromJson<DeviceFunnelMessage>(json);
+                    DevicesAwaitingPage = Mathf.Max(0, funnel.associated - funnel.pageOpen);
+                    DevicesAwaitingJoin = Mathf.Max(0, funnel.pageOpen - funnel.playing);
                     break;
                 }
 
