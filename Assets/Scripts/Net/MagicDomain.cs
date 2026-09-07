@@ -58,8 +58,11 @@ namespace Net
         /// --clobber, so this URL is stable across renewals. Changing the tag would strand
         /// every already-shipped build, which is why it is not a thing anyone should tune.
         ///
-        /// UNTESTED: the renewal workflow has never run, so these URLs 404 until it does —
-        /// exactly the case the seed-certificate fallback in CertificateProvider survives.
+        /// Live and verified: the renewal workflow has published a production certificate here
+        /// since 2026-09-03. deploy/verify-published-cert.sh downloads from these exact URLs
+        /// anonymously and checks everything CertificateProvider.Inspect() checks plus the key
+        /// pairing and chain shape it does not — run it any time to confirm the URLs still
+        /// serve something usable, without needing Unity, a build, or any credential.
         /// </remarks>
         private static readonly string[] DefaultCertUrls =
         {

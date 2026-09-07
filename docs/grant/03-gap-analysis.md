@@ -21,14 +21,32 @@ on my machine" is the single most common reason a strong technical application i
 
 → **WP1.** Also the precondition for [10-demo-script.md](10-demo-script.md).
 
-### G2. The certificate renewal pipeline has never run for real
-`.github/workflows/renew-cert.yml` defaults to Let's Encrypt **staging**, and its publish step
-carries an explicit "UNTESTED: this step has never been run" annotation.
+### G2. ~~The certificate renewal pipeline has never run for real~~ — RESOLVED, and it hid a live bug
+**Resolved 2026-09-07.** The pipeline had in fact run: two `workflow_dispatch` runs on
+2026-09-03 issued against Let's Encrypt production and published successfully. The
+"UNTESTED: this step has never been run" annotation was stale, exactly like the iOS markers
+in G11. `deploy/verify-published-cert.sh` now proves it from outside — it downloads from the
+public URL anonymously and passes.
 
-*Why it matters:* the design is sound and the offline claim rests on it, but the claim is
-currently *designed* rather than *demonstrated*. One real run converts it.
+**But investigating it surfaced a worse, live problem.** The workflow's endpoint defaulted to
+Let's Encrypt *staging* on **both** paths, including the weekly cron. A scheduled run would
+therefore issue an untrusted staging certificate, and the "refuse to publish staging" gate
+would then fail the job. Every weekly run was guaranteed to fail, so **the certificate would
+never have auto-renewed** — it would have expired silently while a red X accumulated in the
+Actions tab. The offline story's renewal mechanism was broken, just not in the way the
+documentation claimed.
 
-→ **WP1** (prove it), **WP2** (fund the shrinking-lifetime question).
+Fixed in the same change: cron now runs production; a freshness gate skips issuing while the
+published certificate has over 30 days left (protecting Let's Encrypt's five-duplicates-per-week
+limit, which the old header comment claimed acme.sh's `--days` flag handled — no `--days` was
+ever passed, and no acme.sh state persisted between runs, so every run issued fresh); staging
+rehearsals publish to a separate `staging` tag so the publish path is exercisable without
+touching the live asset; and the run verifies what it actually published rather than what it
+built.
+
+*Lesson worth carrying into the applications:* the repository has now been wrong twice in the
+same direction — asserting something was unproven when it was working. Both times the stale
+claim was more damaging than the underlying state.
 
 ### G3. No licence, no eligible entity
 No `LICENSE` file. Open-source funders require one as a hard gate. Most public funders require

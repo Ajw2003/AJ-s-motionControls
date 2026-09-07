@@ -32,6 +32,12 @@ under a fixed name whose certificate is fetched while online and served locally 
 unplugged adapter. The document also records the rejected alternative (Wi-Fi Direct) and
 exactly why it loses: it leaves `:53` free and builds no DNS proxy.
 
+The certificate half is independently checkable by a reviewer, which is unusual for a claim
+like this: `./deploy/verify-published-cert.sh` downloads the live certificate from the same
+anonymous public URL a player's machine uses, and validates SAN coverage, issuer, expiry, key
+pairing and chain shape. No credentials, no build, no Unity — a reviewer can run it from a
+fresh clone in about two seconds and watch the claim hold.
+
 **Limitation.** Certificate *provisioning* needs the internet at some point within each
 certificate window (~90 days today), and that window is shrinking industry-wide. Play sessions
 never need it. See Claim 6, which turns this into the research contribution.

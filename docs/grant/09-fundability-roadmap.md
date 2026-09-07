@@ -35,6 +35,12 @@ first action is to open the README.
       `../../../Desktop/GameDev/RockSkipping/...` left over from another machine. Left alone in
       this pass deliberately: these are the historical record of decisions, and rewriting them
       mechanically risks changing what they assert. Fix them by hand, or accept them as archive.
+- [ ] **Watch the first scheduled certificate run.** The cron fires Mondays 06:17 UTC. The
+      first one after 2026-09-07 is the proof that unattended renewal works — every run before
+      that was triggered by hand. Expect it to *skip* (the published certificate has ~86 days
+      left, over the 30-day threshold) and to say so; a skip that reports why is the correct
+      outcome, a failure is not. Run `./deploy/verify-published-cert.sh` any time to check the
+      live certificate independently of the workflow.
 - [ ] **Add `LICENSE`.** Apache-2.0. A hard gate for open-source funders and a prerequisite for
       anyone else adopting the work.
 
@@ -66,10 +72,13 @@ strong application.
 - [ ] **Compile `installer.iss` for the first time.** It has never been through ISCC.
 - [ ] **Code-sign the installer.** An unsigned installer triggers SmartScreen, which will feature
       prominently in your demo video for the wrong reasons.
-- [ ] **Prove the certificate pipeline (G2).** Take `.github/workflows/renew-cert.yml` off Let's
-      Encrypt staging, run the publish step for real once, and confirm an installed client picks
-      up the refreshed certificate. This converts the central claim from designed to demonstrated,
-      and it is the one thing in the offline story a reviewer could reasonably doubt.
+- [x] **Prove the certificate pipeline (G2).** Done — and it turned out to have already been
+      done: two production runs on 2026-09-03 published a real Let's Encrypt certificate, and
+      `deploy/verify-published-cert.sh` confirms it from the public URL with no credentials.
+      The investigation also caught a live bug that would have stopped renewal entirely (the
+      weekly cron defaulted to staging and would have failed every week). Both fixed.
+      **Still outstanding:** confirm an installed client picks up a *refreshed* certificate —
+      that needs a build, so it is gated on the installer work below.
 - [ ] **Clean-VM acceptance test.** A person who has never seen this repository installs from a
       downloaded file on a fresh Windows VM with no development tools and plays a match with two
       phones, unassisted. Watch them do it without helping. Every place they hesitate is a defect.

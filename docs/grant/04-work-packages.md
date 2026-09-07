@@ -55,14 +55,16 @@ survives without it.
 - Code-sign the installer
 - Build CI: tagged commits produce a downloadable signed installer
 - Test CI: `relay/` (49 tests), `controller/test-sensors.js`, and Unity EditMode tests run on push
-- Take `renew-cert.yml` off Let's Encrypt staging, run the publish step for real once, and
-  confirm an installed client picks up the refreshed certificate
+- Confirm an *installed* client picks up a refreshed certificate. The pipeline half of this
+  is already proven (see G2) and checkable any time with `deploy/verify-published-cert.sh`;
+  the client half needs a build, which is why it lives here
 
-**Deliverable:** a downloadable installer, and a certificate pipeline that has actually run.
+**Deliverable:** a downloadable installer, and a certificate refresh proven all the way to an
+installed client rather than only to the published URL.
 **Acceptance:** a person who has never seen the repository installs on a clean Windows VM with
 no development tools and plays a match with two phones, unassisted, from a downloaded file.
 
-*Closes G1, G2, G7.*
+*Closes G1, G7; completes the client half of G2.*
 
 ---
 

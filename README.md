@@ -99,6 +99,26 @@ context, and an HTTPS page cannot open a plain `ws://` socket. Both problems dis
 the page and the socket share one secure origin, which is why the relay serves the controller
 itself and why the certificate is worth the trouble.
 
+### Checking the certificate
+
+The certificate is issued and published by `.github/workflows/renew-cert.yml` and downloaded
+at launch by `CertificateProvider`. To check the live one at any time, from any machine, with
+no credentials and without starting the game:
+
+```bash
+./deploy/verify-published-cert.sh
+```
+
+It downloads from the same anonymous public URL a player's machine uses and checks SAN
+coverage, issuer, expiry, that the key actually matches the certificate, and that the chain is
+a fullchain rather than a bare leaf — phones do not cache intermediates the way desktops do,
+so a bare leaf fails on exactly the devices this project targets.
+
+The workflow runs the same script after publishing, so a publish that succeeds but produces
+something unusable fails in CI instead of at a party. `--tag staging` checks a rehearsal run,
+`--min-days 30` is the bar `deploy/fetch-seed-cert.ps1` applies before baking a seed into a
+build.
+
 ### Where aim and throw actually travel
 
 Everything — `AIM`, `THROW`, roster, turn state, scores, the spectator view — goes over the
