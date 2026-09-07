@@ -736,19 +736,6 @@ and is not, that is either a bug in `HotspotService` or a decision that has quie
 guest-isolation rationale in `Decision-OfflineHosting.md` is not currently in force on this
 machine either way, and somebody should decide which of the two is the intended state.
 
-### `relay/test-portal-fix.ps1` - the whole test as one command
-
-The test had grown to three terminals, two shells and a log grep, whose most likely outcome is a
-step done out of order producing a result that means nothing - which had already happened twice,
-both times by measuring a stale relay. The script does every by-eye check itself: kills the
-running relay (because `StartRelay` reuses any relay already listening), waits until the relay is
-back *and* provably forwarding DNS, and only then captures. It refuses to capture otherwise, on
-the grounds that a capture against the wrong build is worse than no capture.
-
-Verified: the failure path was run end-to-end against the live unforwarding relay and correctly
-timed out with the right diagnosis; the success predicate was verified against a real upstream
-resolver. Only the `pktmon` capture itself is unrun, needing elevation.
-
 ### RESOLVED - forwarding DNS upstream fixes it
 
 Confirmed on the phone, 2026-09-07: **Reddit loads and the "no internet" flag is gone.** Android
@@ -846,11 +833,10 @@ behaviour the seventh hardware test captured. The list now mixes two kinds of en
 reasons, so the comment above it spells out which is which; that distinction is silent when got
 wrong.
 
-**`test-portal-fix.ps1` updated to match.** Its marker inverted (`www.google.com` must now resolve
-to the hotspot address, not to a public one) and it gained an isolation gate: it reads the
-forwarding flag and refuses to capture while guests still have internet, because that would not be
-testing the offline case at all. Both branches of that gate were exercised against the live
-machine - once while forwarding was enabled, once after disabling it.
+**`test-portal-fix.ps1` was the one-command orchestrator for this test** - it killed the stale
+relay, waited until the relay provably ran current code, self-healed the forwarding flag, then
+captured. It has since been deleted (see below); the isolation check it carried is the part worth
+rebuilding if this is ever picked up again.
 
 **A false positive in the gate itself, caught on the first real run.** It reported
 `NOT ISOLATED: forwarding is Enabled on Ethernet 4, Local Area Connection* 12` - naming the
@@ -966,11 +952,17 @@ existed only to serve a hypothesis that hardware testing falsified, and every ot
 list is one we intend to actually serve. The comment above the list now says so, and points here
 before anyone re-litigates it.
 
-**Side effect worth knowing:** `test-portal-fix.ps1` used that name as its "is the relay running
-current code?" marker, since it was the only name unique to the fixed build. With it gone the
-marker can never match and the script times out at the wait step. Its kill-and-restart and
-isolation self-heal are still worth having, so it needs either a new marker or that check
-dropped in favour of a plain health probe. Not done here.
+**`test-portal-fix.ps1` deleted as a consequence.** It used that name as its "is the relay
+running current code?" marker, since it was the only name unique to the fixed build; with the
+name gone the marker could never match and the script would time out every run. Rather than
+leave a tool that always fails, it was removed - the portal chase it existed for is closed, and
+`capture-probe.ps1` and `watch-guests.js` stand on their own. Recoverable from history:
+`git show bd22729:relay/test-portal-fix.ps1`.
+
+Two ideas in it are worth salvaging if this is ever reopened: refusing to measure until the
+relay is provably running current code (two test cycles were wasted on a stale relay before that
+check existed), and reading the forwarding flag back rather than trusting that a disable
+happened.
 
 **Not done, deliberately.** `capture-probe.ps1`'s `ARRIVED AND DROPPED` text advises
 "investigate firewall scope and interface binding", which assumes TCP 80 traffic is a probe. When
