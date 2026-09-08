@@ -1,0 +1,820 @@
+<title>RockSkipping Doc Stack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+  :root {
+    --ground:      #e7ecee;
+    --surface:     #fbfcfc;
+    --surface-2:   #f1f5f6;
+    --ink:         #0f1c22;
+    --ink-2:       #4b636e;
+    --ink-3:       #6f8894;
+    --line:        #c2d0d5;
+    --line-soft:   #d8e2e5;
+    --accent:      #0a6a62;
+    --accent-ink:  #06423d;
+    --accent-soft: #d2e6e3;
+    --velocity:    #a2571c;
+    --velocity-soft:#f0e2d4;
+
+    --f-display: "IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif;
+    --f-body:    "Source Serif 4", Georgia, "Times New Roman", serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0b151a;
+      --surface:     #121f26;
+      --surface-2:   #16262e;
+      --ink:         #e2eaed;
+      --ink-2:       #93a9b3;
+      --ink-3:       #7a919c;
+      --line:        #24373f;
+      --line-soft:   #1d2e35;
+      --accent:      #4dbcb0;
+      --accent-ink:  #a9e0d8;
+      --accent-soft: #143430;
+      --velocity:    #dd9a5f;
+      --velocity-soft:#38271a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0b151a;
+    --surface:     #121f26;
+    --surface-2:   #16262e;
+    --ink:         #e2eaed;
+    --ink-2:       #93a9b3;
+    --ink-3:       #7a919c;
+    --line:        #24373f;
+    --line-soft:   #1d2e35;
+    --accent:      #4dbcb0;
+    --accent-ink:  #a9e0d8;
+    --accent-soft: #143430;
+    --velocity:    #dd9a5f;
+    --velocity-soft:#38271a;
+  }
+
+  * { box-sizing: border-box; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding-bottom: 30px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(2.5rem, 6.4vw, 3.9rem);
+    line-height: 1.02;
+    letter-spacing: -0.018em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 1.16rem;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    padding-top: 4px;
+  }
+  .meta-strip b {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- sections ---------- */
+
+  section { margin-top: 60px; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.62rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  .sec-note {
+    color: var(--ink-2);
+    max-width: 66ch;
+    margin: 0 0 26px;
+    font-size: 1rem;
+  }
+
+  /* ---------- figures ---------- */
+
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 26px 22px 18px;
+  }
+  .fig-scroll { overflow-x: auto; }
+  figure svg {
+    display: block;
+    width: 100%;
+    min-width: 620px;
+    height: auto;
+    color: var(--ink-2);
+  }
+  figcaption {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--ink-3);
+    margin-top: 16px;
+    padding-top: 13px;
+    border-top: 1px solid var(--line-soft);
+  }
+  figcaption b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---------- tier sheet ---------- */
+
+  .tiers {
+    border-top: 1px solid var(--ink);
+  }
+  .tier {
+    display: grid;
+    grid-template-columns: 74px 1fr;
+    gap: 0 22px;
+    padding: 26px 0 28px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tier-num {
+    font-family: var(--f-mono);
+    font-size: 2.1rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    padding-top: 2px;
+  }
+  .tier-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
+    margin-bottom: 4px;
+  }
+  .tier-head h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.34rem;
+    letter-spacing: -0.006em;
+    margin: 0;
+  }
+  .path {
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    padding: 2px 7px;
+  }
+  .answers {
+    font-size: 1.09rem;
+    font-style: italic;
+    color: var(--ink);
+    margin: 0 0 14px;
+    max-width: 62ch;
+  }
+  .holds {
+    margin: 0 0 15px;
+    padding-left: 1.1em;
+    color: var(--ink-2);
+    font-size: 0.98rem;
+    max-width: 68ch;
+  }
+  .holds li { margin-bottom: 5px; }
+  .holds li::marker { color: var(--accent); }
+  .holds strong { color: var(--ink); font-weight: 600; }
+
+  .tier-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .cadence {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--velocity-soft);
+    color: var(--velocity);
+    border: 1px solid var(--velocity);
+    padding: 3px 9px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-size: 10.5px;
+  }
+  .dots { display: inline-flex; gap: 3px; }
+  .dots i {
+    width: 4px; height: 4px;
+    background: currentColor;
+    display: block;
+    opacity: 0.28;
+  }
+  .dots i.on { opacity: 1; }
+  .count { font-variant-numeric: tabular-nums; }
+
+  .aside {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: 13px 16px;
+    margin: 0 0 15px;
+    font-size: 0.97rem;
+    color: var(--accent-ink);
+    max-width: 68ch;
+  }
+  .aside b { font-weight: 600; }
+
+  /* ---------- systems grid ---------- */
+
+  .sys {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin: 4px 0 15px;
+  }
+  .sys div {
+    background: var(--surface);
+    padding: 11px 13px;
+  }
+  .sys b {
+    display: block;
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 1px;
+  }
+  .sys span {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    line-height: 1.45;
+    display: block;
+  }
+
+  /* ---------- satellites ---------- */
+
+  .sats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 22px;
+  }
+  .sat {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 20px 22px 22px;
+  }
+  .sat h3 {
+    font-family: var(--f-mono);
+    font-size: 0.98rem;
+    font-weight: 600;
+    margin: 0 0 3px;
+  }
+  .sat .tagline {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--velocity);
+    margin: 0 0 11px;
+  }
+  .sat p { margin: 0 0 10px; font-size: 0.97rem; color: var(--ink-2); }
+  .sat p:last-child { margin-bottom: 0; }
+  .sat b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- rules ---------- */
+
+  .rules { display: flex; flex-direction: column; gap: 0; }
+  .rule {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 18px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .rule:first-child { border-top: 1px solid var(--line-soft); }
+  .rule .mark {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--accent);
+    padding-top: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .rule h4 {
+    font-family: var(--f-display);
+    font-size: 1.08rem;
+    font-weight: 600;
+    margin: 0 0 3px;
+  }
+  .rule p { margin: 0; color: var(--ink-2); font-size: 0.99rem; max-width: 68ch; }
+  code {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+  .aside code {
+    background: transparent;
+    border-color: currentColor;
+    color: inherit;
+    opacity: 0.92;
+  }
+
+  footer {
+    margin-top: 62px;
+    padding-top: 22px;
+    border-top: 2px solid var(--ink);
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+    line-height: 1.7;
+  }
+  footer b { color: var(--ink-2); font-weight: 500; }
+
+  @media (max-width: 620px) {
+    .wrap { padding: 40px 18px 70px; }
+    .tier { grid-template-columns: 1fr; gap: 8px; }
+    .tier-num { font-size: 1.5rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">RockSkipping · documentation architecture · 8 Sep 2026</p>
+    <h1>Five tiers, each one narrower and faster than the last</h1>
+    <p class="standfirst">A couch party game where the PC drives the TV and phones are motion
+      controllers. Its documentation was rebuilt on <strong>8 September 2026</strong> after an
+      audit found twenty broken links and four tables describing a certificate authority that no
+      longer exists. This is the shape it took.</p>
+    <div class="meta-strip">
+      <span><b>5</b> tiers</span>
+      <span><b>12</b> live documents</span>
+      <span><b>1,636</b> lines in the stack</span>
+      <span><b>0</b> broken links</span>
+    </div>
+  </header>
+
+  <!-- ============ HERO FIGURE ============ -->
+  <section>
+    <h2>The stack, drawn as a skip</h2>
+    <p class="sec-note">The tiers are not five equal folders. Each one asks a narrower question
+      than the one above it and is rewritten more often — which, in a game about skipping stones,
+      draws itself.</p>
+
+    <figure class="fig-scroll">
+      <svg viewBox="0 0 900 372" role="img"
+           aria-label="Five documentation tiers drawn as a stone skipping across water. Each successive touch is lower and closer to the last: tier one Landing has the widest scope and changes rarely, through to tier five Today which has the narrowest scope and is rewritten every session.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <!-- scope axis -->
+        <line x1="34" y1="34" x2="34" y2="248" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+        <text x="26" y="40" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.75">widest</text>
+        <text x="26" y="246" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.75">narrowest</text>
+        <text x="26" y="146" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.55" letter-spacing="1">SCOPE</text>
+
+        <!-- water -->
+        <line x1="46" y1="252" x2="878" y2="252" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+        <line x1="46" y1="256" x2="878" y2="256" stroke="currentColor" stroke-width="1" opacity="0.18"/>
+
+        <!-- trajectory: launch then five touches, arcs shrinking -->
+        <path d="M 58 46 Q 96 120 150 252" fill="none" stroke="currentColor" stroke-width="2" opacity="0.85"/>
+        <path d="M 150 252 Q 253 92 356 252"  fill="none" stroke="currentColor" stroke-width="2" opacity="0.85"/>
+        <path d="M 356 252 Q 441 132 526 252" fill="none" stroke="currentColor" stroke-width="2" opacity="0.85"/>
+        <path d="M 526 252 Q 592 166 658 252" fill="none" stroke="currentColor" stroke-width="2" opacity="0.85"/>
+        <path d="M 658 252 Q 706 196 754 252" fill="none" stroke="currentColor" stroke-width="2" opacity="0.85"/>
+        <path d="M 754 252 Q 786 222 818 252" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.4" stroke-dasharray="4 4"/>
+
+        <!-- splash ticks + touch dots -->
+        <g fill="var(--accent)">
+          <circle cx="150" cy="252" r="6.5"/>
+          <circle cx="356" cy="252" r="6"/>
+          <circle cx="526" cy="252" r="5.5"/>
+          <circle cx="658" cy="252" r="5"/>
+          <circle cx="754" cy="252" r="4.5"/>
+        </g>
+
+        <!-- leader lines down to labels -->
+        <g stroke="currentColor" stroke-width="1" opacity="0.45">
+          <line x1="150" y1="262" x2="150" y2="290"/>
+          <line x1="356" y1="261" x2="356" y2="290"/>
+          <line x1="526" y1="260" x2="526" y2="290"/>
+          <line x1="658" y1="259" x2="658" y2="290"/>
+          <line x1="754" y1="258" x2="754" y2="290"/>
+        </g>
+
+        <!-- labels -->
+        <g font-family="IBM Plex Mono, monospace" text-anchor="middle">
+          <text x="150" y="306" font-size="12.5" font-weight="600" fill="var(--accent)">01</text>
+          <text x="150" y="322" font-size="12" fill="currentColor">Landing</text>
+          <text x="356" y="306" font-size="12.5" font-weight="600" fill="var(--accent)">02</text>
+          <text x="356" y="322" font-size="12" fill="currentColor">Roadmap</text>
+          <text x="526" y="306" font-size="12.5" font-weight="600" fill="var(--accent)">03</text>
+          <text x="526" y="322" font-size="12" fill="currentColor">State</text>
+          <text x="658" y="306" font-size="12.5" font-weight="600" fill="var(--accent)">04</text>
+          <text x="658" y="322" font-size="12" fill="currentColor">Systems</text>
+          <text x="754" y="306" font-size="12.5" font-weight="600" fill="var(--accent)">05</text>
+          <text x="754" y="322" font-size="12" fill="currentColor">Today</text>
+        </g>
+
+        <!-- launch label -->
+        <text x="64" y="36" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.75">a cold reader arrives</text>
+
+        <!-- cadence axis -->
+        <line x1="150" y1="348" x2="754" y2="348" stroke="currentColor" stroke-width="1" opacity="0.4" marker-end="url(#ar)"/>
+        <text x="150" y="366" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.75">rewritten rarely</text>
+        <text x="754" y="366" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.75">rewritten every session</text>
+        <text x="452" y="366" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.55" letter-spacing="1">CADENCE</text>
+      </svg>
+      <figcaption>Each touch sits lower and closer to the one before it. <b>Vertical position is
+        scope</b> — tier 1 covers the whole project, tier 5 covers one day. <b>Horizontal spacing
+        is cadence</b> — the gaps close as the documents get rewritten more often. The dashed final
+        arc is where a session's plan stops mattering and becomes a record of a day that has
+        passed.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ FLOW FIGURE ============ -->
+  <section>
+    <h2>How a change moves through it</h2>
+    <p class="sec-note">Reading runs downward; updates run back up, and they stop early. Work
+      changes today's plan constantly and the definition of done almost never — which is the whole
+      reason the two were split apart.</p>
+
+    <figure class="fig-scroll">
+      <svg viewBox="0 0 900 470" role="img"
+           aria-label="Flow diagram. Reading descends from tier 1 Landing to tier 2 Roadmap to tier 3 Project State to tier 4 Systems to tier 5 Today. Updates flow back up: finished work updates tier 3, and only a change in the definition of done reaches tier 2. Two satellites hang off tier 1: the archive, which describes nothing current, and the grant kit, which addresses a different reader.">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--velocity)"/>
+          </marker>
+        </defs>
+
+        <!-- ---- tier boxes ---- -->
+        <g>
+          <rect x="262" y="18"  width="330" height="58" fill="none" stroke="currentColor" stroke-width="2"/>
+          <rect x="262" y="112" width="330" height="58" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <rect x="262" y="206" width="330" height="58" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <rect x="262" y="300" width="330" height="58" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <rect x="262" y="394" width="330" height="58" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        </g>
+        <g font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">
+          <text x="280" y="44"  font-weight="600" fill="var(--accent)">01</text>
+          <text x="312" y="44"  font-size="14" font-weight="600">Landing</text>
+          <text x="280" y="63"  font-size="11" opacity="0.7">docs/README.md — what this is, where everything is</text>
+          <text x="280" y="138" font-weight="600" fill="var(--accent)">02</text>
+          <text x="312" y="138" font-size="14" font-weight="600">Roadmap</text>
+          <text x="280" y="157" font-size="11" opacity="0.7">Roadmap.md — ten milestones, 10% bands</text>
+          <text x="280" y="232" font-weight="600" fill="var(--accent)">03</text>
+          <text x="312" y="232" font-size="14" font-weight="600">Project state</text>
+          <text x="280" y="251" font-size="11" opacity="0.7">ProjectState.md — where it stands: ~75%</text>
+          <text x="280" y="326" font-weight="600" fill="var(--accent)">04</text>
+          <text x="312" y="326" font-size="14" font-weight="600">Systems</text>
+          <text x="280" y="345" font-size="11" opacity="0.7">systems/ — seven runtime-critical systems</text>
+          <text x="280" y="420" font-weight="600" fill="var(--accent)">05</text>
+          <text x="312" y="420" font-size="14" font-weight="600">Today</text>
+          <text x="280" y="439" font-size="11" opacity="0.7">Today.md — what I am doing, and why this</text>
+        </g>
+
+        <!-- ---- downward reading arrows ---- -->
+        <g stroke="currentColor" stroke-width="1.4" marker-end="url(#ar2)">
+          <line x1="427" y1="76"  x2="427" y2="108"/>
+          <line x1="427" y1="170" x2="427" y2="202"/>
+          <line x1="427" y1="264" x2="427" y2="296"/>
+          <line x1="427" y1="358" x2="427" y2="390"/>
+        </g>
+        <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.85">
+          <text x="437" y="97">defines done for</text>
+          <text x="437" y="191">measured against</text>
+          <text x="437" y="285">grounded in</text>
+          <text x="437" y="379">planned from</text>
+        </g>
+
+        <!-- ---- feedback arrows (left gutter) ---- -->
+        <path d="M 262 437 L 172 437 L 172 250 L 258 250"
+              fill="none" stroke="var(--velocity)" stroke-width="1.6" marker-end="url(#ar3)"/>
+        <path d="M 262 240 L 208 240 L 208 156 L 258 156"
+              fill="none" stroke="var(--velocity)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar3)"/>
+        <text x="164" y="352" text-anchor="middle" transform="rotate(-90 164 352)"
+              font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--velocity)">work finished → status</text>
+        <text x="200" y="200" text-anchor="middle" transform="rotate(-90 200 200)"
+              font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--velocity)">rarely</text>
+
+        <!-- ---- satellites ---- -->
+        <rect x="656" y="112" width="212" height="58" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.75"/>
+        <rect x="656" y="206" width="212" height="58" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.75"/>
+        <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+          <text x="672" y="138" font-size="13" font-weight="600">docs/archive/</text>
+          <text x="672" y="157" font-size="11" opacity="0.7">11 files · describes nothing current</text>
+          <text x="672" y="232" font-size="13" font-weight="600">docs/grant/</text>
+          <text x="672" y="251" font-size="11" opacity="0.7">11 files · a different reader</text>
+        </g>
+        <path d="M 592 40 L 624 40 L 624 132 L 652 132" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.6" marker-end="url(#ar2)"/>
+        <path d="M 624 40 L 624 226 L 652 226" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.6" marker-end="url(#ar2)"/>
+        <text x="656" y="292" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.65">indexed from tier 1,</text>
+        <text x="656" y="307" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.65">never built against</text>
+      </svg>
+      <figcaption>Solid arrows are the reading path; <b>ochre arrows are updates flowing back up</b>,
+        and the dashed one is deliberately rare — finished work changes the status in tier 3 every
+        time, but only a change in what <i>done</i> means ever reaches tier 2. The two dashed boxes
+        hang off tier 1: they are indexed, and nothing is built against them.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ TIER SHEET ============ -->
+  <section>
+    <h2>What each tier holds</h2>
+    <p class="sec-note">Tiers 2 and 4 were scoped by choice rather than convention: 10% milestone
+      bands, and seven system documents. Both decisions and their reasoning are recorded below.</p>
+
+    <div class="tiers">
+
+      <!-- 1 -->
+      <article class="tier">
+        <div class="tier-num">01</div>
+        <div>
+          <div class="tier-head">
+            <h3>Landing</h3>
+            <span class="path">docs/README.md</span>
+          </div>
+          <p class="answers">What is this, and where is everything?</p>
+          <ul class="holds">
+            <li>The project in one paragraph, and <strong>the hard problem it solved</strong> —
+              browser motion sensors need a secure context, which needs a certificate, which needs
+              a resolvable public name, none of which exists in a living room with no internet.</li>
+            <li>The three moving parts: <code>Assets/</code> (Unity 6), <code>relay/</code> (Node),
+              <code>controller/</code> (vanilla JS on the phone).</li>
+            <li>The tier map, the runbooks, and the index of live reference documents.</li>
+            <li>The four conventions that keep the folder from decaying again.</li>
+          </ul>
+          <div class="tier-foot">
+            <span class="cadence"><span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></span> when the structure changes</span>
+            <span class="count">126 lines</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 2 -->
+      <article class="tier">
+        <div class="tier-num">02</div>
+        <div>
+          <div class="tier-head">
+            <h3>Roadmap</h3>
+            <span class="path">docs/Roadmap.md</span>
+          </div>
+          <p class="answers">What does 0% to 100% actually mean?</p>
+          <p class="aside"><b>100% is one sentence:</b> a person who has never seen the repository
+            downloads one file, runs it, and hosts a party — with no internet, no router, no
+            configuration and no instructions. Their guests scan a QR code and play.</p>
+          <ul class="holds">
+            <li>Ten milestones at 10% bands, each with <strong>an acceptance criterion someone
+              else could check</strong> — an observable outcome, not a feeling that the work is
+              finished.</li>
+            <li>An explicit statement of what 100% is <em>not</em>: no store pages, no
+              localisation, no online play, Windows only.</li>
+          </ul>
+          <p class="aside"><b>Why 10% and not 1%:</b> ten bands put a milestone at one to two weeks
+            of real work. Finer bands were considered and rejected — at 1% this becomes a backlog
+            that needs re-cutting every time priorities move, and this project reverses hosting and
+            physics decisions often enough that it would need re-cutting constantly.</p>
+          <div class="tier-foot">
+            <span class="cadence"><span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></span> only when <em>done</em> is redefined</span>
+            <span class="count">231 lines · 10 milestones</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 3 -->
+      <article class="tier">
+        <div class="tier-num">03</div>
+        <div>
+          <div class="tier-head">
+            <h3>Project state</h3>
+            <span class="path">docs/ProjectState.md</span>
+          </div>
+          <p class="answers">Where does the project stand right now, against tier 2?</p>
+          <ul class="holds">
+            <li><strong>Roughly 75%.</strong> Milestones 1–7 complete; 8 built but not done; 9
+              partial and blocked on a non-code decision; 10 not started.</li>
+            <li>A <strong>verified-versus-believed table</strong>, because the difference between
+              the two is where surprises come from.</li>
+            <li>Cross-cutting issues that belong to no milestone at all.</li>
+          </ul>
+          <p class="aside"><b>The thing that is not what it looks like.</b> Milestone 8 reads as
+            nearly finished. Every piece of machinery exists — catalog, shore-pointing selection,
+            settings panel, telemetry — but all six rocks ship
+            <code>SpinMultiplier: 1</code>, <code>VerticalMultiplier: 1</code>,
+            <code>HorizontalMultiplier: 1</code>. They are mechanically identical, and no amount
+            of further code can close the milestone.</p>
+          <div class="tier-foot">
+            <span class="cadence"><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span> when a milestone moves</span>
+            <span class="count">222 lines</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 4 -->
+      <article class="tier">
+        <div class="tier-num">04</div>
+        <div>
+          <div class="tier-head">
+            <h3>Systems</h3>
+            <span class="path">docs/systems/</span>
+          </div>
+          <p class="answers">How does this actually work, and what must I not break?</p>
+          <p class="holds" style="padding-left:0;list-style:none;margin-bottom:8px;">Seven
+            runtime-critical systems — if one is wrong, the game does not work. Every document
+            carries the same four sections: <strong>what it owns</strong>, how it works,
+            <strong>invariants</strong>, and traps that have already cost someone a day.</p>
+          <div class="sys">
+            <div><b>Event system</b><span>Pub/sub across four scenes. Subscription order is load-bearing</span></div>
+            <div><b>Networking</b><span>One relay socket, one hop. Flat DTOs — JsonUtility can't nest</span></div>
+            <div><b>Motion pipeline</b><span>Quaternions only. The play pose sits on a gimbal singularity</span></div>
+            <div><b>Skip physics</b><span>Step is pure. The preview runs it hundreds of times a frame</span></div>
+            <div><b>Scoring &amp; turns</b><span>Push-based. Only ScoreManager knows point values</span></div>
+            <div><b>Hosting &amp; certs</b><span>The PC is the network. DNS must hold :53 before ICS</span></div>
+            <div><b>Rocks &amp; tuning</b><span>A rock owns three numbers. A global never lives on a rock</span></div>
+          </div>
+          <p class="aside"><b>Why seven and not twelve.</b> Scope stops where a document still gets
+            maintained. Audio was left out because it is paused on a decision, and distribution
+            because <code>ZeroSetupPlan.md</code> already covers it accurately — and adding a
+            document that duplicates a live one is how two documents start disagreeing.</p>
+          <div class="tier-foot">
+            <span class="cadence"><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span> when the system changes</span>
+            <span class="count">8 files · 941 lines</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 5 -->
+      <article class="tier">
+        <div class="tier-num">05</div>
+        <div>
+          <div class="tier-head">
+            <h3>Today</h3>
+            <span class="path">docs/Today.md</span>
+          </div>
+          <p class="answers">What am I doing today, and why this rather than something else?</p>
+          <ul class="holds">
+            <li>What was done, and what was <strong>deliberately not</strong> done.</li>
+            <li>What the work surfaced that is somebody else's problem tomorrow.</li>
+            <li>What to do next, <strong>ranked by what unblocks what</strong> — not by size.</li>
+          </ul>
+          <p class="aside"><b>Written last, on purpose.</b> The point of planning after tiers 1–4
+            is that the plan follows from knowing where you actually stand, rather than from
+            whatever felt urgent at the start of the session. A day whose plan is "routine audit,
+            check for drift" is a legitimate plan and gets written down as one.</p>
+          <div class="tier-foot">
+            <span class="cadence"><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span> every working session</span>
+            <span class="count">116 lines</span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============ SATELLITES ============ -->
+  <section>
+    <h2>Two things that hang off the stack</h2>
+    <p class="sec-note">Neither is a tier. Both are indexed from tier 1 so they can be found, and
+      neither is ever built against.</p>
+    <div class="sats">
+      <div class="sat">
+        <h3>docs/archive/</h3>
+        <p class="tagline">Frozen · 11 files · 2,547 lines</p>
+        <p>Documents that were correct when written and are now inert: shipped plans, fixed bugs,
+          and one insurance policy against a disaster that happened and was answered a different
+          way. <b>Nothing in it describes current behaviour.</b></p>
+        <p>They are kept because the reasoning is often the only record of why something is the way
+          it is — and because deleting documents that other documents point at is exactly what
+          broke the link graph in the first place.</p>
+      </div>
+      <div class="sat">
+        <h3>docs/grant/</h3>
+        <p class="tagline">Parallel · 11 files · 1,363 lines</p>
+        <p>The funding case for the <b>plugin the game turned out to contain</b> — the offline
+          secure-context work, extracted. A different reader and a different purpose from
+          everything else in the folder.</p>
+        <p>Explicitly <b>not</b> the project plan. Its week-one work list was doing that job by
+          accident; tiers 2 and 3 own it now.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RULES ============ -->
+  <section>
+    <h2>Four conventions that keep it from decaying again</h2>
+    <p class="sec-note">Each one is a direct response to something the 8 September audit found.</p>
+    <div class="rules">
+      <div class="rule">
+        <div class="mark">01</div>
+        <div>
+          <h4>Cite claims to <code>file:line</code></h4>
+          <p>Most assertions link to the code they describe. This is what made the audit mechanical
+            instead of a matter of opinion — every certificate claim could be checked against
+            <code>MagicDomain.cs</code> in seconds.</p>
+        </div>
+      </div>
+      <div class="rule">
+        <div class="mark">02</div>
+        <div>
+          <h4>Say what a measurement cannot show</h4>
+          <p>The findings documents that state their own limits are the reason a ten-round hardware
+            dead end is not being reopened on a hunch. A tool that cannot fail is worse than no
+            tool.</p>
+        </div>
+      </div>
+      <div class="rule">
+        <div class="mark">03</div>
+        <div>
+          <h4>When a decision reverses, fix the body — not just the header</h4>
+          <p>A "Superseded — see X" box stacked on top of a table that still says the old thing is
+            how four documents ended up describing a certificate authority that had ceased to
+            resolve. The reader trusts the table.</p>
+        </div>
+      </div>
+      <div class="rule">
+        <div class="mark">04</div>
+        <div>
+          <h4>An inert document moves to <code>archive/</code> — it is not deleted</h4>
+          <p>Deleting 34 documents that other documents pointed at is what broke twenty links. The
+            fix is to move things and index them, so a stale pointer lands somewhere that explains
+            itself.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <b>RockSkipping</b> — Unity 6000.3.15f1 · Node relay · vanilla-JS phone controller<br>
+    Structure established 8 September 2026, following <b>docs/Findings-DocumentationAudit.md</b>.
+    Tier 5 is rewritten each session; if this page disagrees with <b>docs/README.md</b>, that file
+    wins.
+  </footer>
+
+</div>
