@@ -20,7 +20,7 @@ MonoBehaviour:
   MinLoss: 0.05
   SpinForStability: 400
   WanderPerBounce: 3
-  SpinRetention: 0.5
+  SpinRetention: 0.9
   RollFalloffDeg: 20
   MaxRollDeg: 30
   PitchSteepFalloffDeg: 22
