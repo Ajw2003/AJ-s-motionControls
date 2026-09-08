@@ -176,10 +176,18 @@ were deleted in `0b7c500` and were never rewritten — the `[Tooltip]` text on `
 now the most complete per-field reference there is.
 
 Full data-flow, wire format, and the shore-pointing selection UI are in
-[`../docs/systems/RockCatalogAndTuning.md`](../docs/systems/RockCatalogAndTuning.md). Note that
-all six rocks currently ship identical multipliers — deliberately, but it means the selection UI
-offers a choice that does not yet change anything. See
-[`../docs/ProjectState.md`](../docs/ProjectState.md).
+[`../docs/systems/RockCatalogAndTuning.md`](../docs/systems/RockCatalogAndTuning.md).
+
+**All six rocks ship identical multipliers, and as of 2026-09-08 that is the design, not a gap.**
+[`../docs/plans/presentation-and-ui.md`](../docs/plans/presentation-and-ui.md) D5 settles that
+rocks differentiate by mesh and silhouette and are named on the scoreboard, while staying
+mechanically identical; milestone 8's acceptance criterion was rewritten to match. Two rules that
+follow, both easy to break by accident:
+
+- **The player's colour always wins the tint.** `RockDefinition.Tint` exists and the catalog
+  builder preserves hand-edits to it, but colour is player identity on a TV — never rock identity.
+- **`Print Skip Curve` showing all six behaving identically is the expected result**, not a
+  failing check. Its job here is the energy invariant.
 
 ### Scoring
 

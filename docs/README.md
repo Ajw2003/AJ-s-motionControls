@@ -77,6 +77,7 @@ have already cost someone a day.
 
 | Doc | What it is |
 |---|---|
+| [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) | **The plan for most of what is left.** Art direction, the in-play HUD, retiring IMGUI for UI Toolkit, rock differentiation, and the order to do it in. Drives milestone 9, and it rewrote milestone 8's acceptance criterion |
 | [`ZeroSetupPlan.md`](ZeroSetupPlan.md) | The plan for shipping to someone else's PC. Milestone 10; still the authority on the four blockers |
 | [`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md) | Why the certificate is what it is. Executed, and still the reference for the design |
 | [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) | Why Mobile Hotspot beat Wi-Fi Direct. Resolved decision, kept for the reasoning |

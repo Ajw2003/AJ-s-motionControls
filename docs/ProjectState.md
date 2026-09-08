@@ -10,10 +10,16 @@ file when a milestone's status changes; update the roadmap only when the *defini
 
 ## Headline
 
-**Roughly 75%.** Milestones 1–7 are complete. Milestone 8 is built but not finished — the six
-rocks exist and are selectable, and they are mechanically identical to each other. Milestone 9 is
-partially built with a non-code blocker. Milestone 10 has not started, and its first blocker
-fails before any of the others is reached.
+**Roughly 75%.** Milestones 1–7 are complete. **Milestone 8 is one authoring pass from done** —
+its acceptance criterion was rewritten on 2026-09-08 so that the six rocks differentiate
+visually rather than mechanically, which is a decision, not a concession. Milestone 9 is the
+whole of the remaining work and now has a plan behind it. Milestone 10 has not started, and its
+first blocker fails before any of the others is reached.
+
+**The centre of gravity moved on 2026-09-08.** Everything left is presentation, and
+[`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) is the document that now drives
+it. It settles fifteen decisions across art direction, the UI framework, the in-play HUD, rock
+differentiation and sequencing. Read it before starting anything below.
 
 | # | % | Milestone | Status |
 |---|---|---|---|
@@ -24,37 +30,40 @@ fails before any of the others is reached.
 | 5 | 50 | Local hosting and secure context | ✅ Done |
 | 6 | 60 | Offline hosting | ✅ Done |
 | 7 | 70 | Frictionless join | ✅ Done |
-| 8 | 80 | Rock variety and selection | 🟡 **Built, not done** — the rocks do not differ |
-| 9 | 90 | Presentation | 🟡 Partial, blocked on a non-code decision |
+| 8 | 80 | Rock variety and selection | 🟡 Criterion rewritten 2026-09-08 — one authoring pass left |
+| 9 | 90 | Presentation | 🟡 Partial — **now planned in full**, two non-code blockers |
 | 10 | 100 | Zero-setup distribution | ❌ Not started |
 
 ---
 
 ## The one thing that is not what it looks like
 
-**Milestone 8 reads as nearly finished and is not.** Every piece of machinery exists: six
-`RockDefinition` assets, six `SkipTuning` assets, a catalog in `Resources/`, `RockSelection`,
-`ShoreRocks` pointing-to-pick, a host settings panel, editor tooling to rebuild the catalog, and
-both an offline sweep and in-play telemetry to compare rocks.
+**The game has no in-play HUD, and this reads as a polish gap when it is a gameplay one.**
 
-All six tunings hold identical values:
+During a throw the TV shows no scoreboard, no turn indicator, no skip counter, no distance. The
+number the whole game is *about* exists only as a `Debug.Log`
+([RockController.cs:281](../Assets/Scripts/Game/RockController.cs:281)) — visible in the Editor
+console and nowhere else. A spectator on the couch cannot tell whose turn it is or how the
+current throw is going without asking the person holding the phone.
 
-```
-Assets/Rocks/Tuning/Rock_01.asset … Rock_06.asset
-  SpinMultiplier: 1
-  VerticalMultiplier: 1
-  HorizontalMultiplier: 1
-```
+Everything needed to fix it already fires. `SkipOccurredEvent` is published per bounce,
+`SPECTATE` already carries a per-player score map, and the chase camera settles the stone at
+frame centre with empty sky above it
+([RockLauncher.cs:132-148](../Assets/Scripts/Game/RockLauncher.cs:132)) — so a top-centre counter
+has somewhere to live. It is not blocked on anything. It has simply never been built, and its
+absence is easy to miss because every *screen* exists and only the in-match layer does not.
 
-This is deliberate and documented — `SkipTuning.cs:22` says the physics is being evaluated bare
-first, so that every difference between two throws is the throw. It is the right call and it was
-made on purpose. But it means the milestone's acceptance criterion ("each plays measurably
-differently under `Print Skip Curve`") is **not met**, and cannot be met by any amount of further
-code. What is left is authoring: deciding what a Skimmer is versus a Shard, and putting numbers
-on it.
+[`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) D4 specifies it, and ranks the
+live per-bounce counter as the single highest-value item in the remaining project.
 
-Six rocks that look different and skip identically is a worse player experience than one rock,
-because it invites a choice that does not matter.
+### What this section used to say
+
+It used to say milestone 8 read as nearly finished and was not, because all six rocks ship
+`SpinMultiplier: 1`, `VerticalMultiplier: 1`, `HorizontalMultiplier: 1` and therefore skip
+identically. That is still **factually true of the assets**, but it is no longer a gap: D5
+settles that the rocks differentiate visually and stay mechanically identical, and
+[`Roadmap.md`](Roadmap.md) milestone 8's acceptance criterion was rewritten to match. Mechanical
+character is deferred deliberately, along one axis, when there is playtest budget for it.
 
 ---
 
@@ -127,20 +136,43 @@ of what died and how.
 Built: catalog, definitions, tunings, selection state and wire format, shore-pointing UI, host
 settings panel, editor tooling, telemetry, offline sweep.
 
-Not done: **the rocks do not differ.** See above. This is the single item standing between the
-project and 80%.
+**Remaining, under the criterion as rewritten on 2026-09-08:** make each rock read as distinct
+on the TV, and name the chosen rock on the scoreboard. The six meshes are already distinct; what
+is missing is the scoreboard itself, which arrives with the HUD in milestone 9. So milestone 8
+now closes *behind* part of milestone 9 rather than ahead of it.
+
+One constraint from D5 that is easy to get wrong: **the player's colour always wins the tint.**
+Do not give rocks their own colour identity — a player's blue rock rendered in the rock's own
+grey reads as a bug, and colour is how five people tell themselves apart on a TV.
 
 ### 9 — Presentation 🟡
 
 Built: `AudioManager`, the six audio events, the core SFX set (skip pitch ladder, sink, fail,
 score, win), trails, water ripples, the URP migration, arc colour and ghost glow.
 
-Not built: music (`MusicDirector`, crossfading), the same-frame sound-collision scheduler, and
-most of the polish list.
+Not built, and this is now most of the remaining project: the entire art direction, the in-play
+HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame
+sound-collision scheduler.
 
-**Blocked on a decision, not on code:** where source clips come from — licensed pack,
-commissioned, or generated. The current SFX are procedurally generated by
-`RockSkipping/Rebuild Audio Bank`, which is why the milestone has got this far without an answer.
+**Planned in full as of 2026-09-08.** [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md)
+carries fifteen decisions and a nine-phase sequence. The order matters and is deliberate: **art
+before UI**, because the HUD's colours are chosen against the sky, and building the HUD first
+means picking them against a default skybox that is about to be deleted.
+
+The state the plan starts from, stated plainly because it is easy to under-estimate: the entire
+art content of this project is two FBX files, one shader and two materials.
+[`Scenes/Game.unity`](../Assets/Scenes/Game.unity) holds exactly two GameObjects — a camera and a
+directional light — and the lake is a runtime `CreatePrimitive(Plane)`. Every TV screen is legacy
+IMGUI rendered in Unity's built-in Arial.
+
+**Two blockers, neither of them code:**
+
+- **Where source clips come from** — licensed pack, commissioned, or generated. Still open. The
+  current SFX are procedurally generated by `RockSkipping/Rebuild Audio Bank`, which is why the
+  milestone has got this far without an answer.
+- **Which typeface, and under what licence.** There is no font asset in the repository at all.
+  D10 settles the shape — heavy-weight SIL-OFL, committed to `Assets/Fonts/` with its `OFL.txt`,
+  never fetched at runtime because the product is built to work offline — but not the face.
 
 ### 10 — Zero-setup distribution ❌
 

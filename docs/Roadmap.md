@@ -174,13 +174,23 @@ split between what a rock owns (three bounded multipliers) and what is global; t
 state and its wire format; pointing the phone at the shore to highlight a stone and confirming
 it; a host settings panel; telemetry and an offline sweep to compare rocks against each other.
 
-**Acceptance:** six rocks are selectable, each plays measurably differently under
-`Print Skip Curve`, a player picks one by pointing their phone at the shore, and the pick
-survives into their throw.
+**Acceptance:** six rocks are selectable, each is **visually distinct on the TV and named on the
+scoreboard**, a player picks one by pointing their phone at the shore, and the pick survives
+into their throw.
 
-**The open dependency:** the three multipliers currently ship at `1.0` on every rock on purpose,
-so the physics could be judged bare first. Authoring real character is part of this milestone,
-not a follow-up.
+**This acceptance criterion changed on 2026-09-08**, and the change is the point. It previously
+read "each plays measurably differently under `Print Skip Curve`". That is now unmeetable by
+design: [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) D5 settles that the rocks
+stay **mechanically identical** and differentiate visually only — distinct meshes and
+silhouettes, named on the scoreboard, with the player's colour always winning the tint, because
+identity in a five-phone party game outranks a cosmetic choice.
+
+**Mechanical differentiation is deliberately deferred, not abandoned.** Three multipliers across
+six rocks is a balance problem with no playtest budget behind it. `SkipTuning.cs:22` records why
+the physics is being judged bare first, and that reasoning still stands. When it is picked up,
+do it along **one** legible axis — flat-and-light skips more but travels less, heavy travels far
+but skips less — because one axis is explainable in a sentence on the phone's choose screen and
+three axes are noise.
 
 ---
 
@@ -189,15 +199,23 @@ not a follow-up.
 It stops looking like a prototype.
 
 **Contains:** audio — the skip pitch ladder, sink, fail, score and win sounds, and the scheduler
-that stops same-frame sounds colliding; trails and water response; camera framing; the visual
-polish list in priority order; music.
+that stops same-frame sounds colliding; trails and water response; camera framing; music. Plus,
+as of 2026-09-08, the whole of [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md):
+the stylised-flat art direction and environment presets, the shore, the retirement of IMGUI in
+favour of UI Toolkit, and **the in-play HUD** — which does not currently exist in any form.
 
 **Acceptance:** someone watching a match from the couch, who has not been told what to look for,
-does not notice anything missing.
+does not notice anything missing. Concretely, and this is new: they can see **whose turn it is
+and how many skips the throw is on, without asking anyone.**
 
-**Known blocker, and it is not code:** where source clips come from — licensed, commissioned, or
-generated — is an unanswered question. The systems work without clips; the milestone does not
-close without them.
+**Two known blockers, and neither is code:**
+
+- **Where source clips come from** — licensed, commissioned, or generated. Still unanswered. The
+  systems work without clips; the milestone does not close without them.
+- **Which typeface**, and under what licence. The project contains **no font asset at all** and
+  renders every screen in Unity's built-in Arial. Same class of blocker as the clips, found
+  2026-09-08. D10 of the plan settles the shape of the answer — a heavy-weight SIL-OFL face
+  committed to `Assets/Fonts/`, never fetched at runtime — but not the specific face.
 
 ---
 

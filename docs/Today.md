@@ -1,108 +1,117 @@
-# Today — 2026-09-08
+# Today — 2026-09-08 (second session)
 
 **Tier 5.** What is being worked on today and why that rather than something else. Rewritten each
 working session. If this file is more than a few days old, it is not today's plan — it is a record
 of a day that has passed.
 
-Written *after* tiers 1–4, deliberately. The point of planning last is that the plan follows from
-knowing where you actually stand, rather than from what felt urgent at the start of the session.
+The earlier session today was the documentation audit and the five-tier rebuild; that record is in
+[`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md). This session replaced the plan
+that came out of it, so this file is rewritten rather than appended to.
 
 ---
 
-## Today was a documentation day
+## Today was a design session, and it changed the plan
 
 **Done:**
 
-- Audited all 31 tracked markdown files against redundancy, relevance and factual accuracy —
-  [`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md)
-- Built the five-tier structure: this file, [`README.md`](README.md), [`Roadmap.md`](Roadmap.md),
-  [`ProjectState.md`](ProjectState.md), and seven system docs under [`systems/`](systems/)
-- Moved 10 inert documents to [`archive/`](archive/) with an index saying why each is inert
-- Repaired all 20 broken links; corrected the certificate facts in `OfflineSetup.md`,
-  `Decision-OfflineHosting.md` and `ZeroSetupPlan.md`; corrected the Unity version in
-  `Assets/CLAUDE.md` (said `6000.3.10f1`, is `6000.3.15f1`)
-- Turned `MASTER-PLAN.md` into a redirect
+- Interrogated the UI, the art and the gameplay against the actual code rather than against the
+  docs describing it. Twenty-one questions over five rounds.
+- Wrote [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) — fifteen numbered
+  decisions, a nine-phase sequence, and a table of the environment facts that drove them.
+- Brought tiers 1–4 into line with it: this file, [`README.md`](README.md),
+  [`Roadmap.md`](Roadmap.md), [`ProjectState.md`](ProjectState.md),
+  [`systems/RockCatalogAndTuning.md`](systems/RockCatalogAndTuning.md), and `Assets/CLAUDE.md`.
 
 **Not done, and deliberately not done:** nothing in `Assets/`, `relay/` or `controller/` was
-changed. No source file was edited beyond a doc-link comment audit that produced findings rather
-than edits.
+changed except the `CLAUDE.md` paragraph describing the rock decision. No scene was deleted, no
+source edited, no git command run. Plan phase 6 deletes `Scenes/MainMenu.unity`; that is an
+action, not a documentation update, and it is still pending.
 
 ---
 
-## What the audit surfaced that is not a documentation problem
+## What the interrogation surfaced
 
-These came out of reading the code to write tier 4. They are recorded here because they were found
-today; they are engineering work, not doc work.
+These came out of reading the code, not the docs. Each one changed a decision.
 
-### 1. Source comments cite deleted documents
+### 1. There is no in-play HUD, and that is a gameplay hole
 
-Nothing breaks — they are comments, not links — but a reader following them finds nothing:
+No scoreboard, no turn indicator, no skip counter during a throw. The skip count exists only as a
+`Debug.Log` ([RockController.cs:281](../Assets/Scripts/Game/RockController.cs:281)). This is now
+the highest-value single item in the project and it is blocked on nothing.
 
-| File | Cites |
-|---|---|
-| `SkipConstants.cs:12` | `docs/plans/Plan-ThrowDrivenSkipModel.md` |
-| `SkipTuning.cs:11`, `:25` | `Plan-ThrowDrivenSkipModel.md`, `Plan-SkipEnergyInvariant.md` |
-| `SkipPhysics.cs` (remarks) | both of the above |
-| `RockCatalog.cs:64` | `Plan-ThrowDrivenSkipModel.md` |
-| `Bootstrap.cs:93`, `:116` | `docs/plans/rock-choosing-system.md` |
-| `CertificateProvider.cs:31` | `SecurityReview.md` |
-| `MagicDnsFallback` references in `dns.js` comments | `SecurityReview.md` |
+### 2. The project contains no font asset at all
 
-### 2. `StartScreen.cs:21` cites the wrong document
+Every screen renders in Unity's built-in Arial, on a TV, at couch distance. This is a sourcing and
+licensing decision of the same class as the audio-clips blocker, and it had never been written
+down as one. It now sits in [`Roadmap.md`](Roadmap.md) milestone 9 alongside the clips.
 
-It explains the removal of the LAN/Hotspot picker by pointing at
-`docs/plans/remove-direct-transport.md`. That plan removed the WebRTC transport; the picker
-removal is in `plans/magic-domain-replacement.md` Phase 3.
+### 3. UI Toolkit is free; uGUI + TextMeshPro is not
 
-### 3. `docs/DeviceMatrix.md` is entirely placeholders
+`Packages/manifest.json` has `com.unity.modules.uielements` but no `com.unity.ugui`. That, plus
+this repo's build-in-code-not-prefabs convention, settled the framework question on facts rather
+than taste.
 
-Every row is `TODO`. The file says so itself. This is cited as evidence in
-`grant/02-innovation-claims.md`, so it matters more than a normal stale doc — a grant reviewer who
-opens it finds an empty table behind a cross-platform claim.
+### 4. Half the "waiting phones are bored" problem is already built
+
+`SPECTATE` already carries a per-player score map and the controller already renders it. Only the
+live skip count is missing, and it is one field on an existing broadcast rather than a new message
+type.
+
+### 5. A `Time.timeScale` slow-motion beat would have been a bug
+
+`RockController` steps the solver at `_constants.FixedStep` inside `Update()`, so scaling time
+would silently change throw outcomes. The cinematic final-bounce beat was agreed and then dropped
+in the same session; the reasoning is preserved in the plan as D7 so it is not rediscovered the
+hard way.
 
 ---
 
 ## What to do next, in order
 
-Ranked by what unblocks what, not by size.
+Ranked by what unblocks what. **This ordering replaces the previous one**, which led with
+authoring the six rocks — a task the plan's D5 has since removed.
 
-### Next — author the six rocks (milestone 8, and the only thing between 75% and 80%)
+### Next — phase 1 of the plan: the art pass
 
-All six `SkipTuning` assets ship `SpinMultiplier: 1`, `VerticalMultiplier: 1`,
-`HorizontalMultiplier: 1`. Every piece of machinery around them is built. Six rocks that look
-different and skip identically invite a choice that does not matter.
+Sky gradient, fog to the horizon, golden-hour light, bloom and a warm tonemap on the URP Volume
+already installed, and shore geometry so the six selectable rocks stop floating on nothing.
 
-This is an **authoring** task, not a coding one: decide what a Skimmer is versus a Shard, put
-numbers on it, and check with `RockSkipping/Verify/Print Skip Curve`, which already sweeps per
-rock and would currently show all six identical. The acceptance criterion in
-[`Roadmap.md`](Roadmap.md) milestone 8 is exactly this.
+It is first because it needs no font decision, no framework learning and no new packages, it is
+roughly a day, and it changes every screenshot. It also has to precede the HUD: the HUD's colours
+are chosen against the sky, and building it first means choosing them against a default skybox
+that is about to be replaced.
 
-It is first because it is the only remaining item in the milestone, it needs no new systems, and
-the verification tool for it already exists.
+### Then — phase 2: environment presets and their validator
 
-### Then — fill in `DeviceMatrix.md`
+`EnvironmentPreset` + catalog, mirroring the `RockCatalog` → `Assets/Rocks/` pattern exactly.
+Golden hour and one contrasting blue-hour, because a preset system with one entry has never been
+proven to work. The validator earns its menu item on four checks — fog actually hides the water
+plane's far edge, the sun is above the horizon, HUD text clears a contrast ratio against the sky,
+and no preset is orphaned from the catalog.
 
-Cheap, and it is the difference between a claim and evidence. The knowledge exists; it is just not
-written down. Do not invent rows — a wrong row is worse than a missing one, and this file is cited
-in grant applications.
+### Then — phases 3 and 4: the font, the editor tooling, and the HUD
 
-### Then — decide where audio clips come from (milestone 9's real blocker)
+Answer the typeface question, commit the face and its `OFL.txt`, build the state driver and the
+runtime tuning panel, then build the in-play HUD in UI Toolkit. The HUD is new code with no
+regression surface, which makes it the right screen to learn the framework on.
 
-Licensed pack, commissioned, or generated. It is a decision, not a task, and it has been open long
-enough that the audio milestone has gone as far as it can without it. Everything currently
-shipping is procedurally generated by `RockSkipping/Rebuild Audio Bank`.
+### Then — phases 5 to 7: the IMGUI port, `JoinScreen` last
 
-### Then — milestone 10, blocker 3 first
+Results, then Start and MatchSettings, then `JoinScreen` on its own with a hardware test session
+attached. It is 609 lines closed after ten rounds of hardware testing and it is the only screen
+where "it looked fine in the Editor" is not evidence.
 
-`relay/` and `controller/` are not in the build. A downloaded build fails there before reaching
-the bundled-Node or runtime-dependency blockers, so it is the one to attack first. Everything else
-in [`ZeroSetupPlan.md`](ZeroSetupPlan.md) is downstream of it.
+### Still open, unchanged by today
 
-### Low priority, whenever
-
-- Fix the seven source comments in §1 above and the mis-citation in §2 — a five-minute pass
-- Surface certificate days-remaining on the join screen below a threshold
-- Prune the 33 local / 40 remote branches, several of which name work that has already landed
+- **Fill in [`DeviceMatrix.md`](DeviceMatrix.md).** Every row is `TODO` and it is cited as
+  evidence in `grant/02-innovation-claims.md`. Do not invent rows.
+- **Decide where audio clips come from.** Open long enough that milestone 9's audio half has gone
+  as far as it can without an answer.
+- **Milestone 10, blocker 3 first** — `relay/` and `controller/` are not in the build, and a
+  downloaded build fails there before reaching the others.
+- **Fix the seven source comments citing deleted documents**, and the mis-citation at
+  `StartScreen.cs:21`. A five-minute pass — and note that `StartScreen.cs` is scheduled for a
+  UI Toolkit port in phase 5, so doing both at once is cheaper.
 
 ---
 
@@ -112,5 +121,5 @@ in [`ZeroSetupPlan.md`](ZeroSetupPlan.md) is downstream of it.
 - A day whose plan is "routine audit, check for documentation drift" is a legitimate plan and
   should be written down as one.
 - If today's work does not map to a milestone in [`Roadmap.md`](Roadmap.md), say so explicitly and
-  say why. Today's did not — documentation belongs to no milestone — and that is fine, but it is
-  worth being deliberate about rather than drifting into.
+  say why. Today's work maps to milestone 9, and to the rewriting of milestone 8's acceptance
+  criterion — which is a tier-2 change, and tier 2 changing is rare enough to be worth noticing.

@@ -63,7 +63,7 @@ The constraint is structural, not validator-enforced: a rock has no field to dis
 `RockCatalog.Validate()` used to enforce that every rock's tuning agreed on shared fields like
 `MaxSpeed` and `Gravity`; those fields no longer exist, so it cannot drift.
 
-## Current state — the rocks do not differ
+## Current state — the rocks differ visually, not mechanically, and that is now the design
 
 All six tunings ship identical values:
 
@@ -74,12 +74,25 @@ HorizontalMultiplier: 1
 ```
 
 **This is deliberate** (`SkipTuning.cs:22`): the physics is being evaluated bare first, so that
-every difference between two throws is the throw. Rock character gets authored once that reads
-well.
+every difference between two throws is the throw.
 
-It is also **the one thing standing between the project and milestone 8**. Six rocks that look
-different and skip identically is a worse experience than one rock, because it invites a choice
-that does not matter. See [`../ProjectState.md`](../ProjectState.md).
+**As of 2026-09-08 it is also the settled design, not a gap.**
+[`../plans/presentation-and-ui.md`](../plans/presentation-and-ui.md) D5 keeps the rocks
+mechanically identical and differentiates them by mesh and silhouette, with the chosen rock
+**named on the scoreboard**. [`../Roadmap.md`](../Roadmap.md) milestone 8's acceptance criterion
+was rewritten to match. This document previously said the identical tunings were "the one thing
+standing between the project and milestone 8" — they are not, any more.
+
+Two consequences for anyone working in this file's area:
+
+- **Do not give a rock its own tint.** `RockDefinition` carries a `Tint` field and the catalog
+  builder preserves hand-edits to it, but the **player's colour always wins** at render time.
+  Colour is how five people tell themselves apart on a TV; a player's blue rock rendered in the
+  rock's own grey reads as a bug, not as flavour.
+- **Mechanical character is deferred, not cancelled.** When it is picked up, put the six rocks on
+  **one** legible axis — flat-and-light skips more but travels less, heavy travels far but skips
+  less. One axis fits in a sentence on the phone's choose screen; three axes are noise and a
+  balance problem nobody has playtest budget for.
 
 ## Selection
 
@@ -142,4 +155,7 @@ roughly 70 fields for a naming-taste win.
 ## Verification
 
 `RockSkipping/Rocks/Validate Catalog`, then `RockSkipping/Verify/Print Skip Curve` — which sweeps
-**per rock**, and is therefore the check that would currently show all six behaving identically.
+**per rock**, and therefore currently shows all six behaving identically. **That is now the
+expected result, not a failure** (see "Current state" above): the sweep's job here is the energy
+invariant every run must satisfy, not proving the rocks apart. It becomes a differentiation check
+again only if mechanical character is ever authored.
