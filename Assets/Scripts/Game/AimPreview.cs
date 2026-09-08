@@ -584,6 +584,25 @@ namespace Game
         public const float WaterReachFromOrigin =
             WaterCentreZ + WaterPlaneBaseSize * WaterPlaneScale * 0.5f;
 
+        /// <summary>
+        /// How far down the lake the far bank sits, in metres. Well past the ~50 m a throw
+        /// covers, so it is never in the flight path, and inside the camera's 1000-unit far
+        /// clip so it is not cut off by the frustum.
+        /// </summary>
+        /// <remarks>
+        /// Pulled in from 480 m, and the reason is the fog rather than the composition. Linear
+        /// fog runs 120 m to 600 m, so at 480 m the bank is about three-quarters faded into the
+        /// horizon colour — only a quarter of its own colour survives, which is why a sand
+        /// colour there still rendered as blue-grey. It reads as haze, and haze cannot be
+        /// recoloured by choosing a different albedo.
+        ///
+        /// At 320 m roughly 58% of the material colour comes through, which is enough for sand
+        /// to look like sand while still leaving the distance haze that makes it sit back behind
+        /// the lake. Still six times further out than a throw travels, so nothing about the
+        /// flight path changes.
+        /// </remarks>
+        private const float ShoreDistance = 320f;
+
         private void BuildPlaceholderScene()
         {
             var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -627,12 +646,31 @@ namespace Game
             var horizon = new Color(0.42f, 0.58f, 0.74f);
 
             camera.transform.position = new Vector3(0, 2f, -3);
-            camera.transform.LookAt(new Vector3(0f, 0f, 4f));
+            camera.transform.rotation = Quaternion.Euler(PitchForHorizonFraction(camera), 0f, 0f);
             camera.backgroundColor = horizon;
+
+            // SolidColor, and a SKYBOX IS NOT AN OPTION HERE. Tried and measured: a gradient
+            // skybox renders correctly and the lake disappears completely.
+            //
+            // The reason is the water's depth behaviour, not the skybox. Clearing to a solid
+            // colour happens BEFORE any geometry, so the water draws over it. URP's skybox pass
+            // instead runs AFTER opaques and relies on the depth buffer to skip pixels already
+            // covered — and WaterRipples keeps the water's ZWrite OFF except for the length of a
+            // sink (see PlaceholderArt.SetWaterDepthWrite, which explains why: with depth on,
+            // the water swallows the stone). Writing no depth, the water leaves nothing for the
+            // skybox pass to test against, so the sky paints straight over the lake.
+            //
+            // So a gradient sky needs either water that writes depth — which reintroduces the
+            // stone-cut-in-half bug that toggle exists to prevent — or a background quad drawn
+            // at the Background queue before the water rather than RenderSettings.skybox. Do not
+            // simply set a skybox and expect it to work; it will look fine in isolation and take
+            // the lake with it.
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 1000f;
 
+            BuildSkyBackdrop(camera, horizon);
             AngleTheSun();
+            BuildFarShore();
 
             // The lake is 2000 units across (a 10-unit Plane scaled by 200) but the far
             // clip is 1000, so the far half is cut off by the frustum and the cut shows as
@@ -651,6 +689,236 @@ namespace Game
             RenderSettings.fogColor = horizon;
             RenderSettings.fogStartDistance = 120f;
             RenderSettings.fogEndDistance = 600f;
+        }
+
+        /// <summary>
+        /// How far in front of the camera the sky quad sits. Any value inside the far clip
+        /// works — it writes no depth and is drawn before everything — so this is only large
+        /// enough that near-plane clipping can never reach it.
+        /// </summary>
+        private const float SkyQuadDistance = 50f;
+
+        /// <summary>
+        /// A gradient-and-cloud backdrop, drawn behind everything as a camera-parented quad.
+        /// </summary>
+        /// <remarks>
+        /// A quad rather than <c>RenderSettings.skybox</c>, and that is not a stylistic choice.
+        /// A skybox was tried and measured: it rendered correctly and the lake vanished
+        /// completely. URP's skybox pass runs AFTER opaques and skips pixels the depth buffer
+        /// says are covered — and the water writes no depth (WaterRipples holds its ZWrite off
+        /// except during a sink), so the sky painted straight over the lake. A Background-queue
+        /// quad draws BEFORE the water instead, so the water lands on top of it exactly as it
+        /// lands on the camera's clear colour today.
+        ///
+        /// Parented to the camera so it follows the chase without ever leaving the frustum. The
+        /// gradient itself is computed from the world view direction inside the shader, not from
+        /// the quad's UVs, so it still tilts like real sky when the camera pitches to follow a
+        /// throw — a UV gradient would be welded to the screen and would not.
+        ///
+        /// Failure leaves the flat clear colour, which is the previous look rather than a broken
+        /// one, and says WHICH failure it was: not found, versus found but failed to compile.
+        /// Both render identically and need entirely different fixes.
+        /// </remarks>
+        private void BuildSkyBackdrop(Camera camera, Color horizon)
+        {
+            var shader = Resources.Load<Shader>("SkyBackdrop");
+
+            if (shader == null)
+            {
+                Debug.LogWarning("[AimPreview] Resources/SkyBackdrop.shader NOT FOUND — keeping " +
+                                 "the flat sky. Expected at Assets/Resources/SkyBackdrop.shader.");
+                return;
+            }
+
+            if (!shader.isSupported)
+            {
+                Debug.LogWarning("[AimPreview] Resources/SkyBackdrop.shader FAILED TO COMPILE — " +
+                                 "keeping the flat sky. The shader error is logged above this.");
+                return;
+            }
+
+            var material = new Material(shader) { renderQueue = 1000 };
+            material.SetColor("_SkyTop", new Color(0.16f, 0.34f, 0.62f));
+            material.SetColor("_SkyHorizon", horizon);
+
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "SkyBackdrop";
+            Destroy(quad.GetComponent<Collider>());
+
+            var renderer = quad.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+
+            // No shadows either way. It is a backdrop: casting would drop a rectangle across the
+            // lake, and receiving would let the sun's angle darken the sky.
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            quad.transform.SetParent(camera.transform, false);
+            quad.transform.localPosition = new Vector3(0f, 0f, SkyQuadDistance);
+            quad.transform.localRotation = Quaternion.identity;
+
+            // Sized to the frustum at that distance, with margin. Height is the exact frustum
+            // height; width comes from the aspect ratio — and the margin covers both rounding
+            // and a window whose aspect is wider than the one this was measured at, either of
+            // which would otherwise leave the clear colour showing in a corner.
+            var height = 2f * SkyQuadDistance * Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            var width = height * Mathf.Max(camera.aspect, 2.4f);
+            quad.transform.localScale = new Vector3(width * 1.2f, height * 1.2f, 1f);
+        }
+
+        /// <summary>
+        /// Fraction of the screen height, measured from the top, where the horizon should sit.
+        /// </summary>
+        private const float HorizonScreenFraction = 1f / 3f;
+
+        /// <summary>
+        /// The camera pitch, in degrees, that puts the horizon at
+        /// <see cref="HorizonScreenFraction"/> down the screen.
+        /// </summary>
+        /// <remarks>
+        /// Computed rather than dialled in by hand, because the answer depends on the camera's
+        /// field of view and a hardcoded angle silently stops being correct the moment somebody
+        /// changes it. The previous LookAt put the horizon about a quarter of the way down,
+        /// which read as slightly too much water and not enough sky.
+        ///
+        /// The maths: a ray at angle t above the camera's forward direction lands at
+        /// tan(t)/tan(halfFov) in normalised device coordinates, where 1 is the top of the
+        /// frame. The horizon is the ray with world direction y = 0, so pitching the camera down
+        /// by t puts the horizon t above centre. Solve for the wanted position and the pitch
+        /// falls out.
+        ///
+        /// Note it is tan-proportional, not linear — half the FOV is not half the screen — which
+        /// is exactly the sort of thing that makes hand-tuned angles drift.
+        /// </remarks>
+        private static float PitchForHorizonFraction(Camera camera)
+        {
+            // NDC offset above centre: 0.5 is the top of the frame, so a horizon a third of the
+            // way down sits (0.5 - 1/3) of the full height above centre, doubled to express it
+            // against the half-height the tangent relation uses.
+            var offsetFromCentre = (0.5f - HorizonScreenFraction) * 2f;
+
+            var halfFovRadians = camera.fieldOfView * 0.5f * Mathf.Deg2Rad;
+            var pitchRadians = Mathf.Atan(offsetFromCentre * Mathf.Tan(halfFovRadians));
+
+            // Positive Euler X pitches the camera DOWN in Unity, which is what pushes the
+            // horizon up the screen and leaves more sky above it.
+            return pitchRadians * Mathf.Rad2Deg;
+        }
+
+        /// <summary>
+        /// A low bank across the far end of the lake, so the water meets land instead of ending.
+        /// </summary>
+        /// <remarks>
+        /// FAR, not near, and that is the correction to the obvious placement. A bank behind the
+        /// throw origin is the intuitive choice — it keeps geometry out of the flight path — and
+        /// it is invisible: the camera sits at z = -3 looking toward +z, so anything behind the
+        /// origin is behind the camera and appears in no frame. A headless capture of that
+        /// version showed nothing at all.
+        ///
+        /// Across the far end it is out of the flight path anyway (a throw covers about 50 m,
+        /// this sits at <see cref="ShoreDistance"/>) and it does a job the near bank could not:
+        /// it gives the horizon something to be, so the six selectable stones stop reading as
+        /// floating on an empty plane.
+        ///
+        /// Drawn at PlaceholderArt.ShoreQueue, BELOW the water's queue. That is not a detail —
+        /// at or above it, the bank paints over the entire lake, because the water writes no
+        /// depth for it to be occluded by.
+        /// </remarks>
+        private static void BuildFarShore()
+        {
+            var bank = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            bank.name = "FarShore";
+            Destroy(bank.GetComponent<Collider>());
+
+            // A flattened cube rather than a Plane: a Plane is single-sided and shows as a hole
+            // from underneath, and the water sits at y = 0 with the camera slightly above it.
+            //
+            // Wide enough to cross the whole frustum at this distance. A strip that ends inside
+            // the view reads as an island, and an island nobody can reach raises a question the
+            // game never answers.
+            //
+            // Sized for the distance, not for the ruler. A measured capture at 480 m showed a
+            // 6-unit bank as a five-pixel hairline nobody would read as land. Standing ~10 units
+            // above the waterline at 320 m is a low ridge rather than a wall.
+            bank.transform.position = new Vector3(0f, 1f, ShoreDistance);
+            bank.transform.localScale = new Vector3(1600f, 18f, 140f);
+            bank.GetComponent<MeshRenderer>().sharedMaterial = Sand();
+
+            BuildDunes();
+        }
+
+        /// <summary>
+        /// The shore material — sand, picked for what survives the fog rather than for realism.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately far brighter and warmer than sand actually is. Linear fog runs 120 m to
+        /// 600 m, so at <see cref="ShoreDistance"/> roughly 40% of this is already replaced by
+        /// the horizon's blue-grey before it reaches the screen; a realistic sand albedo arrives
+        /// as mud. Picked for the far side of the fog, not the inspector swatch — which is also
+        /// why moving <see cref="ShoreDistance"/> means re-checking this colour.
+        /// </remarks>
+        private static Material Sand() =>
+            PlaceholderArt.Create(new Color(0.86f, 0.74f, 0.52f), PlaceholderArt.ShoreQueue);
+
+        /// <summary>
+        /// Low mounds along the bank, so the shoreline has a silhouette instead of a straight
+        /// edge.
+        /// </summary>
+        /// <remarks>
+        /// <b>Spheres, never cubes.</b> A previous attempt at shore detail used rotated cubes,
+        /// and a capture showed exactly what they are — a row of shipping containers along the
+        /// horizon. Hard vertical edges catch the light identically on every instance, and at
+        /// this distance that regularity is the only thing the eye picks up. A squashed sphere
+        /// has no edge to catch, so it reads as a landform at any size.
+        ///
+        /// Sunk into the bank rather than resting on it. A mound sitting exactly on a flat strip
+        /// draws a contact line under itself, and thirty of those in a row read as objects placed
+        /// on a shelf rather than as terrain.
+        ///
+        /// Seeded Random so the coastline is identical every run. An unseeded scatter means a
+        /// screenshot cannot be reproduced and "it looked better last time" is unanswerable —
+        /// which matters here specifically because this gets tuned by capturing it.
+        /// </remarks>
+        private static void BuildDunes()
+        {
+            var sand = Sand();
+            var random = new System.Random(20260908);
+
+            for (var i = 0; i < 30; i++)
+            {
+                var dune = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                dune.name = $"Dune_{i:00}";
+                Destroy(dune.GetComponent<Collider>());
+                dune.GetComponent<MeshRenderer>().sharedMaterial = sand;
+
+                var spread = (float)(random.NextDouble() * 1500.0 - 750.0);
+
+                // BEHIND the bank's centre only, never in front of it. Allowing them either side
+                // put one dune ~45 m nearer than the rest, and a capture showed it as a single
+                // oversized blob dominating the horizon: at this distance, 45 m of depth is a
+                // large change in apparent size. Keeping them all at or behind the bank line
+                // means the spread reads as coastline rather than as one thing in the wrong place.
+                var depth = ShoreDistance + (float)(random.NextDouble() * 60.0);
+
+                // Narrow range for the same reason. Wide size variation plus depth variation
+                // multiply into silhouettes that look unrelated to each other.
+                var size = (float)(random.NextDouble() * 14.0 + 10.0);
+
+                // Wide and low — dunes, not domes. The vertical squash stops a sphere reading as
+                // a ball.
+                //
+                // Sat relative to the BANK TOP, not to the waterline, and that is the whole
+                // trick. Placed at their own scale off y = 0 they finished around y = 7 while
+                // the bank top is at y = 10, so every one of them was swallowed whole and the
+                // shoreline came back as a perfectly flat band. They have to be lifted to the
+                // bank's surface first, and only then can their size decide how far they crest
+                // above it.
+                const float bankTop = 10f;
+                dune.transform.position = new Vector3(spread, bankTop - 1f + size * 0.15f, depth);
+                dune.transform.localScale = new Vector3(size * 2.8f, size * 0.40f, size * 1.8f);
+                dune.transform.rotation =
+                    Quaternion.Euler(0f, (float)(random.NextDouble() * 360.0), 0f);
+            }
         }
 
         /// <summary>
