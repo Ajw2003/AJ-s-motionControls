@@ -3,29 +3,37 @@
 A couch party game: the game runs on a PC driving a TV, and players use their phones as
 motion controllers through a web page — no app download, Jackbox-style.
 
-**Read [PLAN.md](docs/PLAN.md) first.** It has the full architecture, the cross-platform sensor
-problem, the physics design, and the milestone breakdown. This file only covers how to run
-what currently exists.
+**Start with [docs/MASTER-PLAN.md](docs/MASTER-PLAN.md)** for the active tracks, and
+[docs/Decision-OfflineHosting.md](docs/Decision-OfflineHosting.md) for how hosting works and why.
+This file only covers how to run what currently exists.
+
+> **Note on the doc graph.** An earlier `docs/PLAN.md` held the full architecture and milestone
+> breakdown, and was deleted along with `HostingPlan.md`, `Reference-Constants.md`,
+> `Reference-PlayerColours.md` and `SecurityReview.md` (commits `0b7c500`, `77a44f1`). Links to
+> them have been removed rather than left to 404; recover them from git history if needed. The
+> hosting material they carried is superseded by `docs/Decision-OfflineHosting.md` and
+> `docs/plans/magic-domain-replacement.md`.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `Assets/` | Unity 6 project (6000.3.10f1) — the game screen |
+| `Assets/` | Unity 6 project (6000.3.15f1 — see `ProjectSettings/ProjectVersion.txt`) — the game screen |
 | `relay/` | Node WebSocket relay, and the HTTP server for the controller page |
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
 | `deploy/` | Hosting runbook and `setup-offline.ps1`, the one-time elevated machine setup for Hotspot mode |
 | `docs/` | Project documentation and plans |
-| `docs/PLAN.md` | Full design and implementation plan |
-| `docs/HostingPlan.md` | How hosting works and why — supersedes PLAN.md on that subject |
-| `docs/Reference-Constants.md` | Every magic number, hidden constant and serialized field, and which of them must agree across Unity/phone/relay |
-| `docs/Reference-PlayerColours.md` | How player colour flows end to end: phone picker, host adjudication, SPECTATE sync, and which UI elements get tinted |
+| `docs/MASTER-PLAN.md` | Index of the active tracks |
+| `docs/Decision-OfflineHosting.md` | How the host runs a network with no internet, and the evidence for it |
+| `docs/DeviceMatrix.md` | Which phones this is verified on, and what "verified" means |
+| `docs/grant/` | Grant proposal kit — the case for extracting the controller stack as a plugin |
 
 ## Status
 
 **M0 and M1 complete, M2 in progress.** The relay is hardened and tested, the controller
 app normalizes sensors and sends `AIM`/`THROW`, and the pure skip solver plus the aim
-preview are in. Verified end to end on both Android and iOS.
+preview are in. Verified end to end on both Android and iOS across multiple device
+generations — see [docs/DeviceMatrix.md](docs/DeviceMatrix.md).
 
 A match runs a fixed number of rounds and ends with a standings screen — see Match flow
 below.
@@ -36,7 +44,9 @@ dead), and an authored lake scene to replace the runtime placeholder geometry.
 
 **Multiplayer is done and verified.** A real 5-player session across iOS and Android
 exercised scoring, turn rotation, late-join and lobby-rejoin, and all four behaved. That
-was M3, and it landed ahead of the remaining M2 work above.
+was M3, and it landed ahead of the remaining M2 work above. Record it in
+[docs/DeviceMatrix.md](docs/DeviceMatrix.md) — the session is referenced in several places
+but the devices and date are not written down anywhere.
 
 > **Hosting has changed and this matters before you press Play.** There is no longer a
 > deployed relay. The Fly.io deployment was torn down and its files deleted, and
@@ -74,9 +84,8 @@ Players scan the QR — it pre-fills the room code via `?room=CODE` — and type
 
 **The phone must be on the same network as the PC.** The name resolves to a private address,
 so it is unreachable from mobile data — a guest on cellular cannot join. That is the standing
-limitation of local hosting and is not a bug; [HostingPlan.md](docs/HostingPlan.md) §2 has the
-derivation, and [deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) has the rest of
-what it costs.
+limitation of local hosting and is not a bug;
+[deploy/LOCAL-HTTPS-SPIKE.md](deploy/LOCAL-HTTPS-SPIKE.md) has what it costs.
 
 "The same network" is looser than it sounds, though. A 5-player iOS/Android session ran on a
 home setup with an ISP router *and* a second unit in AP mode on its own SSID, with phones
@@ -89,6 +98,26 @@ Why HTTPS at all, rather than plain `ws://` to a LAN IP: phone motion sensors ne
 context, and an HTTPS page cannot open a plain `ws://` socket. Both problems disappear when
 the page and the socket share one secure origin, which is why the relay serves the controller
 itself and why the certificate is worth the trouble.
+
+### Checking the certificate
+
+The certificate is issued and published by `.github/workflows/renew-cert.yml` and downloaded
+at launch by `CertificateProvider`. To check the live one at any time, from any machine, with
+no credentials and without starting the game:
+
+```bash
+./deploy/verify-published-cert.sh
+```
+
+It downloads from the same anonymous public URL a player's machine uses and checks SAN
+coverage, issuer, expiry, that the key actually matches the certificate, and that the chain is
+a fullchain rather than a bare leaf — phones do not cache intermediates the way desktops do,
+so a bare leaf fails on exactly the devices this project targets.
+
+The workflow runs the same script after publishing, so a publish that succeeds but produces
+something unusable fails in CI instead of at a party. `--tag staging` checks a rehearsal run,
+`--min-days 30` is the bar `deploy/fetch-seed-cert.ps1` applies before baking a seed into a
+build.
 
 ### Where aim and throw actually travel
 
@@ -171,7 +200,7 @@ Console and in `verification-result.txt`.
 Headless — note the deliberate absence of `-quit`, since the method enters play mode:
 
 ```bash
-"<your-unity-install>/6000.3.10f1/Editor/Unity.exe" -batchmode -nographics -projectPath . -executeMethod RockSkippingEditor.ProjectSetup.RunVerification -logFile verify.log
+"<your-unity-install>/6000.3.15f1/Editor/Unity.exe" -batchmode -nographics -projectPath . -executeMethod RockSkippingEditor.ProjectSetup.RunVerification -logFile verify.log
 ```
 
 Poll for `verification-result.txt`, then kill the process — exiting the editor from the
@@ -208,7 +237,7 @@ during the Game scene.
 
 ## Notes for whoever picks this up
 
-- The project is on the **built-in render pipeline**, not URP as PLAN.md assumes. Switching
+- The project is on the **built-in render pipeline**, not URP as `Packages/manifest.json` implies. Switching
   is cheapest right now while there are no materials to break.
 - Every scene-local subscriber must call `EventManager.Instance?.UnsubscribeFromAllEvents(this)`
   in `OnDestroy`. The destroyed-subscriber fix backstops forgetting, but don't rely on it.

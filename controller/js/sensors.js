@@ -10,8 +10,13 @@
  * Pure math is exported separately from the browser wiring so it can be unit
  * tested in Node with no device — see test-sensors.js.
  *
- * TEST STATUS: verified on Android (Chrome). iOS branches are written from spec
- * and marked `UNVERIFIED (iOS)`; grep that tag when a device is available.
+ * TEST STATUS: verified on real hardware across multiple iPhone generations (Safari)
+ * and multiple Samsung and Pixel generations (Chrome). Per-device results, and what
+ * "verified" means step by step, are in docs/DeviceMatrix.md — add a row there rather
+ * than a comment here when a new device is tested.
+ *
+ * The pure math below is additionally covered by test-sensors.js, which runs in Node
+ * with no device at all.
  */
 
 // ---------------------------------------------------------------------------
@@ -307,10 +312,11 @@ export class RingBuffer {
  * THE iOS GUARD. This is the only place in the codebase permitted to read
  * acceleration off a DeviceMotionEvent.
  *
- * UNVERIFIED (iOS): assumes iOS exposes `accelerationIncludingGravity` but NOT
+ * Confirmed on device: iOS exposes `accelerationIncludingGravity` but NOT
  * `acceleration`. Android exposes both, so an Android-only test can never catch
  * a regression that reintroduces `event.acceleration` — which would read
  * undefined on every iPhone. Keeping the read in one function is the guard.
+ * See docs/DeviceMatrix.md.
  */
 export function readAcceleration(event) {
   const a = event.accelerationIncludingGravity;
@@ -327,7 +333,8 @@ export function readAcceleration(event) {
  * depending on it. When it is present it is fused in hardware, so it has none of the
  * rotation artefact that both software methods have to work around.
  *
- * UNVERIFIED (iOS): expected to return null throughout on iOS.
+ * Confirmed on device: returns null throughout on iOS, so the iOS path always falls
+ * through to exact quaternion subtraction. See docs/DeviceMatrix.md.
  */
 export function readLinearAcceleration(event) {
   const a = event.acceleration;
@@ -348,10 +355,10 @@ export function readRotationRate(event) {
 // ---------------------------------------------------------------------------
 
 /**
- * UNVERIFIED (iOS): iOS 13+ requires an explicit permission grant for motion and
+ * Confirmed on device: iOS 13+ requires an explicit permission grant for motion and
  * orientation, requested from inside a user gesture. Android has no such API at
  * all, so calling requestPermission unconditionally throws there — hence the
- * feature detection rather than a try/catch or a UA sniff.
+ * feature detection rather than a try/catch or a UA sniff. See docs/DeviceMatrix.md.
  */
 export async function requestMotionPermission() {
   const needsMotion = typeof DeviceMotionEvent?.requestPermission === 'function';
