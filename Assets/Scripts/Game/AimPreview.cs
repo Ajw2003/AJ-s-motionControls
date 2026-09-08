@@ -123,6 +123,16 @@ namespace Game
         private int _lastSeq = -1;
         private float _lastAimTime = -999f;
 
+        /// <summary>
+        /// What <see cref="SetVisible"/> last wrote, so an unchanged frame writes nothing.
+        /// </summary>
+        /// <remarks>
+        /// Starts false and BuildLine/BuildGhost both start hidden to match. A cache that
+        /// disagrees with what is actually on screen is worse than no cache — it latches the
+        /// wrong state permanently — so those two are the initialisation, not a coincidence.
+        /// </remarks>
+        private bool _isVisible;
+
         /// <summary>Rate-limits <see cref="LogRejectedAim"/> so a stuck rejection can't spam the Console.</summary>
         private float _nextRejectLogTime;
 
@@ -186,6 +196,49 @@ namespace Game
             EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnTurnStarted);
             EventManager.Instance?.Subscribe<PlayerColourChangedEvent>(this, OnPlayerColourChanged);
             EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnPlayerJoined);
+        }
+
+        /// <summary>
+        /// Binds the launcher and the relay client once, rather than re-testing for them
+        /// every frame.
+        /// </summary>
+        /// <remarks>
+        /// Start rather than Awake, and that is the whole reason this can be a one-shot.
+        /// Bootstrap.Awake creates RelayClient.Instance before it calls CreateAimPreview, and
+        /// CreateAimPreview adds RockLauncher to this same object immediately after this
+        /// component — so at OUR Awake the launcher does not exist yet, but by the first
+        /// Start every Awake in that chain has run and both are guaranteed present. Bootstrap
+        /// is the only thing that ever builds an AimPreview (it guards on
+        /// FindFirstObjectByType), so there is no other construction order to survive.
+        ///
+        /// The previous shape ran this same resolution from Update: a GetComponent plus two
+        /// UnityEngine.Object null comparisons plus a HasInstance probe, every frame, for the
+        /// entire session — all of them native interop calls, and all of them answering a
+        /// question that stops changing after the first frame.
+        ///
+        /// HasInstance, not Instance — Instance would create a RelayClient, and a preview
+        /// that conjures its own data source hides a real failure. If it is genuinely absent
+        /// the preview is inert for the session, so say so loudly rather than sitting dark.
+        /// </remarks>
+        private void Start()
+        {
+            _launcher = GetComponent<RockLauncher>();
+
+            if (_launcher == null)
+            {
+                Debug.LogWarning("[AimPreview] No RockLauncher on this object — the arc will " +
+                                 "stay up through a throw, drawn over its own result.");
+            }
+
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogError("[AimPreview] No RelayClient — no aim frames will ever arrive " +
+                               "and the preview stays hidden for this session.");
+                return;
+            }
+
+            _client = RelayClient.Instance;
+            _client.AimReceived += OnAim;
         }
 
         private void OnDestroy()
@@ -292,18 +345,18 @@ namespace Game
 
         private void Update()
         {
-            EnsureBound();
-
             HasSignal = Time.time - _lastAimTime <= staleAfterSeconds;
 
             // Smooth every frame regardless of packet arrival — this is what turns
             // 20Hz of network data into something that reads as continuous motion.
             // Exponential rather than a fixed step so it is frame-rate independent.
-            _curAttitude = Quaternion.Slerp(
-                _curAttitude, _targetAttitude, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
+            //
+            // One Exp for both: the attitude and the swing speed smooth at the same rate,
+            // so evaluating it twice was computing the same number twice per frame.
+            var smoothing = 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime);
 
-            _curSwingSpeed = Mathf.Lerp(
-                _curSwingSpeed, _targetSwingSpeed, 1f - Mathf.Exp(-attitudeSmoothing * Time.deltaTime));
+            _curAttitude = Quaternion.Slerp(_curAttitude, _targetAttitude, smoothing);
+            _curSwingSpeed = Mathf.Lerp(_curSwingSpeed, _targetSwingSpeed, smoothing);
 
             // Nothing to predict while a stone is already in the air, and leaving the arc
             // up through the throw means the line the player was aiming with is still
@@ -313,8 +366,7 @@ namespace Game
             var flying = _launcher != null && _launcher.ActiveRock != null && _launcher.ActiveRock.IsFlying;
             var isVisible = HasSignal && !flying;
 
-            _line.enabled = isVisible;
-            _ghost.gameObject.SetActive(isVisible);
+            SetVisible(isVisible);
 
             if (!isVisible) return;
 
@@ -322,16 +374,22 @@ namespace Game
             UpdateArc();
         }
 
-        private void EnsureBound()
+        /// <summary>
+        /// Shows or hides the arc and the ghost, writing only on an actual change.
+        /// </summary>
+        /// <remarks>
+        /// Both setters cross into native code, and SetActive additionally walks the
+        /// object's children and fires OnEnable/OnDisable — so it is not the free
+        /// assignment it looks like. This value changes a handful of times per turn and
+        /// was being written 60 times a second. Same shape as ShoreRocks.SetVisible.
+        /// </remarks>
+        private void SetVisible(bool isVisible)
         {
-            if (_launcher == null) _launcher = GetComponent<RockLauncher>();
+            if (isVisible == _isVisible) return;
 
-            // HasInstance, not Instance — Instance would create a RelayClient, and a
-            // preview that conjures its own data source hides a real failure.
-            if (_client != null || !RelayClient.HasInstance) return;
-
-            _client = RelayClient.Instance;
-            _client.AimReceived += OnAim;
+            _isVisible = isVisible;
+            _line.enabled = isVisible;
+            _ghost.gameObject.SetActive(isVisible);
         }
 
         private void OnAim(AimMessage aim)
@@ -538,6 +596,11 @@ namespace Game
 
             _ghost = ghost.transform;
             _ghost.SetParent(transform, false);
+
+            // Hidden to start, matching _line.enabled = false in BuildLine. Update's
+            // visibility cache assumes this — see _isVisible — and there is nothing to show
+            // anyway until an aim frame has arrived.
+            ghost.SetActive(false);
         }
 
         /// <summary>
