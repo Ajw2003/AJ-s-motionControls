@@ -363,8 +363,19 @@ namespace Game
             // drawn over the result. Both the tooltip above and the debug HUD used to
             // claim this happened; it did not, because _line.enabled was set true
             // unconditionally just before the early return below.
-            var flying = _launcher != null && _launcher.ActiveRock != null && _launcher.ActiveRock.IsFlying;
-            var isVisible = HasSignal && !flying;
+            //
+            // CameraSettled as well as the flying check, because the throw is not over when
+            // the stone is. The camera is still downrange and swinging back for a second or
+            // so afterwards, and the preview coming back at the top of that move drew a
+            // ghost and an arc that slid across the frame from wherever the chase had left
+            // them — pointing somewhere the player was not aiming, for as long as the return
+            // took. Waiting for the shot to be the aiming shot again is what makes the
+            // preview mean what it says. See RockLauncher.CameraSettled.
+            var launcherBusy = _launcher != null &&
+                               ((_launcher.ActiveRock != null && _launcher.ActiveRock.IsFlying) ||
+                                !_launcher.CameraSettled);
+
+            var isVisible = HasSignal && !launcherBusy;
 
             SetVisible(isVisible);
 

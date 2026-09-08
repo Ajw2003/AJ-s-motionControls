@@ -17,6 +17,13 @@ namespace Game
     {
         [SerializeField] private float cameraFollowSmoothing = 0.25f;
 
+        [Tooltip("How close to home, in metres and degrees, counts as the return being over. " +
+                 "SmoothDamp is asymptotic and never actually arrives, so without a threshold " +
+                 "there is no moment to call it done.")]
+        [SerializeField] private float cameraSettleDistance = 0.15f;
+
+        [SerializeField] private float cameraSettleAngle = 2f;
+
         private RelayClient _client;
         private AimPreview _preview;
         private RockController _active;
@@ -32,7 +39,34 @@ namespace Game
         /// </summary>
         private bool _returningHome = true;
 
+        /// <summary>
+        /// Whether the camera is sitting at the aiming shot rather than chasing a stone or
+        /// still on its way back. Backs <see cref="CameraSettled"/>.
+        /// </summary>
+        /// <remarks>
+        /// Starts true: the camera has not moved yet at that point, and the first turn must
+        /// not be made to wait for a return that never happened.
+        /// </remarks>
+        private bool _cameraSettled = true;
+
         public RockController ActiveRock => _active;
+
+        /// <summary>
+        /// True while the camera is framing the aiming shot — false from the moment a throw
+        /// takes it away until it has come all the way back.
+        /// </summary>
+        /// <remarks>
+        /// AimPreview holds the ghost and the arc off until this is true. Showing them the
+        /// instant the stone despawns put a full-size ghost on screen while the camera was
+        /// still metres downrange and swinging round, so it slid across the frame from
+        /// wherever the chase had left it — an aiming guide that lies about where the player
+        /// is aiming for as long as the move takes.
+        ///
+        /// True when there is no Camera.main at all, deliberately. There is then no return to
+        /// wait on, and a preview that hides itself forever over a missing camera is a worse
+        /// failure than one drawn against an unframed shot.
+        /// </remarks>
+        public bool CameraSettled => _camera == null || _cameraSettled;
 
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
 
@@ -128,6 +162,7 @@ namespace Game
             if (_active != null && (_active.IsFlying || _active.IsSinking))
             {
                 _returningHome = false;
+                _cameraSettled = false;
 
                 // Trail behind the rock on X and Z, but lock Y to the camera's home height
                 var target = new Vector3(
@@ -160,6 +195,10 @@ namespace Game
                 _cameraVelocity = Vector3.zero;
             }
 
+            // Already home and nothing has moved it — skip the whole move rather than
+            // SmoothDamping a zero distance every frame for the rest of the turn.
+            if (_cameraSettled) return;
+
             _camera.transform.position = Vector3.SmoothDamp(
                 _camera.transform.position, _cameraHome, ref _cameraVelocity, cameraFollowSmoothing * 2f);
 
@@ -169,6 +208,22 @@ namespace Game
             _camera.transform.rotation = Quaternion.Slerp(
                 _camera.transform.rotation, _cameraHomeRotation,
                 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(cameraFollowSmoothing * 2f, 0.0001f)));
+
+            // Both SmoothDamp and Slerp are asymptotic — they approach home and never reach
+            // it — so the last stretch of the return is a move nobody can see that would
+            // otherwise run forever. Close enough is snapped to exactly home, which both
+            // ends the move and gives CameraSettled a real moment to become true.
+            //
+            // Distance AND angle, not either: a camera sitting in the right spot facing
+            // downrange is not back at the aiming shot, and the rotation settles on its own
+            // schedule from its own starting error.
+            if (Vector3.Distance(_camera.transform.position, _cameraHome) > cameraSettleDistance) return;
+            if (Quaternion.Angle(_camera.transform.rotation, _cameraHomeRotation) > cameraSettleAngle) return;
+
+            _camera.transform.position = _cameraHome;
+            _camera.transform.rotation = _cameraHomeRotation;
+            _cameraVelocity = Vector3.zero;
+            _cameraSettled = true;
         }
 
         /// <summary>
