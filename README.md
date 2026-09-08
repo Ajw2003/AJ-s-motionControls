@@ -105,8 +105,8 @@ The certificate is issued and published by `.github/workflows/renew-cert.yml` an
 at launch by `CertificateProvider`. To check the live one at any time, from any machine, with
 no credentials and without starting the game:
 
-```bash
-./deploy/verify-published-cert.sh
+```powershell
+./deploy/Verify-PublishedCert.ps1
 ```
 
 It downloads from the same anonymous public URL a player's machine uses and checks SAN
@@ -115,9 +115,9 @@ a fullchain rather than a bare leaf — phones do not cache intermediates the wa
 so a bare leaf fails on exactly the devices this project targets.
 
 The workflow runs the same script after publishing, so a publish that succeeds but produces
-something unusable fails in CI instead of at a party. `--tag staging` checks a rehearsal run,
-`--min-days 30` is the bar `deploy/fetch-seed-cert.ps1` applies before baking a seed into a
-build.
+something unusable fails in CI instead of at a party. `-Tag staging -AllowStaging` checks a
+rehearsal run, and `-MinDays 30` is the bar `deploy/fetch-seed-cert.ps1` applies before baking
+a seed into a build.
 
 ### Where aim and throw actually travel
 
