@@ -36,7 +36,7 @@ answers locally, offline, on the host itself.
 Three consequences follow, and they are large:
 
 1. **No public DNS server. Ever.** No VPS, no Fly machine, no UDP :53, no NS delegation, no glue
-   records. The `magic-dns-server.js` in [MagicDnsFallback.md](../MagicDnsFallback.md) is not
+   records. The `magic-dns-server.js` in [MagicDnsFallback.md](../archive/MagicDnsFallback.md) is not
    needed at all.
 2. **No wildcard certificate.** Windows ICS always puts the hotspot on `192.168.137.1`
    ([setup-offline.ps1:57](../../deploy/setup-offline.ps1:57), forced at
@@ -61,7 +61,7 @@ literally zero, and it is worth naming the floor rather than discovering it late
 - Certificate lifetimes are shrinking industry-wide; there is no "issue once" option. Something
   must renew, roughly quarterly.
 - That renewal needs the domain's DNS API credentials, which must never ship in the client —
-  the design already rejected in [HostingPlan.md §1](../HostingPlan.md:37).
+  the design already rejected in `HostingPlan.md` §1 (deleted in `0b7c500`; in git history).
 
 So the irreducible floor is: **a domain you own + an unattended renewal job + a static file.**
 The renewal job is a scheduled GitHub Actions workflow — free, no server, no OS, no patching, no
@@ -91,13 +91,13 @@ NOTHING ELSE RUNS ANYWHERE.
 
 Every address in the system is now a constant: `192.168.137.1`, `play.skiprocking.ca`, port
 8443. The join URL is the same string on every install forever. That alone closes the drift gap
-recorded at [Findings-PhoneUnreachable.md:115](../Findings-PhoneUnreachable.md:115), where
+recorded at `Findings-PhoneUnreachable.md:115` (deleted; in git history), where
 `relay-url.txt` could outrank the cert-derived URL and silently disagree with it.
 
 ### One security constraint to record
 
 The private key is published deliberately — that is what makes the whole approach work, and
-[SecurityReview.md](../SecurityReview.md) §1 already reasons it through. With a single-name
+`SecurityReview.md` §1 (deleted; in git history) already reasoned it through. With a single-name
 cert the blast radius is only `play.skiprocking.ca`; nobody can impersonate `skiprocking.ca`
 itself. The one real coupling: whoever holds the key can set cookies scoped to
 `.skiprocking.ca` that the apex site would receive. Harmless while the apex is a static page
@@ -113,7 +113,7 @@ or sidestepped by putting the controller on its own registrable domain.
 First action on approval: copy this plan to `docs/plans/magic-domain-replacement.md` so it is
 tracked and outlives the session, and add "Superseded — see
 docs/plans/magic-domain-replacement.md" callouts to
-[docs/MagicDnsFallback.md](../MagicDnsFallback.md) (its VPS design is now moot) and
+[docs/MagicDnsFallback.md](../archive/MagicDnsFallback.md) (its VPS design is now moot) and
 [ZeroSetupPlan.md](../ZeroSetupPlan.md) Risk 1. This follows the convention `Assets/CLAUDE.md`
 records for this repo: docs drift fast and say so.
 
@@ -147,10 +147,10 @@ The phase that stops any of this from ever being crippling again.
 replacing the constant duplicated across `CertificateProvider.Suffix`, the `DNS_SUFFIX` default at
 [relay/server.js:408](../../relay/server.js:408), and `$RelayHostName` at
 [setup-offline.ps1:69](../../deploy/setup-offline.ps1:69) — drift that
-[Reference-Constants.md:427](../Reference-Constants.md:427) already flags.
+`Reference-Constants.md:427` (deleted; in git history) already flagged.
 
 - Optional override file `magic-domain.txt`, sited and loaded exactly like
-  [`NetworkModeStore.Load`](../../Assets/Scripts/Net/NetworkMode.cs:30) — never throws, falls back to
+  `NetworkModeStore.Load` (`NetworkMode.cs:30`, deleted with LAN mode; in git history) — never throws, falls back to
   the compiled default. Repointing the domain becomes a text edit, not a Unity rebuild.
 - `LocalServices` already forwards `CertificateProvider.Suffix` to the relay child
   ([LocalServices.cs:455](../../Assets/Scripts/Net/LocalServices.cs:455)); point that at `MagicDomain`
@@ -220,7 +220,7 @@ isolation decision:
 **Everything else fixed and constant.** With the hostname, IP and port all constants, the join
 URL QR is identical on every install — it can be rendered before the hotspot finishes coming up
 instead of waiting on it. Two QRs, Wi-Fi payload then URL, per
-[Rule-RenderQR.md](../Rule-RenderQR.md).
+the QR rule in [systems/HostingAndCertificates.md](../systems/HostingAndCertificates.md).
 
 **Offline chain validation.** Let's Encrypt certs no longer carry OCSP URLs, so a phone with no
 internet validates without a soft-fail stall. Confirm on real hardware in step 6.
@@ -278,7 +278,7 @@ What turns this into "download one thing". Inno Setup (single script, no toolcha
 6. **End-to-end on real hardware** — Start → Hotspot, phone scans both QRs, sensors work with the
    PC's internet unplugged. Specifically watch that the phone does **not** show "No internet" and
    does not drift back to cellular over a full match. This is the test
-   [network-mode-selection.md:77](network-mode-selection.md:77) records as still
+   [network-mode-selection.md:77](../archive/plans/network-mode-selection.md:77) records as still
    outstanding, plus the captive-portal behaviour.
 7. **Installer** — clean Windows VM, no Node installed. Install, launch, confirm a phone joins
    with zero manual steps.

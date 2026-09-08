@@ -43,7 +43,7 @@ describes it.
 
 ### A real bug found while checking this
 
-`startHttpProbeListener` ([relay/server.js:720](../../relay/server.js:720)) reuses
+`startHttpProbeListener` ([relay/server.js:720](../../../relay/server.js:720)) reuses
 `handleRequest`, whose final branch is `serveStatic`. So the `:80` listener does not serve "the
 probes only" as its comment claims — **it serves the entire controller app over insecure HTTP**,
 on `0.0.0.0`, on every interface the host has. Today the `:80` firewall rule is scoped to
@@ -65,9 +65,9 @@ all three per device today** without any phone-side cooperation:
 
 | Stage | What it means | Where the signal already exists |
 |---|---|---|
-| **A. Associated** | Phone is on the hotspot Wi-Fi | `relay/dns.js` sees a query from `192.168.137.x` — captive-portal probes fire within ~1s of association, unprompted ([dns.js:286](../../relay/dns.js:286) already logs the client IP) |
-| **B. Page open** | Phone loaded the controller | `serveStatic` serves `index.html` to that IP ([server.js:323](../../relay/server.js:323)) |
-| **C. Playing** | Phone joined a room | `PLAYER_JOINED` is already sent to the host ([server.js:263](../../relay/server.js:263)) |
+| **A. Associated** | Phone is on the hotspot Wi-Fi | `relay/dns.js` sees a query from `192.168.137.x` — captive-portal probes fire within ~1s of association, unprompted ([dns.js:286](../../../relay/dns.js:286) already logs the client IP) |
+| **B. Page open** | Phone loaded the controller | `serveStatic` serves `index.html` to that IP ([server.js:323](../../../relay/server.js:323)) |
+| **C. Playing** | Phone joined a room | `PLAYER_JOINED` is already sent to the host ([server.js:263](../../../relay/server.js:263)) |
 
 Only **C** reaches Unity. **A** and **B** are logged to a child process's stdout and discarded.
 
@@ -394,7 +394,7 @@ lives. The address is already a constant everywhere else in the system
 (`magic-domain-replacement.md`), so this costs nothing in configurability.
 
 **Implemented 2026-09-06**, once the reachability precondition was met (see "Second hardware
-test" below). `PORTAL_URL` in [server.js](../../relay/server.js) is now
+test" below). `PORTAL_URL` in [server.js](../../../relay/server.js) is now
 `http://${DNS_RESPOND_IP || DNS_NAME}/portal` and `serveCaptiveProbe` redirects to it; the name
 survives only as the fallback for off-hotspot runs, which have no captive portal to reach.
 `test-captive.js` asserts the literal, so a regression to the hostname fails the suite.
@@ -472,7 +472,7 @@ receiving our answers and rejecting the conclusion. Defect 3's fix was necessary
 sufficient.
 
 **A trap that cost a whole test cycle: `LocalServices` reuses a relay that is already
-listening.** `StartRelay` ([LocalServices.cs:251](../../Assets/Scripts/Net/LocalServices.cs:251))
+listening.** `StartRelay` ([LocalServices.cs:251](../../../Assets/Scripts/Net/LocalServices.cs:251))
 probes `/health` first and, if anything answers, logs *"Relay already listening — reusing it"*
 and never spawns a child. The comment is explicit that this is deliberate — it keeps `npm start`
 in a terminal a valid dev loop. The consequence is that **stopping and starting Play does not
@@ -565,7 +565,7 @@ open a socket to it.
   Android's validation retry, not a DNS retry, which independently confirms the answer is being
   accepted.
 - **Not a black-holed second probe.** No `DNS_UPSTREAM` is configured
-  ([LocalServices.cs:439](../../Assets/Scripts/Net/LocalServices.cs:439) sets only `DNS_ALLOW`
+  ([LocalServices.cs:439](../../../Assets/Scripts/Net/LocalServices.cs:439) sets only `DNS_ALLOW`
   and `DNS_NAME`), so unmatched names get an immediate NXDOMAIN rather than hanging.
 
 **A blind spot closed while checking that.** `dns.js` logged only *answered* queries, so the
@@ -672,7 +672,7 @@ dns 192.168.137.85 A connectivitycheck.gstatic.com -> 192.168.137.1
 ```
 
 `www.google.com` is the HTTPS probe host and is absent from `CAPTIVE_PROBE_DOMAINS`
-([server.js:449](../../relay/server.js:449)), so it gets NXDOMAIN. To Android's `NetworkMonitor`
+([server.js:449](../../../relay/server.js:449)), so it gets NXDOMAIN. To Android's `NetworkMonitor`
 a DNS failure and a refused connection are not equivalent, and a validation attempt that cannot
 resolve its HTTPS probe can conclude "no internet" without ever running the HTTP probe - which
 is exactly the packet pattern captured. Adding `www.google.com` to that list would make the
@@ -805,7 +805,7 @@ Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction Stop
 
 `Start-ScheduledTask` returns as soon as the task is *launched*. It waits for nothing and checks
 nothing. Since `HotspotService` treats a null warning as "isolation confirmed"
-([HotspotService.cs:217](../../Assets/Scripts/Net/HotspotService.cs:217)), the system asserted an
+([HotspotService.cs:217](../../../Assets/Scripts/Net/HotspotService.cs:217)), the system asserted an
 isolation property it had never once verified - and asserted it correctly-formatted, every
 session, on a machine that measurably had forwarding enabled. The scheduled task's own
 `LastTaskResult 0` was equally worthless: it reports that a process exited, not that a flag moved.

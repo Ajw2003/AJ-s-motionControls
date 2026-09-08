@@ -3,16 +3,22 @@
 A couch party game: the game runs on a PC driving a TV, and players use their phones as
 motion controllers through a web page — no app download, Jackbox-style.
 
-**Start with [docs/MASTER-PLAN.md](docs/MASTER-PLAN.md)** for the active tracks, and
-[docs/Decision-OfflineHosting.md](docs/Decision-OfflineHosting.md) for how hosting works and why.
-This file only covers how to run what currently exists.
+**Start with [docs/README.md](docs/README.md)** — the documentation entry point. This file only
+covers how to run what currently exists.
+
+The docs are organised in five tiers: [docs/README.md](docs/README.md) (what this is and where
+everything is) → [docs/Roadmap.md](docs/Roadmap.md) (what 0-100% means) →
+[docs/ProjectState.md](docs/ProjectState.md) (where it stands now) →
+[docs/systems/](docs/systems/) (how each runtime-critical system works) →
+[docs/Today.md](docs/Today.md) (what is being worked on today).
 
 > **Note on the doc graph.** An earlier `docs/PLAN.md` held the full architecture and milestone
 > breakdown, and was deleted along with `HostingPlan.md`, `Reference-Constants.md`,
-> `Reference-PlayerColours.md` and `SecurityReview.md` (commits `0b7c500`, `77a44f1`). Links to
-> them have been removed rather than left to 404; recover them from git history if needed. The
-> hosting material they carried is superseded by `docs/Decision-OfflineHosting.md` and
-> `docs/plans/magic-domain-replacement.md`.
+> `Reference-PlayerColours.md`, `Rule-RenderQR.md` and `SecurityReview.md` (commits `0b7c500`,
+> `77a44f1`). The decision taken on 2026-09-08 was to restore none of them: their still-true
+> content was rewritten into the five tiers above and the dead links removed. Recover them from
+> git history if you need the originals. See
+> [docs/Findings-DocumentationAudit.md](docs/Findings-DocumentationAudit.md).
 
 ## Layout
 
