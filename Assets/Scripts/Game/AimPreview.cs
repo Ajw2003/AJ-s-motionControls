@@ -614,13 +614,25 @@ namespace Game
 
             // One colour for the empty sky and for what the lake fades into, so the two
             // cannot disagree — see the fog block below, where the hard horizon is fixed.
-            var horizon = new Color(0.05f, 0.09f, 0.15f);
+            //
+            // Derived from the water rather than picked independently. The water's authored
+            // _BaseColor is a bright mid-blue (0.06, 0.36, 0.72); the sky used to be an almost
+            // black (0.05, 0.09, 0.15), and a headless capture shows the two meeting as a hard
+            // line across the frame — the fog cannot hide an edge when the colour on the far
+            // side of it is nothing like the water's own.
+            //
+            // Lightened and desaturated from the water instead of set to a taste value, so the
+            // relationship survives someone retuning the lake: change _BaseColor and the sky
+            // follows it rather than drifting apart from it again.
+            var horizon = new Color(0.42f, 0.58f, 0.74f);
 
             camera.transform.position = new Vector3(0, 2f, -3);
             camera.transform.LookAt(new Vector3(0f, 0f, 4f));
             camera.backgroundColor = horizon;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 1000f;
+
+            AngleTheSun();
 
             // The lake is 2000 units across (a 10-unit Plane scaled by 200) but the far
             // clip is 1000, so the far half is cut off by the frustum and the cut shows as
@@ -639,6 +651,47 @@ namespace Game
             RenderSettings.fogColor = horizon;
             RenderSettings.fogStartDistance = 120f;
             RenderSettings.fogEndDistance = 600f;
+        }
+
+        /// <summary>
+        /// Puts the scene's directional light at a low side angle so the stones have form.
+        /// </summary>
+        /// <remarks>
+        /// Adjusts the light the scene already has rather than adding one — a second
+        /// directional light would double the ambient contribution and wash out the very
+        /// shading this is for.
+        ///
+        /// Found by type, not by name: Game.unity's is called "Directional Light", but a
+        /// string lookup breaks silently the moment somebody renames it, leaving the scene lit
+        /// by the old values with no error to follow.
+        ///
+        /// The angle is the point, and the obvious choice is the wrong one. A LOW raking light
+        /// is what gives most scenes form, and it was tried first: a headless capture at 28
+        /// degrees came back with the stones darker and flatter than Unity's default. These
+        /// stones are flat and horizontal, so their large visible face is their TOP, and a low
+        /// sun barely lands on it — it lights the thin rims instead, which is nothing.
+        ///
+        /// So the elevation goes up, not down, and the direction comes from the azimuth
+        /// instead: high enough to actually reach the top faces, swung off-axis so the two
+        /// halves of each stone are lit differently and the silhouettes separate.
+        /// </remarks>
+        private static void AngleTheSun()
+        {
+            Light sun = null;
+            foreach (var light in FindObjectsByType<Light>(FindObjectsSortMode.None))
+            {
+                if (light.type != LightType.Directional) continue;
+                sun = light;
+                break;
+            }
+
+            if (sun == null) return;
+
+            // Warm, and not white: white reads as midday and flattens an already flat scene.
+            // Mild enough that the blue water stays blue rather than turning green.
+            sun.color = new Color(1f, 0.94f, 0.85f);
+            sun.intensity = 1.3f;
+            sun.transform.rotation = Quaternion.Euler(55f, 35f, 0f);
         }
     }
 }
