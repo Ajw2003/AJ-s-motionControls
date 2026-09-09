@@ -19,7 +19,7 @@ namespace Game
     {
         [Tooltip("How long the stone keeps turning once it is under, in seconds. A water-drag " +
                  "time constant, not a target — spin is otherwise entirely the solver's " +
-                 "(SkipState.AngularVelocity), so this is the only visual-only spin number left.")]
+                 "(SkipConstants.SpinRetention), so this is the only visual-only spin number left.")]
         [SerializeField] private float underwaterSpinDamping = 0.8f;
 
         [SerializeField] private float despawnDelay = 2.5f;
@@ -149,11 +149,10 @@ namespace Game
             // retention 1.0) and knifed under beautifully, while a good throw arrived with
             // 0.1% of its spin and sat there like a deleted object.
             //
-            // SkipPhysics already carries spin honestly, in SkipState.AngularVelocity,
-            // which the water damps through every contact — spin is load-bearing there: it
-            // is the gyroscopic stability holding the stone's attack angle. Reading that is
-            // free, correct, and means what the player sees is the same rotation the solver
-            // integrated.
+            // SkipPhysics already decays spin honestly, by SkipConstants.SpinRetention per
+            // bounce, because spin is load-bearing there: it is the gyroscopic stability
+            // holding the stone's attack angle. Reading that is free, correct, and means
+            // what the player sees is the same number the bounce is judged on.
             _spinRate = state.Spin;
 
             // In case a previous sink was interrupted — by a despawn landing mid-descent,
@@ -200,8 +199,8 @@ namespace Game
 
                     if (step.Bounced)
                     {
-                        // Spin comes off the solver, which already lost some to the water
-                        // on this bounce through the contact torque. No second, visual-only
+                        // Spin comes off the solver, which already lost some to the water on
+                        // this bounce (SkipConstants.SpinRetention). No second, visual-only
                         // decay on top — one spin, physically derived, drawn as it is.
                         _spinRate = _state.Spin;
 

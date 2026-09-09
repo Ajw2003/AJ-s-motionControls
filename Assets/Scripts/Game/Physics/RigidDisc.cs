@@ -55,47 +55,6 @@ namespace Game
         }
 
         /// <summary>
-        /// The added moment of inertia of a disc rotating about a diameter in water:
-        /// `I_added = (16/45)·ρ_w·R⁵`, the classical ideal-flow result for a circular plate.
-        /// </summary>
-        /// <remarks>
-        /// **This is not a small correction.** For the reference stone — 5 cm radius, 100 g —
-        /// it comes to 1.11e-4 kg·m² against the stone's own transverse moment of 6.3e-5.
-        /// The water is nearly twice the stone: tumbling it means tumbling the water it
-        /// drags, and leaving that out lets the disc spin up roughly three times too easily.
-        /// Measured angular accelerations of ~1e6 rad/s² through contact
-        /// (docs/Findings-RealSkipPhysics.md §8.1) are the symptom.
-        ///
-        /// **Only the transverse axes get it.** An ideal thin disc spinning about its own
-        /// normal sweeps no fluid out of the way, so <see cref="Inertia.Axial"/> is
-        /// untouched: the stone's spin is not slowed by this, only its tumble is. That
-        /// asymmetry is the whole reason spin stabilises a skipping stone, and here it comes
-        /// out of the geometry rather than being asserted.
-        ///
-        /// Scale by the wetted fraction — a stone in mid-flight drags no water, and one
-        /// half in the water drags about half as much.
-        /// </remarks>
-        /// <param name="waterDensity">kg/m³.</param>
-        /// <param name="radius">Disc radius, m.</param>
-        /// <param name="wettedFraction">Wetted area over the disc's full area, 0 to 1.</param>
-        public static float AddedTransverseInertia(float waterDensity, float radius, float wettedFraction)
-        {
-            if (radius <= 0f || wettedFraction <= 0f) return 0f;
-            var r5 = radius * radius * radius * radius * radius;
-            return (16f / 45f) * waterDensity * r5 * Mathf.Clamp01(wettedFraction);
-        }
-
-        /// <summary>
-        /// This disc's inertia with the water it drags folded in, for use through contact.
-        /// See <see cref="AddedTransverseInertia"/>.
-        /// </summary>
-        public static Inertia WithAddedMass(Inertia dry, float waterDensity, float radius, float wettedFraction)
-        {
-            dry.Transverse += AddedTransverseInertia(waterDensity, radius, wettedFraction);
-            return dry;
-        }
-
-        /// <summary>
         /// Advance attitude and angular velocity by one substep under an applied
         /// world-space torque, integrating the full Euler rigid-body equations (not the
         /// fast-spin approximation — see the class remarks).
@@ -128,55 +87,27 @@ namespace Game
             // [B] Eq. (A1) / Findings §2 — Euler's equations, full form, with the
             // gyroscopic coupling terms kept (that coupling is exactly what the fast-spin
             // approximation throws away, and exactly what stays correct as Ω → 0).
-            //
-            // Split into the torque part, which is integrated, and the free-precession
-            // part, which is SOLVED. The split matters: for a disc `i1 = i3` exactly (the
-            // Inertia struct cannot express anything else), so the free equations reduce to
-            //
-            //     ω̇_x = +λ·ω_z,   ω̇_z = −λ·ω_x,   λ = (i2 − i1)·ω_y / i1
-            //
-            // which is a pure rotation of (ω_x, ω_z) at rate λ — an OSCILLATOR. Explicit
-            // Euler is unconditionally unstable on an oscillator: its amplitude grows by
-            // ~(1 + (λ·dt)²/2) every step no matter how small the step is. At a hard 200
-            // rev/s the precession rate is ~2500 rad/s, which grew the amplitude ~17% per
-            // cycle and tore the attitude apart — so a fast-spun stone was LESS stable than
-            // a slow one, exactly backwards, and no amount of spin could hold a bounce.
-            //
-            // Rotating (ω_x, ω_z) by λ·dt instead is exact for the free motion, costs one
-            // sine and one cosine, and makes spin stabilising the way it is in the water.
             var angularAcceleration = new Vector3(
-                torqueBody.x / Mathf.Max(i1, 0.000001f),
-                torqueBody.y / i2,
-                torqueBody.z / Mathf.Max(i3, 0.000001f));
+                (torqueBody.x + (i2 - i3) * omegaBody.y * omegaBody.z) / Mathf.Max(i1, 0.000001f),
+                (torqueBody.y + (i3 - i1) * omegaBody.z * omegaBody.x) / i2,
+                (torqueBody.z + (i1 - i2) * omegaBody.x * omegaBody.y) / Mathf.Max(i3, 0.000001f));
 
             omegaBody += angularAcceleration * dt;
 
-            var lambda = (i2 - i1) * omegaBody.y / Mathf.Max(i1, 0.000001f);
-            var precession = lambda * dt;
-            var cosPrecession = Mathf.Cos(precession);
-            var sinPrecession = Mathf.Sin(precession);
-            omegaBody = new Vector3(
-                omegaBody.x * cosPrecession + omegaBody.z * sinPrecession,
-                omegaBody.y,
-                -omegaBody.x * sinPrecession + omegaBody.z * cosPrecession);
+            // Integrate attitude from the BODY-frame angular velocity: q̇ = ½·q·ω_body (pure
+            // quaternion). Simple explicit Euler — R9 in the verification harness exists
+            // specifically to check this is a small enough step that halving it barely
+            // moves the answer, i.e. that results are physics and not integrator error.
+            var omegaQuat = new Quaternion(omegaBody.x, omegaBody.y, omegaBody.z, 0f);
+            var derivative = Multiply(attitude, omegaQuat);
 
-            // Advance the attitude by the exact rotation ω_body·dt represents, rather than
-            // by `q + ½·q·ω·dt` and a renormalise. Same reason: the first-order form grows
-            // the rotation it is meant to preserve, and normalising hides the error in the
-            // norm while leaving it in the angle.
-            var omegaMagnitude = omegaBody.magnitude;
-            if (omegaMagnitude > 0.000001f)
-            {
-                var angle = omegaMagnitude * dt;
-                var axis = omegaBody / omegaMagnitude;
-                var half = 0.5f * angle;
-                var sinHalf = Mathf.Sin(half);
-                var step = new Quaternion(
-                    axis.x * sinHalf, axis.y * sinHalf, axis.z * sinHalf, Mathf.Cos(half));
+            var updated = new Quaternion(
+                attitude.x + 0.5f * dt * derivative.x,
+                attitude.y + 0.5f * dt * derivative.y,
+                attitude.z + 0.5f * dt * derivative.z,
+                attitude.w + 0.5f * dt * derivative.w);
 
-                attitude = Normalize(Multiply(attitude, step));
-            }
-
+            attitude = Normalize(updated);
             angularVelocityWorld = attitude * omegaBody;
         }
 

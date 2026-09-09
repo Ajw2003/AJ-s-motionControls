@@ -14,16 +14,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Game.SkipConstants
   Gravity: 9.81
   WaterY: 0
-  WaterDensity: 1000
-  LiftCoefficient: 16
-  DragCoefficient: 0
-  SpeedScale: 0.3
-  SpinScale: 60
-  ForgivenessPitchDeg: 12
-  ForgivenessRollDeg: 15
-  ForgivenessYawDeg: 10
+  SpeedScale: 1.2
+  EnergyLoss: 0.2
+  LiftShare: 0.03
+  MinLoss: 0.05
+  SpinForStability: 400
+  WanderPerBounce: 3
+  SpinRetention: 0.9
+  RollFalloffDeg: 20
+  MaxRollDeg: 30
+  PitchSteepFalloffDeg: 22
+  PitchShallowFalloffDeg: 55
+  YawFalloffDeg: 40
+  MaxIncidenceDeg: 45
+  ForgivenessPitchDeg: 0
+  ForgivenessRollDeg: 0
+  ForgivenessYawDeg: 0
   SpinToleranceScale: 0.01
   ReferenceSpeed: 30
   FixedStep: 0.02
-  ContactStep: 0.00002
   PredictSeconds: 22

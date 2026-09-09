@@ -62,12 +62,7 @@ namespace Verification
         /// <summary>Bank angles swept, degrees.</summary>
         private static readonly float[] RollAngles = { -70f, -40f, -20f, 0f, 20f, 40f, 70f };
 
-        /// <summary>
-        /// The published optimal attack angle, kept here only so this report has a fixed
-        /// angle to sweep at. It is no longer a constant in the solver: SkipPhysics does not
-        /// know that 20 degrees is special, and SkipReality MEASURES the optimum rather than
-        /// being told it (check R1).
-        /// </summary>
+        /// <summary>The physically optimal attack angle — see SkipPhysics.OptimalAttackDeg.</summary>
         private const float OptimalAttackDeg = 20f;
 
         /// <summary>A firm, ordinary throw — used wherever the sweep needs to hold speed fixed.
@@ -105,8 +100,7 @@ namespace Verification
             var report = new StringBuilder();
             report.AppendLine("Skip curve — driven through the real solver.");
             report.AppendLine(
-                $"Constants: SpeedScale {constants.SpeedScale}   SpinScale {constants.SpinScale}   " +
-                $"C_l {constants.LiftCoefficient}   " +
+                $"Constants: SpeedScale {constants.SpeedScale}   EnergyLoss {constants.EnergyLoss}   " +
                 $"forgiveness pitch/roll/yaw {constants.ForgivenessPitchDeg}/{constants.ForgivenessRollDeg}/{constants.ForgivenessYawDeg} deg   " +
                 $"spin tolerance {constants.SpinToleranceScale}   reference speed {constants.ReferenceSpeed} m/s");
             report.AppendLine();
@@ -172,8 +166,8 @@ namespace Verification
 
                 var reference = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, tuning);
                 referenceRow.AppendLine(
-                    $"  {name,-18}  {tuning.Mass * 1000f,5:F0}g  {tuning.Radius * 100f,5:F1}cm   " +
-                    $"{tuning.Thickness * 1000f,5:F1}mm   {reference.Skips,5}   {reference.Distance,7:F1} m");
+                    $"  {name,-18}  {tuning.SpinMultiplier,5:F2}  {tuning.VerticalMultiplier,5:F2}   " +
+                    $"{tuning.HorizontalMultiplier,5:F2}   {reference.Skips,5}   {reference.Distance,7:F1} m");
             }
 
             report.AppendLine(Rule());
@@ -204,8 +198,8 @@ namespace Verification
         private static string ReportFor(string label, SkipConstants constants, SkipTuning tuning)
         {
             var report = new StringBuilder();
-            report.AppendLine($"{label}  —  {tuning.Mass * 1000f:F0} g  radius {tuning.Radius * 100f:F1} cm  " +
-                              $"thickness {tuning.Thickness * 1000f:F1} mm");
+            report.AppendLine($"{label}  —  spin {tuning.SpinMultiplier:F2}  vertical {tuning.VerticalMultiplier:F2}  " +
+                              $"horizontal {tuning.HorizontalMultiplier:F2}");
             report.AppendLine();
 
             report.AppendLine($"Speed sweep, at pitch {OptimalAttackDeg:F0} deg (the physical optimum), roll 0:");
@@ -258,15 +252,13 @@ namespace Verification
             var lines = new StringBuilder();
 
             // "Strongest" means best FOR SKIPPING, which is NOT every field at its ceiling:
-            // The most skip-friendly BODY the catalog allows, not the most flattering set
-            // of multipliers - there are no multipliers any more. A light, wide stone needs
-            // the least lift to plane and has the most area to make it with, so this is the
-            // rock choice that helps most, and the check below is that the THROW still
-            // matters more than it does.
+            // HorizontalMultiplier scales energy LOSS, so the strongest rock has it at its
+            // floor. Setting it to the maximum would build a deliberately draggy rock and
+            // let this check pass trivially.
             var maxed = SkipTuning.CreateDefault();
-            maxed.Mass = 0.05f;
-            maxed.Radius = 0.07f;
-            maxed.Thickness = 0.005f;
+            maxed.SpinMultiplier = 1.2f;
+            maxed.VerticalMultiplier = 1.3f;
+            maxed.HorizontalMultiplier = 0.95f;
 
             var normalSpeed = Measure(ReferenceSwingSpeed, OptimalAttackDeg, 0f, constants, baseline);
             var doubledSpeed = Measure(ReferenceSwingSpeed * 2f, OptimalAttackDeg, 0f, constants, baseline);

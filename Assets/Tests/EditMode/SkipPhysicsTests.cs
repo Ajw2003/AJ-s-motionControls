@@ -119,7 +119,7 @@ namespace RockSkipping.Physics.Tests
             var tuning = DefaultTuning();
 
             // A sane, firm reference throw at the physically optimal attack angle
-            // (the published optimum, which the solver is never told) — this should skip.
+            // (see SkipPhysics.OptimalAttackDeg / docs remarks) — this should clearly skip.
             var state = MakeLaunchState(constants, tuning, swingSpeed: 30f, pitchDeg: 20f, rollDeg: 0f, spinRate: 400f);
 
             for (var i = 0; i < 5000 && !state.HasSunk; i++)

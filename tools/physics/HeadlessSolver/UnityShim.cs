@@ -69,27 +69,6 @@ namespace UnityEngine
 
         public static float Dot(Vector3 a, Vector3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
 
-        /// <summary>Unsigned angle between two vectors, degrees — Unity's convention.</summary>
-        public static float Angle(Vector3 from, Vector3 to)
-        {
-            var denominator = Mathf.Sqrt(from.sqrMagnitude * to.sqrMagnitude);
-            if (denominator < 1e-15f) return 0f;
-            var cos = Mathf.Clamp(Dot(from, to) / denominator, -1f, 1f);
-            return Mathf.Acos(cos) * Mathf.Rad2Deg;
-        }
-
-        /// <summary>
-        /// Signed angle from `from` to `to` about `axis`, degrees. Unity's sign convention:
-        /// positive is a right-handed rotation about `axis`, which is what the sign of the
-        /// cross product projected onto the axis gives.
-        /// </summary>
-        public static float SignedAngle(Vector3 from, Vector3 to, Vector3 axis)
-        {
-            var unsigned = Angle(from, to);
-            var cross = Cross(from, to);
-            return Dot(axis, cross) < 0f ? -unsigned : unsigned;
-        }
-
         public static Vector3 Cross(Vector3 a, Vector3 b) => new Vector3(
             a.y * b.z - a.z * b.y,
             a.z * b.x - a.x * b.z,
@@ -213,75 +192,5 @@ namespace UnityEngine
             var composed = (a90 * a90) * Vector3.forward;
             Near("double yaw .z", composed.z, -1f);
         }
-    }
-}
-
-namespace UnityEngine
-{
-    /// <summary>
-    /// The rest of the Unity surface the skip-physics files touch — enough to compile and
-    /// RUN SkipPhysics/SkipConstants/SkipTuning outside the Editor.
-    /// </summary>
-    /// <remarks>
-    /// These are deliberately inert. The attributes carry Editor-inspector metadata and mean
-    /// nothing headless; `Resources.Load` always misses, which is the point — it drives
-    /// `SkipConstants.LoadOrWarn` down its CreateDefault path, so the harness measures the
-    /// CODE's defaults rather than whatever has drifted into the shipped .asset. When the
-    /// asset and the defaults disagree, that difference is a finding, not a nuisance.
-    ///
-    /// Same rule as the rest of this file: the real physics sources are LINKED, never copied,
-    /// so there is nothing here that can drift from what Unity compiles.
-    /// </remarks>
-    public class ScriptableObject
-    {
-        /// <summary>Unity's asset name. Only ever used here in warning text.</summary>
-        public string name = string.Empty;
-
-        public static T CreateInstance<T>() where T : ScriptableObject, new() => new T();
-    }
-
-    public static class Resources
-    {
-        /// <summary>Always a miss — see the class remarks.</summary>
-        public static T Load<T>(string path) where T : class => null;
-    }
-
-    public static class Debug
-    {
-        public static void Log(object message) => System.Console.WriteLine($"[log] {message}");
-        public static void LogWarning(object message) => System.Console.WriteLine($"[warn] {message}");
-        public static void LogError(object message) => System.Console.WriteLine($"[error] {message}");
-    }
-
-    [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
-    public sealed class TooltipAttribute : System.Attribute
-    {
-        public TooltipAttribute(string tooltip) { }
-    }
-
-    [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
-    public sealed class HeaderAttribute : System.Attribute
-    {
-        public HeaderAttribute(string header) { }
-    }
-
-    [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
-    public sealed class RangeAttribute : System.Attribute
-    {
-        public RangeAttribute(float min, float max) { }
-    }
-
-    [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
-    public sealed class SerializeFieldAttribute : System.Attribute { }
-
-    [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
-    public sealed class HideInInspectorAttribute : System.Attribute { }
-
-    [System.AttributeUsage(System.AttributeTargets.Class, AllowMultiple = false)]
-    public sealed class CreateAssetMenuAttribute : System.Attribute
-    {
-        public string fileName;
-        public string menuName;
-        public int order;
     }
 }

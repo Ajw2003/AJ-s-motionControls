@@ -10,45 +10,32 @@ namespace Game
         public Vector3 Velocity;
 
         /// <summary>
-        /// The stone's orientation. Starts straight from the phone and is then integrated
-        /// by the solver — the water tips it, and this is what it tips. Applied to the mesh
-        /// verbatim, so the stone the player watches is the stone the physics is solving.
+        /// The stone's orientation, straight from the phone. Applied to the mesh verbatim
+        /// — this is what makes the stone match the phone.
         /// </summary>
         public Quaternion Attitude;
 
         /// <summary>
-        /// The stone's face normal in world space — <see cref="PhoneAttitude.FaceNormal"/>
-        /// of <see cref="Attitude"/>, kept alongside it because the contact model reads it
-        /// every substep. Derived, never authored: if it disagrees with Attitude, Attitude
-        /// wins.
+        /// The stone's face normal at launch, in world space — <see cref="PhoneAttitude.FaceNormal"/>
+        /// of <see cref="Attitude"/>. Roll's two effects on a bounce (lift scaled by
+        /// cos(roll), lift deflected sideways) both fall out of this one rotated vector, so
+        /// Step reads it directly rather than decomposing and recomposing pitch/roll
+        /// scalars — see the plan's remarks on the old three-angle bug.
         /// </summary>
         public Vector3 FaceNormal;
 
         /// <summary>
-        /// The stone's angular velocity, world space, rad/s. Both the spin the player put on
-        /// it and whatever tumble the water has since added — they are the same vector and
-        /// the solver does not distinguish them.
-        /// </summary>
-        /// <remarks>
-        /// This is the field that makes spin do real work. It is what
-        /// <see cref="RigidDisc.Integrate"/> advances and what
-        /// <see cref="DiscContact.Evaluate"/> reads to damp rotation, so a well-spun stone
-        /// holds its attack angle through a slap and a badly spun one is turned over by it —
-        /// with nothing anywhere deciding that a run "should" now end.
-        /// </remarks>
-        public Vector3 AngularVelocity;
-
-        /// <summary>
         /// Where the stone was aimed at launch, flattened to the water plane. The velocity
-        /// starts aligned with this; over a run the contact can push the velocity away from
-        /// it, which is the sideslip the yaw forgiveness band judges.
+        /// starts aligned with this; over a run, roll's sideways lift can push the velocity
+        /// away from it, which is the sideslip the yaw forgiveness band judges.
         /// </summary>
         public Vector3 HeadingDir;
 
         /// <summary>
         /// Face angle in degrees above horizontal, straight off the phone's tilt at launch
-        /// — the toss angle AND the attack angle are the same number, on purpose. See
-        /// PhoneAttitude.FaceAngleDeg and the plan's "no hidden neutral-pose offset" section.
+        /// — the toss angle AND the attack angle the bounce judges are the same number, on
+        /// purpose. See PhoneAttitude.FaceAngleDeg and the plan's "no hidden neutral-pose
+        /// offset" section.
         /// </summary>
         public float FaceAngleDeg;
 
@@ -57,34 +44,26 @@ namespace Game
 
         /// <summary>
         /// How fast the wrist was turning about the phone's screen normal, deg/s, signed.
-        /// Kept as the raw phone reading: it widens the forgiveness bands and drives the
-        /// stone's drawn rotation. The PHYSICS uses <see cref="AngularVelocity"/>, which is
-        /// this converted into the stone's own units by <see cref="SpinTransfer"/>.
+        /// Turns the stone on screen, widens every forgiveness band (see
+        /// SkipConstants.SpinToleranceScale), and — the real work — holds the stone's
+        /// attack angle through each impact. Decays every bounce by
+        /// SkipConstants.SpinRetention, so stability always runs out eventually.
         /// </summary>
         public float Spin;
 
         /// <summary>
-        /// How far the face has been turned away from where it was launched, degrees.
+        /// Accumulated attitude drift, degrees. A real stone skips because spin holds its
+        /// face steady through the slap; without spin it tumbles, the attack angle
+        /// randomises and the run dies in a bounce or two. This is that: every bounce adds
+        /// drift in proportion to how UNstabilised the stone is, and the total is charged
+        /// against the pitch and roll errors, so quality decays over a run at a rate spin
+        /// controls.
+        ///
+        /// It is also what stops attitude being frozen at launch. Before this existed,
+        /// quality was computed once from the release pose and never changed, so nothing
+        /// about a run ever degraded.
         /// </summary>
-        /// <remarks>
-        /// This used to be an invented accumulator — every bounce added
-        /// `WanderPerBounce · (1 − stability)` so that runs would decay. It is now a
-        /// MEASUREMENT: the angle between the current face normal and the launch normal.
-        /// Nothing adds to it and nothing tunes it; it is read out of the attitude the
-        /// solver integrated. A stone that holds its face reports zero all run.
-        /// </remarks>
         public float WanderDeg;
-
-        /// <summary>
-        /// Whether any part of the face was under water at the end of the last substep.
-        /// </summary>
-        /// <remarks>
-        /// Carried in the state, not in a local, because a contact can straddle two Step
-        /// calls: a bounce lasts a few milliseconds and the fixed step is twenty, so usually
-        /// it does not — but "usually" is how a skip goes uncounted on the throw that
-        /// happens to land on a step boundary.
-        /// </remarks>
-        public bool InContact;
 
         public int SkipCount;
         public bool HasSunk;
@@ -100,77 +79,98 @@ namespace Game
     }
 
     /// <summary>
-    /// The skip solver: ballistic flight, and a sub-stepped fluid-dynamic water contact.
+    /// Custom bounce solver. Deliberately not Unity rigidbodies: skipping needs exact
+    /// per-bounce control over attitude and energy loss, and the aim preview needs to
+    /// run the same maths headlessly to draw its arc.
     /// </summary>
     /// <remarks>
     /// PURE. Step takes state in and returns state out; it mutates nothing, touches no
     /// scene, and publishes no events.
     ///
     /// That last part is load-bearing. The aim preview runs Step hundreds of times per
-    /// frame for a throw that has not happened. If Step published SkipOccurredEvent, the
-    /// preview would score imaginary throws and the scoreboard would climb while a player
-    /// merely aimed. RockController inspects the returned SkipStep and publishes — and only
-    /// when driving a real throw. Audio, VFX and camera shake follow the same rule:
-    /// observable effects belong to the caller, never in here.
+    /// frame for a throw that has not happened. If Step published SkipOccurredEvent,
+    /// the preview would score imaginary throws and the scoreboard would climb while a
+    /// player merely aimed. RockController inspects the returned SkipStep and publishes
+    /// — and only when driving a real throw. Audio, VFX and camera shake follow the
+    /// same rule: observable effects belong to the caller, never in here.
     ///
-    /// <b>The model.</b> There is no bounce formula. The stone has a body — mass, radius,
-    /// thickness, and the moments of inertia that follow (<see cref="SkipTuning"/>) — and
-    /// while any part of its face is under water the solver integrates the real pressure
-    /// force and its torque (<see cref="DiscContact"/>, <see cref="RigidDisc"/>) at a
-    /// microsecond substep. Whether the stone skips or sinks is then an OUTCOME, not a
-    /// branch: enough lift and it leaves, not enough and it goes under.
+    /// The model: the throw drives, the rock modulates. Speed comes straight from the
+    /// phone's swing (SkipConstants.SpeedScale converts hand m/s to stone m/s); energy
+    /// loss per bounce falls out of how steeply the stone hits and how far its face is
+    /// from level, not from an authored retention constant; and each rock only scales
+    /// that geometry with three bounded multipliers. See
+    /// docs/plans/Plan-ThrowDrivenSkipModel.md for the full reasoning.
     ///
-    /// Everything the old solver authored is now a consequence:
-    ///
-    /// - <b>Energy loss</b> is the work the pressure does against the stone. It cannot be
-    ///   positive: pressure acts only where the face is advancing into the water, so its
-    ///   work rate is `½ρC_l·u_n³` with `u_n &lt; 0` everywhere it acts. The old `MinLoss`
-    ///   clamp that enforced this is gone because the structure now guarantees it.
-    /// - <b>The forward/upward split</b> is the face normal's direction. Nothing shares out
-    ///   an energy budget.
-    /// - <b>Tumbling</b> is the contact torque against the stone's own inertia and spin.
-    ///   There is no `WanderDeg` to invent and no stability threshold to type in.
-    /// - <b>The 20° optimum</b> is not written down anywhere in this file. It emerges, and
-    ///   the verification harness measures it rather than asserting it.
-    ///
-    /// See docs/plans/real-skip-physics.md and docs/Findings-RealSkipPhysics.md. The
-    /// findings document, not this file, is the source of truth for the published numbers —
-    /// including §9.9, which is candid that skip counts are still short of Bocquet's and
-    /// that the shortfall currently lands on `SkipConstants.SpinScale`.
+    /// A bounce is ONE ENERGY BUDGET: it takes a loss, then splits what survives between
+    /// forward and upward motion. It never synthesises lift out of horizontal speed. That
+    /// distinction is load-bearing — the earlier version did synthesise it, and stones
+    /// gained energy every bounce and skipped for minutes on end. Because the loss is
+    /// floored at SkipConstants.MinLoss and the split preserves magnitude exactly,
+    /// outgoing speed is always strictly less than incoming speed, no matter what any
+    /// tuning field is set to. Keep it that way: any future change here should be checked
+    /// against that one invariant first. See docs/plans/Plan-SkipEnergyInvariant.md.
     /// </remarks>
     public static class SkipPhysics
     {
         /// <summary>
-        /// How far the stone must fly between contacts, in radii, for the hop to count as a
-        /// skip rather than surface chatter.
+        /// The empirically optimal attack angle for a skipping stone (Clanet, Hersen &amp;
+        /// Bocquet, 2004). A statement about what skipping IS, not a per-rock or global
+        /// knob — nobody ever needed to dial it, only how forgiving missing it is
+        /// (SkipConstants.ForgivenessPitchDeg).
         /// </summary>
-        /// <remarks>
-        /// Without this the solver counted a stone vibrating on the surface as skipping —
-        /// runs of "skips" two centimetres apart on a five-centimetre stone
-        /// (docs/Findings-RealSkipPhysics.md §8.3). Real hops are metres. The gap between
-        /// the two is enormous, so this threshold is not delicate; it is in radii so it
-        /// scales with the stone instead of being a length typed in for one size of rock.
-        /// </remarks>
-        private const float MinimumHopRadii = 4f;
+        private const float OptimalAttackDeg = 20f;
+
+        // The falloff and hard-limit thresholds that used to live here as private consts are
+        // now fields on SkipConstants (RollFalloffDeg, MaxRollDeg, PitchSteepFalloffDeg,
+        // PitchShallowFalloffDeg, YawFalloffDeg, MaxIncidenceDeg). They decide what counts as
+        // a flat-out failed throw, which is a feel question that has to be answerable without
+        // a recompile. OptimalAttackDeg stays a const below: it is a fact about skipping, not
+        // a preference.
 
         /// <summary>
-        /// Below this forward speed a run is over regardless. Not a skip/sink criterion —
-        /// the physics decides that — just a floor that stops a stone that has effectively
-        /// stopped from being simulated forever.
+        /// How much harder a bad bounce is than a clean one. Multiplies the energy loss at
+        /// quality 0; quality 1 pays the authored EnergyLoss unmodified.
         /// </summary>
-        private const float MinForwardSpeed = 0.05f;
+        private const float WorstQualityLossScale = 2.5f;
 
-        /// <summary>Ceiling on contact substeps inside a single Step, so a pathological
-        /// state cannot hang the aim preview. A real contact is a few hundred.</summary>
-        private const int MaxContactSubsteps = 4000;
+        /// <summary>Energy-loss scaling at glancing incidence and at the steepest survivable
+        /// incidence. A steeper arrival slaps harder and costs more.</summary>
+        private const float ShallowIncidenceLossScale = 0.8f;
+        private const float SteepIncidenceLossScale = 1.6f;
+
+        /// <summary>Hard ceiling on the share of surviving energy that can go upward. Well
+        /// below 1 — a bounce that sent everything vertical would stop dead in the air.</summary>
+        private const float MaxLiftShare = 0.5f;
+
+        /// <summary>How sharply bank steers the stone, radians of heading change per unit
+        /// sin(roll). A rotation of the horizontal velocity, never an addition to it — see
+        /// the energy remarks in Step.</summary>
+        private const float RollSteerRad = 0.05f;
+
+        /// <summary>Below this speed the stone stops skipping and sinks, regardless of angle.</summary>
+        private const float MinSkipSpeed = 2.5f;
+
+        /// <summary>
+        /// Leave the water slower than this, vertically, and the stone did not skip — it
+        /// went in. A guard against grinding, not the thing that ends a run — see MinSkipSpeed.
+        /// </summary>
+        private const float MinExitRiseSpeed = 0.3f;
 
         /// <summary>
         /// A forgiveness band widened by spin, deg per deg/s of measured wrist spin — see
         /// SkipConstants.SpinToleranceScale. A band authored at 0 stays off regardless of
         /// spin: spin buys tolerance, it does not turn tolerance on where none was authored.
         /// </summary>
-        public static float EffectiveBand(float authoredBandDeg, float spinRate, float spinToleranceScale) =>
+        private static float EffectiveBand(float authoredBandDeg, float spinRate, float spinToleranceScale) =>
             authoredBandDeg <= 0f ? 0f : authoredBandDeg + Mathf.Abs(spinRate) * spinToleranceScale;
+
+        /// <summary>0..1 quality from how far a measured value sits outside its forgiveness
+        /// band, fading to 0 over falloffDeg once past it.</summary>
+        private static float BandQuality(float errorDeg, float effectiveBandDeg, float falloffDeg)
+        {
+            var excess = Mathf.Max(0f, Mathf.Abs(errorDeg) - effectiveBandDeg);
+            return Mathf.Clamp01(1f - excess / Mathf.Max(falloffDeg, 0.0001f));
+        }
 
         /// <summary>Build the initial state from a throw descriptor.</summary>
         /// <param name="origin">Where the throw starts.</param>
@@ -185,9 +185,9 @@ namespace Game
             // normalisation, no power curve — a harder swing is simply a faster stone.
             var speed = Mathf.Max(0f, swingSpeed) * constants.SpeedScale;
 
-            // Where the stone is pointing IS where it goes. Both read off the same rotation
-            // the mesh is drawn with, so the throw can never disagree with the stone the
-            // player watched themselves aim.
+            // Where the stone is pointing IS where it goes. Both read off the same
+            // rotation the mesh is drawn with, so the throw can never disagree with the
+            // stone the player watched themselves aim.
             var heading = PhoneAttitude.HeadingDirection(attitude);
 
             // The phone's own tilt IS the toss angle — no separate LaunchPitchDeg, and no
@@ -196,25 +196,19 @@ namespace Game
             var pitch = pitchDeg * Mathf.Deg2Rad;
             var velocity = heading * (speed * Mathf.Cos(pitch)) + Vector3.up * (speed * Mathf.Sin(pitch));
 
-            var faceNormal = PhoneAttitude.FaceNormal(attitude);
-
-            // The wrist's twist becomes the stone's spin about its own face normal. The
-            // conversion is SpinTransfer's grip-radius model, then SpinScale — see the
-            // tooltip there for why that factor is not 1.
-            var stoneSpin = SpinTransfer.ToStoneSpinRadPerSec(spinRate, tuning.Radius)
-                            * constants.SpinScale;
-
             return new SkipState
             {
                 Position = origin,
                 Velocity = velocity,
                 Attitude = attitude,
-                FaceNormal = faceNormal,
-                AngularVelocity = faceNormal * stoneSpin,
+                FaceNormal = PhoneAttitude.FaceNormal(attitude),
                 HeadingDir = heading,
                 FaceAngleDeg = pitchDeg,
                 RollDeg = PhoneAttitude.RollDeg(attitude),
-                Spin = spinRate,
+                // Signed. Which way the wrist turned is mostly visual, but it also widens
+                // every forgiveness band (see EffectiveBand) and, above all, stabilises the
+                // stone against tumbling — see SkipState.WanderDeg.
+                Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.8f, 1.2f),
                 WanderDeg = 0f,
                 SkipCount = 0,
                 HasSunk = false,
@@ -233,168 +227,125 @@ namespace Game
                 return result;
             }
 
-            var radius = Mathf.Max(tuning.Radius, 0.001f);
-            var mass = Mathf.Max(tuning.Mass, 0.001f);
-            var dryInertia = tuning.Inertia;
-            var contactStep = Mathf.Max(constants.ContactStep, 0.0000001f);
-            var discArea = Mathf.PI * radius * radius;
+            next.Velocity += Vector3.down * (constants.Gravity * dt);
+            next.Position += next.Velocity * dt;
 
-            var remaining = dt;
-            var substeps = 0;
-
-            while (remaining > 0f && !next.HasSunk && substeps < MaxContactSubsteps)
+            var crossedSurface = next.Position.y <= constants.WaterY && next.Velocity.y < 0f;
+            if (!crossedSurface)
             {
-                substeps++;
-
-                next.FaceNormal = (next.Attitude * Vector3.up).normalized;
-                var heightAboveWater = next.Position.y - constants.WaterY;
-
-                var forces = DiscContact.Evaluate(
-                    heightAboveWater, next.FaceNormal, next.Velocity, next.AngularVelocity,
-                    radius, constants.WaterDensity,
-                    constants.LiftCoefficient, constants.DragCoefficient);
-
-                var inContact = forces.WettedArea > 0f;
-
-                // A skip completes on the WATER-TO-AIR transition, going up. Keying this off
-                // "started rising this substep" instead does not work: lift turns the stone
-                // upward well before it is clear of the water, so by the time the face is dry
-                // it has been rising for hundreds of substeps and the moment is long past.
-                if (next.InContact && !inContact && next.Velocity.y > 0f)
-                {
-                    // Count the hop by the flight it is ABOUT to make. The stone is ballistic
-                    // the moment it is clear, so `2·v_y·v_h/g` is the hop exactly — no need to
-                    // wait for it to land, and the splash is reported where it happened.
-                    var horizontal = new Vector3(next.Velocity.x, 0f, next.Velocity.z).magnitude;
-                    var hop = 2f * next.Velocity.y * horizontal / Mathf.Max(constants.Gravity, 0.0001f);
-
-                    if (hop >= MinimumHopRadii * radius)
-                    {
-                        next.SkipCount++;
-                        result.Bounced = true;
-                    }
-                }
-
-                next.InContact = inContact;
-
-                if (!inContact)
-                {
-                    // Airborne. Step straight to the water rather than creeping toward it:
-                    // at a 20 ms fixed step a 12 m/s stone covers a quarter of a metre,
-                    // which would sail clean over a contact zone about a centimetre deep.
-                    var flightStep = Mathf.Min(remaining, TimeToContact(next, constants, radius, remaining));
-                    if (flightStep <= 0f) flightStep = remaining;
-
-                    Advance(ref next, Vector3.zero, mass, constants.Gravity, flightStep);
-
-                    // No torque in free flight — gravity acts at the centre of mass — so the
-                    // stone keeps whatever rotation it has.
-                    IntegrateAttitude(ref next, Vector3.zero, dryInertia, flightStep);
-
-                    remaining -= flightStep;
-                    continue;
-                }
-
-                if (result.ImpactSpeed <= 0f) result.ImpactSpeed = next.Velocity.magnitude;
-
-                // Sunk means the stone's CENTRE is a whole radius under, which is
-                // tilt-independent and unambiguous.
-                //
-                // Not "fully wetted": those are different things and conflating them killed
-                // the flattest throws outright. A level stone skimming with its centre a
-                // millimetre under IS fully wetted — that is the whole planing regime, and
-                // it is generating its maximum lift right then. Worse, DiscContact's
-                // dead-flat branch reports its submersion as a large sentinel rather than a
-                // real distance, so a wetted-depth test read a perfectly level stone as
-                // infinitely deep and sank it on contact.
-                if (heightAboveWater <= -radius)
-                {
-                    next.HasSunk = true;
-                    break;
-                }
-
-                var step = Mathf.Min(contactStep, remaining);
-
-                Advance(ref next, forces.Lift + forces.Friction, mass, constants.Gravity, step);
-
-                // Tumbling the stone means tumbling the water it drags — see
-                // RigidDisc.AddedTransverseInertia, which for a real stone is nearly twice
-                // the stone's own transverse moment.
-                var wetInertia = RigidDisc.WithAddedMass(
-                    dryInertia, constants.WaterDensity, radius, forces.WettedArea / discArea);
-                IntegrateAttitude(ref next, forces.Torque, wetInertia, step);
-
-                remaining -= step;
+                result.State = next;
+                return result;
             }
 
-            // Drift is measured off the attitude the solver integrated, not accumulated.
-            next.FaceNormal = (next.Attitude * Vector3.up).normalized;
-            next.WanderDeg = Vector3.Angle(next.FaceNormal, PhoneAttitude.FaceNormal(state.Attitude));
+            next.Position.y = constants.WaterY;
 
-            var forwardSpeed = new Vector3(next.Velocity.x, 0f, next.Velocity.z).magnitude;
-            if (!next.HasSunk && forwardSpeed < MinForwardSpeed && next.Position.y - constants.WaterY <= radius)
+            var speed = next.Velocity.magnitude;
+            result.ImpactSpeed = speed;
+
+            // How steeply it is coming in, measured against the water plane.
+            var horizontal = new Vector3(next.Velocity.x, 0f, next.Velocity.z);
+            var horizontalSpeed = horizontal.magnitude;
+            var incidenceDeg = horizontalSpeed > 0.0001f
+                ? Vector3.Angle(next.Velocity, horizontal)
+                : 90f;
+
+            // Bank far enough and the leading edge digs in — the same normal that gives a
+            // level stone its lift is what says an over-rolled one catches and sinks.
+            if (speed < MinSkipSpeed || incidenceDeg > constants.MaxIncidenceDeg
+                || Mathf.Abs(next.RollDeg) + next.WanderDeg > constants.MaxRollDeg)
             {
                 next.HasSunk = true;
-            }
-
-            if (next.HasSunk)
-            {
                 next.Velocity = Vector3.zero;
-                next.AngularVelocity = Vector3.zero;
                 result.HasSunk = true;
+                result.State = next;
+                return result;
             }
 
+            // Three axes, three bands, three qualities, multiplied together. Each is a
+            // gradient, not a cliff — see BandQuality — and past the pitch band the falloff
+            // is asymmetric: too shallow fades gradually (a survivable skim), too steep
+            // collapses fast (an abrupt plow-in). That asymmetry is the whole reason pitch
+            // has two falloff constants instead of one.
+            //
+            // WanderDeg is charged against pitch and roll here: it is the tumble a stone
+            // picks up when spin is not holding it steady, so a poorly spun run degrades
+            // bounce by bounce instead of repeating one frozen launch pose forever.
+            var pitchError = next.FaceAngleDeg - OptimalAttackDeg;
+            var pitchBand = EffectiveBand(constants.ForgivenessPitchDeg, next.Spin, constants.SpinToleranceScale);
+            var pitchFalloff = pitchError >= 0f ? constants.PitchSteepFalloffDeg : constants.PitchShallowFalloffDeg;
+            var pitchQuality = BandQuality(Mathf.Abs(pitchError) + next.WanderDeg, pitchBand, pitchFalloff);
+
+            var rollBand = EffectiveBand(constants.ForgivenessRollDeg, next.Spin, constants.SpinToleranceScale);
+            var rollQuality = BandQuality(Mathf.Abs(next.RollDeg) + next.WanderDeg, rollBand, constants.RollFalloffDeg);
+
+            // Sideslip: how far the velocity has drifted from where the stone was aimed.
+            // Zero at launch by construction (CreateLaunch builds velocity straight off
+            // heading); a banked run curves and this is what starts costing it.
+            var yawErrorDeg = horizontalSpeed > 0.0001f
+                ? Vector3.Angle(horizontal, next.HeadingDir)
+                : 0f;
+            var yawBand = EffectiveBand(constants.ForgivenessYawDeg, next.Spin, constants.SpinToleranceScale);
+            var yawQuality = BandQuality(yawErrorDeg, yawBand, constants.YawFalloffDeg);
+
+            var quality = pitchQuality * rollQuality * yawQuality;
+
+            // ── ONE ENERGY BUDGET ────────────────────────────────────────────────────────
+            // Take the loss first, then split what SURVIVES between forward and upward.
+            // Lift is a share of the post-loss budget, never a quantity synthesised from
+            // horizontal speed — that was the bug this model replaces, where a stone
+            // arriving with vy ~ 0 left with vy = 0.09 * vh and runs never ended.
+            //
+            // The invariant, and it is structural rather than tuned: lossFraction is
+            // floored at MinLoss > 0, and the split preserves magnitude exactly
+            // (vy^2 + vh^2 = speedAfter^2), so outgoing speed is ALWAYS strictly less than
+            // incoming speed — whatever quality, roll, or the rock's multipliers do.
+            var incidenceFactor = Mathf.Clamp01(incidenceDeg / constants.MaxIncidenceDeg);
+            var lossShape = Mathf.Lerp(1f, WorstQualityLossScale, 1f - quality)
+                            * Mathf.Lerp(ShallowIncidenceLossScale, SteepIncidenceLossScale, incidenceFactor)
+                            * Mathf.Clamp(tuning.HorizontalMultiplier, 0.95f, 1.05f);
+            var lossFraction = Mathf.Clamp(constants.EnergyLoss * lossShape, constants.MinLoss, 0.95f);
+
+            var speedAfter = speed * Mathf.Sqrt(1f - lossFraction);
+
+            // Roll scales the lift down (a stone on its edge planes less) via the same
+            // rotated face normal the mesh is drawn with — see SkipState.FaceNormal.
+            var rollRad = next.RollDeg * Mathf.Deg2Rad;
+            var liftShare = Mathf.Clamp(
+                constants.LiftShare * quality * Mathf.Cos(rollRad) * Mathf.Clamp(tuning.VerticalMultiplier, 0.7f, 1.3f),
+                0f, MaxLiftShare);
+
+            var rise = speedAfter * Mathf.Sqrt(liftShare);
+            if (rise < MinExitRiseSpeed)
+            {
+                next.HasSunk = true;
+                next.Velocity = Vector3.zero;
+                result.HasSunk = true;
+                result.State = next;
+                return result;
+            }
+
+            // Bank steers by ROTATING the surviving horizontal velocity, not by adding a
+            // lateral kick to it. Same visible curve, but a rotation cannot change the
+            // vector's magnitude, so it cannot smuggle energy in the way the old additive
+            // kick did.
+            var exitHorizontalSpeed = speedAfter * Mathf.Sqrt(1f - liftShare);
+            var heading = horizontalSpeed > 0.0001f ? horizontal / horizontalSpeed : next.HeadingDir;
+            var steered = Quaternion.AngleAxis(
+                Mathf.Sin(rollRad) * RollSteerRad * Mathf.Rad2Deg, Vector3.up) * heading;
+
+            next.Velocity = steered * exitHorizontalSpeed + Vector3.up * rise;
+
+            // Spin holds the stone steady; what spin does not cover accumulates as tumble,
+            // and spin itself bleeds off — so stability always runs out and the run ends.
+            var stability = Mathf.Clamp01(Mathf.Abs(next.Spin) / Mathf.Max(constants.SpinForStability, 0.0001f));
+            next.WanderDeg += (1f - stability) * constants.WanderPerBounce;
+            next.Spin *= constants.SpinRetention;
+
+            next.SkipCount++;
+
+            result.Bounced = true;
             result.State = next;
             return result;
-        }
-
-        /// <summary>
-        /// Time until the disc's rim first reaches the water, under gravity alone, or
-        /// <paramref name="horizon"/> if it will not within that window.
-        /// </summary>
-        /// <remarks>
-        /// Contact begins when the centre is `R·sinθ` above the surface, not when it is AT
-        /// the surface — a tilted disc touches with its rim first. Attitude is treated as
-        /// fixed across the lookahead, which is safe because the result is only used to pick
-        /// a step length: land slightly early and the next iteration simply finds no wetted
-        /// area and looks again.
-        /// </remarks>
-        private static float TimeToContact(in SkipState state, SkipConstants constants, float radius, float horizon)
-        {
-            var n = state.FaceNormal;
-            var sinTilt = Mathf.Sqrt(Mathf.Max(0f, 1f - n.y * n.y));
-            var touchHeight = radius * sinTilt;
-
-            // Height of the centre above the height at which the rim touches.
-            var y0 = state.Position.y - constants.WaterY - touchHeight;
-            if (y0 <= 0f) return 0f;
-
-            var g = Mathf.Max(constants.Gravity, 0.0001f);
-            var vy = state.Velocity.y;
-
-            // y0 + vy·t − ½g·t² = 0
-            var discriminant = vy * vy + 2f * g * y0;
-            if (discriminant <= 0f) return horizon;
-
-            var t = (vy + Mathf.Sqrt(discriminant)) / g;
-            return t > 0f && t < horizon ? t : horizon;
-        }
-
-        /// <summary>Semi-implicit translation step: velocity first, then position.</summary>
-        private static void Advance(ref SkipState state, Vector3 force, float mass, float gravity, float dt)
-        {
-            var acceleration = force / mass + Vector3.down * gravity;
-            state.Velocity += acceleration * dt;
-            state.Position += state.Velocity * dt;
-        }
-
-        private static void IntegrateAttitude(ref SkipState state, Vector3 torque, RigidDisc.Inertia inertia, float dt)
-        {
-            var attitude = state.Attitude;
-            var angularVelocity = state.AngularVelocity;
-            RigidDisc.Integrate(ref attitude, ref angularVelocity, torque, inertia, dt);
-            state.Attitude = attitude;
-            state.AngularVelocity = angularVelocity;
         }
 
         /// <summary>
