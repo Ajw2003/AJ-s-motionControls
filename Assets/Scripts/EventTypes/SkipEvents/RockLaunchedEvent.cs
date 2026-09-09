@@ -45,7 +45,7 @@ namespace EventTypes.SkipEvents
         public float RollDeg { get; }
 
         /// <summary>
-        /// Wrist spin at launch, deg/s, signed, after SkipTuning.SpinMultiplier — the same
+        /// Wrist spin at launch, deg/s, signed, as measured at the phone — the same
         /// rate the stone is actually drawn turning at.
         /// </summary>
         public float SpinRate { get; }

@@ -3,14 +3,33 @@ using UnityEngine;
 namespace Game
 {
     /// <summary>
-    /// Every number that is NOT a property of one rock: the simulation itself, the one
-    /// unit conversion the model cannot do without, and the three forgiveness bands that
+    /// Every number that is NOT a property of one rock: the water, the simulation, the two
+    /// unit conversions the model cannot do without, and the three forgiveness bands that
     /// are the only softening left anywhere in the pipeline.
     /// </summary>
     /// <remarks>
-    /// Split out of SkipTuning so a rock's file cannot grow global knobs back in — see
-    /// docs/plans/Plan-ThrowDrivenSkipModel.md. Loaded once from Resources/SkipConstants,
-    /// same pattern as SkipTuning and RockCatalog.
+    /// Split out of SkipTuning so a rock's file cannot grow global knobs back in. Loaded once
+    /// from Resources/SkipConstants, same pattern as SkipTuning and RockCatalog.
+    ///
+    /// **What changed, and why the old dials are gone.** `EnergyLoss`, `LiftShare`,
+    /// `MinLoss`, `SpinRetention`, `WanderPerBounce` and `SpinForStability` all described a
+    /// bounce that was scored and then scaled. The solver now integrates real fluid forces
+    /// through the water contact (see <see cref="DiscContact"/>), so every one of those is a
+    /// consequence rather than a setting:
+    ///
+    /// - energy loss **is** the work the pressure does against the stone, and is negative by
+    ///   construction rather than by a `MinLoss` clamp;
+    /// - the split between forward and upward **is** the face normal's direction;
+    /// - tumbling **is** the contact torque against the stone's own inertia and spin, so
+    ///   there is no `WanderDeg` to invent and no stability threshold to type in.
+    ///
+    /// What is left divides cleanly in two. The **physical** block has right answers that
+    /// can be looked up and got wrong — fresh water is 1000 kg/m³, not a taste. The
+    /// **calibration** block converts the phone's units into the stone's, and is the only
+    /// place a number is chosen because of how the game plays.
+    ///
+    /// See docs/plans/real-skip-physics.md and docs/Findings-RealSkipPhysics.md; the
+    /// findings document, not this file, is the source of truth for the published values.
     /// </remarks>
     [CreateAssetMenu(menuName = "RockSkipping/Skip Constants", fileName = "SkipConstants")]
     public class SkipConstants : ScriptableObject
@@ -19,105 +38,61 @@ namespace Game
         public float Gravity = 9.81f;
         public float WaterY = 0f;
 
-        [Header("Launch")]
-        [Tooltip("Converts the phone's raw swing speed (m/s at the wrist) into a stone's " +
-                 "launch speed. The one constant the model cannot remove — everything else " +
-                 "is either raw phone signal or falls out of geometry.")]
-        public float SpeedScale = 1f;
+        [Tooltip("Water density, kg/m^3. Fresh water is 1000. This is a physical fact, not " +
+                 "a dial - changing it to tune the game changes what 'water' means.")]
+        public float WaterDensity = ReferenceStone.WaterDensity;
 
-        [Header("Bounce")]
-        [Tooltip("Fraction of kinetic energy the water takes on every bounce — THE one dial " +
-                 "for how many skips a good throw gets.\n\n" +
-                 "The bounce takes this loss first, then splits what survives between forward " +
-                 "and upward motion, so outgoing speed is always less than incoming speed and " +
-                 "a run can never run away.\n\n" +
-                 "Approximate skips for a clean throw:\n" +
-                 "    skips ~= ln(MinSkipSpeed / launchSpeed) / (0.5 * ln(1 - EnergyLoss))\n\n" +
-                 "That is an upper bound — a wobbly (low-spin) throw ends sooner, because " +
-                 "tumble ends a run before the energy budget does.\n\n" +
-                 "Measured against a 30 m/s swing at the optimal angle: 0.17 ~= 29 skips, " +
-                 "0.20 ~= 25 (the default), 0.23 ~= 21, 0.26 ~= 18. Raise it for shorter runs, " +
-                 "lower it for longer.")]
-        [Range(0.02f, 0.6f)] public float EnergyLoss = 0.20f;
+        [Header("Hydrodynamics")]
+        [Tooltip("Lift coefficient C_l in the pressure law p = 0.5 * rho * C_l * (v.n)^2.\n\n" +
+                 "Bocquet quotes ~1 for a law in the FULL speed squared. This model uses the " +
+                 "Nagahiro form in the NORMAL velocity squared, which is the only one that " +
+                 "produces a magic angle (Findings 1.2/1.4), and at skipping angles " +
+                 "(v.n)^2 is a small fraction of V^2 - so the equivalent value here is much " +
+                 "larger than 1. Around 16 reproduces contact durations of a few " +
+                 "milliseconds, which is the published order (R3).")]
+        [Range(0.5f, 64f)] public float LiftCoefficient = 16f;
 
-        [Tooltip("Share of the energy surviving a bounce that gets redirected upward into the " +
-                 "next hop, before quality/roll/rock scaling. Sets the shape of the arc, not " +
-                 "the length of the run — it is a split of a fixed budget, so raising it buys " +
-                 "higher hops at the cost of forward carry. ~0.03 is a 10-degree exit angle.")]
-        [Range(0.005f, 0.2f)] public float LiftShare = 0.030f;
+        [Tooltip("Friction coefficient C_f, along the face.\n\n" +
+                 "SHIPS AT ZERO, and this is not neglect. Combining Bocquet's V^2 friction " +
+                 "with the (v.n)^2 pressure law sinks the stone at every tilt and every " +
+                 "speed - measured, Findings 1.3. Above about 0.1 this breaks the model " +
+                 "rather than tuning it. The stone still decelerates without it: a tilted " +
+                 "face's normal force already points partly backwards.")]
+        [Range(0f, 0.1f)] public float DragCoefficient = ReferenceStone.DragCoefficient;
 
-        [Tooltip("Floor under the per-bounce energy loss, whatever quality and the rock's " +
-                 "multiplier work out to. This is the guarantee that every run ends: energy " +
-                 "strictly falls every bounce, so the stone always reaches MinSkipSpeed " +
-                 "eventually. Do not set to 0.")]
-        [Range(0.01f, 0.3f)] public float MinLoss = 0.05f;
+        [Header("Calibration - phone units to stone units")]
+        [Tooltip("Converts the phone's raw swing speed (m/s at the wrist) into the stone's " +
+                 "launch speed. A harder swing is simply a faster stone - no power curve.\n\n" +
+                 "Well below 1, and that is measured rather than taste: the phone's median " +
+                 "swing is 26 m/s at the wrist (Findings 6) while real stone skipping happens " +
+                 "at 5-12 m/s. Passing the wrist speed straight through threw 30 m/s stones, " +
+                 "and since contact torque grows with speed while spin does not, those were " +
+                 "flipped over by the first bounce every time.")]
+        public float SpeedScale = 0.3f;
 
-        [Header("Gyroscopic stability")]
-        [Tooltip("Wrist spin, deg/s, at which the stone is fully stabilised. Spin holds a real " +
-                 "stone's attack angle through each impact — below this the stone starts to " +
-                 "tumble (see WanderPerBounce) and the run dies early. Measured phone throws " +
-                 "sit around 200-450 deg/s.")]
-        public float SpinForStability = 400f;
+        [Tooltip("Converts the phone's raw wrist spin (deg/s) into the stone's spin.\n\n" +
+                 "Expect this to be the sensitive one. Spin is what holds the stone's " +
+                 "attitude through a contact, and the model currently needs roughly 2.5x " +
+                 "more of it than Bocquet's published stability floor to do so (Findings " +
+                 "9.9). That factor lives HERE, in the open, rather than inside the solver. " +
+                 "If the stability gap is closed later, this is the one number to revisit.")]
+        public float SpinScale = 60f;
 
-        [Tooltip("Degrees of attitude drift added per bounce when the stone has NO spin, scaled " +
-                 "down to zero at SpinForStability. Drift is added to the pitch and roll errors, " +
-                 "so quality decays over a run and an unspun stone tumbles out in a couple of " +
-                 "bounces — which is exactly what an unspun stone does.")]
-        public float WanderPerBounce = 3f;
-
-        [Tooltip("Fraction of its spin the stone keeps per bounce. Below 1 so even a " +
-                 "well-spun stone eventually loses stability and starts to tumble.\n\n" +
-                 "Lower than ~0.98 and this, rather than EnergyLoss, becomes what ends every " +
-                 "run: spin bleeds out, tumble caps the skip count, and throwing twice as hard " +
-                 "stops buying more skips. Keep it high enough that the energy budget is the " +
-                 "thing that runs out first, or EnergyLoss silently stops being the dial.")]
-        [Range(0.5f, 1f)] public float SpinRetention = 0.99f;
-
-        [Header("Failure — how fast a bad throw stops being a throw")]
-        // These were private consts in SkipPhysics. They are the dials that decide what
-        // counts as a flat-out fail, so they belong where they can be tuned by feel rather
-        // than by recompile. Values here are the originals — exposing them changed nothing.
-        [Tooltip("How fast quality dies once bank is past ForgivenessRollDeg, in degrees. " +
-                 "SMALLER = harsher. Quality hits 0 at (ForgivenessRollDeg + spin bonus + this), " +
-                 "so with the defaults a stone is still skipping at 50 deg of bank. Real stones " +
-                 "catch an edge and stop well before that.")]
-        public float RollFalloffDeg = 35f;
-
-        [Tooltip("Bank past this and the leading edge digs in — instant sink, no bounce. The " +
-                 "hard backstop behind RollFalloffDeg. At the default 80 a stone banked 79 deg " +
-                 "still bounces, which is the main reason badly rolled throws survive.")]
-        public float MaxRollDeg = 80f;
-
-        [Tooltip("How fast quality dies past the pitch band on the STEEP side (nose up). Tight, " +
-                 "because plowing in is an abrupt failure.")]
-        public float PitchSteepFalloffDeg = 22f;
-
-        [Tooltip("How fast quality dies past the pitch band on the SHALLOW side (nose down). " +
-                 "Wide, because a weak skim is a gradual, survivable failure.")]
-        public float PitchShallowFalloffDeg = 55f;
-
-        [Tooltip("How fast quality dies past the yaw (sideslip) band.")]
-        public float YawFalloffDeg = 40f;
-
-        [Tooltip("Arrive at the water steeper than this and the stone plows in and stops, " +
-                 "regardless of how it was held.")]
-        public float MaxIncidenceDeg = 45f;
-
-        [Header("Forgiveness")]
-        [Tooltip("Nose up/down (PhoneAttitude.FaceAngleDeg). Error inside this band counts " +
-                 "as zero; only the excess outside it costs quality. 0 disables forgiveness " +
-                 "on this axis entirely, and spin cannot turn it back on.")]
+        [Header("Forgiveness - the only softening in the pipeline")]
+        [Tooltip("Half-width of the pitch band, degrees. Inside it the throw is treated as " +
+                 "physics-optimal; outside, only the excess reaches the solver. A band at 0 " +
+                 "is off.")]
         public float ForgivenessPitchDeg = 12f;
 
-        [Tooltip("Bank (PhoneAttitude.RollDeg). Same rule as pitch.")]
+        [Tooltip("Half-width of the roll band, degrees. A band at 0 is off.")]
         public float ForgivenessRollDeg = 15f;
 
-        [Tooltip("Aim left/right (PhoneAttitude.HeadingDeg, read as sideslip against the " +
-                 "stone's own heading). Same rule as pitch.")]
+        [Tooltip("Half-width of the yaw band, degrees. A band at 0 is off.")]
         public float ForgivenessYawDeg = 10f;
 
-        [Tooltip("How much wrist spin widens each forgiveness band, deg per deg/s. Spin buys " +
-                 "tolerance and nothing else — it never adds distance on its own.")]
+        [Tooltip("Extra forgiveness per deg/s of measured wrist spin. Spin buys tolerance " +
+                 "and nothing else - it never adds distance on its own. A band authored at " +
+                 "0 stays off no matter how fast the wrist turned.")]
         public float SpinToleranceScale = 0.01f;
 
         [Header("Presentation")]
@@ -128,6 +103,13 @@ namespace Game
 
         [Header("Simulation")]
         public float FixedStep = 0.02f;
+
+        [Tooltip("Substep used while any part of the face is in the water, seconds.\n\n" +
+                 "A whole bounce lasts single-digit milliseconds, so the flight step is " +
+                 "orders of magnitude too coarse to resolve one. 20 microseconds is well " +
+                 "inside convergence - the outcome moves by under one percent across a 200x " +
+                 "range of this value (Findings 8.1).")]
+        public float ContactStep = 0.00002f;
 
         [Tooltip("How far ahead the aim preview simulates, in seconds.")]
         public float PredictSeconds = 22f;

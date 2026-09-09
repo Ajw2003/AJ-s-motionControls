@@ -100,6 +100,19 @@ namespace HeadlessSolver
         /// it the vertical velocity every bounce has to reverse.</summary>
         private static float _releaseHeight = 0.30f;
 
+        /// <summary>Accumulate the first contact's linear and angular impulse — see the
+        /// "arm" mode. The ratio is the effective moment arm of the pressure resultant.</summary>
+        private static bool _armProbe;
+
+        private static float _armLinear;
+        private static float _armAngular;
+
+        /// <summary>NET angular impulse — the vector sum. Summing magnitudes instead counts
+        /// a torque that reverses inside the contact as if both halves tilted the stone the
+        /// same way, which overstates how much the attitude actually moves.</summary>
+        private static Vector3 _armAngularVector;
+        private static bool _armDone;
+
         private static Setup Baseline() => new Setup
         {
             Mass = Game.ReferenceStone.Mass,
@@ -169,6 +182,20 @@ namespace HeadlessSolver
                 var inContact = forces.WettedArea > 0f;
                 var dt = inContact ? s.ContactStep : s.FlightStep;
 
+                if (_armProbe && !_armDone)
+                {
+                    if (inContact)
+                    {
+                        _armLinear += (forces.Lift + forces.Friction).magnitude * dt;
+                        _armAngular += forces.Torque.magnitude * dt;
+                        _armAngularVector += forces.Torque * dt;
+                    }
+                    else if (_armLinear > 0f)
+                    {
+                        _armDone = true;
+                    }
+                }
+
                 if (_contactTrace && inContact && result.Skips == 0)
                 {
                     // Every 250 substeps is every 5 ms at the default contact step.
@@ -185,12 +212,15 @@ namespace HeadlessSolver
                     }
                 }
 
-                // Fully submerged with no lift left to give — that is a sink, not a skip.
-                var submergedDepth = Game.DiscContact.SignedWaterDistance(height, n);
-                if (submergedDepth <= -s.Radius)
+                // Sunk means the CENTRE is a whole radius under — tilt-independent, and the
+                // same criterion SkipPhysics.Step uses. Not "fully wetted": a level stone
+                // skimming is fully wetted and is at that moment making its maximum lift,
+                // and DiscContact's dead-flat branch reports a sentinel rather than a real
+                // depth, so a wetted-depth test sinks a perfectly flat stone on contact.
+                if (height <= -s.Radius)
                 {
                     result.Sank = true;
-                    result.EndReason = "fully submerged";
+                    result.EndReason = "centre a radius under";
                     break;
                 }
 
@@ -414,6 +444,138 @@ namespace HeadlessSolver
             Console.WriteLine("=".PadRight(70, (char)61));
             Console.WriteLine($"target: strongest throw = {WorldRecordSkips} skips, weakest = sinks");
             Console.WriteLine();
+
+            if (mode == "stepcheck")
+            {
+                // Isolate SkipPhysics.Step from CreateLaunch: build the SAME initial state
+                // SimulateDirect uses (horizontal velocity, face tilted back 20 deg) by hand
+                // and run it through the real Predict. If this disagrees with SimulateDirect
+                // the fault is in Step; if it agrees, the fault is in the launch geometry.
+                var constants = Game.SkipConstants.CreateDefault();
+                var tuning = Game.SkipTuning.CreateDefault();
+                var t = Baseline();
+                t.LiftCoefficient = constants.LiftCoefficient;
+
+                var path = new System.Collections.Generic.List<Vector3>();
+                Console.WriteLine($"   {"speed",8}{"rev/s",8}{"Step skips",12}{"Step m",9}"
+                                  + $"{"direct skips",14}{"direct m",10}");
+
+                foreach (var (speed, rev) in new[] { (5f, 14f), (8f, 14f), (12f, 14f), (12f, 50f) })
+                {
+                    var tilt = LaunchTiltDeg * Mathf.Deg2Rad;
+                    var normal = new Vector3(0f, Mathf.Cos(tilt), -Mathf.Sin(tilt)).normalized;
+                    var attitude = Quaternion.FromToRotation(new Vector3(0f, 1f, 0f), normal);
+
+                    var launch = new Game.SkipState
+                    {
+                        Position = new Vector3(0f, 0.30f, 0f),
+                        Velocity = new Vector3(0f, 0f, speed),
+                        Attitude = attitude,
+                        FaceNormal = normal,
+                        AngularVelocity = normal * (rev * 2f * Mathf.PI),
+                        HeadingDir = new Vector3(0f, 0f, 1f),
+                        FaceAngleDeg = LaunchTiltDeg,
+                        RollDeg = 0f,
+                        Spin = 0f,
+                    };
+
+                    var end = Game.SkipPhysics.Predict(launch, constants, tuning, path);
+                    var direct = SimulateDirect(t, speed, rev * 2f * Mathf.PI, LaunchTiltDeg);
+
+                    Console.WriteLine($"   {speed,8:F0}{rev,8:F0}{end.SkipCount,12}{end.Position.z,9:F1}"
+                                      + $"{direct.Skips,14}{direct.Distance,10:F1}");
+                }
+                return 0;
+            }
+
+            if (mode == "game")
+            {
+                // Drive the REAL SkipPhysics.CreateLaunch/Predict, exactly as RockController
+                // and AimPreview do, with the measured phone envelope from Findings section 6.
+                // Everything above this mode tests the contact model; this tests the wiring.
+                var constants = Game.SkipConstants.CreateDefault();
+                var tuning = Game.SkipTuning.CreateDefault();
+                if (args.Length > 1)
+                    constants.SpinScale = float.Parse(args[1], CultureInfo.InvariantCulture);
+                if (args.Length > 2)
+                    constants.SpeedScale = float.Parse(args[2], CultureInfo.InvariantCulture);
+
+                Console.WriteLine($"SkipConstants defaults: C_l {constants.LiftCoefficient:F0}, "
+                                  + $"SpeedScale {constants.SpeedScale:F2}, SpinScale {constants.SpinScale:F1}, "
+                                  + $"contact step {constants.ContactStep * 1e6f:F0} us");
+                Console.WriteLine($"SkipTuning defaults: {tuning.Mass * 1000f:F0} g, "
+                                  + $"R {tuning.Radius * 100f:F1} cm, t {tuning.Thickness * 1000f:F1} mm");
+                Console.WriteLine();
+                Console.WriteLine($"   {"throw",10}{"swing m/s",11}{"spin deg/s",12}{"toss deg",10}"
+                                  + $"{"skips",7}{"dist m",9}{"sunk",7}");
+
+                var path = new System.Collections.Generic.List<Vector3>();
+                var cases = new[]
+                {
+                    ("weakest", MeasuredMinSwing, MeasuredMinSpinDeg),
+                    ("median", MeasuredMedianSwing, MeasuredMedianSpinDeg),
+                    ("hard", MeasuredP95Swing, MeasuredP90SpinDeg),
+                    ("strongest", MeasuredMaxSwing, MeasuredMaxSpinDeg),
+                };
+
+                // Sweep the toss angle. In this game FaceAngleDeg is BOTH the toss angle and
+                // the attack angle - one phone pose, both meanings - so they cannot be chosen
+                // independently. A stone tossed UP at 20 degrees comes back down at -20 with
+                // its face still at +20, meeting the water at a 40 degree attack angle and
+                // ploughing in. The angle that works is at or below level.
+                foreach (var toss in new[] { 20f, 10f, 5f, 0f, -5f, -10f })
+                {
+                    Console.WriteLine($"   -- toss {toss,5:F0} deg --");
+                    foreach (var (label, swing, spinDeg) in cases)
+                    {
+                        var attitude = Quaternion.AngleAxis(-toss, new Vector3(1f, 0f, 0f));
+                        var launch = Game.SkipPhysics.CreateLaunch(
+                            new Vector3(0f, 0.3f, 0f), swing, attitude, spinDeg, constants, tuning);
+                        var end = Game.SkipPhysics.Predict(launch, constants, tuning, path);
+
+                        Console.WriteLine($"   {label,10}{swing,11:F2}{spinDeg,12:F0}"
+                                          + $"{Game.PhoneAttitude.FaceAngleDeg(attitude),10:F1}"
+                                          + $"{end.SkipCount,7}{end.Position.z,9:F1}{(end.HasSunk ? "yes" : "no"),7}");
+                    }
+                }
+
+                return 0;
+            }
+
+            if (mode == "arm")
+            {
+                // The attitude swings through a contact by roughly (angular impulse)/(spin
+                // angular momentum). Measure both rather than reasoning about the arm:
+                //   linear impulse   J = integral |F| dt      (what reverses v_y)
+                //   angular impulse  H = integral |tau| dt    (what tilts the spin axis)
+                //   effective arm    H / J
+                //   spin momentum    L = I_axial * Omega
+                // Stability needs H << L. H/L is the swing in radians.
+                var t = Baseline();
+                if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
+                _armProbe = true;
+                Console.WriteLine($"C_l = {t.LiftCoefficient:F0}, 12 m/s, tilt {LaunchTiltDeg:F0} deg, first contact");
+                Console.WriteLine($"   {"rev/s",8}{"J N.s",10}{"|H| sum",11}{"H net",11}"
+                                  + $"{"cancel",8}{"arm/R",8}{"L",11}{"Hnet/L",9}{"swing deg",11}");
+                foreach (var rev in new[] { 5f, 14f, 25f, 50f, 100f, 200f })
+                {
+                    _armLinear = _armAngular = 0f;
+                    _armAngularVector = Vector3.zero;
+                    _armDone = false;
+                    var inertia = Game.RigidDisc.ComputeInertia(t.Mass, t.Radius, t.Thickness);
+                    SimulateDirect(t, 12f, rev * 2f * Mathf.PI, LaunchTiltDeg);
+                    var netAngular = _armAngularVector.magnitude;
+                    var arm = _armLinear > 0f ? _armAngular / _armLinear : 0f;
+                    var cancellation = _armAngular > 0f ? netAngular / _armAngular : 0f;
+                    var L = inertia.Axial * rev * 2f * Mathf.PI;
+                    var ratio = L > 0f ? netAngular / L : 0f;
+                    Console.WriteLine($"   {rev,8:F0}{_armLinear,10:F3}{_armAngular,11:F5}{netAngular,11:F5}"
+                                      + $"{cancellation,8:F2}{arm / t.Radius,8:F2}{L,11:F5}"
+                                      + $"{ratio,9:F2}{ratio * Mathf.Rad2Deg,11:F0}");
+                }
+                _armProbe = false;
+                return 0;
+            }
 
             if (mode == "spin")
             {

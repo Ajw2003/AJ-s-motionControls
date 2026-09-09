@@ -65,7 +65,8 @@ and `Assets/Scripts/Editor/*`):
 | Menu item | What it does |
 |---|---|
 | `RockSkipping/Verify/Run Event System Verification` | Proves pub/sub survives scene loads; writes `verification-result.txt` at repo root. Headless: see [`../README.md`](../README.md) "Verifying the Unity event system" for the exact `-batchmode` invocation (note: no `-quit`, it enters Play mode). |
-| `RockSkipping/Verify/Print Skip Curve` | Runs `SkipPhysics` speed/angle/roll sweeps per rock, writes `skip-curve.txt` at repo root — the acceptance check for "is this tuning any good", including the energy invariant every run must satisfy. |
+| `RockSkipping/Verify/Print Reality Check` | The R1–R10 checks against the published planing-disc model (Bocquet 2003, Clanet 2004, Nagahiro 2004); writes `skip-reality.txt` at repo root. **This is the physics gate now** — it measures the magic angle rather than asserting it. |
+| `RockSkipping/Verify/Print Skip Curve` | Older per-rock speed/angle/roll sweep, writes `skip-curve.txt`. Largely superseded by the reality check; its central "throw speed must beat any per-rock multiplier" premise is moot now that rocks have no multipliers. |
 | `RockSkipping/Rocks/Build Catalog from FBX` | Regenerates `Assets/Rocks/Rock_0N.asset` + `Resources/RockCatalog.asset` from `Resources/Fbx/RocksRemeshed.fbx`. Idempotent — preserves hand-edited display names/tints/tuning refs. |
 | `RockSkipping/Rocks/Validate Catalog` | Names any rock with no mesh, no tuning, or an id another rock already uses. |
 | `RockSkipping/Rebuild Audio Bank` (+ `(reset tuning)`) | Regenerates `Assets/Scripts/Audio/AudioBank`-driven procedural SFX. |
@@ -137,7 +138,21 @@ selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/Physic
 
 A custom, pure, side-effect-free stepping function (`SkipPhysics.Step`), not PhysX rigidbody
 collision — needed both for precise per-bounce control and so the aim preview can run the same
-math speculatively, many frames ahead, without side effects. **`Step` must never publish
+math speculatively, many frames ahead, without side effects.
+
+**There is no bounce formula.** Free flight is ballistic; while any part of the face is under
+water the solver integrates the real pressure force and its torque (`DiscContact`, `RigidDisc`) at
+a ~20 µs substep. Skip-versus-sink is an *outcome*, not a branch. Energy loss is the work the
+pressure does and cannot be positive — pressure acts only where the face is advancing into the
+water — so the old `MinLoss` clamp is gone as unnecessary rather than as a simplification. The
+20° optimum appears nowhere in the solver; it emerges, and `SkipReality` measures it.
+
+Two things follow that are easy to break by accident. Rotation belongs in the pressure law: the
+local surface velocity of a rigid body is `v_cm + ω × r`, and evaluating the law only at the disc
+centre is what silently removed the model's rotational damping. And the free precession in
+`RigidDisc.Integrate` is **solved, not integrated** — it is an oscillator, and explicit Euler is
+unconditionally unstable on one, which previously made a faster-spun stone *less* stable than a
+slow one. See `docs/Findings-RealSkipPhysics.md` §9. **`Step` must never publish
 events or otherwise touch anything observable** (score, audio, VFX, haptics) — only the caller
 driving a *real* throw does that (`RockController`/`RockLauncher`), because the preview runs
 `Step` continuously while a player merely aims and would otherwise "score" imaginary throws.
@@ -155,12 +170,24 @@ them unchanged, without adding an explicit reference.
 Six rock meshes (`Resources/Fbx/RocksRemeshed.fbx`), each with a `RockDefinition` asset holding
 one `SkipTuning` reference (`Assets/Rocks/Tuning/<Id>.asset`, a flat folder).
 
-**A rock owns three numbers and nothing else** — `SpinMultiplier`, `VerticalMultiplier`,
-`HorizontalMultiplier`, all narrowly bounded. Everything that is not a property of one rock
-lives on the single `Resources/SkipConstants.asset`: gravity, water height, the speed scale,
-`EnergyLoss`, the forgiveness bands, `ReferenceSpeed`, the fixed step. That split is the
-constraint — **a global belongs in `SkipConstants`, never on a rock** — and it is structural
-rather than validator-enforced, because a rock has no field to disagree with. Presentation
+**A rock owns its BODY and nothing else** — `Mass` (kg), `Radius` (m), `Thickness` (m), in SI
+units. The three bounded multipliers (`SpinMultiplier`, `VerticalMultiplier`,
+`HorizontalMultiplier`) are gone: they scaled the *output* of a bounce, so no rock could ever be
+wrong, only feel wrong. The solver now integrates real fluid forces over the stone's geometry, so
+what it needs from a rock is what the rock physically **is**, and those numbers have right answers
+— a skipping stone is 5–8 cm across and 50–250 g, and anything outside that is an error rather
+than an aggressive tuning choice.
+
+Everything that is not a property of one rock lives on the single `Resources/SkipConstants.asset`:
+gravity, water height, water density, the lift/friction coefficients, the two phone→stone
+calibration scales (`SpeedScale`, `SpinScale`), the forgiveness bands, `ReferenceSpeed`, the fixed
+step and the contact substep. That split is the constraint — **a global belongs in
+`SkipConstants`, never on a rock** — and it is structural rather than validator-enforced, because
+a rock has no field to disagree with.
+
+**The bodies are not authored by hand.** All six currently carry the reference stone's dimensions
+because deriving them from each mesh is `RockCatalogBuilder`'s job (plan phase 2) and typing six
+plausible-looking bodies in by hand is exactly the guessing this rewrite exists to end. Presentation
 (`WaterRipples`, `SfxDirector`, `RockTrail`) normalizes against `SkipConstants.ReferenceSpeed`,
 which is the one speed every such system must agree on.
 

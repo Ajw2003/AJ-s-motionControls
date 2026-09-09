@@ -645,26 +645,163 @@ Things that now behave the way the sources say they should:
 - **First hop is 2.7–2.8 m**, against Bocquet's `X₀ ≈ 5.9 m`. Same order; was 2 cm chatter.
 - **Longer runs at shallower tilt**: 12.9 m at 30° rising to 132.6 m at 3°.
 
-### 9.8 The one gap left, and it is well isolated
+### 9.8 The moment arm, measured
 
-**Frozen attitude reaches 10 skips; the full model at a realistic 14 rev/s still reaches 0.** The
-entire remaining shortfall is that spin does not hold the attitude at throwable spin rates. The
-model needs ~50 rev/s to complete a single hop, and human throws measured in §6 are far below that.
+The remaining shortfall is that spin does not hold the attitude at throwable rates. The attitude
+swings through a contact by roughly `H / L` — net angular impulse over spin angular momentum — so
+both were measured directly (`HeadlessSolver arm`) rather than argued about.
 
-Bocquet's own spin-limited ceiling is `N_c^spin = R·Ω²/g`, which at 14 rev/s predicts 38 skips.
-Ours predicts 0. The destabilising angular impulse through contact is therefore still far too large
-relative to the spin's angular momentum — the likely suspects, in order:
+`C_l = 16`, 12 m/s, 20° tilt, first contact:
 
-1. **The lift's moment arm.** The pressure resultant sits at the wetted segment's centroid, which
-   at deep penetration is a long way from the centre. If the real stone only ever dips shallowly,
-   the arm stays near the rim and the angular impulse is much smaller.
-2. **`C_l ≈ 16` multiplies the torque as well as the lift** — §8.4's original bind, now damped and
-   inertially loaded but not eliminated.
-3. **No added-mass moment from translation.** Only rotational added inertia is modelled.
+| spin rev/s | J (N·s) | ∫\|τ\|dt | net H | cancellation | arm / R | L (kg·m²/s) | H/L | swing |
+|---|---|---|---|---|---|---|---|---|
+| 5 | 0.091 | 0.00408 | 0.00408 | 1.00 | 0.90 | 0.0039 | 1.04 | **60°** |
+| 14 | 0.093 | 0.00419 | 0.00419 | 1.00 | 0.90 | 0.0110 | 0.38 | **22°** |
+| 50 | 0.351 | 0.01498 | 0.01348 | 0.90 | 0.85 | 0.0393 | 0.34 | 20° |
+| 100 | 0.388 | 0.01663 | 0.01619 | 0.97 | 0.86 | 0.0785 | 0.21 | 12° |
+| 200 | 0.396 | 0.01692 | 0.01683 | 0.99 | 0.86 | 0.1571 | 0.11 | **6°** |
 
-**Status: the rotational instability, the two measurement bugs and the integrator bug are fixed and
-verified. The magic angle and contact duration now come out right. Spin stabilisation at realistic
-rates does not, and that is the single thing between this model and a playable match.**
+**The effective arm is 0.86–0.90 R, and that is geometry rather than a defect.** A shallow contact
+wets only a sliver at the rim, and a circular segment's centroid tends to `R` as the segment
+shrinks — the arm is *longest* exactly when the stone is skimming, which is the regime skipping
+happens in. Bocquet places the resultant at the immersed-area centroid too ([B] Appendix A), so
+this matches the source rather than departing from it.
+
+**The torque does not reverse within a contact** — the cancellation column is the net angular
+impulse over the sum of magnitudes, and it is 1.00 at the low spins that matter. So the swing is
+real and cannot be explained away as a measurement artefact of summing magnitudes.
+
+At 14 rev/s the swing is 22° on a stone launched at 20° tilt, which is enough to take it through
+level and out the other side — and that is exactly what the contact trace shows (tilt walking
+20° → 7° → 20° → 38° → 56° monotonically, pitching rather than precessing). The stone is sitting
+right on the boundary where spin stops dominating: at 14 rev/s the precession rate (~14 rad/s) and
+the rate the stone would tumble under the same torque with no spin at all (~24 rad/s) are the same
+order, so it does both.
+
+### 9.9 How far off is this, really
+
+Bocquet's own stability floor is `Ω > √(2Mg/I) = 2√g / R`, which for the reference stone is
+**125 rad/s ≈ 20 rev/s**. This model needs **~50 rev/s** to complete one hop and ~200 rev/s to look
+stable. **So it is a factor of ~2.5 short of the published threshold, not an order of magnitude.**
+
+Worth recording: the two spin criteria quoted in this document disagree with each other.
+`√(2Mg/I) = 2√g/R` gives 125 rad/s, while R7's `Ω ≫ √(g/R)` gives **14 rad/s** — a factor of nine
+apart, and only the first is consistent with the formula it is derived from. R7 also asserts
+`N_c^spin = RΩ²/g` gives 38 skips at 14 rev/s (88 rad/s), which is *below* the 125 rad/s stability
+floor the same source implies. These cannot all be right, and R1–R10 should not be treated as a
+consistent set until that is resolved against [B] directly.
+
+### 9.10 Status
+
+Fixed and verified this session:
+
+| | |
+|---|---|
+| Rotational damping | pointwise pressure law, no new coefficient, exact reduction at ω = 0 |
+| Added rotational inertia | `(16/45)ρR⁵`, transverse only, 1.8× the stone's own |
+| Chatter counted as skips | minimum hop of four radii |
+| **Hop length measured as contact length** | resolved at the next contact instead |
+| **Explicit Euler unstable on gyroscopic precession** | free precession solved exactly; spin now stabilises instead of destabilising |
+
+Now behaving as the sources say: **the magic angle emerges at 20°** (R1), **contact lasts ~5 ms**
+(R3), first hop 2.7 m against `X₀ ≈ 5.9 m`, energy strictly decreasing by construction (R8).
+
+Not yet: skip counts are ~10 frozen against 38, and the full model needs ~2.5× more spin than
+Bocquet's threshold to hold attitude. **For gameplay that factor lands squarely on `SpinScale`**,
+which is a calibration the plan's phase 4 already provides for — it is not a fudge hidden in the
+solver, and it is one number to revisit if the stability gap is later closed.
 
 `SkipReality.cs` still calls the seven-argument `Evaluate` overload and so does not yet see the
 rotation term; it should be passed the angular velocity when R1–R10 are next run.
+
+---
+
+## 10. Wiring the solver into the game (2026-09-09)
+
+Phase 1's three rewrites — the ones §2 of `Findings-HistoryUntangle.md` found had never been done
+— are now done. `SkipPhysics`, `SkipConstants` and `SkipTuning` no longer resemble what shipped on
+`main`.
+
+### 10.1 It can now be verified outside Unity
+
+`UnityShim.cs` gained `ScriptableObject`, `Resources`, `Debug`, the serialization attributes and
+`Vector3.Angle`/`SignedAngle`, and the csproj now links `SkipPhysics.cs`, `SkipConstants.cs`,
+`SkipTuning.cs` and `PhoneAttitude.cs`. **The real solver the Editor compiles now runs headlessly**,
+so the rewrite was checked rather than hoped about. The sources are linked, never copied, so there
+is no second copy to drift.
+
+`HeadlessSolver stepcheck` builds the same initial state the reference integrator uses and runs it
+through the real `SkipPhysics.Predict`:
+
+| release | spin | Step skips | Step m | reference skips | reference m |
+|---|---|---|---|---|---|
+| 5 m/s | 14 rev/s | 0 | 2.0 | 0 | 2.0 |
+| 8 m/s | 14 rev/s | 0 | 3.3 | 0 | 3.4 |
+| 12 m/s | 14 rev/s | 0 | 5.0 | 0 | 5.2 |
+| 12 m/s | 50 rev/s | 1 | 7.2 | 1 | 7.4 |
+
+Skip counts identical, distances within 4% — the residual is `Step`'s fixed-step windowing against
+the reference's continuous loop. **The wiring is faithful.**
+
+### 10.2 Two more bugs, both found only because the game path could be run
+
+1. **Skips were never counted.** The transition test asked whether the stone had *started rising*
+   that substep. Lift turns the stone upward hundreds of substeps before its face is clear of the
+   water, so by the time it was dry the moment had long passed. It now keys off the water-to-air
+   transition, and the flag lives in `SkipState` because a contact can straddle two `Step` calls.
+   Symptom: a stone travelling 71 m over multiple visible bounces reporting **0 skips**.
+2. **A perfectly level throw sank on contact.** The sink test asked whether the stone was fully
+   *wetted*. Those are different things: a level stone skimming with its centre a millimetre under
+   is fully wetted and is at that moment making its maximum lift. Worse, `DiscContact`'s dead-flat
+   branch reports a large sentinel instead of a real depth, so a wetted-depth test read a level
+   stone as infinitely deep. Sinking is now "the centre is a whole radius under" — tilt-independent
+   and unambiguous.
+
+### 10.3 The launch geometry has a consequence worth knowing
+
+`FaceAngleDeg` is **both** the toss angle and the attack angle — one phone pose, both meanings.
+So at release the velocity lies in the face plane and the attack angle is **exactly zero**; all of
+it comes from gravity turning the velocity between release and the water. A stone tossed *up* at
+20° comes back down at −20° with its face still at +20°, meeting the water at 40° and ploughing in.
+
+Measured, this is what the toss angle is worth (`SpinScale` 60, `SpeedScale` 0.3):
+
+| toss | weakest | median | hard | strongest |
+|---|---|---|---|---|
+| 20° | 0 | 2 | 6 | 6 |
+| 10° | 0 | 1 | 6 | 4 |
+| 5° | 0 | 1 | 2 | 5 |
+| 0° | 0 | 0 | 0 | 0 |
+
+The ladder is right — the weakest throw sinks, harder throws skip more and go further — but it
+runs out around 6, against the plan's 15–30 target. **Decoupling the face tilt from the toss angle
+is the obvious next lever and it is a design decision, not a tuning one**: it is what `ThrowAssist`
+(plan phase 5) would have to do to put a stone in the water at its optimal attack angle, and it
+changes what the player's wrist means.
+
+### 10.4 Calibration, and why the numbers are what they are
+
+- **`SpeedScale` 1.2 → 0.3.** The phone's median swing is 26 m/s at the wrist while real stone
+  skipping happens at 5–12 m/s, so the old value threw 31 m/s stones. Contact torque grows with
+  speed while spin does not, so those were flipped by the first bounce every time — *harder throws
+  were strictly worse*, which is the opposite of the game.
+- **`SpinScale` 60.** Carries the ~2.5× stability gap of §9.9 on top of `SpinTransfer`'s grip-radius
+  conversion. It is large and it is in the open rather than hidden in the solver; it is the one
+  number to revisit if that gap closes.
+- **Code defaults and the shipped asset now agree.** §Context opened by noting the asset had
+  drifted so far from the code that all three forgiveness bands were zeroed and `SpinRetention` sat
+  at the value its own tooltip called a failure mode. Not repeating that.
+
+The six per-rock tuning assets all carry the reference body deliberately: `Assets/CLAUDE.md`
+requires a rock's physics be derived from its mesh, that derivation is `RockCatalogBuilder`'s job
+(phase 2), and hand-typing six plausible bodies is the guessing this rewrite exists to end. It also
+matches the standing design decision (presentation-and-ui D5) that rocks differ by silhouette, not
+mechanically.
+
+### 10.5 Not done
+
+`ThrowAssist` (phase 5) does not exist; the forgiveness bands are authored and read by nothing, so
+they currently do nothing. `RockCatalogBuilder` does not yet seed bodies from mesh bounds.
+`SkipReality` still calls the seven-argument `Evaluate` and so does not see the rotation term.
+`SkipCurve` compiles but its central premise — that throw speed must beat any per-rock multiplier —
+is moot now that rocks have no multipliers.
