@@ -493,3 +493,178 @@ modelling decision, and it is where the work stops pending a call.
 **Not achieved.** Weakest-throw-sinks holds robustly. Strongest-throw-equals-38 does not, and the
 numbers that looked closest (§7.3, torque disabled) were both physically hollow — torque removed —
 and inflated by the miscounting in §8.3.
+
+---
+
+## 9. Rotational damping — the §8.4 bind, half resolved (2026-09-09)
+
+§8.5 left the work stopped on a modelling call: the model had **no rotational damping**, so the
+`C_l ≈ 16` needed for lift also multiplied the torque by 16 and rang the stone into inversion.
+This section records what was done about it and what it did and did not fix.
+
+### 9.1 The missing term was not a damping coefficient — it was the pressure law read correctly
+
+[N] assumption (i) is that pressure goes as `(v·n)²` where `v` is "the speed of the body". For a
+rigid body the velocity of the surface at `r` is `v_cm + ω × r`, **not** `v_cm`. `DiscContact`
+was evaluating the law once, at the disc centre, and applying that one value across the whole
+wetted area.
+
+Applying the same law pointwise and integrating over the segment produces a hydrodynamic moment
+that opposes rotation — **with no new coefficient and no new force term.** It is the law that was
+already there, evaluated where it actually applies. At `ω = 0` every rotational term carries a
+factor of the roll or pitch rate and vanishes, so the model reduces *exactly* to the previous one
+and R1 (measured at fixed attitude) is untouched by construction.
+
+### 9.2 Assumption (ii) has to be enforced pointwise, and that is what makes R8 structural
+
+The first attempt integrated `u_n²` over the whole wetted segment in closed form, using the
+segment's area moments. **Every stone sank at every speed and every `C_l`.**
+
+The reason is that `u_n = v_n + a·y − b·x` changes sign across the face once the disc rotates:
+part of it drives into the water while the rest lifts away. [N] assumption (ii) — "for the part of
+the surface facing air, there is no hydrodynamic force" — is a statement about each piece of the
+surface, and the old scalar guard on the centre's normal velocity only coincided with it while the
+stone was not rotating. Integrating over the whole segment regardless invents pressure on the
+receding half, and once `b·R` exceeds `|v_n|` (within a millisecond of a real contact) the
+fictitious half dominates.
+
+Restricting the integration to `u_n < 0` also makes the energy invariant **structural** rather
+than asserted: the rate of work of the pressure is `½ρC_l·u_n³`, so every element of it is negative
+once the region is cut correctly.
+
+The region is the disc cut by two chords and has no compact closed form, but it is **exact in `y`**
+at fixed `x` — `u_n` is linear in `y` there — so only the sweep along `x` is numerical.
+`DiscContact.RotatingPressureIntegrals` uses 24 strips under the substitution `x = R·sinθ`, which
+removes the `√(R²−x²)` endpoint singularity; a uniform rule in `x` was 5% low on the first moment
+at the same strip count.
+
+### 9.3 Added rotational inertia — the water the stone tumbles
+
+The second missing term, and the one §8.4 named. A disc rotating about a diameter drags fluid with
+it: `I_added = (16/45)·ρ_w·R⁵`. For the reference stone that is **1.11e-4 kg·m² against the
+stone's own 6.3e-5** — the water is nearly twice the stone. Leaving it out is why measured angular
+accelerations reached ~1e6 rad/s².
+
+Only the transverse axes take it. An ideal thin disc spinning about its own normal sweeps no fluid
+aside, so the axial moment is untouched: **spin is not slowed by this, only tumble is.** That
+asymmetry is why spin stabilises a skipping stone, and here it falls out of the geometry rather
+than being asserted.
+
+### 9.4 Verification
+
+`HeadlessSolver selftest` (new) checks two things and both pass:
+
+| Check | Result |
+|---|---|
+| Quadrature vs the closed-form segment moments at `ω = 0`, over `d/R ∈ [−0.9, 0.9]` | agrees to **≤ 3.9e-4** on the pressure integral and **≤ 3.2e-4** on the moment arm as a fraction of the radius |
+| The pitch-rate-dependent part of the moment opposes the pitch rate, at ±20, ±100, ±400 rad/s | **opposes at every rate** |
+
+The closed forms it checks against (`DiscContact.Moments`) were themselves checked against
+brute-force numerical integration before being written — worst relative error 6e-5 — and against
+the exact full-disc values `A = πR²`, `Mxx = Myy = πR⁴/4`.
+
+**Control experiment.** `HeadlessSolver trace 16 norotpressure` hides rotation from the pressure
+law only. It reproduces the pre-change results *exactly* — 2 / 3 / 19 skips at 2.2 / 3.8 / 7.3 m —
+confirming the change is cleanly isolated to the rotational term.
+
+### 9.5 Two measurement bugs, both of which had corrupted published numbers here
+
+**The skip counter counted chatter.** §8.3's finding is now acted on: a hop counts only if the
+stone travels at least four radii between contacts.
+
+**The "gap" was never the gap.** The harness computed `position.z − lastContactZ` with
+`lastContactZ` set at contact *entry*, so what it reported as the hop length was **the length of
+the contact itself**. It read 0.32 m on a bounce whose exit velocities imply a 2.5 m flight. The
+hop can only be measured once the stone lands, so the exit is now held pending and resolved at the
+next contact.
+
+This second bug invalidated the first pass of measurements taken after the damping work, including
+a conclusion — recorded here and since removed — that raising `C_l` made skip count *worse*. With
+the hop measured correctly, raising `C_l` **helps**, monotonically. Any number in this section
+predating this subsection should be treated as unreliable.
+
+### 9.6 A pre-existing integrator bug: spin made the stone LESS stable
+
+Sweeping spin from 2 to 200 rev/s produced **no stabilisation at any rate** — 0 skips throughout,
+including at 1257 rad/s, where a spinning disc should be immovable. That held with the damping and
+added mass both disabled, so it predates all of this session's work.
+
+The cause is in `RigidDisc.Integrate`. For a disc `i1 = i3` exactly, so the free Euler equations
+reduce to
+
+```
+ω̇_x = +λ·ω_z,   ω̇_z = −λ·ω_x,   λ = (i2 − i1)·ω_y / i1
+```
+
+which is a pure rotation of `(ω_x, ω_z)` — an **oscillator**. The code advanced it with explicit
+Euler, which is *unconditionally unstable* on an oscillator: amplitude grows by `~(1 + (λ·dt)²/2)`
+per step regardless of how small the step is. At 200 rev/s the precession rate is ~2500 rad/s and
+the amplitude grew ~17% per cycle. **The faster the stone spun, the faster its attitude blew up** —
+exactly backwards, and it made gyroscopic stabilisation impossible to observe at any spin.
+
+R9 (halving the contact step barely moves the answer) did not catch this, because the instability
+is driven by the precession rate, not the step size — halving `dt` halves the per-step growth but
+doubles the number of steps.
+
+Fixed by solving the free precession exactly (rotate `(ω_x, ω_z)` by `λ·dt`) and advancing the
+attitude by the exact rotation `ω·dt` represents instead of `q + ½·q·ω·dt` and a renormalise. Both
+are cheap and neither is an approximation for this body. Spin now stabilises monotonically:
+
+| spin rev/s | 2 | 5 | 10 | 14 | 25 | 50 | 100 | 200 |
+|---|---|---|---|---|---|---|---|---|
+| skips (C_l = 16, 12 m/s) | 0 | 0 | 0 | 0 | 0 | 1 | 3 | 5 |
+
+### 9.7 What the model does now
+
+Honest counts, correct hop metric, stable integrator, against Bocquet's 6 / 17 / 38 at 5 / 8 / 12 m/s:
+
+| `C_l` | attitude frozen (`notorque`) | full model, 14 rev/s |
+|---|---|---|
+| 4 | 1 / 3 / 6 | 0 / 0 / 0 |
+| 16 | 1 / 4 / 8 | 0 / 0 / 0 |
+| 32 | 2 / 4 / 9 | 0 / 0 / 0 |
+| 64 | 2 / 5 / 10 | 0 / 0 / 0 |
+
+Things that now behave the way the sources say they should:
+
+- **The magic angle emerges.** Sweeping launch tilt at fixed everything else (`C_l = 16`, 12 m/s,
+  attitude frozen), skip count peaks at **20°**:
+
+  | tilt° | 30 | **20** | 15 | 10 | 7 | 5 | 3 | 2 |
+  |---|---|---|---|---|---|---|---|---|
+  | skips | 6 | **8** | 7 | 7 | 5 | 4 | 2 | 0 |
+  | distance m | 12.9 | 20.3 | 27.4 | 41.5 | 59.4 | 82.8 | 132.6 | 3.0 |
+  | first hop m | 2.71 | 2.75 | 2.60 | 2.26 | 1.63 | 1.45 | 0.78 | 0.00 |
+
+  Nothing tells the model that 20° is special. This is R1, and it is the first time it has been
+  seen end-to-end rather than in the fixed-attitude Python sweep. Note the optimum is in *skips*,
+  not distance — distance keeps rising as tilt falls, right up to the angle where the stone stops
+  bouncing at all.
+- **Contact duration is order milliseconds** at `C_l = 16` — about 5 ms, against ~128 ms before.
+  That is R3, and it was the symptom §9.8 previously flagged as the thing to chase.
+- **First hop is 2.7–2.8 m**, against Bocquet's `X₀ ≈ 5.9 m`. Same order; was 2 cm chatter.
+- **Longer runs at shallower tilt**: 12.9 m at 30° rising to 132.6 m at 3°.
+
+### 9.8 The one gap left, and it is well isolated
+
+**Frozen attitude reaches 10 skips; the full model at a realistic 14 rev/s still reaches 0.** The
+entire remaining shortfall is that spin does not hold the attitude at throwable spin rates. The
+model needs ~50 rev/s to complete a single hop, and human throws measured in §6 are far below that.
+
+Bocquet's own spin-limited ceiling is `N_c^spin = R·Ω²/g`, which at 14 rev/s predicts 38 skips.
+Ours predicts 0. The destabilising angular impulse through contact is therefore still far too large
+relative to the spin's angular momentum — the likely suspects, in order:
+
+1. **The lift's moment arm.** The pressure resultant sits at the wetted segment's centroid, which
+   at deep penetration is a long way from the centre. If the real stone only ever dips shallowly,
+   the arm stays near the rim and the angular impulse is much smaller.
+2. **`C_l ≈ 16` multiplies the torque as well as the lift** — §8.4's original bind, now damped and
+   inertially loaded but not eliminated.
+3. **No added-mass moment from translation.** Only rotational added inertia is modelled.
+
+**Status: the rotational instability, the two measurement bugs and the integrator bug are fixed and
+verified. The magic angle and contact duration now come out right. Spin stabilisation at realistic
+rates does not, and that is the single thing between this model and a playable match.**
+
+`SkipReality.cs` still calls the seven-argument `Evaluate` overload and so does not yet see the
+rotation term; it should be passed the angular velocity when R1–R10 are next run.

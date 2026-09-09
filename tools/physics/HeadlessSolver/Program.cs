@@ -34,6 +34,19 @@ namespace HeadlessSolver
         /// <summary>The record Bocquet cites (J. Coleman-McGhee), and the stated target.</summary>
         private const int WorldRecordSkips = 38;
 
+        /// <summary>
+        /// How far the stone must travel between contacts, in disc radii, for the hop to
+        /// count as a skip rather than surface chatter.
+        /// </summary>
+        /// <remarks>
+        /// Two disc diameters. The separation it has to make is not subtle: measured chatter
+        /// gaps are ~0.02 m on a 0.05 m stone while real hops are 0.5-6 m against Bocquet's
+        /// `X_0 = 2·v_x·|v_z|/g ~ 5.9 m`, so anything from about one diameter to one metre
+        /// picks out the same runs. Expressed in radii so it scales with the stone rather
+        /// than being a length typed in for one size of rock.
+        /// </remarks>
+        private const float MinimumHopRadii = 4f;
+
         private struct Setup
         {
             public float Mass;
@@ -65,6 +78,27 @@ namespace HeadlessSolver
         /// <summary>Diagnostic: zero the contact torque, i.e. pretend spin holds the stone
         /// perfectly. Isolates whether rotational instability is what caps skip count.</summary>
         private static bool _noTorque;
+
+        /// <summary>Diagnostic: hide the disc's rotation from the PRESSURE law only, so the
+        /// contact behaves as it did before the pointwise rotating-pressure integration went
+        /// in. The torque is still applied. Isolates the damping term's own effect.</summary>
+        private static bool _noRotationalPressure;
+
+        /// <summary>Diagnostic: leave out the added rotational inertia of the water the
+        /// stone drags while tumbling. Isolates that term from the damping.</summary>
+        private static bool _noAddedMass;
+
+        /// <summary>Diagnostic: print substep detail through the first contact. R3 says a
+        /// bounce lasts milliseconds; when it does not, this says what the stone is doing
+        /// instead of guessing from the summary.</summary>
+        private static bool _contactTrace;
+
+        private static int _contactSamples;
+
+        /// <summary>Release height above the water, m. Bocquet throws flat and lets gravity
+        /// supply the incidence angle, so this sets the incidence at first contact and with
+        /// it the vertical velocity every bounce has to reverse.</summary>
+        private static float _releaseHeight = 0.30f;
 
         private static Setup Baseline() => new Setup
         {
@@ -103,7 +137,7 @@ namespace HeadlessSolver
 
             // Bocquet throws flat and lets gravity supply the incidence angle; the stone is
             // released just above the surface travelling horizontally.
-            var position = new Vector3(0f, 0.30f, 0f);
+            var position = new Vector3(0f, _releaseHeight, 0f);
             var velocity = new Vector3(0f, 0f, releaseSpeed);
 
             var angularVelocity = normal * spinRad;
@@ -113,6 +147,8 @@ namespace HeadlessSolver
             var result = new RunResult();
             var wasInContact = false;
             var lastContactZ = 0f;
+            var pendingExitZ = 0f;
+            var hasPendingExit = false;
             var firstGap = -1f;
             var lastGap = -1f;
 
@@ -125,11 +161,29 @@ namespace HeadlessSolver
                 var n = (attitude * Vector3.up).normalized;
                 var height = position.y;
                 var forces = Game.DiscContact.Evaluate(
-                    height, n, velocity, s.Radius, s.WaterDensity,
+                    height, n, velocity,
+                    _noRotationalPressure ? Vector3.zero : angularVelocity,
+                    s.Radius, s.WaterDensity,
                     s.LiftCoefficient, s.DragCoefficient);
 
                 var inContact = forces.WettedArea > 0f;
                 var dt = inContact ? s.ContactStep : s.FlightStep;
+
+                if (_contactTrace && inContact && result.Skips == 0)
+                {
+                    // Every 250 substeps is every 5 ms at the default contact step.
+                    if (_contactSamples++ % 250 == 0)
+                    {
+                        var dNow = Game.DiscContact.SignedWaterDistance(height, n);
+                        var tiltNow = Mathf.Acos(Mathf.Clamp(n.y, -1f, 1f)) * Mathf.Rad2Deg;
+                        var vn = Vector3.Dot(velocity, n);
+                        Console.WriteLine(
+                            $"   {(elapsed - contactStart) * 1000f,9:F2}{height * 1000f,9:F1}"
+                            + $"{dNow / s.Radius,8:F2}{forces.WettedArea / (Mathf.PI * s.Radius * s.Radius),8:F2}"
+                            + $"{velocity.z,8:F2}{velocity.y,8:F2}{vn,8:F2}"
+                            + $"{forces.Lift.magnitude,10:F1}{tiltNow,8:F1}");
+                    }
+                }
 
                 // Fully submerged with no lift left to give — that is a sink, not a skip.
                 var submergedDepth = Game.DiscContact.SignedWaterDistance(height, n);
@@ -144,26 +198,59 @@ namespace HeadlessSolver
                                    + Vector3.down * s.Gravity;
                 velocity += acceleration * dt;
                 position += velocity * dt;
-                Game.RigidDisc.Integrate(ref attitude, ref angularVelocity,
-                    inContact && !_noTorque ? forces.Torque : Vector3.zero, inertia, dt);
+                // Fold in the water the stone drags while tumbling. Only matters in
+                // contact, and scales with how much of the face is wet.
+                var wettedFraction = forces.WettedArea / (Mathf.PI * s.Radius * s.Radius);
+                var effectiveInertia = _noAddedMass
+                    ? inertia
+                    : Game.RigidDisc.WithAddedMass(inertia, s.WaterDensity, s.Radius, wettedFraction);
 
-                // A skip is completed when the stone LEAVES the water going up.
+                Game.RigidDisc.Integrate(ref attitude, ref angularVelocity,
+                    inContact && !_noTorque ? forces.Torque : Vector3.zero, effectiveInertia, dt);
+
+                // A skip is completed when the stone leaves the water going up AND then
+                // actually FLIES — see MinimumHopRadii. The hop can only be measured once
+                // the stone comes back down, so the exit is held pending and resolved at the
+                // next contact.
+                //
+                // The distance floor is what keeps surface chatter out of the count: runs of
+                // "skips" 2 cm apart while the stone sat vibrating on the surface, which is
+                // what inflated every skip count in docs/Findings-RealSkipPhysics.md §7
+                // (see §8.3).
                 if (wasInContact && !inContact && velocity.y > 0f)
                 {
-                    result.Skips++;
-                    var gap = position.z - lastContactZ;
-                    if (firstGap < 0f) firstGap = gap;
-                    lastGap = gap;
-                    lastContactZ = position.z;
+                    pendingExitZ = position.z;
+                    hasPendingExit = true;
+                }
+                else if (!wasInContact && inContact && hasPendingExit)
+                {
+                    // Airborne distance between leaving the water and touching it again.
+                    // This is the hop; the old code measured position.z minus the CONTACT
+                    // ENTRY z, which is the length of the contact itself, not the flight.
+                    var gap = position.z - pendingExitZ;
+                    hasPendingExit = false;
 
-                    if (_trace)
+                    // This branch consumes the contact-entry event, so it owes the same
+                    // bookkeeping the plain entry branch below does.
+                    lastContactZ = position.z;
+                    var previousContactStart = contactStart;
+                    contactStart = elapsed;
+
+                    if (gap >= MinimumHopRadii * s.Radius)
+                    {
+                        result.Skips++;
+                        if (firstGap < 0f) firstGap = gap;
+                        lastGap = gap;
+                    }
+
+                    if (_trace && result.Skips > 0)
                     {
                         // Tilt of the face away from level: this is the tumble that ends runs.
                         var tiltNow = Mathf.Acos(Mathf.Clamp(n.y, -1f, 1f)) * Mathf.Rad2Deg;
                         var spinNow = Vector3.Dot(angularVelocity, n) / (2f * Mathf.PI);
                         Console.WriteLine($"   {result.Skips,4}{contactStart - elapsed + elapsed,0:F0}"
                                           + $"{gap,9:F2}{velocity.magnitude,10:F2}"
-                                          + $"{(elapsed - contactStart) * 1000f,11:F2}"
+                                          + $"{(contactStart - previousContactStart) * 1000f,11:F2}"
                                           + $"{tiltNow,10:F1}{spinNow,10:F2}");
                     }
                 }
@@ -224,8 +311,91 @@ namespace HeadlessSolver
             }
         }
 
+        /// <summary>
+        /// Check the rotating-pressure quadrature against the closed-form segment moments
+        /// at zero rotation, and check that rotation only ever removes rotational energy.
+        /// </summary>
+        /// <remarks>
+        /// Two properties the whole damping model rests on, both cheap to check and both
+        /// catastrophic to get wrong:
+        ///
+        /// 1. **At ω = 0 the quadrature must equal the closed form.** If it does not, the
+        ///    strip integration is wrong and the magic angle (R1) — measured at fixed
+        ///    attitude, where ω plays no part — would move for a purely numerical reason.
+        /// 2. **The moment must oppose rotation.** For a pitch rate `b`, the `v̂` component
+        ///    of the hydrodynamic moment must carry the opposite sign to `b`. This is the
+        ///    damping, and a sign error here inverts the stone rather than settling it.
+        /// </remarks>
+        private static bool PressureSelfTest()
+        {
+            const float radius = 0.05f;
+            var ok = true;
+
+            Console.WriteLine("1. quadrature vs closed form at omega = 0");
+            Console.WriteLine($"   {"d/R",6}{"quad P",14}{"exact P",14}{"rel",10}{"quad Mx",14}{"exact Mx",14}{"rel",10}");
+            foreach (var k in new[] { -0.9f, -0.6f, -0.3f, 0f, 0.3f, 0.6f, 0.9f })
+            {
+                var d = radius * k;
+                const float vn = -3.5f;
+                Game.DiscContact.RotatingPressureIntegrals(radius, d, vn, 0f, 0f,
+                    out var p, out var along, out _);
+
+                var m = Game.DiscContact.Moments(radius, d);
+                var exactP = vn * vn * m.Area;
+                var exactAlong = vn * vn * m.AlongFirst;
+
+                var relP = Mathf.Abs(p - exactP) / Mathf.Max(Mathf.Abs(exactP), 1e-12f);
+
+                // Mx is normalised by `radius * P`, NOT by itself. Mx is a moment arm times
+                // a pressure, and the arm passes through zero as the segment approaches the
+                // full disc (a full disc's centroid is its own centre), so a self-relative
+                // error there is a small number divided by a smaller one and says nothing.
+                // What matters physically is the error in the arm as a fraction of the
+                // disc's own radius, which is exactly this.
+                var relA = Mathf.Abs(along - exactAlong) / Mathf.Max(radius * Mathf.Abs(exactP), 1e-12f);
+                if (relP > 0.005f || relA > 0.005f) ok = false;
+
+                Console.WriteLine($"   {k,6:F1}{p,14:E4}{exactP,14:E4}{relP,10:E2}"
+                                  + $"{along,14:E4}{exactAlong,14:E4}{relA,10:E2}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("2. the pitch-rate-dependent moment opposes pitch (the damping)");
+            Console.WriteLine("   NB the TOTAL moment is dominated by the static restoring term that");
+            Console.WriteLine("   exists at b = 0; damping is what the pitch rate ADDS to it.");
+
+            // The v-hat component of the moment is -alongMoment (see Evaluate).
+            Game.DiscContact.RotatingPressureIntegrals(radius, 0f, -3.5f, 0f, 0f,
+                out _, out var alongAtRest, out _);
+            var momentAtRest = -alongAtRest;
+
+            Console.WriteLine($"   {"b rad/s",10}{"total moment",18}{"damping part",18}{"opposes?",10}");
+            foreach (var b in new[] { -400f, -100f, -20f, 20f, 100f, 400f })
+            {
+                Game.DiscContact.RotatingPressureIntegrals(radius, 0f, -3.5f, 0f, b,
+                    out _, out var along, out _);
+                var moment = -along;
+                var damping = moment - momentAtRest;
+                var opposes = damping * b < 0f;
+                if (!opposes) ok = false;
+                Console.WriteLine($"   {b,10:F0}{moment,18:E4}{damping,18:E4}{(opposes ? "yes" : "NO"),10}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"SELF TEST: {(ok ? "PASS" : "FAIL")}");
+            return ok;
+        }
+
         private static int Main(string[] args)
         {
+            // Pull diagnostic flags out FIRST, so the positional numeric arguments below
+            // never see them. They are named, so they can sit anywhere on the line.
+            _noRotationalPressure = Array.IndexOf(args, "norotpressure") >= 0;
+            _noTorque = Array.IndexOf(args, "notorque") >= 0;
+            _noAddedMass = Array.IndexOf(args, "noaddedmass") >= 0;
+            args = Array.FindAll(args,
+                a => a != "norotpressure" && a != "notorque" && a != "noaddedmass");
+
             var mode = args.Length > 0 ? args[0] : "envelope";
             var s = Baseline();
 
@@ -244,6 +414,90 @@ namespace HeadlessSolver
             Console.WriteLine("=".PadRight(70, (char)61));
             Console.WriteLine($"target: strongest throw = {WorldRecordSkips} skips, weakest = sinks");
             Console.WriteLine();
+
+            if (mode == "spin")
+            {
+                // Spin is what is supposed to hold the attitude through contact. If the full
+                // model only matches the frozen-attitude run at implausible spin rates, the
+                // stabilisation is too weak and that is a modelling problem, not a tuning one.
+                var t = Baseline();
+                if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
+                Console.WriteLine($"C_l = {t.LiftCoefficient:F0}, 12 m/s, tilt {LaunchTiltDeg:F0} deg");
+                Console.WriteLine("   Bocquet's stability floor is sqrt(g/R) ~ 14 rad/s ~ 2.2 rev/s;");
+                Console.WriteLine("   a good human throw is 5-14 rev/s (docs section 6: measured max ~3.8 rev/s at the phone).");
+                Console.WriteLine($"   {"rev/s",8}{"rad/s",9}{"skips",8}{"dist m",9}{"first gap m",13}{"end",22}");
+                foreach (var rev in new[] { 2f, 5f, 10f, 14f, 25f, 50f, 100f, 200f })
+                {
+                    var r = SimulateDirect(t, 12f, rev * 2f * Mathf.PI, LaunchTiltDeg);
+                    Console.WriteLine($"   {rev,8:F0}{rev * 2f * Mathf.PI,9:F0}{r.Skips,8}"
+                                      + $"{r.Distance,9:F1}{r.FirstGapMetres,13:F2}  {r.EndReason,-20}");
+                }
+                return 0;
+            }
+
+            if (mode == "tilt")
+            {
+                // Is skip count set by the tilt alone? A contact force that only acts along
+                // the face normal removes horizontal momentum in fixed proportion to the
+                // vertical momentum it reverses -- the ratio is tan(tilt) -- so if that is
+                // what caps the run, skips should scale like 1/tan(tilt) and no coefficient
+                // should move it.
+                var t = Baseline();
+                if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
+                Console.WriteLine($"C_l = {t.LiftCoefficient:F0}, 12 m/s");
+                Console.WriteLine($"   {"tilt",6}{"tan",8}{"1/tan",8}{"skips",8}{"dist m",9}{"first gap m",13}");
+                foreach (var tiltDeg in new[] { 30f, 20f, 15f, 10f, 7f, 5f, 3f, 2f })
+                {
+                    var r = SimulateDirect(t, 12f, 14f * 2f * Mathf.PI, tiltDeg);
+                    // UnityShim's Mathf has no Tan; the physics files never needed one.
+                    var rad = tiltDeg * Mathf.Deg2Rad;
+                    var tan = Mathf.Sin(rad) / Mathf.Cos(rad);
+                    Console.WriteLine($"   {tiltDeg,6:F0}{tan,8:F3}{1f / tan,8:F1}"
+                                      + $"{r.Skips,8}{r.Distance,9:F1}{r.FirstGapMetres,13:F2}");
+                }
+                return 0;
+            }
+
+            if (mode == "incidence")
+            {
+                // How much of the shortfall is the launch condition rather than the model?
+                // Release height sets the incidence angle at first contact.
+                var t = Baseline();
+                if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
+                Console.WriteLine($"C_l = {t.LiftCoefficient:F0}, 12 m/s, launch tilt {LaunchTiltDeg:F0} deg");
+                Console.WriteLine($"   {"h m",8}{"beta deg",10}{"skips",8}{"dist m",9}{"end",24}");
+                foreach (var h in new[] { 0.30f, 0.15f, 0.08f, 0.04f, 0.02f, 0.01f, 0.005f })
+                {
+                    _releaseHeight = h;
+                    var vy = Mathf.Sqrt(2f * t.Gravity * h);
+                    var beta = Mathf.Atan2(vy, 12f) * Mathf.Rad2Deg;
+                    var r = SimulateDirect(t, 12f, 14f * 2f * Mathf.PI, LaunchTiltDeg);
+                    Console.WriteLine($"   {h,8:F3}{beta,10:F1}{r.Skips,8}{r.Distance,9:F1}  {r.EndReason,-24}");
+                }
+                _releaseHeight = 0.30f;
+                return 0;
+            }
+
+            if (mode == "contact")
+            {
+                var t = Baseline();
+                if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
+                var speed = args.Length > 2 ? float.Parse(args[2], CultureInfo.InvariantCulture) : 12f;
+                Console.WriteLine($"first contact, {speed:F0} m/s, C_l = {t.LiftCoefficient:F0}, "
+                                  + $"launch tilt {LaunchTiltDeg:F0} deg");
+                Console.WriteLine($"   {"t ms",9}{"h mm",9}{"d/R",8}{"wet",8}"
+                                  + $"{"vz",8}{"vy",8}{"v.n",8}{"lift N",10}{"tilt",8}");
+                _contactTrace = true;
+                var r = SimulateDirect(t, speed, 14f * 2f * Mathf.PI, LaunchTiltDeg);
+                _contactTrace = false;
+                Console.WriteLine($"   => {r.Skips} skips, {r.Distance:F1} m, {r.EndReason}");
+                return 0;
+            }
+
+            if (mode == "selftest")
+            {
+                return PressureSelfTest() ? 0 : 1;
+            }
 
             if (mode == "envelope")
             {
@@ -283,6 +537,10 @@ namespace HeadlessSolver
                 var t = Baseline();
                 t.SpeedScale = 1f;
                 if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
+                if (_noRotationalPressure)
+                    Console.WriteLine("DIAGNOSTIC: rotation hidden from the pressure law");
+                if (_noTorque)
+                    Console.WriteLine("DIAGNOSTIC: contact torque disabled entirely");
                 Console.WriteLine($"C_l = {t.LiftCoefficient:F0}\n");
 
                 foreach (var (speed, spinRev, expected) in new[]
