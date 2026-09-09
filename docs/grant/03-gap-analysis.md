@@ -25,7 +25,7 @@ on my machine" is the single most common reason a strong technical application i
 **Resolved 2026-09-07.** The pipeline had in fact run: two `workflow_dispatch` runs on
 2026-09-03 issued against Let's Encrypt production and published successfully. The
 "UNTESTED: this step has never been run" annotation was stale, exactly like the iOS markers
-in G11. `deploy/verify-published-cert.sh` now proves it from outside — it downloads from the
+in G11. `deploy/Verify-PublishedCert.ps1` now proves it from outside — it downloads from the
 public URL anonymously and passes.
 
 **But investigating it surfaced a worse, live problem.** The workflow's endpoint defaulted to

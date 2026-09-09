@@ -41,6 +41,12 @@ sysinfo.txt
 # Verification harness output
 verification-result.txt
 
+# Scene capture harness output (tools/capture-scene.ps1). Regenerated on every run, and the
+# PNG is a photograph of one moment rather than a fact about the project.
+scene-capture.png
+scene-capture.done
+scene-capture.log
+
 # Node
 node_modules/
 npm-debug.log*

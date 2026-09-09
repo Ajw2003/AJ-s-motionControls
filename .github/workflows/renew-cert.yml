@@ -17,7 +17,7 @@ name: Renew play.skiprocking.ca certificate
 # to that one name rather than every possible subdomain.
 #
 # STATUS: proven end to end. Two workflow_dispatch runs on 2026-09-03 (run numbers 1 and 2)
-# issued against production and published successfully; deploy/verify-published-cert.sh
+# issued against production and published successfully; deploy/Verify-PublishedCert.ps1
 # passes against the live URL. Earlier revisions of this file carried an "UNTESTED: this step
 # has never been run" note on the publish step; it was stale and has been removed.
 
@@ -94,7 +94,7 @@ jobs:
   renew:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out (for deploy/verify-published-cert.sh)
+      - name: Check out (for deploy/Verify-PublishedCert.ps1)
         uses: actions/checkout@v4
 
       - name: Resolve run settings
@@ -113,7 +113,7 @@ jobs:
           if [ "$MODE" = "staging" ]; then
             echo "server=letsencrypt_test" >> "$GITHUB_OUTPUT"
             echo "tag=$STAGING_TAG"        >> "$GITHUB_OUTPUT"
-            echo "allow_staging=--allow-staging" >> "$GITHUB_OUTPUT"
+            echo "allow_staging=-AllowStaging" >> "$GITHUB_OUTPUT"
           else
             echo "server=letsencrypt" >> "$GITHUB_OUTPUT"
             echo "tag=$CERT_TAG"      >> "$GITHUB_OUTPUT"
@@ -140,12 +140,16 @@ jobs:
       - name: Inspect the currently published certificate
         id: published
         continue-on-error: true
+        # pwsh is preinstalled on ubuntu-latest, so CI runs the same script a developer runs by
+        # hand on Windows. NO_COLOR keeps ANSI escapes out of the log and out of the grep below.
+        env:
+          NO_COLOR: '1'
         run: |
           set -euo pipefail
-          ./deploy/verify-published-cert.sh \
-            --tag "${{ steps.cfg.outputs.tag }}" \
-            --domain "$DOMAIN" \
-            --repo "$CERT_REPO" \
+          pwsh ./deploy/Verify-PublishedCert.ps1 \
+            -Tag "${{ steps.cfg.outputs.tag }}" \
+            -Domain "$DOMAIN" \
+            -Repo "$CERT_REPO" \
             ${{ steps.cfg.outputs.allow_staging }} \
             | tee published.txt
           DAYS=$(grep -oE '[0-9]+ days remaining' published.txt | grep -oE '^[0-9]+' || echo 0)
@@ -347,16 +351,18 @@ jobs:
       # instead of on a phone.
       - name: Verify what was actually published
         if: steps.decide.outputs.issue == 'true'
+        env:
+          NO_COLOR: '1'
         run: |
           set -euo pipefail
           # The upload is not always readable the instant gh returns.
           for attempt in 1 2 3 4 5; do
-            if ./deploy/verify-published-cert.sh \
-                 --tag "${{ steps.cfg.outputs.tag }}" \
-                 --domain "$DOMAIN" \
-                 --repo "$CERT_REPO" \
+            if pwsh ./deploy/Verify-PublishedCert.ps1 \
+                 -Tag "${{ steps.cfg.outputs.tag }}" \
+                 -Domain "$DOMAIN" \
+                 -Repo "$CERT_REPO" \
                  ${{ steps.cfg.outputs.allow_staging }} \
-                 --min-days 30 | tee verified.txt
+                 -MinDays 30 | tee verified.txt
             then
               {
                 echo ""

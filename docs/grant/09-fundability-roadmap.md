@@ -39,7 +39,7 @@ first action is to open the README.
       first one after 2026-09-07 is the proof that unattended renewal works — every run before
       that was triggered by hand. Expect it to *skip* (the published certificate has ~86 days
       left, over the 30-day threshold) and to say so; a skip that reports why is the correct
-      outcome, a failure is not. Run `./deploy/verify-published-cert.sh` any time to check the
+      outcome, a failure is not. Run `./deploy/Verify-PublishedCert.ps1` any time to check the
       live certificate independently of the workflow.
 - [ ] **Add `LICENSE`.** Apache-2.0. A hard gate for open-source funders and a prerequisite for
       anyone else adopting the work.
@@ -74,7 +74,7 @@ strong application.
       prominently in your demo video for the wrong reasons.
 - [x] **Prove the certificate pipeline (G2).** Done — and it turned out to have already been
       done: two production runs on 2026-09-03 published a real Let's Encrypt certificate, and
-      `deploy/verify-published-cert.sh` confirms it from the public URL with no credentials.
+      `deploy/Verify-PublishedCert.ps1` confirms it from the public URL with no credentials.
       The investigation also caught a live bug that would have stopped renewal entirely (the
       weekly cron defaulted to staging and would have failed every week). Both fixed.
       **Still outstanding:** confirm an installed client picks up a *refreshed* certificate —

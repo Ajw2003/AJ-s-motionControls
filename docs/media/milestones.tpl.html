@@ -1,0 +1,590 @@
+<title>RockSkipping Milestones</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+  /* dark-first: the captures are deep water blue, so the page sits with them */
+  :root {
+    --ground:    #070f1a;
+    --ground-2:  #0c1826;
+    --surface:   #111f30;
+    --surface-2: #16273a;
+    --ink:       #e8eff5;
+    --ink-2:     #9fb4c6;
+    --ink-3:     #71889d;
+    --line:      #1e3448;
+    --line-2:    #2a4560;
+    --accent:    #4aa3d8;   /* the water */
+    --gold:      #e6c649;   /* the highlighted stone on the shore */
+    --done:      #3fb094;
+    --partial:   #dd9333;
+    --idle:      #5d738a;
+    --f-disp: Archivo, "Helvetica Neue", Arial, sans-serif;
+    --f-body: "Source Serif 4", Georgia, serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground:    #eef3f8;
+      --ground-2:  #e3ebf3;
+      --surface:   #ffffff;
+      --surface-2: #f2f6fa;
+      --ink:       #0b1a29;
+      --ink-2:     #47606f;
+      --ink-3:     #6d8494;
+      --line:      #cbd9e5;
+      --line-2:    #b3c6d6;
+      --accent:    #1a6ea6;
+      --gold:      #9a7708;
+      --done:      #16775f;
+      --partial:   #a1600d;
+      --idle:      #6d8494;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:    #eef3f8;
+    --ground-2:  #e3ebf3;
+    --surface:   #ffffff;
+    --surface-2: #f2f6fa;
+    --ink:       #0b1a29;
+    --ink-2:     #47606f;
+    --ink-3:     #6d8494;
+    --line:      #cbd9e5;
+    --line-2:    #b3c6d6;
+    --accent:    #1a6ea6;
+    --gold:      #9a7708;
+    --done:      #16775f;
+    --partial:   #a1600d;
+    --idle:      #6d8494;
+  }
+
+  * { box-sizing: border-box; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 26px 100px; }
+
+  /* ---------------- masthead ---------------- */
+  .top { padding: 54px 0 34px; }
+  .kicker {
+    font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 16px;
+  }
+  h1 {
+    font-family: var(--f-disp); font-weight: 800;
+    font-size: clamp(2.6rem, 7vw, 4.6rem); line-height: .98;
+    letter-spacing: -.03em; margin: 0 0 18px; text-wrap: balance;
+  }
+  h1 .thin { font-weight: 500; color: var(--ink-2); }
+  .lede { font-size: 1.18rem; color: var(--ink-2); max-width: 60ch; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------------- progress spine ---------------- */
+  .spine { margin: 34px 0 0; }
+  .spine-bar { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+  .seg {
+    height: 12px; background: var(--line);
+    position: relative; border-radius: 1px;
+  }
+  .seg.done { background: var(--done); }
+  .seg.part { background: linear-gradient(90deg, var(--partial) 0 55%, var(--line) 55% 100%); }
+  .seg-lab {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px;
+    font-family: var(--f-mono); font-size: 10px; color: var(--ink-3);
+    margin-top: 7px; font-variant-numeric: tabular-nums;
+  }
+  .spine-foot {
+    display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: baseline;
+    margin-top: 16px; font-family: var(--f-mono); font-size: 12px; color: var(--ink-3);
+  }
+  .pct { font-family: var(--f-disp); font-weight: 800; font-size: 2rem; color: var(--ink); letter-spacing: -.02em; }
+  .key { display: inline-flex; align-items: center; gap: 6px; }
+  .key i { width: 10px; height: 10px; display: block; border-radius: 1px; }
+
+  /* ---------------- hero media ---------------- */
+  .hero { margin: 40px 0 0; }
+  .frame {
+    background: var(--surface); border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .frame video, .frame img { display: block; width: 100%; height: auto; }
+  .cap {
+    font-family: var(--f-mono); font-size: 11.5px; line-height: 1.6;
+    color: var(--ink-3); padding: 12px 15px; border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .cap b { color: var(--ink-2); font-weight: 500; }
+  .cap .stamp { color: var(--accent); }
+
+  /* ---------------- section head ---------------- */
+  .sechead { margin: 72px 0 6px; }
+  .sechead h2 {
+    font-family: var(--f-disp); font-weight: 700; font-size: 1.9rem;
+    letter-spacing: -.02em; margin: 0; text-wrap: balance;
+  }
+  .sechead p { color: var(--ink-2); max-width: 64ch; margin: 8px 0 0; font-size: 1.02rem; }
+
+  /* ---------------- milestone bands ---------------- */
+  .ms { border-top: 1px solid var(--line); padding: 34px 0 38px; }
+  .ms-head {
+    display: grid; grid-template-columns: 92px 1fr auto; gap: 0 20px;
+    align-items: start;
+  }
+  .ms-pct {
+    font-family: var(--f-disp); font-weight: 800; font-size: 1.55rem;
+    letter-spacing: -.02em; line-height: 1.1; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .ms.is-done .ms-pct { color: var(--done); }
+  .ms.is-part .ms-pct { color: var(--partial); }
+  .ms-title {
+    font-family: var(--f-disp); font-weight: 700; font-size: 1.55rem;
+    letter-spacing: -.017em; margin: 0; line-height: 1.15; text-wrap: balance;
+  }
+  .chip {
+    font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .07em;
+    text-transform: uppercase; padding: 4px 10px; white-space: nowrap;
+    border: 1px solid currentColor; color: var(--idle);
+  }
+  .chip.done { color: var(--done); }
+  .chip.part { color: var(--partial); }
+
+  .ms-body { margin-top: 16px; padding-left: 112px; }
+  .ms-body > p { margin: 0 0 14px; max-width: 66ch; color: var(--ink-2); }
+  .ms-body > p:last-child { margin-bottom: 0; }
+  .ms-body strong { color: var(--ink); font-weight: 600; }
+
+  .accept {
+    font-family: var(--f-mono); font-size: 12.5px; line-height: 1.65;
+    color: var(--ink-2); background: var(--surface-2);
+    border-left: 2px solid var(--accent); padding: 11px 15px;
+    margin: 0 0 18px; max-width: 72ch;
+  }
+  .accept b {
+    display: block; color: var(--accent); font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;
+  }
+
+  .flag {
+    border: 1px solid var(--partial); border-left-width: 3px;
+    padding: 14px 17px; margin: 0 0 18px; max-width: 70ch;
+    background: color-mix(in srgb, var(--partial) 9%, transparent);
+  }
+  .flag h4 {
+    font-family: var(--f-disp); font-size: 1.02rem; font-weight: 700;
+    margin: 0 0 5px; color: var(--partial);
+  }
+  .flag p { margin: 0 0 9px; font-size: .98rem; color: var(--ink-2); }
+  .flag p:last-child { margin: 0; }
+  .flag code, .accept code { font-family: var(--f-mono); font-size: .88em; color: var(--ink); }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .duo .frame img { max-height: 460px; object-fit: contain; background: var(--ground-2); }
+
+  .empty {
+    border: 1px dashed var(--line-2); padding: 40px 24px; text-align: center;
+    font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); line-height: 1.8;
+  }
+  .empty b { color: var(--ink-2); display: block; font-size: 13px; margin-bottom: 6px; font-weight: 500; }
+
+  ul.pts { margin: 0 0 16px; padding-left: 1.15em; color: var(--ink-2); max-width: 68ch; }
+  ul.pts li { margin-bottom: 6px; }
+  ul.pts li::marker { color: var(--accent); }
+  ul.pts strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------------- footer ---------------- */
+  footer {
+    margin-top: 76px; padding-top: 26px; border-top: 2px solid var(--line-2);
+    font-family: var(--f-mono); font-size: 11.5px; line-height: 1.85; color: var(--ink-3);
+  }
+  footer b { color: var(--ink-2); font-weight: 500; }
+  footer .prov { margin-top: 14px; }
+
+  @media (max-width: 760px) {
+    .wrap { padding: 0 16px 70px; }
+    .ms-head { grid-template-columns: 1fr auto; gap: 4px 12px; }
+    .ms-pct { grid-column: 1 / -1; font-size: 1.1rem; }
+    .ms-body { padding-left: 0; }
+    .duo { grid-template-columns: 1fr; }
+    .seg-lab { font-size: 8px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <p class="kicker">RockSkipping · roadmap · tier 2 of the doc stack</p>
+    <h1>Ten milestones<br><span class="thin">from nothing to a stranger playing</span></h1>
+    <p class="lede">A couch party game: the PC drives the TV, phones are motion controllers over a
+      web page, no app to install. <strong>100% is one sentence</strong> — someone who has never
+      seen the repository downloads one file, runs it, and hosts a party with no internet, no
+      router and no instructions. Everything below is on the way to exactly that.</p>
+
+    <div class="spine">
+      <div class="spine-bar" role="img" aria-label="Progress: milestones one through seven complete, eight and nine partial, ten not started. Roughly 75 percent.">
+        <div class="seg done"></div><div class="seg done"></div><div class="seg done"></div>
+        <div class="seg done"></div><div class="seg done"></div><div class="seg done"></div>
+        <div class="seg done"></div><div class="seg part"></div><div class="seg part"></div>
+        <div class="seg"></div>
+      </div>
+      <div class="seg-lab">
+        <span>01</span><span>02</span><span>03</span><span>04</span><span>05</span>
+        <span>06</span><span>07</span><span>08</span><span>09</span><span>10</span>
+      </div>
+      <div class="spine-foot">
+        <span class="pct">~75%</span>
+        <span class="key"><i style="background:var(--done)"></i> 7 complete</span>
+        <span class="key"><i style="background:var(--partial)"></i> 2 partial</span>
+        <span class="key"><i style="background:var(--line)"></i> 1 not started</span>
+        <span>as of 2026-09-08</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <figure class="frame" style="margin:0">
+      <video src="{{SKIP}}" autoplay muted loop playsinline preload="auto"
+             aria-label="Gameplay: the translucent aim ghost stone tilts as the player aims, the arc flattens, then the stone is released and skips across the water leaving expanding ripple rings."></video>
+      <figcaption class="cap"><b>Milestone 3, working.</b> The large translucent stone is the
+        <b>aim preview</b> — it runs the real solver speculatively, hundreds of steps per frame,
+        while the player merely aims. Then the throw: the stone leaves, skips, and each touch
+        prints a ripple ring. <span class="stamp">Capture 2026-08-24</span></figcaption>
+    </figure>
+  </section>
+
+  <div class="sechead">
+    <h2>Why ten, and why 10% each</h2>
+    <p>Ten bands put one milestone at roughly one to two weeks of real work — coarse enough to be
+      a meaningful unit, fine enough that "where am I" has an answer better than "somewhere in the
+      middle". Finer bands were considered and rejected: at 1% this becomes a backlog that needs
+      re-cutting every time priorities move, and this project reverses hosting and physics
+      decisions often enough that it would need re-cutting constantly. Every milestone below
+      carries an <strong>acceptance criterion someone else could check</strong> — an observable
+      outcome, not a feeling that the work is finished.</p>
+  </div>
+
+  <!-- ══════════ 01 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">10%</div>
+      <h3 class="ms-title">Infrastructure spike</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>The load-bearing scaffolding, before any of it was worth building on: the event system
+        ported and made multi-scene safe, the four-scene structure, the Node relay written and
+        hardened with its own tests.</p>
+      <div class="accept"><b>Acceptance</b>Event-system verification proves publish/subscribe
+        survives a scene load and that destroyed subscribers are dropped; <code>npm test</code>
+        passes in <code>relay/</code>.</div>
+      <figure class="frame" style="margin:0">
+        <img src="{{M1}}" alt="Verification output listing PASS and FAIL lines, including FAIL EventManager survived Bootstrap to Lobby and FAIL persistent subscriber still receives after Lobby load.">
+        <figcaption class="cap"><b>The run that found the bugs, not the run that passed.</b>
+          Every <code>FAIL</code> here is the ported event system failing to survive a scene load —
+          exactly the four fixes that had to land before anything else could be built.
+          <span class="stamp">Capture 2026-07-29, day one</span></figcaption>
+      </figure>
+    </div>
+  </article>
+
+  <!-- ══════════ 02 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">20%</div>
+      <h3 class="ms-title">Motion pipeline</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>The phone's orientation arrives in Unity as the same rotation the player is holding.
+        Tilt the phone ten degrees, the stone tilts ten degrees.</p>
+      <div class="accept"><b>Acceptance</b>That correspondence holds on both iOS and Android, in
+        the pose the game is actually played in — phone upright, screen facing the player, aimed
+        at a television.</div>
+      <p><strong>It is its own milestone because that pose sits exactly on a gimbal
+        singularity.</strong> <code>DeviceOrientationEvent</code> reports Tait-Bryan angles where
+        <code>beta = 90°</code> is "upright, screen facing you" — so the grip reference sits
+        <em>on</em> the singularity, not near it. Sensor noise alone swung aim by tens of degrees.
+        The fix was to stop decomposing entirely: the phone differences two quaternions and sends
+        four floats, and Unity applies them to the stone verbatim.</p>
+      <div class="duo">
+        <figure class="frame" style="margin:0">
+          <img src="{{M2}}" alt="Phone controller screen showing two large circular buttons, TAP TO AIM labelled idle, and SWING! labelled armed.">
+          <figcaption class="cap"><b>The whole phone UI.</b> Two targets, no instructions.
+            <span class="stamp">2026-08-13</span></figcaption>
+        </figure>
+        <figure class="frame" style="margin:0">
+          <video src="{{WATER}}" autoplay muted loop playsinline preload="auto"
+                 aria-label="A stone drifting on the water as ripple rings expand outward from an earlier impact."></video>
+          <figcaption class="cap"><b>What the phone drives.</b> Orientation applied to the stone
+            with no Euler maths anywhere in the path.
+            <span class="stamp">2026-09-01</span></figcaption>
+        </figure>
+      </div>
+    </div>
+  </article>
+
+  <!-- ══════════ 03 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">30%</div>
+      <h3 class="ms-title">Skip physics</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>A stone thrown at water skips, sinks, or fails — and <strong>the throw</strong> is what
+        decides which. Shown in the clip at the top of this page.</p>
+      <div class="accept"><b>Acceptance</b>A speed/angle/roll sweep in which a better throw beats a
+        worse one, every run satisfying the energy invariant, and two different throws producing
+        visibly different results with no tuning edit between them.</div>
+      <ul class="pts">
+        <li><strong>A bounce is one energy budget.</strong> It takes a loss, then splits what
+          survives between forward and upward motion — it never synthesises lift out of horizontal
+          speed. An earlier version did, and stones gained energy every bounce and skipped for
+          minutes on end.</li>
+        <li><strong>Spin is the stabiliser.</strong> It holds the stone's face steady through the
+          slap and decays every bounce, so a run always ends. Without it the stone tumbles and
+          dies in two bounces — which is what an unspun stone actually does.</li>
+        <li><strong>The solver is pure.</strong> No events, no scene, no side effects — which is
+          the only reason the aim preview can run it speculatively without scoring imaginary
+          throws.</li>
+      </ul>
+      <p>It is not "physics works". An earlier model had 25 tuning fields fighting each other, and
+        a one-point tuning edit moved the result more than the player's own throw did. The
+        milestone is <strong>the throw mattering</strong>.</p>
+    </div>
+  </article>
+
+  <!-- ══════════ 04 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">40%</div>
+      <h3 class="ms-title">Turns, scoring, multiplayer</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>A real match, with real people, to a real result: the roster, match phases, turn rotation,
+        push-based scoring, late join, names and colours, the results screen.</p>
+      <div class="accept"><b>Acceptance</b>A cross-platform session with five or more phones —
+        iOS and Android together — completes a full match, with a player joining mid-lobby or
+        dropping and returning handled without a restart.</div>
+      <figure class="frame" style="margin:0">
+        <img src="{{M4}}" alt="The game's results screen reading FINAL SCORES, after 2 rounds, 1. BRUUU 284.">
+        <figcaption class="cap"><b>Verified by a five-player cross-platform match.</b> Scoring is
+          push-based — gameplay publishes events and only <code>ScoreManager</code> knows what a
+          skip is worth. <span class="stamp">Capture 2026-08-31</span></figcaption>
+      </figure>
+    </div>
+  </article>
+
+  <!-- ══════════ 05 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">50%</div>
+      <h3 class="ms-title">Local hosting and secure context</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>The PC hosts the game itself. No cloud service is involved in any way — the relay runs as
+        a child process of the game, over HTTPS, with a certificate obtained and renewed with no
+        human involved.</p>
+      <div class="accept"><b>Acceptance</b>Press Play; a phone opens the join URL, gets a valid
+        certificate, and its motion sensors unlock. Nothing was configured first and no cloud
+        account exists.</div>
+      <p><strong>This is half the project.</strong> Phone motion sensors are gated on a secure
+        context — without this milestone there is no game, only a demo that works on the
+        developer's machine. The chain is unforgiving: sensors need a secure context, a secure
+        context needs a certificate, a certificate needs a resolvable public name, and a living
+        room has none of it.</p>
+      <p>The public service this originally leaned on <strong>died at the DNS layer</strong> —
+        not degraded, gone. It was replaced by a single-name certificate on an owned domain,
+        renewed unattended by a scheduled job and published where a fresh install can fetch it.</p>
+    </div>
+  </article>
+
+  <!-- ══════════ 06 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">60%</div>
+      <h3 class="ms-title">Offline hosting</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>The living room has no internet. The game does not care. The PC raises its own Wi-Fi
+        network, hands out addresses, answers DNS for its own hostname, and isolates its guests.</p>
+      <div class="accept"><b>Acceptance</b>Unplug everything. Start the game. A phone that has
+        never seen this network joins by QR and plays a full match.</div>
+      <figure class="frame" style="margin:0">
+        <img src="{{M6}}" alt="Terminal output diagnosing the hotspot at 192.168.137.1, with four numbered checks all reporting PASS: relay health, DNS answering the probe domain, the port 80 listener bound and reachable, and the Android probe receiving a 302 redirect.">
+        <figcaption class="cap"><b>Every check names what it cannot prove.</b> Step 3 says in
+          passing that it is "the step that decides whether a portal sheet can EVER appear" —
+          writing that down is why a ten-round dead end is not being reopened on a hunch.
+          <span class="stamp">Capture 2026-09-06</span></figcaption>
+      </figure>
+      <p style="margin-top:14px">It is separate from milestone 5 because that one needs a working
+        network and this one needs the PC to <strong>be</strong> the network. Three genuine
+        blockers each looked like a Windows limitation and were not — including a Wi-Fi radio that
+        must be <em>on but need not be associated</em>, which reports failure in a way that reads
+        exactly like "Windows cannot do this offline".</p>
+    </div>
+  </article>
+
+  <!-- ══════════ 07 ══════════ -->
+  <article class="ms is-done">
+    <div class="ms-head">
+      <div class="ms-pct">70%</div>
+      <h3 class="ms-title">Frictionless join</h3>
+      <span class="chip done">Complete</span>
+    </div>
+    <div class="ms-body">
+      <p>Joining stops being a ritual. A guest used to pay two camera scans and about nine
+        interactions — and pay all nine again at every session, forever.</p>
+      <div class="accept"><b>Acceptance</b>A guest who played last week arrives, scans once, and is
+        in. A guest who is stuck is visible on the TV as stuck, at the stage they are stuck at.</div>
+      <figure class="frame" style="margin:0">
+        <video src="{{JOIN}}" autoplay muted loop playsinline preload="auto"
+               aria-label="The game's join screen on the TV: a heading reading a phone is on the Wi-Fi, now scan the second code, with a small completed Wi-Fi QR beside a large game-URL QR, the network name, the play.skiprocking.ca address, and the room code ULUX."></video>
+        <figcaption class="cap"><b>The standing rule: always render a QR, never ask anyone to type
+          or hunt for an address.</b> The first code joins the Wi-Fi; once a phone is on it, the
+          screen advances itself and asks for the second. The room code underneath is the spoken
+          fallback — no <code>I</code> and no <code>O</code>, because it gets read aloud off a
+          television. <span class="stamp">Capture 2026-09-06</span></figcaption>
+      </figure>
+      <p style="margin-top:14px">Closed after ten rounds of hardware testing. The captive portal
+        was <strong>abandoned deliberately, not forgotten</strong>: Android resolves both probe
+        hosts every 60 seconds and issues no HTTP probe, while the same phone's browser completes
+        a full request to the same port seconds later. Ten rounds excluded every host-side cause
+        by direct measurement.</p>
+    </div>
+  </article>
+
+  <!-- ══════════ 08 ══════════ -->
+  <article class="ms is-part">
+    <div class="ms-head">
+      <div class="ms-pct">80%</div>
+      <h3 class="ms-title">Rock variety and selection</h3>
+      <span class="chip part">Built, not done</span>
+    </div>
+    <div class="ms-body">
+      <p>Six stones that feel different, and a way to choose one that is worth doing. Players pick
+        by pointing the phone at the shore on the TV, then confirming on the handset.</p>
+      <div class="accept"><b>Acceptance</b>Six rocks are selectable, <em>each plays measurably
+        differently</em>, a player picks one by pointing their phone at the shore, and the pick
+        survives into their throw.</div>
+      <figure class="frame" style="margin:0 0 16px">
+        <img src="{{M8SHORE}}" alt="Six stones laid out along the shore in the game, each labelled: Skimmer, Slab, Pebble, Nugget, Shard and Boulder, each with a one-line description. Pebble is highlighted in gold with an orange marker above it.">
+        <figcaption class="cap"><b>All six, with the character already written for them.</b>
+          Skimmer — "thin and fast, rewards a clean angle, forgives nothing". Shard — "barely
+          there, skitters on long after it should have sunk". Boulder — "heavy going, needs a real
+          throw to stay up at all". <span class="stamp">Capture 2026-09-01</span></figcaption>
+      </figure>
+      <div class="flag">
+        <h4>This reads as nearly finished, and it is not</h4>
+        <p>Every piece of machinery exists — the catalog, the shore UI, the wire format, a host
+          settings panel, in-play telemetry and an offline sweep to compare rocks against each
+          other. But all six tunings ship <strong>identical values</strong>:
+          <code>SpinMultiplier: 1</code>, <code>VerticalMultiplier: 1</code>,
+          <code>HorizontalMultiplier: 1</code>.</p>
+        <p>That was deliberate — the physics was being judged bare first, so that every difference
+          between two throws was the throw. But it means the acceptance criterion above
+          <strong>cannot be met by any amount of further code</strong>. Boulder and Shard are
+          promised opposite personalities in writing and are, today, the same stone in a different
+          silhouette. Six rocks that skip identically is a worse experience than one rock, because
+          it invites a choice that does not matter.</p>
+        <p>What is left is authoring: deciding what a Skimmer is versus a Shard and putting numbers
+          on it. The tool that checks it already sweeps per rock.</p>
+      </div>
+      <figure class="frame" style="margin:0;max-width:340px">
+        <img src="{{M8CHOOSE}}" alt="The phone's choose-your-stone screen: instructions to point the phone at a stone on the TV then tap confirm, a confirm button, the current pick shown as On: Pebble, and a row of player colour swatches.">
+        <figcaption class="cap"><b>The handset half.</b> "Point your phone at a stone on the TV,
+          then tap CONFIRM." <span class="stamp">2026-09-02</span></figcaption>
+      </figure>
+    </div>
+  </article>
+
+  <!-- ══════════ 09 ══════════ -->
+  <article class="ms is-part">
+    <div class="ms-head">
+      <div class="ms-pct">90%</div>
+      <h3 class="ms-title">Presentation</h3>
+      <span class="chip part">Partial · blocked</span>
+    </div>
+    <div class="ms-body">
+      <p>It stops looking like a prototype: audio, trails, water response, camera framing, music.</p>
+      <div class="accept"><b>Acceptance</b>Someone watching a match from the couch, who has not
+        been told what to look for, does not notice anything missing.</div>
+      <p><strong>Built:</strong> the skip pitch ladder, sink, fail, score and win sounds, trails,
+        water ripples, the render-pipeline migration, arc colour and ghost glow.
+        <strong>Not built:</strong> music, and the scheduler that stops same-frame sounds
+        colliding.</p>
+      <div class="flag">
+        <h4>The blocker is a decision, not code</h4>
+        <p>Where source clips come from — licensed pack, commissioned, or generated — is
+          unanswered, and has been long enough that the milestone has gone as far as it can
+          without it. Everything shipping today is <strong>procedurally generated</strong> at
+          build time, which is the only reason it got this far.</p>
+      </div>
+    </div>
+  </article>
+
+  <!-- ══════════ 10 ══════════ -->
+  <article class="ms">
+    <div class="ms-head">
+      <div class="ms-pct">100%</div>
+      <h3 class="ms-title">Zero-setup distribution</h3>
+      <span class="chip">Not started</span>
+    </div>
+    <div class="ms-body">
+      <p>The sentence at the top of this page. Bundling the runtime and the relay inside the build,
+        getting the defaults right with no override files, and an installer that is compiled and
+        signed.</p>
+      <div class="accept"><b>Acceptance</b>A person who has never seen the repository is handed one
+        file. They install it, run it, and host a party. You are not in the room and they do not
+        phone you.</div>
+      <p>Four blockers, known and unchanged. The third is the one to attack first —
+        <strong>the relay and controller folders are not in the build at all.</strong> They live
+        outside the Unity project, so the build never copies them, and a downloaded build fails
+        there before it reaches the bundled-runtime or dependency problems. Everything else in this
+        milestone is downstream of fixing it.</p>
+      <div class="empty">
+        <b>No capture exists for this milestone</b>
+        Nothing has been built to record. That is what "not started" looks like,<br>
+        and leaving the space empty is more honest than filling it.
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <b>RockSkipping</b> — Unity 6000.3.15f1 · Node relay · vanilla-JS phone controller.
+    Definitions live in <b>docs/Roadmap.md</b> (tier 2); current status in
+    <b>docs/ProjectState.md</b> (tier 3). A milestone is done when its acceptance criterion has
+    been <b>checked</b>, not when the code exists — "written but never run" is not done, and
+    saying so is the whole value of writing the criteria down.
+    <div class="prov">All footage and screenshots on this page are real captures from this machine,
+      dated 2026-07-29 through 2026-09-06. Nothing is mocked up. Clips are silent and loop; they
+      hold still if your system asks for reduced motion.</div>
+  </footer>
+
+</div>
+
+<script>
+  // Honour reduced-motion: the clips are illustrative, never load-bearing.
+  (function () {
+    var q = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function apply() {
+      var vids = document.querySelectorAll('video');
+      for (var i = 0; i < vids.length; i++) {
+        if (q.matches) { vids[i].pause(); vids[i].removeAttribute('loop'); vids[i].setAttribute('controls', ''); }
+        else { vids[i].setAttribute('loop', ''); vids[i].removeAttribute('controls'); vids[i].play().catch(function () {}); }
+      }
+    }
+    apply();
+    if (q.addEventListener) q.addEventListener('change', apply);
+  })();
+</script>

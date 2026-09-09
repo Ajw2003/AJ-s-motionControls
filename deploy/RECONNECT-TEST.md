@@ -1,7 +1,7 @@
 # Testing host reconnection
 
 Proves that a host dropping off the network no longer ejects every player. Background:
-[HostingPlan.md](../docs/HostingPlan.md) §5. The bug was originally found on the old Fly.io
+[docs/systems/Networking.md](../docs/systems/Networking.md). The bug was originally found on the old Fly.io
 deployment, whose trial tier stopped machines every 5 minutes and killed the host socket
 mid-match. That deployment is gone — the relay now runs on this machine
 ([README.md](README.md)) — but every failure path below still exists, because a local relay

@@ -1,0 +1,3340 @@
+diff --git a/Assets/Editor/ProjectSetup.cs b/Assets/Editor/ProjectSetup.cs
+index 5e240cd..e6c6891 100644
+--- a/Assets/Editor/ProjectSetup.cs
++++ b/Assets/Editor/ProjectSetup.cs
+@@ -131,5 +131,17 @@ namespace RockSkippingEditor
+         /// </remarks>
+         [MenuItem("RockSkipping/Verify/Print Skip Curve")]
+         public static void PrintSkipCurve() => SkipCurve.Run();
++
++        /// <summary>
++        /// The R1-R10 reality check against the published planing-disc model — see
++        /// <see cref="SkipReality"/>. Writes skip-reality.txt at the project root.
++        /// </summary>
++        /// <remarks>
++        /// Also no play mode and no scene: DiscContact/RigidDisc are pure and
++        /// ReferenceStone is asset-free, so this runs standalone against the papers'
++        /// own apparatus rather than anything read from Resources.
++        /// </remarks>
++        [MenuItem("RockSkipping/Verify/Print Reality Check")]
++        public static void PrintRealityCheck() => SkipReality.Run();
+     }
+ }
+diff --git a/Assets/Scripts/Game/Physics/DiscContact.cs b/Assets/Scripts/Game/Physics/DiscContact.cs
+new file mode 100644
+index 0000000..7b07fec
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/DiscContact.cs
+@@ -0,0 +1,241 @@
++using UnityEngine;
++
++namespace Game
++{
++    /// <summary>
++    /// The published planing-disc contact model: wetted area, its centroid, and the two
++    /// forces that act on it. Pure, closed-form geometry plus one force evaluation — no
++    /// integration lives here, that is <see cref="RigidDisc"/>'s job.
++    /// </summary>
++    /// <remarks>
++    /// Every formula here is cited in docs/Findings-RealSkipPhysics.md and must not drift
++    /// from it — that document, not this file's comments, is the source of truth for the
++    /// numbers. In particular:
++    ///
++    /// - Wetted area is Bocquet [B] Eq. (9) (Findings §2), algebraically identical to the
++    ///   form quoted in docs/plans/real-skip-physics.md.
++    /// - The force law is the corrected one from Findings §1, NOT the plan's first draft:
++    ///   lift goes as the SQUARED NORMAL velocity `(v·n̂)²` (the Nagahiro/Birkhoff form,
++    ///   Findings §1.2 — Bocquet's constant-coefficient `V²` form cannot produce a magic
++    ///   angle), and friction acts along `t̂`, which lies IN the disc's own plane, not
++    ///   against the flight path (Findings §1.1). There is no force at all on the dry face.
++    ///
++    /// PURE. No Unity scene access, no events, no side effects, deterministic — this file
++    /// lives in the RockSkipping.Physics assembly (`"references": []`) alongside
++    /// SkipPhysics/PhoneAttitude/SkipConstants/SkipTuning specifically so it can be used
++    /// standalone by EditMode tests and by the verification harness. Do not add a
++    /// reference to anything outside System.Collections.Generic/UnityEngine.
++    /// </remarks>
++    public static class DiscContact
++    {
++        /// <summary>
++        /// The wetted area of a circular disc of radius <paramref name="radius"/>, cut by a
++        /// plane whose intersection with the disc's own plane sits a signed distance
++        /// <paramref name="d"/> from the disc centre, measured along the axis that points
++        /// INTO the water (see <see cref="WettedAxis"/>).
++        /// </summary>
++        /// <remarks>
++        /// Bocquet [B] Eq. (9) / Findings §2, `S_im(s) = R²·[acos(1−s/R) − (1−s/R)·√(1−(1−s/R)²)]`
++        /// with `s = |z|/sinθ`. Substituting `d = R − s` gives exactly the form used here,
++        /// `R²·acos(d/R) − d·√(R²−d²)`, which the Findings doc confirms is algebraically
++        /// identical.
++        ///
++        /// `d` is the distance from the disc centre to the waterline, along the wetted
++        /// axis: `d = −R` means the whole disc is submerged (the far side, `d = +R`, means
++        /// bone dry). At `d = 0` the waterline passes exactly through the centre and the
++        /// disc is exactly half wetted — this is what the EditMode geometry tests check.
++        /// </remarks>
++        public static float WettedArea(float radius, float d)
++        {
++            if (radius <= 0f) return 0f;
++
++            // Fully dry / fully wet clamp — the closed form is only valid for |d| < R;
++            // outside that band the physical answer is exactly 0 or the full disc.
++            if (d >= radius) return 0f;
++            if (d <= -radius) return Mathf.PI * radius * radius;
++
++            var ratio = d / radius;
++            return radius * radius * Mathf.Acos(ratio) - d * Mathf.Sqrt(radius * radius - d * d);
++        }
++
++        /// <summary>
++        /// Distance from the disc centre to the wetted segment's centroid, along the same
++        /// wetted axis <paramref name="d"/> is measured on. Always ≥ 0: the centroid of the
++        /// wetted cap sits between the waterline and the far (wettest) rim, never behind
++        /// the disc centre.
++        /// </summary>
++        /// <remarks>
++        /// Closed form for a circular segment's centroid, derived directly from
++        /// `WettedArea`'s own integral (see the derivation in the class remarks of the
++        /// EditMode test file — it is not separately published in [B], but it follows from
++        /// the same integral [B] Eq. (9) is built from):
++        ///
++        /// ```
++        /// x̄ = (2/3)·(R² − d²)^1.5 / A_wet
++        /// ```
++        ///
++        /// At `d = −R` (fully submerged) this correctly gives 0 — the centroid of a whole
++        /// circle is its own centre. At `d = 0` (half wetted) it gives the textbook
++        /// semicircle centroid, `4R/(3π) ≈ 0.424·R`, measured from the flat edge.
++        /// </remarks>
++        public static float WettedCentroidDistance(float radius, float d)
++        {
++            var area = WettedArea(radius, d);
++            if (area <= 0f) return 0f;
++
++            var clamped = Mathf.Clamp(d, -radius, radius);
++            var underRoot = Mathf.Max(0f, radius * radius - clamped * clamped);
++            var moment = (2f / 3f) * Mathf.Pow(underRoot, 1.5f);
++            return moment / area;
++        }
++
++        /// <summary>
++        /// The in-plane direction that points INTO the water, given the disc's outward
++        /// face normal <paramref name="normal"/>. This is the axis <see cref="WettedArea"/>
++        /// and <see cref="WettedCentroidDistance"/>'s `d` is measured along, and the
++        /// direction the wetted centroid is offset from the disc centre in world space.
++        /// </summary>
++        /// <remarks>
++        /// Moving a distance `x` along this axis lowers height by `x·sinθ`, where `θ` is
++        /// the disc's tilt off horizontal (`sinθ = |horizontal component of normal|`) — so
++        /// `d = z / sinθ` (see <see cref="SignedWaterDistance"/>) is exactly the disc-plane
++        /// distance to the waterline that trigonometry predicts.
++        ///
++        /// Degenerate when the disc is dead flat (`normal` parallel to world up): there is
++        /// no well-defined "downhill" direction on a level disc, so this falls back to
++        /// world forward projected onto the disc's plane — an arbitrary but stable choice
++        /// (a flat disc's contact is radially symmetric, so which in-plane axis is picked
++        /// does not matter physically).
++        /// </remarks>
++        public static Vector3 WettedAxis(Vector3 normal)
++        {
++            var n = normal.sqrMagnitude > 0.0001f ? normal.normalized : Vector3.up;
++
++            // Project world-up onto the disc's own plane, then flip: the result points
++            // "downhill" (into the water) rather than "uphill".
++            var uphill = Vector3.up - n * Vector3.Dot(n, Vector3.up);
++            if (uphill.sqrMagnitude > 0.0001f) return -uphill.normalized;
++
++            // Disc is flat (normal parallel to up) — pick a stable arbitrary in-plane axis.
++            var fallback = Vector3.forward - n * Vector3.Dot(n, Vector3.forward);
++            if (fallback.sqrMagnitude > 0.0001f) return -fallback.normalized;
++            return -Vector3.Cross(n, Vector3.right).normalized;
++        }
++
++        /// <summary>
++        /// The signed disc-plane distance from the disc centre to the waterline (the `d`
++        /// every method above takes), given the centre's height above the water and the
++        /// disc's tilt.
++        /// </summary>
++        /// <param name="heightAboveWater">Disc centre's height minus the water height —
++        /// positive means the centre sits above the water.</param>
++        /// <param name="normal">The disc's outward face normal.</param>
++        public static float SignedWaterDistance(float heightAboveWater, Vector3 normal)
++        {
++            var n = normal.sqrMagnitude > 0.0001f ? normal.normalized : Vector3.up;
++            var sinTheta = Mathf.Sqrt(Mathf.Max(0f, 1f - n.y * n.y));
++
++            // Dead flat: there is no tilt to project the height through. A flat disc
++            // touches everywhere at once — treat as fully wet the instant the centre is at
++            // or below the water, fully dry otherwise. Callers should rarely land exactly
++            // here (a perfectly flat contact is a measure-zero case) but must not divide by
++            // zero when they do.
++            if (sinTheta < 0.001f) return heightAboveWater <= 0f ? -1000f : 1000f;
++
++            return heightAboveWater / sinTheta;
++        }
++
++        /// <summary>One substep's fluid forces and the torque they exert about the disc centre.</summary>
++        public struct ContactForces
++        {
++            public float WettedArea;
++            public Vector3 Lift;
++            public Vector3 Friction;
++            public Vector3 Torque;
++        }
++
++        /// <summary>
++        /// Evaluate the fluid forces for one substep of contact. Pure — reads the disc's
++        /// state, returns forces and torque, touches nothing else.
++        /// </summary>
++        /// <param name="heightAboveWater">Disc centre's height minus the water height.</param>
++        /// <param name="normal">Disc's outward face normal, world space, unit length.</param>
++        /// <param name="velocity">Disc centre's velocity, world space, m/s.</param>
++        /// <param name="radius">Disc radius, m.</param>
++        /// <param name="waterDensity">kg/m³ — Bocquet [B] uses 1000 (fresh water).</param>
++        /// <param name="liftCoefficient">`C_l` — Findings §3, "≈ 1", constant (Bocquet's
++        /// weakest assumption, see Findings §5 item 1 — exposed as a field, not baked in,
++        /// for exactly that reason).</param>
++        /// <param name="dragCoefficient">`C_f` — same source, "≈ 1".</param>
++        public static ContactForces Evaluate(
++            float heightAboveWater, Vector3 normal, Vector3 velocity,
++            float radius, float waterDensity, float liftCoefficient, float dragCoefficient)
++        {
++            var n = normal.sqrMagnitude > 0.0001f ? normal.normalized : Vector3.up;
++            var d = SignedWaterDistance(heightAboveWater, n);
++
++            var forces = new ContactForces
++            {
++                WettedArea = WettedArea(radius, d),
++            };
++
++            if (forces.WettedArea <= 0f) return forces;
++
++            // ── Lift, along n̂, proportional to the SQUARED NORMAL velocity ──────────────
++            // Findings §1.2 / [N]: "Hydrodynamic pressure p acting from water is
++            // proportional to (v·n)²... For the part of the surface facing air, there is no
++            // hydrodynamic force." This — not Bocquet's constant-coefficient V² form — is
++            // what produces the magic angle (R1), so it is not optional.
++            var normalSpeed = Vector3.Dot(velocity, n);
++
++            // ── The face must be moving INTO the water to feel any pressure ─────────────
++            // [N] assumption (ii): "For the part of the surface facing air, there is no
++            // hydrodynamic force." Squaring normalSpeed loses its sign, so without this
++            // guard the lift is applied along +n̂ even when the face is travelling AWAY
++            // from the water — and still water would be pushing the stone along its own
++            // direction of travel, doing positive work.
++            //
++            // That is not a rounding error. Before this guard, a 12 m/s throw left its
++            // first contact at 42.66 m/s: once the attitude tumbled far enough for n̂ to
++            // lean into the velocity, every substep pumped in energy and the run became
++            // nonsense. It is the same class of bug the old solver shipped with (see the
++            // "ONE ENERGY BUDGET" remarks in SkipPhysics) — water can take energy from a
++            // stone and redirect what is left, never add to it.
++            //
++            // The guard is what makes that structural rather than hoped-for: with
++            // normalSpeed < 0 required, the lift always opposes penetration, so its work
++            // is always negative. R8 in SkipReality asserts the consequence.
++            var isPenetrating = normalSpeed < 0f;
++
++            var liftMagnitude = isPenetrating
++                ? 0.5f * waterDensity * liftCoefficient * normalSpeed * normalSpeed * forces.WettedArea
++                : 0f;
++            forces.Lift = n * liftMagnitude;
++
++            // ── Friction, along t̂, IN the disc's own plane ──────────────────────────────
++            // Findings §1.1 / [B] Eq. (1): the force decomposes along n̂ and along t̂, where
++            // t̂ lies in the stone's own plane — NOT along −v̂ (that was the plan's original,
++            // wrong, draft). t̂ here is the in-plane component of velocity, reversed, so
++            // friction opposes the disc's slide across the water. Magnitude uses the FULL
++            // speed squared, per [B] Eq. (1) (`V²`), not just the in-plane component.
++            var inPlaneVelocity = velocity - n * normalSpeed;
++            if (inPlaneVelocity.sqrMagnitude > 0.0001f)
++            {
++                var tangent = -inPlaneVelocity.normalized;
++                var frictionMagnitude = 0.5f * waterDensity * dragCoefficient * velocity.sqrMagnitude * forces.WettedArea;
++                forces.Friction = tangent * frictionMagnitude;
++            }
++
++            // ── Torque, about the wetted segment's centroid, not the disc centre ────────
++            // "P is the centroid of the immersed area" ([B] Appendix A / Findings §2) — the
++            // force effectively acts there, offset forward of the disc centre along the
++            // wetted axis, so it exerts a torque that tries to flip the stone.
++            var centroidDistance = WettedCentroidDistance(radius, d);
++            var wettedAxis = WettedAxis(n);
++            var centroidOffset = wettedAxis * centroidDistance;
++            forces.Torque = Vector3.Cross(centroidOffset, forces.Lift + forces.Friction);
++
++            return forces;
++        }
++    }
++}
+diff --git a/Assets/Scripts/Game/Physics/DiscContact.cs.meta b/Assets/Scripts/Game/Physics/DiscContact.cs.meta
+new file mode 100644
+index 0000000..562cbbd
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/DiscContact.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: aa505f6f02358954594d86c65243312b
+\ No newline at end of file
+diff --git a/Assets/Scripts/Game/Physics/ReferenceStone.cs b/Assets/Scripts/Game/Physics/ReferenceStone.cs
+new file mode 100644
+index 0000000..a3552f6
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/ReferenceStone.cs
+@@ -0,0 +1,96 @@
++namespace Game
++{
++    /// <summary>
++    /// Bocquet's standard stone — the exact dimensions and coefficients [B]'s closed-form
++    /// results (Findings §3) were derived for. Everything R1-R7 in the verification harness
++    /// asserts is a published number for THIS stone, so measuring it here is reproducing
++    /// the papers' own apparatus, not something merely analogous to it.
++    /// </summary>
++    /// <remarks>
++    /// Source: L. Bocquet, "The physics of stone skipping", Am. J. Phys. 71(2), 150-155
++    /// (2003), arXiv:physics/0210015 — docs/Findings-RealSkipPhysics.md §3, first row:
++    /// "M = 0.1 kg, a = 0.1 m diameter (R = 0.05 m), C_l ≈ C_f ≈ 1, ρ_w = 1000 kg/m³,
++    /// θ ≈ 10°."
++    ///
++    /// <b>Not a SkipTuning.</b> docs/plans/real-skip-physics.md's Phase 1 table describes
++    /// this as "a code-built SkipTuning", but that plan's Phase 1 also lists rewriting
++    /// SkipTuning.cs itself (three multipliers → Mass/Radius/Thickness), and this pass was
++    /// scoped NOT to touch SkipTuning.cs, SkipPhysics.cs, SkipConstants.cs or any other
++    /// gameplay file — Phase 1 here is additive only, so the existing game keeps compiling
++    /// and playing unchanged while these new pieces are built and measured standalone. This
++    /// class is therefore a plain, asset-free, dependency-free data holder instead — it is
++    /// still exactly what the harness needs (SkipReality drives DiscContact/RigidDisc
++    /// directly, never through SkipTuning), and it means adopting the real dimensions as an
++    /// actual SkipTuning conversion is a clean, isolated Phase 2 decision rather than one
++    /// smuggled in here.
++    ///
++    /// <b>Thickness is NOT a published number.</b> Neither [B] nor [C] state a thickness —
++    /// both treat the stone as an idealised thin disc. `Thickness` below is an engineering
++    /// assumption (a plausible thin flat stone, R/10), not a citation, and exists only so
++    /// <see cref="RigidDisc.ComputeInertia"/> has a transverse-inertia term to compute; it
++    /// is deliberately small enough that the transverse moment is dominated by the ¼MR²
++    /// term the papers DO ground, exactly as the thin-disc idealisation intends.
++    /// </remarks>
++    public static class ReferenceStone
++    {
++        /// <summary>kg — [B], Findings §3.</summary>
++        public const float Mass = 0.1f;
++
++        /// <summary>m — [B]'s "a = 0.1 m diameter", Findings §3.</summary>
++        public const float Radius = 0.05f;
++
++        /// <summary>
++        /// m — NOT published (see class remarks). R/10, a plausible thin flat stone.
++        /// </summary>
++        public const float Thickness = Radius / 10f;
++
++        /// <summary>`C_l` — [B], Findings §3: "C_l ≈ C_f ≈ 1".</summary>
++        public const float LiftCoefficient = 1f;
++
++        /// <summary>
++        /// `C_f` — Bocquet's tangential friction coefficient. **Zero, deliberately, and this
++        /// is NOT the value [B] quotes.**
++        /// </summary>
++        /// <remarks>
++        /// [B] quotes `C_f ≈ 1`, but that number belongs to [B]'s own self-consistent model
++        /// where lift AND friction both scale with the full `V²`. We use [N]'s `(v·n̂)²` lift
++        /// instead, because [B]'s `V²` form has no interior optimum in tilt and therefore
++        /// cannot produce the magic angle at all (verified — see below).
++        ///
++        /// Mixing the two is not a small error. At the shallow angles skipping happens at,
++        /// `(v·n̂)² ≪ V²`, so a `V²` friction term dwarfs the lift and the stone ploughs in.
++        /// Measured with `tools/physics/verify-disc-contact.py`, sweeping tilt 5–60° at 15°
++        /// incidence:
++        ///
++        ///     C_f = 0.00  ->  optimum 30 deg, v_min  4.44 m/s
++        ///     C_f = 0.10  ->  optimum 35 deg, v_min  6.52 m/s
++        ///     C_f = 0.25  ->  optimum 40 deg, v_min 16.22 m/s
++        ///     C_f = 0.50  ->  NEVER BOUNCES at any tilt or any speed
++        ///     C_f = 1.00  ->  NEVER BOUNCES at any tilt or any speed
++        ///
++        /// So `C_f = 1` — the value the first draft of the findings doc specified — sinks
++        /// every throw ever made. The Birkhoff/[N] model is pressure-only by construction:
++        /// the stone still decelerates, because a tilted disc's normal force already has a
++        /// backward component. Friction does not need to be added on top, and cannot be.
++        ///
++        /// **Raising this above ~0.1 will break the model, not tune it.** See
++        /// `docs/Findings-RealSkipPhysics.md` §1.3.
++        /// </remarks>
++        public const float DragCoefficient = 0f;
++
++        /// <summary>kg/m³ — [B] Eq. (1) / Findings §1.1: fresh water.</summary>
++        public const float WaterDensity = 1000f;
++
++        /// <summary>m/s² — standard gravity; [B] uses this implicitly throughout.</summary>
++        public const float Gravity = 9.81f;
++
++        /// <summary>
++        /// deg — [B]'s own worked tilt for the standard stone, Findings §3 ("θ ≈ 10°").
++        /// NOT the magic angle (R1's ≈20° is a RESULT the harness measures, never an
++        /// input) — this is the incidental tilt Bocquet's own closed-form examples use.
++        /// </summary>
++        public const float WorkedTiltDeg = 10f;
++
++        public static RigidDisc.Inertia Inertia => RigidDisc.ComputeInertia(Mass, Radius, Thickness);
++    }
++}
+diff --git a/Assets/Scripts/Game/Physics/ReferenceStone.cs.meta b/Assets/Scripts/Game/Physics/ReferenceStone.cs.meta
+new file mode 100644
+index 0000000..53464ab
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/ReferenceStone.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: b6f2def980b7a6b46a872c731e52a2b1
+\ No newline at end of file
+diff --git a/Assets/Scripts/Game/Physics/RigidDisc.cs b/Assets/Scripts/Game/Physics/RigidDisc.cs
+new file mode 100644
+index 0000000..4d09666
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/RigidDisc.cs
+@@ -0,0 +1,132 @@
++using UnityEngine;
++
++namespace Game
++{
++    /// <summary>
++    /// A disc's mass properties and the full Euler rigid-body integration of its attitude
++    /// and angular velocity under an applied torque.
++    /// </summary>
++    /// <remarks>
++    /// PURE. No Unity scene access, no events, no side effects — see the assembly-level
++    /// remarks in <see cref="DiscContact"/>; this file lives alongside it for the same
++    /// reason (EditMode-testable, referenced by nothing outside System.Collections.Generic
++    /// / UnityEngine).
++    ///
++    /// docs/plans/real-skip-physics.md is explicit that this must be the FULL Euler
++    /// equations, not the fast-spin gyroscopic shortcut (`ṅ̂ = (τ × n̂)/(I_a·Ω)`) that the
++    /// literature usually reaches for: that approximation divides by the spin rate and
++    /// diverges as `Ω → 0`, and an unspun throw tumbling on its own — with no invented
++    /// `WanderDeg` fudge to make it happen — is exactly the behaviour this rewrite exists
++    /// to get for free. [B] Eq. (A1) (Findings §2) is the standard Euler set this
++    /// implements.
++    /// </remarks>
++    public static class RigidDisc
++    {
++        /// <summary>
++        /// A disc's two distinct principal moments of inertia. Bocquet's axis convention
++        /// (Findings §2 / [B] Appendix A): axis 2 is along the disc's own normal `n̂` (the
++        /// spin axis) with `I₂ ≡ J₀`; axes 1 and 3 lie in the disc's plane (one of them is
++        /// `t̂`) and share `I₁ = I₃ ≡ J₁`. In this file's local-frame convention (matching
++        /// <see cref="PhoneAttitude.FaceNormal"/>, which is `attitude * Vector3.up`) that
++        /// maps onto Unity's local axes as: local Y = `n̂` (axial, `J₀`), local X and local Z
++        /// = the two transverse axes (`J₁`).
++        /// </summary>
++        public struct Inertia
++        {
++            /// <summary>`J₀ = ½MR²` — moment about the disc's own normal (spin axis).</summary>
++            public float Axial;
++
++            /// <summary>`J₁ = ¼MR² + ¹⁄₁₂Mh²` — moment about either in-plane axis.</summary>
++            public float Transverse;
++        }
++
++        /// <summary>
++        /// A uniform disc's inertia tensor from its mass properties. Standard closed-form
++        /// solid-disc formulas, cited in docs/plans/real-skip-physics.md's model section.
++        /// </summary>
++        public static Inertia ComputeInertia(float mass, float radius, float thickness)
++        {
++            var radiusSq = radius * radius;
++            return new Inertia
++            {
++                Axial = 0.5f * mass * radiusSq,
++                Transverse = 0.25f * mass * radiusSq + (1f / 12f) * mass * thickness * thickness,
++            };
++        }
++
++        /// <summary>
++        /// Advance attitude and angular velocity by one substep under an applied
++        /// world-space torque, integrating the full Euler rigid-body equations (not the
++        /// fast-spin approximation — see the class remarks).
++        /// </summary>
++        /// <param name="attitude">World-space orientation. Updated in place.</param>
++        /// <param name="angularVelocityWorld">World-space angular velocity, rad/s. Updated
++        /// in place.</param>
++        /// <param name="torqueWorld">Applied torque about the disc centre, world space,
++        /// N·m (from <see cref="DiscContact.Evaluate"/> during contact; zero in free
++        /// flight — gravity acts at the centre of mass and exerts no torque).</param>
++        /// <param name="inertia">This disc's principal moments.</param>
++        /// <param name="dt">Substep, seconds.</param>
++        public static void Integrate(
++            ref Quaternion attitude, ref Vector3 angularVelocityWorld,
++            Vector3 torqueWorld, Inertia inertia, float dt)
++        {
++            var inverseAttitude = Quaternion.Inverse(attitude);
++
++            // Move into the disc's own (principal-axis) frame — Euler's equations are only
++            // simple in the frame the inertia tensor is diagonal in.
++            var omegaBody = inverseAttitude * angularVelocityWorld;
++            var torqueBody = inverseAttitude * torqueWorld;
++
++            // Local Y is the spin axis (I₂ = Axial); local X and Z are the two transverse
++            // axes (I₁ = I₃ = Transverse) — see the Inertia struct remarks.
++            var i1 = inertia.Transverse;
++            var i2 = Mathf.Max(inertia.Axial, 0.000001f);
++            var i3 = inertia.Transverse;
++
++            // [B] Eq. (A1) / Findings §2 — Euler's equations, full form, with the
++            // gyroscopic coupling terms kept (that coupling is exactly what the fast-spin
++            // approximation throws away, and exactly what stays correct as Ω → 0).
++            var angularAcceleration = new Vector3(
++                (torqueBody.x + (i2 - i3) * omegaBody.y * omegaBody.z) / Mathf.Max(i1, 0.000001f),
++                (torqueBody.y + (i3 - i1) * omegaBody.z * omegaBody.x) / i2,
++                (torqueBody.z + (i1 - i2) * omegaBody.x * omegaBody.y) / Mathf.Max(i3, 0.000001f));
++
++            omegaBody += angularAcceleration * dt;
++
++            // Integrate attitude from the BODY-frame angular velocity: q̇ = ½·q·ω_body (pure
++            // quaternion). Simple explicit Euler — R9 in the verification harness exists
++            // specifically to check this is a small enough step that halving it barely
++            // moves the answer, i.e. that results are physics and not integrator error.
++            var omegaQuat = new Quaternion(omegaBody.x, omegaBody.y, omegaBody.z, 0f);
++            var derivative = Multiply(attitude, omegaQuat);
++
++            var updated = new Quaternion(
++                attitude.x + 0.5f * dt * derivative.x,
++                attitude.y + 0.5f * dt * derivative.y,
++                attitude.z + 0.5f * dt * derivative.z,
++                attitude.w + 0.5f * dt * derivative.w);
++
++            attitude = Normalize(updated);
++            angularVelocityWorld = attitude * omegaBody;
++        }
++
++        /// <summary>Quaternion Hamilton product, written out explicitly rather than via
++        /// Unity's `operator *`. <c>b</c> above is a PURE quaternion (w = 0, from an
++        /// angular velocity, never unit length) — writing the product out directly keeps
++        /// this independent of anything Unity's operator assumes about its operands being
++        /// rotations.</summary>
++        private static Quaternion Multiply(Quaternion a, Quaternion b) => new(
++            a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
++            a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
++            a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
++            a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z);
++
++        private static Quaternion Normalize(Quaternion q)
++        {
++            var magnitude = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
++            if (magnitude < 0.000001f) return Quaternion.identity;
++            return new Quaternion(q.x / magnitude, q.y / magnitude, q.z / magnitude, q.w / magnitude);
++        }
++    }
++}
+diff --git a/Assets/Scripts/Game/Physics/RigidDisc.cs.meta b/Assets/Scripts/Game/Physics/RigidDisc.cs.meta
+new file mode 100644
+index 0000000..e098afb
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/RigidDisc.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 654f722755607de4a841d4a635553892
+\ No newline at end of file
+diff --git a/Assets/Scripts/Game/Physics/SpinTransfer.cs b/Assets/Scripts/Game/Physics/SpinTransfer.cs
+new file mode 100644
+index 0000000..7493fd4
+--- /dev/null
++++ b/Assets/Scripts/Game/Physics/SpinTransfer.cs
+@@ -0,0 +1,92 @@
++using UnityEngine;
++
++namespace Game
++{
++    /// <summary>
++    /// Converts the phone's measured rotation rate into the stone's spin rate.
++    /// </summary>
++    /// <remarks>
++    /// <b>The problem this solves.</b> The phone reports `spinRate` in deg/s about its own
++    /// screen normal — how fast the wrist twisted. The solver needs the stone's spin about
++    /// its face normal. The old code treated those as the SAME NUMBER, and that identity is
++    /// an invented assumption, not physics: a phone and a pebble are different sizes, so
++    /// equal angular rates are not equal throws.
++    ///
++    /// What is actually conserved at release is the TANGENTIAL SPEED AT THE GRIP POINT. A
++    /// real skipper holds the stone with the index finger curled around its edge; the finger
++    /// pulls, the edge moves at the finger's speed, and the stone's spin follows from its own
++    /// radius:
++    ///
++    ///     v_tangential = ω_phone · r_grip          (what the hand actually did)
++    ///     Ω_stone      = v_tangential / R_stone    (what the stone does with it)
++    ///
++    /// so
++    ///
++    ///     Ω_stone = ω_phone · (r_grip / R_stone)
++    ///
++    /// A big object turning slowly has the same rim speed as a small object turning fast,
++    /// which is why the ratio is above 1 for any stone smaller than a phone is long. This is
++    /// the whole model: one ratio of two measurable lengths, no free parameter.
++    ///
++    /// <b>What this does NOT fix, and nothing on this side can.</b> Measured against 124 real
++    /// throws (`docs/Findings-RealSkipPhysics.md` §6.2), the phone's best recorded twist is
++    /// 3.83 rev/s. Bocquet's bounce ceiling `N_c = R·Ω²/g` wants ~14 rev/s for a world-record
++    /// run. This conversion lifts the best throw from about 3 bounces to about 7 — a real
++    /// improvement, and still far short.
++    ///
++    /// The residual is not a tuning shortfall, it is a measurement one: a wrist twist is not
++    /// a finger flick, and the phone is not being asked to perform one. A real flick moves the
++    /// fingertip at roughly 4.4 m/s (= 88 rad/s × 0.05 m); the phone gesture manages roughly
++    /// 1.7 m/s of rim speed. Closing the rest means changing what the CONTROLLER captures, not
++    /// what this file computes. Do not "fix" it by inflating <see cref="GripRadius"/> past a
++    /// real phone's half-length — that would turn a measured constant back into a feel knob,
++    /// which is the failure mode this whole rewrite exists to end.
++    /// </remarks>
++    public static class SpinTransfer
++    {
++        /// <summary>
++        /// Effective radius from the phone's rotation axis to the grip point, in metres —
++        /// about half the long edge of an ordinary phone (~15 cm).
++        /// </summary>
++        /// <remarks>
++        /// A measured length, not a tuning value. If it ever needs to change it is because
++        /// phones changed size, and the honest fix is to measure one. See the class remarks
++        /// on why inflating it to buy skips is the wrong move.
++        /// </remarks>
++        public const float GripRadius = 0.075f;
++
++        /// <summary>
++        /// The stone's spin in rad/s, from the phone's measured rotation in deg/s.
++        /// </summary>
++        /// <param name="phoneRateDegPerSec">
++        /// Signed, straight off the wire (<c>ThrowMessage.spinRate</c>). Sign is preserved:
++        /// which way the wrist turned decides which way the stone turns on screen.
++        /// </param>
++        /// <param name="stoneRadius">
++        /// The stone's radius in metres. Smaller stones spin FASTER for the same hand motion,
++        /// which is the physically correct direction and falls out rather than being authored.
++        /// </param>
++        public static float ToStoneSpinRadPerSec(float phoneRateDegPerSec, float stoneRadius)
++        {
++            // A zero or negative radius has no rim to impart spin to, and would divide by
++            // zero. Return the honest answer rather than an infinity that poisons the solver.
++            if (stoneRadius <= 0f) return 0f;
++
++            var phoneRateRadPerSec = phoneRateDegPerSec * Mathf.Deg2Rad;
++            var tangentialSpeed = phoneRateRadPerSec * GripRadius;
++
++            return tangentialSpeed / stoneRadius;
++        }
++
++        /// <summary>
++        /// Tangential speed at the grip point, m/s — the quantity that is actually conserved.
++        /// </summary>
++        /// <remarks>
++        /// Exposed because it is the number to compare against a real finger flick (~4.4 m/s)
++        /// when judging whether the CONTROLLER is capturing enough of the gesture. The solver
++        /// itself never needs it; <see cref="ToStoneSpinRadPerSec"/> folds it in.
++        /// </remarks>
++        public static float GripTangentialSpeed(float phoneRateDegPerSec) =>
++            phoneRateDegPerSec * Mathf.Deg2Rad * GripRadius;
++    }
++}
+diff --git a/Assets/Scripts/Verification/SkipReality.cs b/Assets/Scripts/Verification/SkipReality.cs
+new file mode 100644
+index 0000000..1b74535
+--- /dev/null
++++ b/Assets/Scripts/Verification/SkipReality.cs
+@@ -0,0 +1,682 @@
++using System.Collections.Generic;
++using System.IO;
++using System.Text;
++using Game;
++using UnityEngine;
++
++namespace Verification
++{
++    /// <summary>
++    /// The R1-R10 reality check: drives <see cref="DiscContact"/>/<see cref="RigidDisc"/>
++    /// directly against <see cref="ReferenceStone"/> and compares the result to the
++    /// published numbers in docs/Findings-RealSkipPhysics.md §3. Mirrors
++    /// <see cref="SkipCurve"/>'s Run()/Build()/ResultPath structure, writing
++    /// skip-reality.txt at the repo root.
++    /// </summary>
++    /// <remarks>
++    /// This harness is deliberately independent of <c>SkipConstants</c>/<c>SkipTuning</c>/
++    /// <c>SkipPhysics</c> — docs/plans/real-skip-physics.md is explicit that Phase 1's
++    /// harness "drives DiscContact/RigidDisc directly, not through SkipPhysics", precisely
++    /// so this file can exist without the gameplay solver changing underneath it. Every
++    /// constant a real throw would read off SkipConstants/SkipTuning is instead read off
++    /// <see cref="ReferenceStone"/> or defined locally below, with a citation.
++    ///
++    /// <b>Tolerances are loose on purpose.</b> docs/Findings-RealSkipPhysics.md §5 item 3:
++    /// "[B] assumes tilt θ is constant through a collision and derives stability
++    /// separately. We integrate attitude live instead, so R1-R7 test a STRONGER model than
++    /// the one that produced these closed forms — expect agreement in order of magnitude
++    /// and in trend, not to three digits." Every check below states its tolerance and why,
++    /// rather than asserting the closed-form number to full precision.
++    /// </remarks>
++    public static class SkipReality
++    {
++        public static string ResultPath =>
++            Path.GetFullPath(Path.Combine(Application.dataPath, "..", "skip-reality.txt"));
++
++        // ── Simulation step sizes ───────────────────────────────────────────────────────
++        // docs/plans/real-skip-physics.md: "integrated at a fine internal ContactStep
++        // (~20-50 µs)". 30 µs sits in that band. Free flight is not force-critical (gravity
++        // only, no torque) so it can afford a coarser step; 1 ms keeps the arc's own
++        // rotation (from AngularVelocity, still integrated torque-free between bounces)
++        // accurate without spending substeps on a phase that needs none.
++        private const float ContactStep = 0.00003f;
++        private const float FreeFlightStep = 0.001f;
++
++        /// <summary>Safety valve — a contact phase should last milliseconds (R3); this is
++        /// generous enough to never bind on a real bounce and only trips if the integrator
++        /// is diverging (see the energy check inside SimulateBounce).</summary>
++        private const float MaxContactSeconds = 0.25f;
++
++        private const float WaterY = 0f;
++
++        // ── The world state the simulator carries between free flight and contact ──────
++        private struct FlightState
++        {
++            public Vector3 Position;
++            public Vector3 Velocity;
++            public Quaternion Attitude;
++            public Vector3 AngularVelocity;
++        }
++
++        private static FlightState CreateLaunch(float speed, float attackAngleDeg, float spinRadPerSec)
++        {
++            // Same construction SkipPhysicsTests.MakeLaunchState and SkipCurve.Measure use:
++            // forward's elevation IS the attack angle, LookRotation builds the attitude
++            // from it, and spin is applied about the disc's own normal (its natural spin
++            // axis — see ReferenceStone / RigidDisc.Inertia remarks on axis convention).
++            var pitchRad = attackAngleDeg * Mathf.Deg2Rad;
++            var forward = new Vector3(0f, Mathf.Sin(pitchRad), Mathf.Cos(pitchRad));
++            var attitude = Quaternion.LookRotation(forward, Vector3.up);
++
++            return new FlightState
++            {
++                Position = Vector3.zero,
++                Velocity = forward * speed,
++                Attitude = attitude,
++                AngularVelocity = (attitude * Vector3.up) * spinRadPerSec,
++            };
++        }
++
++        private static float LowestRimHeight(FlightState state, float radius)
++        {
++            var normal = state.Attitude * Vector3.up;
++            var sinTheta = Mathf.Sqrt(Mathf.Max(0f, 1f - normal.y * normal.y));
++            return (state.Position.y - WaterY) - radius * sinTheta;
++        }
++
++        /// <summary>Coast under gravity (and torque-free rotation) until the disc's lowest
++        /// rim point reaches the water, or the time budget runs out.</summary>
++        private static bool AdvanceToContact(
++            ref FlightState state, RigidDisc.Inertia inertia, float gravity, float radius,
++            float maxSeconds, ref float elapsedSeconds)
++        {
++            var budgetSteps = Mathf.CeilToInt(maxSeconds / FreeFlightStep);
++            for (var i = 0; i < budgetSteps; i++)
++            {
++                RigidDisc.Integrate(ref state.Attitude, ref state.AngularVelocity, Vector3.zero, inertia, FreeFlightStep);
++                state.Velocity += Vector3.down * (gravity * FreeFlightStep);
++                state.Position += state.Velocity * FreeFlightStep;
++                elapsedSeconds += FreeFlightStep;
++
++                if (LowestRimHeight(state, radius) <= 0f && state.Velocity.y < 0f) return true;
++            }
++            return false;
++        }
++
++        private struct BounceResult
++        {
++            public FlightState Exit;
++            public bool Bounced;
++            public bool Sank;
++            public float EntrySpeed;
++            public float ExitSpeed;
++            public float ContactSeconds;
++            public float EnergyLostJoules;
++            public bool EveryStepLostEnergy;
++        }
++
++        /// <summary>
++        /// One full contact phase, substepped through <see cref="DiscContact.Evaluate"/>
++        /// and <see cref="RigidDisc.Integrate"/>. Ends when the rim clears the surface
++        /// (a skip) or the centre passes a full radius below the water (a sink) — both
++        /// physical outcomes, matching docs/plans/real-skip-physics.md's "Exit or sink"
++        /// step, not a tuned threshold.
++        /// </summary>
++        private static BounceResult SimulateBounce(
++            FlightState entry, float mass, float radius, RigidDisc.Inertia inertia,
++            float waterDensity, float liftCoefficient, float dragCoefficient, float gravity)
++        {
++            var state = entry;
++            var entrySpeed = state.Velocity.magnitude;
++            var entryEnergy = 0.5f * mass * entrySpeed * entrySpeed;
++            var previousEnergy = entryEnergy;
++            var everyStepLostEnergy = true;
++
++            var maxSubsteps = Mathf.CeilToInt(MaxContactSeconds / ContactStep);
++            var contactSeconds = 0f;
++
++            for (var i = 0; i < maxSubsteps; i++)
++            {
++                var normal = state.Attitude * Vector3.up;
++                var heightAboveWater = state.Position.y - WaterY;
++
++                var forces = DiscContact.Evaluate(
++                    heightAboveWater, normal, state.Velocity, radius, waterDensity, liftCoefficient, dragCoefficient);
++
++                var totalForce = forces.Lift + forces.Friction + Vector3.down * (mass * gravity);
++                state.Velocity += (totalForce / mass) * ContactStep;
++                state.Position += state.Velocity * ContactStep;
++
++                RigidDisc.Integrate(ref state.Attitude, ref state.AngularVelocity, forces.Torque, inertia, ContactStep);
++
++                contactSeconds += ContactStep;
++
++                var speedNow = state.Velocity.magnitude;
++                var energyNow = 0.5f * mass * speedNow * speedNow;
++                if (energyNow > previousEnergy + 0.0001f) everyStepLostEnergy = false;
++                previousEnergy = energyNow;
++
++                if (heightAboveWater < -radius)
++                {
++                    // Centre a full radius under water — fully submerged, this bounce sank.
++                    return new BounceResult
++                    {
++                        Exit = state, Sank = true, EntrySpeed = entrySpeed, ExitSpeed = speedNow,
++                        ContactSeconds = contactSeconds,
++                        EnergyLostJoules = entryEnergy - energyNow,
++                        EveryStepLostEnergy = everyStepLostEnergy,
++                    };
++                }
++
++                if (LowestRimHeight(state, radius) > 0f)
++                {
++                    // Rim cleared the surface — a skip.
++                    return new BounceResult
++                    {
++                        Exit = state, Bounced = true, EntrySpeed = entrySpeed, ExitSpeed = speedNow,
++                        ContactSeconds = contactSeconds,
++                        EnergyLostJoules = entryEnergy - energyNow,
++                        EveryStepLostEnergy = everyStepLostEnergy,
++                    };
++                }
++            }
++
++            // Ran out of substep budget without exiting either way — treat as a sink; a
++            // contact this long is not a slow bounce, it is the integrator not resolving
++            // an exit (see MaxContactSeconds).
++            var finalSpeed = state.Velocity.magnitude;
++            return new BounceResult
++            {
++                Exit = state, Sank = true, EntrySpeed = entrySpeed, ExitSpeed = finalSpeed,
++                ContactSeconds = contactSeconds,
++                EnergyLostJoules = entryEnergy - 0.5f * mass * finalSpeed * finalSpeed,
++                EveryStepLostEnergy = everyStepLostEnergy,
++            };
++        }
++
++        private struct RunResult
++        {
++            public int Skips;
++            public List<float> BounceDistances;
++            public List<float> BounceEnergyLosses;
++            public bool AllBouncesLostEnergy;
++            public bool Terminated;
++        }
++
++        /// <summary>Chain free flight and bounces until the stone sinks, the time budget
++        /// runs out, or <paramref name="maxBounces"/> is hit (a safety cap, not a modelled
++        /// ceiling — the two modelled ceilings, slowdown and spin, are what R5/R7b check,
++        /// and both are expected to end a real run well under this cap).</summary>
++        private static RunResult SimulateRun(
++            float speed, float attackAngleDeg, float spinRadPerSec,
++            float mass, float radius, RigidDisc.Inertia inertia,
++            float waterDensity, float liftCoefficient, float dragCoefficient, float gravity,
++            int maxBounces = 200, float maxSeconds = 30f)
++        {
++            var state = CreateLaunch(speed, attackAngleDeg, spinRadPerSec);
++            var distances = new List<float>();
++            var losses = new List<float>();
++            var allLostEnergy = true;
++            var elapsed = 0f;
++            var terminated = false;
++
++            while (elapsed < maxSeconds && distances.Count < maxBounces)
++            {
++                var remaining = maxSeconds - elapsed;
++                var contacted = AdvanceToContact(ref state, inertia, gravity, radius, remaining, ref elapsed);
++                if (!contacted) break;
++
++                var bounce = SimulateBounce(state, mass, radius, inertia, waterDensity, liftCoefficient, dragCoefficient, gravity);
++                elapsed += bounce.ContactSeconds;
++
++                if (!bounce.EveryStepLostEnergy) allLostEnergy = false;
++
++                if (bounce.Sank)
++                {
++                    terminated = true;
++                    break;
++                }
++
++                distances.Add(new Vector2(bounce.Exit.Position.x, bounce.Exit.Position.z).magnitude);
++                losses.Add(bounce.EnergyLostJoules);
++                state = bounce.Exit;
++
++                if (float.IsNaN(state.Velocity.x) || float.IsInfinity(state.Velocity.x))
++                {
++                    // Diverged. Report what was gathered before the failure rather than
++                    // spin forever or throw.
++                    break;
++                }
++            }
++
++            return new RunResult
++            {
++                Skips = distances.Count,
++                BounceDistances = distances,
++                BounceEnergyLosses = losses,
++                AllBouncesLostEnergy = allLostEnergy,
++                Terminated = terminated,
++            };
++        }
++
++        // ── The report ───────────────────────────────────────────────────────────────
++
++        public static string Build()
++        {
++            var report = new StringBuilder();
++            report.AppendLine("Reality check — the published planing-disc model, measured against");
++            report.AppendLine("docs/Findings-RealSkipPhysics.md, run against Bocquet's own standard stone");
++            report.AppendLine("(ReferenceStone.cs): M=0.1kg, R=0.05m, C_l=C_f=1, water 1000 kg/m3.");
++            report.AppendLine();
++            report.AppendLine("Tolerances are loose by design — see the class remarks in SkipReality.cs");
++            report.AppendLine("and Findings-RealSkipPhysics.md §5 item 3: a live-integrated model is");
++            report.AppendLine("expected to agree with these closed forms in order of magnitude and trend,");
++            report.AppendLine("not to three digits.");
++            report.AppendLine();
++
++            var mass = ReferenceStone.Mass;
++            var radius = ReferenceStone.Radius;
++            var inertia = ReferenceStone.Inertia;
++            var waterDensity = ReferenceStone.WaterDensity;
++            var cl = ReferenceStone.LiftCoefficient;
++            var cf = ReferenceStone.DragCoefficient;
++            var gravity = ReferenceStone.Gravity;
++
++            var allPassed = true;
++            void Section(string title) { report.AppendLine(new string('=', 70)); report.AppendLine(title); report.AppendLine(new string('=', 70)); report.AppendLine(); }
++            void Check(string label, bool ok, string detail) { if (!ok) allPassed = false; report.AppendLine($"  {(ok ? "PASS" : "FAIL")}  {label} — {detail}"); }
++
++            // Shared reference spin: high enough to hold attitude through several bounces
++            // (well above the R7 stability threshold this same report measures below), so
++            // R1/R2/R4/R5/R6 aren't confounded by an unrelated tumbling failure.
++            const float referenceSpinRadPerSec = 90f; // ~14 rev/s — see R7b's own citation
++
++            // ── R1 — the magic angle ─────────────────────────────────────────────────
++            Section("R1 — Magic angle (Clanet 2004, ~20 deg)");
++            {
++                float MinimumBounceSpeed(float angleDeg)
++                {
++                    // Coarse geometric search: the smallest swept speed that produces a
++                    // skip rather than a sink, for this attack angle. A 15% step keeps the
++                    // sweep cheap; R1 only needs the ANGLE that minimises this, not the
++                    // speed itself to high precision.
++                    var speed = 0.2f;
++                    for (var i = 0; i < 60; i++)
++                    {
++                        var launch = CreateLaunch(speed, angleDeg, referenceSpinRadPerSec);
++                        var bounce = SimulateBounce(launch, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                        if (bounce.Bounced) return speed;
++                        speed *= 1.15f;
++                    }
++                    return float.PositiveInfinity; // never bounced in the swept range
++                }
++
++                var bestAngle = 0f;
++                var bestSpeed = float.PositiveInfinity;
++                var angleTable = new StringBuilder();
++                angleTable.AppendLine("   angle   critical speed");
++                for (var angle = 2.5f; angle <= 45f; angle += 2.5f)
++                {
++                    var critical = MinimumBounceSpeed(angle);
++                    angleTable.AppendLine($"  {angle,5:F1}   {critical,10:F2} m/s");
++                    if (critical < bestSpeed) { bestSpeed = critical; bestAngle = angle; }
++                }
++                report.Append(angleTable);
++                report.AppendLine();
++
++                // Loose band: the closed forms this model is a STRONGER version of only
++                // claim "~20 deg" and [N] Fig. 4 shows a further ~15% wander with incidence
++                // — a 10-30 deg band is generous but should still catch a force law that
++                // is qualitatively wrong (e.g. reverted to the constant-coefficient V² form,
++                // which has no interior optimum at all).
++                //
++                // EXPECT THIS NEAR THE TOP OF THE BAND, and do not "fix" it by widening.
++                // tools/physics/verify-disc-contact.py runs the same force law in a simpler
++                // 2-D, fixed-attitude, spinless form and measures the optimum at 30 deg
++                // (incidence 10 and 15 deg) and 25 deg (incidence 20 deg) — so a reading of
++                // 28-31 here is this model agreeing with that one, not a failure. It sits
++                // above the published 20 deg because [N] fits an extra inflection parameter
++                // (θ̂ = 2.6) that we do not; see docs/Findings-RealSkipPhysics.md §1.4.
++                // A reading below ~15 deg or a monotonic sweep with no interior minimum is
++                // the real failure this check exists to catch.
++                Check("magic angle lands in a shallow band around 20 deg",
++                    bestAngle >= 10f && bestAngle <= 30f,
++                    $"measured minimum at {bestAngle:F1} deg (critical speed {bestSpeed:F2} m/s), want 10-30 deg");
++            }
++            report.AppendLine();
++
++            // ── R2 — critical speed ──────────────────────────────────────────────────
++            Section("R2 — Critical speed at the magic angle (lift 0.71 m/s vs dissipation ~2 m/s [binding])");
++            {
++                var speed = 0.2f;
++                var measuredCritical = float.PositiveInfinity;
++                for (var i = 0; i < 60; i++)
++                {
++                    var launch = CreateLaunch(speed, 20f, referenceSpinRadPerSec);
++                    var bounce = SimulateBounce(launch, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                    if (bounce.Bounced) { measuredCritical = speed; break; }
++                    speed *= 1.15f;
++                }
++                report.AppendLine($"  measured critical speed to bounce at 20 deg: {measuredCritical:F2} m/s");
++                report.AppendLine($"  published: lift criterion 0.71 m/s (Eq. 14); dissipation criterion" +
++                                  " ~2 m/s (Eq. 19) — the BINDING one per [B].");
++                report.AppendLine();
++                // Order-of-magnitude band around the binding (larger) criterion — see the
++                // class remarks on tolerance.
++                Check("critical speed is the right order of magnitude",
++                    measuredCritical > 0.2f && measuredCritical < 8f,
++                    $"{measuredCritical:F2} m/s, want roughly 0.5-8 m/s (published dissipation criterion ~2 m/s)");
++            }
++            report.AppendLine();
++
++            // ── R3 — contact duration ────────────────────────────────────────────────
++            Section("R3 — Contact duration (order of milliseconds, [B] Eq. 6)");
++            {
++                var launch = CreateLaunch(8f, 20f, referenceSpinRadPerSec);
++                var bounce = SimulateBounce(launch, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                report.AppendLine($"  8 m/s at 20 deg: contact lasted {bounce.ContactSeconds * 1000f:F3} ms, " +
++                                  $"{(bounce.Bounced ? "bounced" : bounce.Sank ? "sank" : "?")}");
++                report.AppendLine();
++                Check("contact duration is order-of-milliseconds",
++                    bounce.ContactSeconds > 0.0001f && bounce.ContactSeconds < 0.05f,
++                    $"{bounce.ContactSeconds * 1000f:F3} ms, want roughly 0.1-50 ms");
++            }
++            report.AppendLine();
++
++            // ── R4 — energy lost per collision is CONSTANT, not fractional ──────────
++            Section("R4 — Energy lost per bounce is a constant absolute amount, not a fraction of KE ([B] Eq. 17)");
++            {
++                var speeds = new[] { 4f, 6f, 8f, 10f, 12f };
++                var losses = new List<float>();
++                var table = new StringBuilder();
++                table.AppendLine("  speed    entry KE (J)   energy lost (J)");
++                foreach (var s in speeds)
++                {
++                    var launch = CreateLaunch(s, 20f, referenceSpinRadPerSec);
++                    var bounce = SimulateBounce(launch, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                    var entryKe = 0.5f * mass * bounce.EntrySpeed * bounce.EntrySpeed;
++                    losses.Add(bounce.EnergyLostJoules);
++                    table.AppendLine($"  {s,5:F1}    {entryKe,10:F3}     {bounce.EnergyLostJoules,10:F4}");
++                }
++                report.Append(table);
++                report.AppendLine();
++
++                var mean = Mean(losses);
++                var maxDeviation = 0f;
++                foreach (var l in losses) maxDeviation = Mathf.Max(maxDeviation, Mathf.Abs(l - mean));
++                var relativeDeviation = mean > 0.00001f ? maxDeviation / mean : float.PositiveInfinity;
++
++                // Entry KE spans 4x (16 J-ish) from 4 to 12 m/s. A FRACTIONAL loss law would
++                // make EnergyLostJoules track that same ~9x spread (KE ~ v^2). A constant
++                // loss should instead stay within roughly a factor of 2 of its own mean —
++                // loose, per the class remarks, but more than tight enough to catch a
++                // fractional law sneaking back in.
++                Check("energy lost per bounce stays roughly constant across a 3x speed range",
++                    relativeDeviation < 1.0f,
++                    $"losses {string.Join(", ", losses.ConvertAll(l => l.ToString("F4")))} J, " +
++                    $"mean {mean:F4} J, max deviation {relativeDeviation:P0} of mean (want < 100%)");
++
++                report.AppendLine();
++                report.AppendLine($"  published (R4b, standard stone): W ~= -mu*M*g*eps, mu~=1.4, eps~=13cm" +
++                                  $" -> W ~= {1.4f * mass * gravity * 0.13f:F4} J");
++            }
++            report.AppendLine();
++
++            // ── R5 — skip count vs release speed ─────────────────────────────────────
++            Section("R5 — Skips vs release speed (N_c = V^2/(2*g*mu*eps): 6 @ 5 m/s, 17 @ 8 m/s, 38 @ 12 m/s [world record])");
++            {
++                var cases = new (float speed, int published)[] { (5f, 6), (8f, 17), (12f, 38) };
++                var table = new StringBuilder();
++                table.AppendLine("  speed   simulated skips   published");
++                var trendOk = true;
++                var previousSkips = -1;
++                foreach (var (speed, published) in cases)
++                {
++                    var run = SimulateRun(speed, 20f, referenceSpinRadPerSec, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                    table.AppendLine($"  {speed,5:F1}   {run.Skips,15}   {published,9}");
++                    if (previousSkips >= 0 && run.Skips < previousSkips) trendOk = false;
++                    previousSkips = run.Skips;
++                }
++                report.Append(table);
++                report.AppendLine();
++                Check("skip count rises with release speed",
++                    trendOk, "5 -> 8 -> 12 m/s skip counts are non-decreasing");
++            }
++            report.AppendLine();
++
++            // ── R6 — pitter-patter ────────────────────────────────────────────────────
++            Section("R6 — Skip spacing collapses toward the end of a run (the 'pitty-pat', [B] Eq. 24)");
++            {
++                var run = SimulateRun(8f, 20f, referenceSpinRadPerSec, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                var gaps = new List<float>();
++                for (var i = 1; i < run.BounceDistances.Count; i++)
++                    gaps.Add(run.BounceDistances[i] - run.BounceDistances[i - 1]);
++
++                report.AppendLine($"  8 m/s run: {run.Skips} skips, {gaps.Count} gaps measured");
++                if (gaps.Count >= 4)
++                {
++                    report.AppendLine("  gap sequence (m): " + string.Join(", ", gaps.ConvertAll(g => g.ToString("F2"))));
++                    var firstHalf = Mean(gaps.GetRange(0, gaps.Count / 2));
++                    var lastFew = Mean(gaps.GetRange(gaps.Count - Mathf.Min(3, gaps.Count), Mathf.Min(3, gaps.Count)));
++                    report.AppendLine();
++                    Check("spacing near the end of the run is smaller than early spacing",
++                        lastFew < firstHalf,
++                        $"first-half mean gap {firstHalf:F2} m, last-few mean gap {lastFew:F2} m");
++                }
++                else
++                {
++                    report.AppendLine();
++                    report.AppendLine("  SKIP  not enough bounces in this run to measure a spacing trend");
++                }
++            }
++            report.AppendLine();
++
++            // ── R7 / R7b — spin threshold and spin ceiling ───────────────────────────
++            Section("R7 — Spin threshold (sqrt(g/R) ~= 14 rad/s) and R7b — spin-limited bounces (5 @ 5 rev/s, 38 @ 14 rev/s)");
++            {
++                var published = Mathf.Sqrt(gravity / radius);
++                report.AppendLine($"  published threshold Omega_0 >> sqrt(g/R) = {published:F2} rad/s " +
++                                  $"({published / (2f * Mathf.PI):F2} rev/s)");
++                report.AppendLine();
++
++                float MinimumStableSpin()
++                {
++                    // Coarse search for the smallest spin that survives more than a couple
++                    // of bounces at a firm, ordinary throw — a low-spin throw here should
++                    // tumble out almost immediately.
++                    var spin = 0.5f;
++                    for (var i = 0; i < 40; i++)
++                    {
++                        var run = SimulateRun(8f, 20f, spin, mass, radius, inertia, waterDensity, cl, cf, gravity, maxBounces: 6);
++                        if (run.Skips >= 4) return spin;
++                        spin *= 1.3f;
++                    }
++                    return float.PositiveInfinity;
++                }
++
++                var measuredThreshold = MinimumStableSpin();
++                report.AppendLine($"  measured (smallest spin reaching >=4 skips at 8 m/s / 20 deg): " +
++                                  $"{measuredThreshold:F2} rad/s ({measuredThreshold / (2f * Mathf.PI):F2} rev/s)");
++                report.AppendLine();
++                Check("stability needs spin of the same order as sqrt(g/R)",
++                    measuredThreshold > published * 0.1f && measuredThreshold < published * 10f,
++                    $"{measuredThreshold:F2} rad/s vs published {published:F2} rad/s (want within 10x either way)");
++
++                report.AppendLine();
++                var lowSpin = 5f * 2f * Mathf.PI;   // "5 rev/s" -> rad/s, per R7b's own units
++                var highSpin = 14f * 2f * Mathf.PI; // "14 rev/s" -> rad/s
++                var lowRun = SimulateRun(8f, 20f, lowSpin, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                var highRun = SimulateRun(8f, 20f, highSpin, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                report.AppendLine($"  5 rev/s -> {lowRun.Skips} skips (published ~5)");
++                report.AppendLine($"  14 rev/s -> {highRun.Skips} skips (published ~38)");
++                report.AppendLine();
++                Check("more spin means more bounces (R7b trend)",
++                    highRun.Skips > lowRun.Skips,
++                    $"5 rev/s: {lowRun.Skips} skips, 14 rev/s: {highRun.Skips} skips");
++            }
++            report.AppendLine();
++
++            // ── R8 — energy invariant ────────────────────────────────────────────────
++            Section("R8 — Energy invariant: exit KE < entry KE on every bounce, every case");
++            {
++                var cases = new[] { 4f, 8f, 12f };
++                var allOk = true;
++                foreach (var s in cases)
++                {
++                    var run = SimulateRun(s, 20f, referenceSpinRadPerSec, mass, radius, inertia, waterDensity, cl, cf, gravity);
++                    if (!run.AllBouncesLostEnergy) allOk = false;
++                    report.AppendLine($"  {s:F1} m/s run: every substep lost energy = {run.AllBouncesLostEnergy}");
++                }
++                report.AppendLine();
++                Check("no bounce, in any case measured, ever gains energy",
++                    allOk, "see per-run substep energy check above");
++            }
++            report.AppendLine();
++
++            // ── R9 — integrator convergence ──────────────────────────────────────────
++            Section("R9 — Halving ContactStep should barely move the outcome");
++            {
++                var fullStepRun = SimulateRunWithStep(8f, 20f, referenceSpinRadPerSec, mass, radius, inertia,
++                    waterDensity, cl, cf, gravity, ContactStep);
++                var halfStepRun = SimulateRunWithStep(8f, 20f, referenceSpinRadPerSec, mass, radius, inertia,
++                    waterDensity, cl, cf, gravity, ContactStep * 0.5f);
++
++                var skipDiff = Mathf.Abs(fullStepRun.Skips - halfStepRun.Skips);
++                var fullDistance = fullStepRun.BounceDistances.Count > 0 ? fullStepRun.BounceDistances[^1] : 0f;
++                var halfDistance = halfStepRun.BounceDistances.Count > 0 ? halfStepRun.BounceDistances[^1] : 0f;
++                var distanceDiff = fullDistance > 0.0001f ? Mathf.Abs(fullDistance - halfDistance) / fullDistance : 0f;
++
++                report.AppendLine($"  ContactStep={ContactStep * 1e6f:F0}us: {fullStepRun.Skips} skips, final distance {fullDistance:F2} m");
++                report.AppendLine($"  ContactStep={ContactStep * 0.5f * 1e6f:F0}us: {halfStepRun.Skips} skips, final distance {halfDistance:F2} m");
++                report.AppendLine();
++
++                // The plan's own aspiration is "< 1%". That is the target for a converged
++                // explicit integrator at these step sizes; loosened here to a documented
++                // 10% so a legitimate pass is not accidentally reported as a failure before
++                // anyone has tuned ContactStep against a real profiling pass — see the
++                // class remarks on tolerance philosophy.
++                Check("skip count is identical or within 1 skip when the step is halved",
++                    skipDiff <= 1, $"skip counts {fullStepRun.Skips} vs {halfStepRun.Skips}");
++                Check("final distance moves less than 10% when the step is halved",
++                    distanceDiff < 0.10f, $"{distanceDiff:P1} difference (plan's aspiration is <1%)");
++            }
++            report.AppendLine();
++
++            // ── R10 — informational: dimension sensitivity vs the reference stone ────
++            Section("R10 — Rocks vs the reference stone (INFORMATIONAL — the real six-rock catalog is Phase 2)");
++            {
++                report.AppendLine("  The real six naturalistic rocks have no SI Mass/Radius/Thickness yet —");
++                report.AppendLine("  that conversion is explicitly Phase 2 (RockCatalogBuilder seeding from");
++                report.AppendLine("  mesh.bounds). Standing in for it here: the reference stone's own radius");
++                report.AppendLine("  and mass perturbed +-20%/+-30%, at a representative throw, to show the");
++                report.AppendLine("  shape of the sensitivity the real catalog will inherit.");
++                report.AppendLine();
++                report.AppendLine("  radius     mass     skips   distance");
++
++                var variations = new (float radiusScale, float massScale)[]
++                {
++                    (0.8f, 0.7f), (0.8f, 1.3f), (1.0f, 1.0f), (1.2f, 0.7f), (1.2f, 1.3f),
++                };
++                foreach (var (radiusScale, massScale) in variations)
++                {
++                    var r = radius * radiusScale;
++                    var m = mass * massScale;
++                    var i2 = RigidDisc.ComputeInertia(m, r, ReferenceStone.Thickness * radiusScale);
++                    var run = SimulateRun(8f, 20f, referenceSpinRadPerSec, m, r, i2, waterDensity, cl, cf, gravity);
++                    var distance = run.BounceDistances.Count > 0 ? run.BounceDistances[^1] : 0f;
++                    report.AppendLine($"  {r,6:F3}   {m,6:F3}   {run.Skips,5}   {distance,7:F2} m");
++                }
++                report.AppendLine();
++                report.AppendLine("  No pass/fail here — see docs/plans/real-skip-physics.md R10 remarks.");
++            }
++            report.AppendLine();
++
++            report.AppendLine(allPassed ? "PASS" : "FAIL");
++            return report.ToString();
++        }
++
++        /// <summary>Same as SimulateRun but with a caller-chosen ContactStep — used only by
++        /// R9's convergence check, which needs to run the same throw at two step sizes.</summary>
++        private static RunResult SimulateRunWithStep(
++            float speed, float attackAngleDeg, float spinRadPerSec,
++            float mass, float radius, RigidDisc.Inertia inertia,
++            float waterDensity, float liftCoefficient, float dragCoefficient, float gravity,
++            float contactStep, int maxBounces = 60, float maxSeconds = 15f)
++        {
++            var state = CreateLaunch(speed, attackAngleDeg, spinRadPerSec);
++            var distances = new List<float>();
++            var elapsed = 0f;
++
++            while (elapsed < maxSeconds && distances.Count < maxBounces)
++            {
++                var remaining = maxSeconds - elapsed;
++                var contacted = AdvanceToContact(ref state, inertia, gravity, radius, remaining, ref elapsed);
++                if (!contacted) break;
++
++                var bounce = SimulateBounceWithStep(state, mass, radius, inertia, waterDensity, liftCoefficient, dragCoefficient, gravity, contactStep);
++                elapsed += bounce.ContactSeconds;
++
++                if (bounce.Sank) break;
++
++                distances.Add(new Vector2(bounce.Exit.Position.x, bounce.Exit.Position.z).magnitude);
++                state = bounce.Exit;
++
++                if (float.IsNaN(state.Velocity.x) || float.IsInfinity(state.Velocity.x)) break;
++            }
++
++            return new RunResult { Skips = distances.Count, BounceDistances = distances };
++        }
++
++        private static BounceResult SimulateBounceWithStep(
++            FlightState entry, float mass, float radius, RigidDisc.Inertia inertia,
++            float waterDensity, float liftCoefficient, float dragCoefficient, float gravity, float contactStep)
++        {
++            var state = entry;
++            var entrySpeed = state.Velocity.magnitude;
++            var maxSubsteps = Mathf.CeilToInt(MaxContactSeconds / contactStep);
++            var contactSeconds = 0f;
++
++            for (var i = 0; i < maxSubsteps; i++)
++            {
++                var normal = state.Attitude * Vector3.up;
++                var heightAboveWater = state.Position.y - WaterY;
++
++                var forces = DiscContact.Evaluate(
++                    heightAboveWater, normal, state.Velocity, radius, waterDensity, liftCoefficient, dragCoefficient);
++
++                var totalForce = forces.Lift + forces.Friction + Vector3.down * (mass * gravity);
++                state.Velocity += (totalForce / mass) * contactStep;
++                state.Position += state.Velocity * contactStep;
++
++                RigidDisc.Integrate(ref state.Attitude, ref state.AngularVelocity, forces.Torque, inertia, contactStep);
++                contactSeconds += contactStep;
++
++                if (heightAboveWater < -radius)
++                    return new BounceResult { Exit = state, Sank = true, EntrySpeed = entrySpeed, ContactSeconds = contactSeconds };
++
++                if (LowestRimHeight(state, radius) > 0f)
++                    return new BounceResult { Exit = state, Bounced = true, EntrySpeed = entrySpeed, ContactSeconds = contactSeconds };
++            }
++
++            return new BounceResult { Exit = state, Sank = true, EntrySpeed = entrySpeed, ContactSeconds = contactSeconds };
++        }
++
++        private static float Mean(List<float> values)
++        {
++            if (values.Count == 0) return 0f;
++            var sum = 0f;
++            foreach (var v in values) sum += v;
++            return sum / values.Count;
++        }
++
++        /// <summary>Menu entry point, and the batchmode one via ProjectSetup.</summary>
++        public static void Run()
++        {
++            var report = Build();
++            Debug.Log($"[SkipReality]\n{report}");
++
++            try { File.WriteAllText(ResultPath, report); }
++            catch (IOException e) { Debug.LogWarning($"Could not write the reality check: {e.Message}"); }
++        }
++    }
++}
+diff --git a/Assets/Scripts/Verification/SkipReality.cs.meta b/Assets/Scripts/Verification/SkipReality.cs.meta
+new file mode 100644
+index 0000000..58f2864
+--- /dev/null
++++ b/Assets/Scripts/Verification/SkipReality.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 3b26f4f8fa88fab45a15f648103ff15e
+\ No newline at end of file
+diff --git a/Assets/Tests/EditMode/DiscContactTests.cs b/Assets/Tests/EditMode/DiscContactTests.cs
+new file mode 100644
+index 0000000..29b3ba5
+--- /dev/null
++++ b/Assets/Tests/EditMode/DiscContactTests.cs
+@@ -0,0 +1,131 @@
++using Game;
++using NUnit.Framework;
++using UnityEngine;
++
++namespace RockSkipping.Physics.Tests
++{
++    /// <summary>
++    /// Closed-form geometry coverage for Assets/Scripts/Game/Physics/DiscContact.cs —
++    /// wetted area and its centroid against analytic values at known depths, plus the
++    /// symmetry the geometry must obey. This file is the reason DiscContact was written as
++    /// pure, static, closed-form maths in the first place: everything here is checkable
++    /// against a formula with no simulation involved.
++    /// </summary>
++    /// <remarks>
++    /// Centroid derivation (not separately published in [B] — DiscContact.cs cites this):
++    /// integrating the same circular-segment area DiscContact.WettedArea is built from
++    /// (docs/Findings-RealSkipPhysics.md §2 / [B] Eq. 9) against x dA gives a first moment
++    /// of (2/3)*(R^2-d^2)^1.5, so centroid distance x̄ = moment / area. At d = -R (fully
++    /// wet) that reduces to 0 (a whole circle's centroid is its own centre); at d = 0 (half
++    /// wet) it reduces to the textbook semicircle centroid 4R/(3*pi).
++    /// </remarks>
++    public class DiscContactTests
++    {
++        private const float Radius = 0.05f; // ReferenceStone.Radius — arbitrary here, any R>0 works
++        private const float Tolerance = 0.0001f;
++
++        [Test]
++        public void WettedArea_AtZeroImmersion_IsZero()
++        {
++            // d = +R: the waterline sits exactly at the far rim — the disc is bone dry.
++            Assert.That(DiscContact.WettedArea(Radius, Radius), Is.EqualTo(0f).Within(Tolerance));
++
++            // Anything past the far rim is equally dry — the clamp, not the closed form,
++            // has to hold here (the closed form is only valid for |d| < R).
++            Assert.That(DiscContact.WettedArea(Radius, Radius * 2f), Is.EqualTo(0f).Within(Tolerance));
++        }
++
++        [Test]
++        public void WettedArea_AtHalfImmersion_IsHalfTheDiscArea()
++        {
++            // d = 0: the waterline passes exactly through the disc centre.
++            var fullArea = Mathf.PI * Radius * Radius;
++            var wetted = DiscContact.WettedArea(Radius, 0f);
++
++            Assert.That(wetted, Is.EqualTo(fullArea * 0.5f).Within(Tolerance));
++        }
++
++        [Test]
++        public void WettedArea_AtFullImmersion_IsTheWholeDisc()
++        {
++            // d = -R: the waterline sits at the far (dry-side) rim's mirror — the whole
++            // disc is submerged.
++            var fullArea = Mathf.PI * Radius * Radius;
++
++            Assert.That(DiscContact.WettedArea(Radius, -Radius), Is.EqualTo(fullArea).Within(Tolerance));
++            Assert.That(DiscContact.WettedArea(Radius, -Radius * 2f), Is.EqualTo(fullArea).Within(Tolerance));
++        }
++
++        [Test]
++        public void WettedArea_IsSymmetric_ComplementaryDepthsSumToTheFullDisc()
++        {
++            // The wetted cap at +d and the wetted cap at -d are complementary halves of the
++            // same disc — together they must reconstruct the whole circle, for any depth,
++            // not just the three landmark cases above.
++            var fullArea = Mathf.PI * Radius * Radius;
++
++            foreach (var d in new[] { -0.04f, -0.02f, -0.01f, 0.01f, 0.02f, 0.04f })
++            {
++                var wetAtD = DiscContact.WettedArea(Radius, d);
++                var wetAtMinusD = DiscContact.WettedArea(Radius, -d);
++
++                Assert.That(wetAtD + wetAtMinusD, Is.EqualTo(fullArea).Within(Tolerance),
++                    $"WettedArea(R, {d}) + WettedArea(R, {-d}) should reconstruct the full disc.");
++            }
++        }
++
++        [Test]
++        public void WettedCentroidDistance_AtFullImmersion_IsTheDiscCentre()
++        {
++            // A fully wetted disc's centroid IS the disc's own centre — zero offset.
++            Assert.That(DiscContact.WettedCentroidDistance(Radius, -Radius), Is.EqualTo(0f).Within(Tolerance));
++        }
++
++        [Test]
++        public void WettedCentroidDistance_AtHalfImmersion_MatchesTheSemicircleCentroid()
++        {
++            // Textbook result: a semicircle's centroid sits 4R/(3*pi) from its flat edge.
++            var expected = 4f * Radius / (3f * Mathf.PI);
++            var measured = DiscContact.WettedCentroidDistance(Radius, 0f);
++
++            Assert.That(measured, Is.EqualTo(expected).Within(Tolerance));
++        }
++
++        [Test]
++        public void WettedCentroidDistance_AtZeroImmersion_IsZero()
++        {
++            // No wetted area at all — nothing to take a centroid of.
++            Assert.That(DiscContact.WettedCentroidDistance(Radius, Radius), Is.EqualTo(0f).Within(Tolerance));
++        }
++
++        [Test]
++        public void WettedCentroidDistance_MovesTowardTheFarRimAsImmersionShrinks()
++        {
++            // As the wetted cap shrinks toward the far rim, its own centroid must get
++            // closer to that rim (and further from the disc centre) — monotonic, not just
++            // correct at the three landmark points.
++            var atHalf = DiscContact.WettedCentroidDistance(Radius, 0f);
++            var atThreeQuarters = DiscContact.WettedCentroidDistance(Radius, Radius * 0.5f);
++
++            Assert.That(atThreeQuarters, Is.GreaterThan(atHalf),
++                "A smaller wetted cap's centroid should sit further from the disc centre " +
++                "(closer to the far rim) than a half-wetted disc's.");
++        }
++
++        [Test]
++        public void WettedArea_IsMonotonic_AsWaterlineSweepsFromDryToFullyWet()
++        {
++            // d sweeps from +R (dry) to -R (fully wet) — wetted area must never decrease
++            // along that sweep. A regression here (e.g. a sign flip in the clamp) would
++            // otherwise slip past the three landmark-value tests above.
++            var previous = -1f;
++            for (var d = Radius; d >= -Radius; d -= Radius / 20f)
++            {
++                var area = DiscContact.WettedArea(Radius, d);
++                Assert.That(area, Is.GreaterThanOrEqualTo(previous - Tolerance),
++                    $"Wetted area decreased while sweeping d from dry to wet at d={d}.");
++                previous = area;
++            }
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/DiscContactTests.cs.meta b/Assets/Tests/EditMode/DiscContactTests.cs.meta
+new file mode 100644
+index 0000000..3d387f5
+--- /dev/null
++++ b/Assets/Tests/EditMode/DiscContactTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: f9ac4f7b806788d4f87bb66c939b53ab
+\ No newline at end of file
+diff --git a/docs/Findings-RealSkipPhysics.md b/docs/Findings-RealSkipPhysics.md
+new file mode 100644
+index 0000000..7c62662
+--- /dev/null
++++ b/docs/Findings-RealSkipPhysics.md
+@@ -0,0 +1,495 @@
++# Findings — the real physics of stone skipping
++
++Step 0 of [`plans/real-skip-physics.md`](plans/real-skip-physics.md): the published values the new
++solver is built from and validated against. **Every number here is quoted from a paper, not
++recalled.** Anything the harness asserts must cite a row in this document.
++
++Both primary sources are open-access on arXiv and were read in full:
++
++| Ref | Paper | Source |
++|---|---|---|
++| **[B]** | L. Bocquet, "The physics of stone skipping", *Am. J. Phys.* **71**(2), 150–155 (2003) | [arXiv:physics/0210015](https://arxiv.org/abs/physics/0210015) |
++| **[C]** | C. Clanet, F. Hersen, L. Bocquet, "Secrets of successful stone-skipping", *Nature* **427**, 29 (2004) | [doi:10.1038/427029a](https://www.nature.com/articles/427029a) |
++| **[N]** | S. Nagahiro, Y. Hayakawa, "A theoretical and numerical approach to 'magic angle' of stone skipping" (2004) | [arXiv:physics/0411125](https://arxiv.org/abs/physics/0411125) |
++
++[C] is paywalled; its experimental parameters and results are quoted here via [N], which reproduces
++them by SPH simulation and compares against the published domains directly.
++
++---
++
++## 1. Corrections to the plan as written
++
++### 1.1 The friction force acts along the stone, not against the velocity
++
++The plan specified `F_drag = ½·ρ·C_D·v²·A_wet·(−v̂)`. **That is wrong.** [B] Eq. (1):
++
++```
++F = ½·C_l·ρ_w·V²·S_im·n̂  +  ½·C_f·ρ_w·V²·S_im·t̂
++```
++
++> "The force can be adequately decomposed into a component along the direction of the stone (that
++> is, along **t**) and a component perpendicular to it (that is, along **n**)." — [B] §II
++
++`n̂` is the stone's face normal and `t̂` lies **in the stone's own plane**. Water skims along the
++face; it does not resist along the flight path. At the shallow angles skipping happens at, the two
++directions are close — which is exactly why the error would have been invisible in play while
++quietly poisoning every calibration. `C_l` and `C_f` are the lift and friction coefficients, and
++[B] takes both **constant and independent of tilt and incidence**.
++
++### 1.2 The normal force goes as the normal velocity, not the total speed
++
++[B] uses `V²`. [N]'s ODE model — the one **shown to reproduce the magic angle** — instead assumes:
++
++> "(i) Hydrodynamic pressure p acting from water is proportional to **(v · n)²**, where v is the
++> speed of the body and n is the unit vector to the surface of the disk. (ii) For the part of the
++> surface facing air, there is no hydrodynamic force." — [N]
++
++This matters more than it looks. **[B]'s constant-coefficient `V²` form cannot produce a magic
++angle** — tilt enters it only through `C = C_l·cosθ − C_f·sinθ`, which is monotonic in θ and has no
++interior optimum. The 20° result needs the `(v·n)²` dependence together with the real wetted-area
++geometry. Since reproducing 20° is check R1, and R1 is the whole justification for the rewrite:
++
++> **Use the [N] / Birkhoff form: normal pressure ∝ (v·n)², no force on the dry face.** [B] remains
++> the source for the geometry, the dissipation argument, the stability criterion and every closed-
++> form estimate below — those are what R2–R7 assert.
++
++### 1.3 The two corrections are not independent — combining them naively sinks every throw
++
++§1.1 and §1.2 were written as separate fixes. **They are not compatible as stated, and the
++combination — `(v·n̂)²` lift plus [B]'s `V²` friction with `C_f ≈ 1` — sinks the stone at every
++tilt and every speed.** This was caught before it reached the Editor by re-implementing the
++contact model outside Unity: **`tools/physics/verify-disc-contact.py`**, which is checked in and
++re-runnable.
++
++The reason is dimensional. At the shallow angles skipping happens at, `(v·n̂)² ≪ V²`, so a `V²`
++friction term dwarfs a `(v·n̂)²` lift term and the stone ploughs in. Measured, sweeping tilt
++5–60° at 15° incidence:
++
++| `C_f` | Result |
++|---|---|
++| **0.00** | optimum **30°**, `v_min` **4.44 m/s** |
++| 0.05 | optimum 35°, `v_min` 5.36 m/s |
++| 0.10 | optimum 35°, `v_min` 6.52 m/s |
++| 0.25 | optimum 40°, `v_min` 16.22 m/s |
++| 0.50 | **never bounces at any tilt or speed** |
++| **1.00** | **never bounces at any tilt or speed** ← the value §1.1 originally specified |
++
++**Resolution: the model is pressure-only.** `C_l` from the `(v·n̂)²` law, and **`C_f = 0`**. This is
++Birkhoff's model as [N] uses it, and it is self-consistent. The stone still decelerates — a tilted
++disc's normal force already has a backward component — so nothing is lost by dropping the separate
++friction term. `C_f` is retained in the code as a parameter, documented as **breaking the model
++above ~0.1 rather than tuning it**.
++
++`§1.1's` claim that friction acts along `t̂` rather than `−v̂` remains correct as a statement about
++[B]. It is simply moot here, because the coefficient is zero.
++
++### 1.4 Verified: only the `(v·n̂)²` law has an interior optimum
++
++The claim in §1.2 — that [B]'s `V²` form cannot produce a magic angle — was an analytical
++assertion when written. It has now been tested, and it holds:
++
++| Force law | `v_min` vs tilt | Magic angle? |
++|---|---|---|
++| [B], both ∝ `V²` | **monotonic**: 2.12 → 2.94 → 3.88 → 5.19 → 7.51 → 13.86 m/s across 5–30° | **No** — no interior minimum |
++| [N], pressure-only `(v·n̂)²` | **U-shaped**, minimum at 25–30° | **Yes** |
++
++The `(v·n̂)²` law also reproduces [N] Fig. 4's qualitative result that the optimum *falls* as
++incidence rises — 30° at β = 10° and 15°, 25° at β = 20°.
++
++**The optimum lands at 25–30°, not the published 20°.** Do not treat that gap as settled. The
++verification script is 2-D, holds attitude fixed through the collision, ignores spin and thickness,
++and uses a coarse full-immersion sink criterion; [N] additionally fits an inflection parameter
++`θ̂ = 2.6` to land on 20°. The structure is right and the magnitude is close; **R1's tolerance
++should be set to accept 20–30° on the first pass**, and narrowing it is a later, separate piece of
++work once live attitude and spin are in.
++
++---
++
++## 2. The model
++
++### Wetted area — [B] Eq. (9)
++
++For a circular stone of radius `R`, immersed to depth `|z|` at tilt `θ`, with `s = |z|/sinθ`:
++
++```
++S_im(s) = R² · [ arccos(1 − s/R) − (1 − s/R)·√(1 − (1 − s/R)²) ]
++```
++
++This is algebraically identical to the form in the plan (`R²·acos(d/R) − d·√(R²−d²)` with `d = R−s`).
++**The plan's geometry was correct and needs no change.**
++
++### Characteristic frequency and contact time — [B] Eqs. (4), (6)
++
++The collision is a harmonic oscillator in the immersed depth `z`:
++
++```
++ω₀² = C·ρ_w·V_x0²·a / (2·M·sinθ)        where C = C_l·cosθ − C_f·sinθ
++z(t) = −g/ω₀² + (g/ω₀²)·cos(ω₀t) + (V_z0/ω₀)·sin(ω₀t)
++t_coll ≈ π/ω₀
++```
++
++### Angular dynamics — [B] Eq. (20) and Appendix A
++
++Full Euler equations, with axis `1` along `y` (perpendicular to `n̂` and `t̂`), `2` along `n̂`, `3`
++along `t̂`, `I₁ = I₃ ≡ J₁`, `I₂ ≡ J₀`, torque from the lift component only:
++
++```
++θ̈ + Ω²(θ − θ₀) = M_y / J₁        with  Ω = [(J₀ − J₁)/J₁]·ω_spin
++```
++
++The torque `M_y = OP × F_lift`, where **P is the centroid of the immersed area** — confirming the
++plan's centre-of-pressure treatment. [B] Eq. (A1) is the standard Euler set, so the plan's
++instruction to integrate the full equations rather than the fast-spin approximation is consistent
++with the source and strictly safer at low spin.
++
++---
++
++## 3. Published numbers — what the harness asserts
++
++[B]'s standard stone throughout: **M = 0.1 kg, a = 0.1 m diameter (R = 0.05 m), ρ_w = 1000 kg/m³,
++θ ≈ 10°**. [B] quotes `C_l ≈ C_f ≈ 1`; we use `C_l = 1`, **`C_f = 0`** — see §1.3, this is not
++optional.
++
++| # | Quantity | Published value | Source |
++|---|---|---|---|
++| R1 | **Magic angle** — tilt minimising the speed required to bounce | **≈ 20°** | [C], title result |
++| R1b | Its sensitivity to incidence angle β | falls as β rises, but only **~15% for β up to 40°** — "remains around 20° for the ordinal incident angle" | [N] Fig. 4 |
++| R2 | Critical speed, **lift** criterion (weight vs lift) | `V_c = √(16Mg/(Cρ_w a²)) / √(1 − 8M·tan²β/(a³Cρ_w sinθ))` ≈ **0.71 m/s** | [B] Eq. (14) |
++| R2b | Critical speed, **dissipation** criterion — **the binding one** | `V_c = √(2μgε)` ≈ **2 m/s** | [B] Eq. (19) |
++| R2c | Clanet's experimental disc | specific gravity **2.7**, aspect ratio **9.1**, spin **65 rev/s**, test speed **3.5 m/s** | [N] |
++| R3 | Contact time | `t_coll ≈ π/ω₀` | [B] Eq. (6) |
++| R4 | Energy lost per collision | `W ≈ −μ·M·g·ε`, **independent of the incoming speed** | [B] Eq. (17) |
++| R4b | Its two constants, standard stone | `μ = C̃/C ≈ **1.4**`, `ε = π√(2M·sinθ/(C·ρ_w·a)) ≈ **13 cm**` | [B] Eq. (18) |
++| R5 | Bounces from slowdown | `N_c = V_x0²/(2gμε)` → **6** at 5 m/s, **17** at 8 m/s, **38** at 12 m/s | [B] Eq. (23) |
++| R6 | **Skip spacing** | `X[N] = X₀·√(1 − N/N_c)`, `X₀ = 2V_x0·|V_z0|/g` ≈ **2.25 m** at 8 m/s | [B] Eq. (24) |
++| R7 | Minimum spin for stability | `Ω₀ ≫ √(g/R)` ≈ **14 s⁻¹** for a 10 cm stone — "larger than a few revolutions per second (≈ 2 Hz)" | [B] Eq. (21) |
++| R7b | Bounces from angular destabilisation | `N_c = R·Ω₀²/g` → **5** at 5 rev/s, **38** at 14 rev/s | [B] Eq. (25) |
++
++### The structural result — R5 and R7b are both ceilings, and the answer is the smaller
++
++> "The maximum number of bounces is therefore given by the **minimum of the two previous
++> estimates**, in Eqs. (23) and (25)." — [B] §VII
++
++Speed-limited bounces grow as `V²` without bound. Spin-limited bounces **do not depend on speed at
++all**. So past a certain point throwing harder buys nothing, and only spin does:
++
++> "even if the initial velocity of the stone is very large … the stone will be stopped by angular
++> destabilization after N_c^spin bounces. In other words, the initial 'kick' that puts the stone in
++> rotational motion is a key factor for a good throw." — [B] §VII
++
++`X[N] = X₀√(1 − N/N_c)` is the pitter-patter, and [B] names it: spacing falls slowly at first, then
++collapses as `N → N_c` because of the square root. [B] calls it **"pitty-pat"** and cites
++stone-skipping competitions. R6 is therefore not a nice-to-have — it is a published, named,
++observable signature, and the one item on this list that muscle memory knows directly.
++
++---
++
++## 4. What this means for the game
++
++### 4.1 The game's reference speed is roughly 3× reality
++
++`SkipCurve.ReferenceSwingSpeed` is **30 m/s**. In [B], **12 m/s is the world record** (38 bounces,
++J. Coleman-McGhee). The paper's worked throws run **5–12 m/s**. The current solver's "25 skips at
++30 m/s" is a well-tuned answer to a question reality does not ask.
++
++`SkipConstants.SpeedScale` is the one honest place to absorb this: the phone measures wrist speed,
++and the mapping to a release speed must land a hard human throw near **10–12 m/s**, not 30.
++
++### 4.2 Skip count becomes spin-governed, and that is the point
++
++At 12 m/s the slowdown ceiling is already 38. At 30 m/s it is ~250 — so under real physics **the
++speed ceiling stops binding almost immediately and spin becomes the only thing limiting a run**.
++`N_c^spin = R·Ω₀²/g` needs ~14 rev/s to reach 38 bounces.
++
++This inverts the current game. Today `EnergyLoss` is documented as "THE one dial for how many skips
++a good throw gets". Under real physics **the wrist flick is the dial**, and throwing harder mostly
++buys distance rather than count. That is also what every stone skipper's muscle memory already says
++— which is the whole reason for doing this.
++
++### 4.3 Per-bounce energy loss does not scale with speed
++
++[B] Eq. (17): `W ≈ −μMgε`, independent of `V_x0`. The current solver takes a **fractional** loss
++(`EnergyLoss = 0.20` of kinetic energy per bounce). These are qualitatively different laws. A
++constant absolute loss gives `V² ∝ (N_c − N)`, which is precisely what produces the `√` spacing
++collapse. A fractional loss decays geometrically and **can never** produce pitty-pat.
++
++This single distinction is most of why the current game cannot feel like skipping a stone no matter
++how its 23 knobs are set.
++
++---
++
++## 5. Open items for implementation
++
++1. `C_l` and `C_f` are "≈ 1" and assumed constant — [B] flags this as the model's weakest assumption
++   (note 6: `C_l ∼ h/a` for a thin ellipsoid, with a large prefactor). Expose both as
++   `SkipConstants` fields defaulting to 1.0, documented as **the published estimate, not a feel knob**.
++2. [N] fits an inflection parameter `θ̂ = 2.6` to its own SPH runs. If R1 does not land at 20°,
++   suspect the force law before suspecting the geometry.
++3. [B] assumes tilt `θ` is constant through a collision and derives stability separately. We
++   integrate attitude live instead, so R1–R7 test a *stronger* model than the one that produced these
++   closed forms — expect agreement in order of magnitude and in trend, not to three digits. Set the
++   tolerances accordingly, and record in the harness what they were set to.
++
++---
++
++## 6. Measured: what the phone actually produces
++
++Answering "is 30 m/s the right reference?" from 124 real recorded throws in `rock-throws.csv`,
++which `Verification/RockTelemetry` had already been collecting. Re-runnable at any time:
++
++```
++python "C:/Users/aj/Desktop/GameDev/RockSkipping/tools/physics/analyse-throws.py"
++```
++
++### 6.1 Speed — the 30 m/s reference is the median, not a hard throw
++
++| | swingSpeed (raw m/s off the phone) |
++|---|---|
++| median | **26.1** |
++| p90 | 46.5 |
++| p95 | **53.0** |
++| max | 74.8 |
++
++`SkipCurve`'s 30 m/s reference sits at roughly the **52nd percentile** — it has been characterising
++a *median* throw as "a good hard throw" all along. A hard throw is ~53 m/s.
++
++Taking p95 as "hard" (the max is noisy), the calibration is:
++
++| Target release speed | `SpeedScale` | Meaning |
++|---|---|---|
++| 12 m/s | **0.227** | world record, 38 skips |
++| 10 m/s | **0.189** | very strong throw |
++| 8 m/s | **0.151** | good adult throw, 17 skips |
++
++`SpeedScale` is currently **1.0**, so it is wrong by roughly a factor of five. This part is
++straightforward: pick a target and the number follows.
++
++### 6.2 Spin — this is the real problem, and no Unity-side tuning can fix it
++
++Bocquet Eq. (25) gives a bounce ceiling that **does not depend on throw speed at all**:
++`N_c = R·Ω²/g`. Measured against recorded spin:
++
++| Source | rev/s | Max bounces |
++|---|---|---|
++| published: world record | 14.00 | 39.4 |
++| published: decent spin | 5.00 | 5.0 |
++| published: minimum for stability | 2.00 | 0.8 |
++| **MEASURED: best of 124 throws** | **3.83** | **3.0** |
++| MEASURED: p90 | 2.78 | 1.6 |
++| MEASURED: median | 1.45 | 0.4 |
++
++*(The formula reproduces Bocquet's own worked numbers — 14 rev/s → 39.4 against his stated 38,
++5 rev/s → 5.0 against his stated 5 — so the measured rows can be trusted.)*
++
++**Under raw physics, the best throw ever recorded on this game would skip 3 times, and a median
++throw would not skip at all.**
++
++This is a **units and semantics gap, not a tuning gap**. `spinRate` measures how fast the phone
++rotates about its own screen normal — a wrist twist. A real skipper spins the stone with a finger
++flick off the index finger, and the *stone* leaves at ~14 rev/s while the *wrist* never approaches
++that. The phone is measuring the wrong body.
++
++No value of any Unity-side constant can recover information the phone never captured. The options
++are a documented physical transfer model (finger tangential speed ÷ stone radius), a controller-side
++gesture change that actually captures a flick, or accepting a low spin ceiling as the honest raw
++baseline. **That decision is deliberately not made here** — it is recorded so it is made on the
++numbers.
++
++### 6.3 The current solver is running away
++
++Recorded distances: median 55.4 m, **max 783.3 m**. `SkipCurve`'s own verdict asserts "full power
++stays on the drawn water", and the drawn water is nowhere near 783 m. The existing energy-budget
++model is producing runaway throws in real play, which is independent corroboration for the rewrite.
++
++### 6.4 Spin transfer — decided, implemented, measured
++
++Decision: **the physical transfer model** (`Assets/Scripts/Game/Physics/SpinTransfer.cs`).
++
++The old code treated phone deg/s as stone deg/s **1:1**. That identity is invented, not measured:
++a phone and a pebble are different sizes, so equal angular rates are not equal throws. What is
++conserved at release is the **tangential speed at the grip point** — the stone leaves the finger,
++and its spin follows from its own radius:
++
++```
++Ω_stone = ω_phone · (r_grip / R_stone)      r_grip = 0.075 m (half a phone), R_stone = 0.05 m
++```
++
++One ratio of two measurable lengths. No free parameter. Measured effect on the same 124 throws:
++
++| Throw | raw rev/s | stone rev/s | Max bounces |
++|---|---|---|---|
++| best of the set | 3.83 | 5.75 | **6.7** |
++| p90 | 2.78 | 4.17 | 3.5 |
++| median | 1.45 | 2.18 | 1.0 |
++
++So the best recorded throw goes from **3 bounces to about 7**, and a median throw crosses from
++"does not skip" to "skips once". Real, and still far from the 38 a world-record throw gets.
++
++**The residual is quantified rather than hidden.** Grip tangential speed on the best throw is
++**1.81 m/s** against a real finger flick's **4.4 m/s** — the gesture captures **41%** of a real
++flick. That remaining 59% is a controller-side measurement problem: a wrist twist is not a finger
++flick, and the phone is not currently asked to perform one. Inflating `GripRadius` past a real
++phone's half-length would turn a measured constant back into a feel knob, which is the exact
++failure this rewrite exists to end.
++
++### 6.5 Still open: `SpeedScale`
++
++Deferred deliberately until R1–R10 produce numbers from the new solver, then chosen so skip counts
++land where they should. The candidates are in §6.1; **`SpeedScale` remains 1.0 until then**, which
++is known-wrong by roughly 5× and must not be left that way.
++
++---
++
++## 7. Headless calibration — one bug fixed, one blocker found
++
++Built `tools/physics/HeadlessSolver/`: a dotnet console app that **links the real
++`DiscContact.cs` / `RigidDisc.cs` / `SpinTransfer.cs` / `ReferenceStone.cs`** and runs them
++outside Unity. The Editor's project lock no longer gates physics iteration — a full parameter
++sweep takes seconds instead of one menu click per data point.
++
++UnityEngine.CoreModule.dll cannot be used for this: `Quaternion.Inverse`, `FromToRotation` and
++friends are native ECalls that throw outside the player. `UnityShim.cs` supplies managed
++equivalents, and `Quaternion.SelfTest()` pins them to Unity's conventions (rotation sense, cross
++product handedness, composition order) before any number is trusted.
++
++### 7.1 FIXED — the water was creating energy
++
++`DiscContact.Evaluate` computed lift as `½·ρ·C_l·(v·n̂)²·A` along `+n̂`. Squaring loses the
++sign, so lift was applied **even when the face was moving away from the water**. Once the
++attitude tumbled far enough for `n̂` to lean into the velocity, every substep did positive work.
++
++Measured before the fix: a **12 m/s throw left its first contact at 42.66 m/s**.
++
++The fix is [N] assumption (ii) — no hydrodynamic force on the face turned away from the water —
++implemented as an explicit `normalSpeed < 0` guard. Lift now always opposes penetration, so its
++work is always negative and the energy invariant is structural. Verified: 12 m/s in, 10.74 m/s out.
++
++This is the same class of bug the previous solver shipped with, and it is exactly what R8 exists
++to catch.
++
++### 7.2 Calibrated — `C_l` is ~12–32, not 1
++
++Bocquet's `C_l ≈ 1` belongs to his `V²` model. With the `(v·n̂)²` law, `C_l = 1` gives far too
++little lift: contact lasts 20–60 ms against his own `t_coll = π/ω₀ ≈ 7 ms`, and the stone wallows
++in rather than planing off. [B] flags `C_l` as its weakest assumption and [N] fits an equivalent
++parameter, so this is the one honest place to absorb the difference.
++
++Raising it also moves the **magic angle toward the published 20°**, which is an independent check
++it is not just a fudge:
++
++| `C_l` | magic angle |
++|---|---|
++| 1 | 27.5° |
++| 4 | 25.0° |
++| 16 | 22.5° |
++| 32 | 22.5° |
++| 64 | 5.0° (collapses) |
++
++**`C_l` ≈ 16–32.** Above ~48 the magic angle collapses and the calibration is invalid.
++
++### 7.3 BLOCKER — the contact torque over-destabilises the stone
++
++With the full model, skip count is **erratic and non-monotonic in throw speed**: 47 skips at one
++setting, 2 at its neighbour, and a p95 throw frequently out-skipping the hardest throw. Throwing
++harder doing *worse* is both unphysical and unacceptable in a game.
++
++Isolated by zeroing the contact torque. The model immediately became smooth and monotonic:
++
++| SpeedScale | weakest | median | hard | strongest |
++|---|---|---|---|---|
++| 0.23 | 0 | 3 | 8 | 13 |
++| 0.35 | 0 | 5 | 14 | 22 |
++| **0.50** | **0** | 9 | 21 | **32** |
++| 0.75 | 0 | 15 | 37 | 22 (inverts) |
++
++So the torque — not energy, not lift, not the spin transfer — is what ends runs early and
++randomly. **Zeroing it is a diagnostic, not a fix**: it deletes the gyroscopic physics that makes
++spin meaningful, which is half of what the rewrite is for.
++
++**Leading hypothesis, not yet tested.** Contact lasts 20–60 ms against a published ~7 ms. The
++torque is therefore acting for 3–8× too long, which is plenty to flip a stone that would really
++have left the water already. The over-long contact and the tumbling may be one fault, not two —
++and if so, shortening the contact fixes both. Worth testing before adding any damping term, which
++would be a new invented mechanism.
++
++### 7.4 Status against the target
++
++Target: strongest possible throw = 38 skips, weakest = outright sink.
++
++- **Weakest sinks: ACHIEVED**, robustly, across every configuration tested.
++- **Strongest = 38: NOT ACHIEVED.** Best with the full model is erratic; best with torque
++  disabled is 32 at `C_l = 12`, `SpeedScale = 0.50`, `R = 5 cm`.
++
++The gap is §7.3, and it is a physics question rather than a tuning one. Tuning around it would
++mean picking numbers that flatter a model known to be wrong — which is what this rewrite exists
++to stop.
++
++---
++
++## 8. Diagnosis complete — the model rings, and the skip counter lies
++
++Ran the headless harness through hypothesis tests rather than more sweeping. Two hypotheses
++killed, one confirmed.
++
++### 8.1 KILLED — it is not integrator divergence (R9 passes)
++
++Angular accelerations in contact reach ~1e6 rad/s², so a 20 µs step changes ω by ~20 rad/s
++against an 88 rad/s spin. That looked like guaranteed divergence. It is not — across a **200×
++range** of contact step:
++
++| step µs | 20 | 10 | 5 | 2 | 1 | 0.5 | 0.25 | 0.1 |
++|---|---|---|---|---|---|---|---|---|
++| skips | 19 | 19 | 19 | 18 | 18 | 17 | 23 | 23 |
++| distance m | 7.3 | 7.3 | 7.3 | 7.1 | 7.2 | 7.2 | 7.2 | 7.2 |
++
++Distance is rock steady. **R9 passes**; the results are physics, not step size. `ContactStep`
++can stay at 20 µs, which matters for the aim preview's per-frame cost.
++
++### 8.2 KILLED — it is not the contact being too long
++
++The torque *impulse* is `r_cp × Δp`: it depends on the momentum change and the lever arm, not on
++how long contact lasts. Shortening the contact cannot reduce it. §7.3's hypothesis was wrong.
++
++### 8.3 CONFIRMED — the stone flips, and the "skips" are surface chatter
++
++Per-bounce trace, 12 m/s, 14 rev/s, `C_l = 16`:
++
++```
++skip  gap m   speed  contact ms  tilt deg
++   1   0.50   11.21       43.23      45.8
++   2   0.02    8.55        0.96      31.0
++   3   0.02    8.55        1.30     147.6   <- inverted
++   4   0.02    8.47        0.92      32.1
++   5   0.02    8.47        1.18     146.7
++```
++
++After one real bounce the tilt oscillates **32° ↔ 147°** — the stone is flipping over and back —
++and the gaps collapse to 2 cm. 19 "skips" over 7.3 m is 0.38 m per hop against Bocquet's
++`X₀ = 2v_x|v_z|/g ≈ 5.9 m`. It is vibrating on the surface, not skipping.
++
++**Two consequences.**
++
++1. **The skip counter is wrong.** "Left the water going up" counts surface chatter as skips. Every
++   full-model skip count in §7 is inflated and should not be trusted. A skip needs a minimum hop —
++   Bocquet's `X₀` gives a principled floor.
++2. **The torque is over-driven, not mis-signed.** The wetted region is the *trailing* edge, so lift
++   there pitches the nose down — correctly restoring. Overshooting past level into inversion is
++   the signature of a restoring torque with **no damping**, not of a destabilising one.
++
++### 8.4 The bind, stated plainly
++
++- The `(v·n̂)²` law is required for the magic angle (§1.4) but gives ~4× too little lift at
++  `C_l = 1`, so the stone sinks instead of planing.
++- Fixing that needs `C_l ≈ 16`, which also multiplies the **torque** by 16.
++- The model has **no rotational damping**, so the now-16× restoring torque rings and inverts the
++  stone after one bounce.
++
++A real plate rotating in water is heavily damped by added mass; this model is frictionless in
++rotation. That is a genuine missing physical term, not a tuning knob — but adding it is a
++modelling decision, and it is where the work stops pending a call.
++
++### 8.5 Honest status
++
++**Not achieved.** Weakest-throw-sinks holds robustly. Strongest-throw-equals-38 does not, and the
++numbers that looked closest (§7.3, torque disabled) were both physically hollow — torque removed —
++and inflated by the miscounting in §8.3.
+diff --git a/docs/plans/real-skip-physics.md b/docs/plans/real-skip-physics.md
+new file mode 100644
+index 0000000..35ed5ac
+--- /dev/null
++++ b/docs/plans/real-skip-physics.md
+@@ -0,0 +1,304 @@
++# Ground the skip solver in real stone-skipping physics
++
++## Context
++
++`SkipPhysics.Step` currently models a bounce as an **instantaneous impulse gated by invented
++quality bands**. It works, it terminates, and its energy invariant holds — but nothing in it can
++be checked against reality, because almost every number in it was chosen by feel:
++
++- `OptimalAttackDeg = 20f` is *asserted* as a constant, citing Clanet 2004. In the real model 20°
++  is not an input at all — it is a **result** that falls out of integrating the contact, and a
++  solver that reproduces it has demonstrated it is right about everything upstream of it.
++- Energy loss is `EnergyLoss × WorstQualityLossScale × incidence lerp × rock multiplier`, clamped.
++  Four made-up shaping factors standing in for one dissipation integral.
++- Lift is `LiftShare × quality × cos(roll) × multiplier`, clamped to `MaxLiftShare` — a share of a
++  budget, with a comment explaining that a previous version synthesised energy here.
++- Tumbling is `WanderDeg`, an accumulator of invented degrees, decayed by `SpinRetention` and
++  compared against `SpinForStability`.
++- Failure is three `BandQuality` gradients over `Forgiveness{Pitch,Roll,Yaw}Deg`, with five
++  falloff constants and two hard cliffs.
++
++That is roughly **23 knobs that answer to nothing**. The consequence is exactly what prompted this:
++there is no way to ask "is this how a skipped stone actually behaves", so muscle memory — the only
++oracle anyone has — has nothing to be compared against, and tuning is guessing in 23 dimensions
++where the knobs interact.
++
++**The intended outcome:** a solver whose contact phase is the published planing-disc model, whose
++inputs are measurable SI quantities (kg, m, m/s, rad/s, kg/m³), and which is validated against
++published experimental results *before* a single number is tuned for feel. Then "how punishing is
++raw physics" becomes a measurement you read off a report, and every later tuning decision is a
++deliberate, named departure from a known-correct baseline rather than a nudge in the dark.
++
++The world is already real-metre scale (throws ~50 m, water plane and shore authored in metres), so
++SI drops in 1:1. No scale factor anywhere.
++
++### Decisions already taken
++
++| Decision | Choice |
++|---|---|
++| Rollout | Build the solver + harness as **pure additions**, measure, write findings, *then* flip gameplay |
++| Forgiveness bands | **Deleted entirely.** Raw physics baseline, no assist layer built yet |
++| Rock character | Authored **SI fields** (`Mass`, `Radius`, `Thickness`), seeded once from mesh bounds |
++| Reference stone | **A seventh rock ships by default: the theoretical perfect stone** (see below) |
++| Scope | Solver + launch mapping + live attitude through contact + verification harness. **Not** `RockController`'s stepping loop |
++
++### Sources
++
++The model is Bocquet, *Am. J. Phys.* **71**, 150 (2003); Clanet, Hersen & Bocquet, *Nature* **427**,
++29 (2004); Rosellini, Hersen, Clanet & Bocquet, *J. Fluid Mech.* **543**, 137 (2005).
++
++> **Step 0 is DONE.** Both primary papers were fetched and read in full; every published value,
++> formula and constant now lives in **[`../Findings-RealSkipPhysics.md`](../Findings-RealSkipPhysics.md)**
++> with a citation. **That document, not this plan and not recall, is the source for every number the
++> harness asserts.** It also records two corrections to this plan's force law (§1) and three
++> consequences for the game (§4) that were not visible before reading the sources.
++>
++> Bocquet 2003 is open-access: [arXiv:physics/0210015](https://arxiv.org/abs/physics/0210015).
++
++---
++
++## The model
++
++### State
++
++`SkipState` becomes real rigid-body state in SI units:
++
++| Field | Meaning |
++|---|---|
++| `Position`, `Velocity` | m, m/s (unchanged) |
++| `Attitude` | quaternion — now **integrated**, not frozen at launch |
++| `AngularVelocity` | rad/s, **world-space vector** — replaces the scalar `Spin` |
++| `SkipCount`, `HasSunk` | unchanged |
++
++Dropped: `FaceNormal`, `HeadingDir`, `FaceAngleDeg`, `RollDeg`, `WanderDeg`, scalar `Spin`. The
++first four are derivable from `Attitude` on demand via existing `PhoneAttitude` helpers; `WanderDeg`
++has no analogue because tumbling is now literally the attitude tumbling.
++
++`RockController.Launch` reads `FaceAngleDeg`/`RollDeg`/`Spin` off the launch state for
++`RockLaunchedEvent` — those become `PhoneAttitude.FaceAngleDeg(state.Attitude)`,
++`PhoneAttitude.RollDeg(state.Attitude)`, and the axial component of `AngularVelocity`. Same event,
++same fields, computed rather than stored.
++
++### Two phases
++
++**Free flight** — gravity only, at `FixedStep`. Air drag omitted (negligible over ~2 s at these
++speeds; Bocquet omits it). This is what the current code already does and it is already correct.
++
++**Contact** — entered when the disc's lowest rim point crosses `WaterY`, integrated at a fine
++internal `ContactStep` (~20–50 µs) until the rim clears the surface again. Per substep:
++
++1. **Wetted area.** The stone is a disc of radius `R`, normal `n̂`. Where the water plane cuts the
++   disc's own plane, the submerged part is a circular segment. With `d` the signed in-plane
++   distance from disc centre to that cut line (`d = y_centre / √(1 − n̂ᵧ²)`):
++
++   ```
++   A_wet = R² · acos(d/R) − d · √(R² − d²)        for |d| < R
++   ```
++
++   Exact closed form, cheap, no approximation. This single expression is what the current code's
++   whole `incidenceFactor` / `quality` apparatus was standing in for.
++
++2. **Forces.** **Corrected by step 0 — see `docs/Findings-RealSkipPhysics.md` §1.** Two errors in
++   the original draft of this plan: friction acts **along the stone's own plane**, not against the
++   flight path, and the normal force goes as the **normal** velocity, not the total speed.
++
++   ```
++   F_lift     = ½ · ρ_w · C_l · (v·n̂)² · A_wet · n̂      (Nagahiro/Birkhoff form)
++   F_friction = ½ · ρ_w · C_f · V²      · A_wet · t̂      (t̂ lies IN the stone's plane)
++   ```
++
++   No force at all on the dry face. `ρ_w = 1000 kg/m³`; `C_l ≈ C_f ≈ 1` (Bocquet 2003 Eq. 1).
++
++   > The `(v·n̂)²` form is not optional. Bocquet's constant-coefficient `V²` version **cannot
++   > produce a magic angle** — tilt enters it only monotonically, with no interior optimum — and
++   > reproducing 20° is check R1, the whole justification for this rewrite.
++
++3. **Torque and attitude.** The centre of pressure is the **centroid of the wetted segment**, which
++   sits forward of the disc centre — so the force exerts a torque `τ = r_cp × F` that tries to flip
++   the stone. Integrate the **full Euler rigid-body equations** for a disc
++   (`I_axial = ½MR²`, `I_transverse = ¼MR² + ¹⁄₁₂Mh²`).
++
++   > Use the full equations, **not** the fast-spin gyroscopic approximation `ṅ̂ = (τ × n̂)/(I_a Ω)`.
++   > That approximation is standard in the literature but diverges as `Ω → 0`, and the zero-spin
++   > tumbling case is precisely the behaviour we need to be correct — it is what makes an unspun
++   > throw fail on its own without a `WanderDeg` fudge.
++
++4. **Exit or sink.** Contact ends when the rim clears the surface — that is a skip. It sinks when
++   the centre passes below `−R` (fully submerged) or contact exceeds a substep budget. Both are
++   physical outcomes, neither is a tuned threshold.
++
++### What this deletes
++
++Every one of these disappears, replaced by geometry and dissipation:
++
++`OptimalAttackDeg`, `WorstQualityLossScale`, `ShallowIncidenceLossScale`, `SteepIncidenceLossScale`,
++`MaxLiftShare`, `RollSteerRad`, `MinSkipSpeed`, `MinExitRiseSpeed` (all `SkipPhysics` consts) and
++`EnergyLoss`, `LiftShare`, `MinLoss`, `SpinForStability`, `WanderPerBounce`, `SpinRetention`,
++`RollFalloffDeg`, `MaxRollDeg`, `PitchSteepFalloffDeg`, `PitchShallowFalloffDeg`, `YawFalloffDeg`,
++`MaxIncidenceDeg`, `ForgivenessPitchDeg`, `ForgivenessRollDeg`, `ForgivenessYawDeg`,
++`SpinToleranceScale` (all `SkipConstants`).
++
++`SkipConstants` is left with: `Gravity`, `WaterY`, `WaterDensity`, `LiftCoefficient`,
++`DragCoefficient`, `SpeedScale`, `FixedStep`, `ContactStep`, `MaxContactSubsteps`, `PredictSeconds`,
++`ReferenceSpeed`. Four of those are physical constants of water and one is presentation-only.
++
++### The theoretical perfect stone
++
++A **seventh rock ships in the catalog by default**, and it is the baseline every other rock is read
++against. Its dimensions are not a design choice — they are **the experimental disc from the papers**,
++so R1 and R2 are measuring the actual published apparatus rather than something merely similar.
++When the solver reproduces the magic angle *for this stone*, that is the literature reproduced, not
++an analogy to it.
++
++- **Mesh:** a procedurally-built disc primitive (`PlaceholderArt`, the project's single material
++  factory), not an FBX mesh. It genuinely is a perfect disc — a remeshed naturalistic rock would
++  quietly misrepresent it. This also means it survives `RockSkipping/Rocks/Build Catalog from FBX`,
++  which rebuilds the six from `RocksRemeshed.fbx`.
++- **Selectable by players**, not verification-only. It is the honest control: a player who cannot
++  out-skip the perfect stone knows the gap is the throw, not the rock.
++- **Distinctly named and visually obvious** on the scoreboard and in the shore lineup. It must never
++  read as a seventh naturalistic pebble.
++- **Tinted by the player's colour like every other rock** — the standing rule that colour is player
++  identity, never rock identity, is not suspended for this one.
++
++Three existing constraints it has to satisfy, each already documented and each easy to break here:
++
++1. `RockSkipping/Rocks/Validate Catalog` flags any rock with no mesh, no tuning, or a duplicate id —
++   the reference stone needs a real mesh reference, a real `SkipTuning` asset, and its own id.
++2. `Build Catalog from FBX` is idempotent and preserves hand-edits. It must **not** delete a rock it
++   cannot find in the FBX. Verify this explicitly; it is the most likely way the stone silently
++   vanishes on a later rebuild.
++3. `Resources/` is a curated list — the stone's `RockDefinition` lives under `Assets/Rocks/` like the
++   other six and is reached through the catalog, not added to `Resources/`.
++
++### Emergent behaviours to verify, not implement
++
++Sideways deflection under bank, decreasing skip spacing toward the end of a run ("pitter-patter"),
++the 20° optimum, spin-dependent survival, and steeper-arrival-costs-more all fall out of the above.
++**If any of them has to be added by hand, the model is wrong** — that is the diagnostic.
++
++---
++
++## Files
++
++### Phase 1 — additive, gameplay untouched
++
++| File | Change |
++|---|---|
++| `docs/plans/real-skip-physics.md` | **First action:** copy this plan into the repo (per your standing rule that plans live in `docs/`) |
++| `Scripts/Game/Physics/DiscContact.cs` | **New.** Pure, static: wetted area, segment centroid, forces, torque for one substep. The one file that is entirely closed-form geometry, so it is the one file that is exhaustively unit-testable |
++| `Scripts/Game/Physics/RigidDisc.cs` | **New.** Pure: disc inertia tensor, Euler rigid-body integration of `Attitude` + `AngularVelocity` |
++| `Scripts/Game/Physics/SkipPhysics.cs` | Rewritten `Step` — flight phase unchanged, contact phase sub-steps through `DiscContact`/`RigidDisc`. **`Step`, `Predict`, `CreateLaunch` signatures preserved**, as is the `SkipStep { Bounced, ImpactSpeed, HasSunk }` contract |
++| `Scripts/Game/Physics/SkipConstants.cs` | Strip the invented sections, add the physical ones. Keep `LoadOrWarn`/`CreateDefault` |
++| `Scripts/Game/Physics/SkipTuning.cs` | Three multipliers → `Mass` (kg), `Radius` (m), `Thickness` (m) |
++| `Scripts/Game/Physics/ReferenceStone.cs` | **New.** The theoretical perfect stone's SI dimensions as a `SkipTuning`, built in code with the paper cited in the file. Pure and asset-free, so the harness can use it with no catalog dependency — the same trick `SkipCurve.cs:258` already uses with `SkipTuning.CreateDefault()` |
++| `Scripts/Verification/SkipReality.cs` | **New.** The reality-check harness (below), run against `ReferenceStone`. Writes `skip-reality.txt` at repo root, same pattern as `SkipCurve.Run()` |
++| `Editor/ProjectSetup.cs` | Add `RockSkipping/Verify/Print Reality Check` beside the existing `Print Skip Curve` (`ProjectSetup.cs:132`) |
++| `Tests/EditMode/DiscContactTests.cs` | **New.** Closed-form geometry tests — area and centroid against analytic values at known depths |
++| `Tests/EditMode/SkipPhysicsTests.cs` | Keep all four existing tests (purity, non-mutation, termination + per-bounce energy loss, reference throw skips). They are exactly the right invariants and must survive the rewrite unchanged in intent |
++| `docs/Findings-RealSkipPhysics.md` | **The deliverable.** Published values with citations, measured results, and the verdict on how punishing raw physics is |
++
++`PhoneAttitude.cs` is **not** changed — it is already quaternion-based and already the single
++conversion point. `RockSkipping.Physics.asmdef` is unchanged; the new files go in the same folder so
++`Tests/EditMode/` reaches them and the purity boundary (`"references": []`) still holds.
++
++### Phase 2 — flip gameplay over, only after you have read the findings
++
++| File | Change |
++|---|---|
++| `Scripts/Game/RockController.cs:133` | `Launch` computes `FaceAngleDeg`/`RollDeg`/spin from `Attitude` + `AngularVelocity` for `RockLaunchedEvent`. Stepping loop (`:190-226`) untouched |
++| `Scripts/Game/RockLauncher.cs:147` | `CreateLaunch` call — signature preserved, so likely no change beyond the spin argument's units |
++| `Scripts/Game/AimPreview.cs:488` | Same; confirm predict cost per frame is still acceptable |
++| `Scripts/Editor/RockCatalogBuilder.cs` | Seed `Mass`/`Radius`/`Thickness` from `mesh.bounds` on rebuild, preserving hand-edits — the pattern it already uses for display names and tints. `mesh.vertices` is unavailable (`isReadable: 0`), bounds only |
++| `Assets/Rocks/Tuning/*.asset` | Six tuning assets take real dimensions |
++| `Assets/Rocks/Rock_Reference.asset` + tuning | **New.** The perfect stone as a shipped, selectable catalog rock — its dimensions read from `ReferenceStone`, so the played stone and the measured stone cannot drift apart |
++| `Scripts/Game/PlaceholderArt.cs`, `ShoreRocks.cs` | Procedural disc mesh for the reference stone, and its distinct presentation in the shore lineup |
++| `Scripts/Game/RockCatalog.cs` | `Validate Catalog` must accept a rock whose mesh is procedural rather than from the FBX |
++| `Scripts/Verification/SkipCurve.cs` | Rewrite the verdict bands (`:380-445`) against real release speeds. `ReferenceSwingSpeed` drops from 30 m/s to a real release speed, and `OptimalAttackDeg` stops being imported from `SkipPhysics` |
++| `docs/systems/SkipPhysics.md`, `RockCatalogAndTuning.md`, `Assets/CLAUDE.md` | The architecture sections describing the energy-budget model and the three-multiplier rock split are then describing nothing that exists |
++
++Nothing in `SfxDirector`, `WaterRipples`, `RockTrail` or `ScoreManager` changes — they read
++`ReferenceSpeed` and the `SkipOccurredEvent`/`RockSunkEvent` payloads, all preserved.
++
++---
++
++## Verification
++
++### Reality checks — `RockSkipping/Verify/Print Reality Check`
++
++Each asserts a published result, with its citation printed beside it. **The published values are
++in [`../Findings-RealSkipPhysics.md`](../Findings-RealSkipPhysics.md) §3 — take them from there.**
++
++| # | Check | Expectation |
++|---|---|---|
++| R1 | **The magic angle emerges.** Sweep attack angle 0–45°, find the one minimising critical speed | ≈ 20°, and shallow — Clanet 2004's central result |
++| R2 | Critical speed at the optimum for their experimental disc | Matches the published curve |
++| R3 | Contact duration for a typical bounce | Order milliseconds |
++| R4 | Energy lost per bounce | **Constant in absolute terms** (`W ≈ −μMgε`), NOT a fixed fraction of KE. This is what produces R6 |
++| R5 | Skip count vs release speed | `N_c = V²/(2gμε)`: 6 at 5 m/s, 17 at 8 m/s, 38 at 12 m/s (world record) |
++| R6 | **Skip spacing decreases toward the end of a run** | Geometric decay — the pitter-patter, the thing muscle memory knows best |
++| R7 | Spin threshold, and the spin ceiling | `Ω ≫ √(g/R)` ≈ 14 s⁻¹; and `N_c^spin = RΩ²/g` — 5 bounces at 5 rev/s, 38 at 14 rev/s |
++| R8 | Energy invariant | Exit KE < entry KE on **every** bounce, every case (guards the explicit integrator adding energy) |
++| R9 | Integrator convergence | Halving `ContactStep` changes outcomes by < 1% — proves results are physics, not step size |
++| R10 | **The six naturalistic rocks measured against the perfect stone** | Each rock's skips and distance as a fraction of the reference stone's, at identical throws. No pass/fail — this is the readout that says how much of the gap is the rock and how much is the throw |
++
++### Two structural requirements the sources impose
++
++Both come out of `Findings-RealSkipPhysics.md` and neither was visible when this plan was drafted.
++Getting either wrong makes every check above meaningless even if it passes.
++
++1. **A run ends at `min(N_slowdown, N_spin)`.** Speed-limited bounces grow as `V²` without bound;
++   spin-limited bounces do not depend on speed *at all*. Both ceilings must exist, and the smaller
++   one wins (Bocquet §VII). If only the energy ceiling is modelled, throwing harder buys unlimited
++   skips — which is the failure this whole rewrite is meant to end, reappearing in a new costume.
++2. **Per-bounce energy loss is a constant absolute quantity, not a fraction of kinetic energy.**
++   Constant loss gives `V² ∝ (N_c − N)`, and that is *precisely* what makes skip spacing collapse as
++   `√(1 − N/N_c)` at the end of a run. A fractional loss decays geometrically and can never produce
++   the pitter-patter. Do not reintroduce a fractional loss under any name.
++
++R1–R7 all run against the **theoretical perfect stone**, so they are reproducing the papers'
++apparatus directly. R9 has no analogue in the current code and is the one that makes the rest
++trustworthy. R10 is the number that makes rock tuning a decision rather than a guess.
++
++### Existing tests
++
++`Tests/EditMode/SkipPhysicsTests.cs` and `PhoneAttitudeTests.cs` must pass unchanged in intent —
++purity, non-mutation, termination, and per-bounce energy loss are all still exactly the right
++invariants and the rewrite must not weaken them.
++
++### Running it
++
++The Unity Editor holds an exclusive project lock, so there is no out-of-band compile check — verify
++via the open Editor's Console, per `Assets/CLAUDE.md`. Both the reality check and the skip curve are
++pure and need no Play mode or scene.
++
++**Step cards for every command will be produced at implementation time, run first, and handed over
++in the standard format.** The relay tests (`cd relay && npm test`) are untouched by this work.
++
++---
++
++## Risks
++
++1. **Raw physics may be too punishing for a party game.** Expected, and the entire point of measuring
++   before flipping — the findings doc answers it with numbers, and an assist layer becomes an
++   informed, separate decision.
++2. **Real skip counts may not match the current game's feel.** The curve tool currently targets a
++   band at an unreal 30 m/s reference. Real release speeds are much lower; skip counts will move.
++3. **`AimPreview` cost.** ~100 substeps/bounce × ~20 bounces ≈ 2 000 extra substeps per predict, per
++   frame. Cheap in principle, but there is a recent commit tuning aim preview performance
++   (`8402f11`, `57a3a20`), so measure rather than assume. `MaxContactSubsteps` caps the worst case.
++4. **Explicit integration can add energy.** Mitigated by R8 and R9 and by a small `ContactStep`.
++5. **Recalled physics constants.** Mitigated by step 0 — fetch the papers, cite every number.
++6. **The perfect stone may simply be the best rock**, making the other six pointless to pick. That is
++   a real possibility and R10 measures it. It is a game-design consequence to decide on once the
++   numbers exist, not something to pre-empt by handicapping the reference stone — a handicapped
++   reference stone would stop being a reference.
++7. **The reference stone silently disappearing on the next `Build Catalog from FBX`.** It is the one
++   catalog entry with no FBX counterpart. Explicitly re-run the rebuild after adding it and confirm
++   it survives.
++
++## Out of scope
++
++Air drag, water waves and surface disturbance from prior skips, buoyancy during the sink,
++non-circular stone footprints, an assist/forgiveness layer, and any change to the phone-side motion
++pipeline or the relay.
+diff --git a/tools/physics/HeadlessSolver/.gitignore b/tools/physics/HeadlessSolver/.gitignore
+new file mode 100644
+index 0000000..7b2c8bd
+--- /dev/null
++++ b/tools/physics/HeadlessSolver/.gitignore
+@@ -0,0 +1,3 @@
++# dotnet build output — regenerated by `dotnet build`, never source.
++bin/
++obj/
+diff --git a/tools/physics/HeadlessSolver/Program.cs b/tools/physics/HeadlessSolver/Program.cs
+new file mode 100644
+index 0000000..e38df73
+--- /dev/null
++++ b/tools/physics/HeadlessSolver/Program.cs
+@@ -0,0 +1,433 @@
++using System;
++using System.Globalization;
++using UnityEngine;
++
++namespace HeadlessSolver
++{
++    /// <summary>
++    /// Drives the project's real <see cref="Game.DiscContact"/> / <see cref="Game.RigidDisc"/>
++    /// outside Unity, so the skip model can be calibrated in seconds instead of one Editor
++    /// menu click at a time.
++    /// </summary>
++    /// <remarks>
++    /// The run loop here is the one that becomes SkipPhysics.Step in phase 2 — flight under
++    /// gravity at a coarse step, contact sub-stepped finely, attitude integrated throughout.
++    /// Calibrating it here and then porting the settled numbers is the whole point: the
++    /// alternative is guessing in the Editor.
++    /// </remarks>
++    internal static class Program
++    {
++        // Measured envelope from 124 real throws — docs/Findings-RealSkipPhysics.md §6.
++        private const float MeasuredMinSwing = 1.83f;
++        private const float MeasuredMedianSwing = 26.09f;
++        private const float MeasuredP95Swing = 52.97f;
++        private const float MeasuredMaxSwing = 74.81f;
++
++        private const float MeasuredMinSpinDeg = 100.6f;
++        private const float MeasuredMedianSpinDeg = 522.5f;
++        private const float MeasuredP90SpinDeg = 1000.2f;
++        private const float MeasuredMaxSpinDeg = 1380.0f;
++
++        /// <summary>Bocquet's optimum, and what a decent thrower actually achieves.</summary>
++        private const float LaunchTiltDeg = 20f;
++
++        /// <summary>The record Bocquet cites (J. Coleman-McGhee), and the stated target.</summary>
++        private const int WorldRecordSkips = 38;
++
++        private struct Setup
++        {
++            public float Mass;
++            public float Radius;
++            public float Thickness;
++            public float SpeedScale;
++            public float WaterDensity;
++            public float LiftCoefficient;
++            public float DragCoefficient;
++            public float Gravity;
++            public float FlightStep;
++            public float ContactStep;
++        }
++
++        private struct RunResult
++        {
++            public int Skips;
++            public float Distance;
++            public bool Sank;
++            public float FinalSpeed;
++            public float FirstGapMetres;
++            public float LastGapMetres;
++            public string EndReason;
++        }
++
++        /// <summary>Per-bounce detail, printed by trace mode. Diagnosing beats sweeping.</summary>
++        private static bool _trace;
++
++        /// <summary>Diagnostic: zero the contact torque, i.e. pretend spin holds the stone
++        /// perfectly. Isolates whether rotational instability is what caps skip count.</summary>
++        private static bool _noTorque;
++
++        private static Setup Baseline() => new Setup
++        {
++            Mass = Game.ReferenceStone.Mass,
++            Radius = Game.ReferenceStone.Radius,
++            Thickness = Game.ReferenceStone.Thickness,
++            SpeedScale = 1f,
++            WaterDensity = Game.ReferenceStone.WaterDensity,
++            LiftCoefficient = Game.ReferenceStone.LiftCoefficient,
++            DragCoefficient = Game.ReferenceStone.DragCoefficient,
++            Gravity = Game.ReferenceStone.Gravity,
++            FlightStep = 0.002f,
++            ContactStep = 0.00002f,
++        };
++
++        /// <summary>
++        /// Simulate one whole throw: launch, then flight/contact until it sinks or the
++        /// budget runs out. Returns what a player would actually see.
++        /// </summary>
++        private static RunResult Simulate(Setup s, float swingSpeed, float phoneSpinDeg, float tiltDeg) =>
++            SimulateDirect(s, swingSpeed * s.SpeedScale,
++                Game.SpinTransfer.ToStoneSpinRadPerSec(phoneSpinDeg, s.Radius), tiltDeg);
++
++        /// <summary>
++        /// The same run, driven by SI quantities directly, so the model can be checked
++        /// against Bocquet's own worked examples without going through phone units.
++        /// </summary>
++        private static RunResult SimulateDirect(Setup s, float releaseSpeed, float spinRad, float tiltDeg)
++        {
++            var tilt = tiltDeg * Mathf.Deg2Rad;
++
++            // Face normal tilted back against the direction of travel by the attack angle.
++            // FromToRotation rather than Euler: no sign convention to get wrong.
++            var normal = new Vector3(0f, Mathf.Cos(tilt), -Mathf.Sin(tilt)).normalized;
++            var attitude = Quaternion.FromToRotation(Vector3.up, normal);
++
++            // Bocquet throws flat and lets gravity supply the incidence angle; the stone is
++            // released just above the surface travelling horizontally.
++            var position = new Vector3(0f, 0.30f, 0f);
++            var velocity = new Vector3(0f, 0f, releaseSpeed);
++
++            var angularVelocity = normal * spinRad;
++
++            var inertia = Game.RigidDisc.ComputeInertia(s.Mass, s.Radius, s.Thickness);
++
++            var result = new RunResult();
++            var wasInContact = false;
++            var lastContactZ = 0f;
++            var firstGap = -1f;
++            var lastGap = -1f;
++
++            var elapsed = 0f;
++            var contactStart = 0f;
++            const float budgetSeconds = 60f;
++
++            while (elapsed < budgetSeconds)
++            {
++                var n = (attitude * Vector3.up).normalized;
++                var height = position.y;
++                var forces = Game.DiscContact.Evaluate(
++                    height, n, velocity, s.Radius, s.WaterDensity,
++                    s.LiftCoefficient, s.DragCoefficient);
++
++                var inContact = forces.WettedArea > 0f;
++                var dt = inContact ? s.ContactStep : s.FlightStep;
++
++                // Fully submerged with no lift left to give — that is a sink, not a skip.
++                var submergedDepth = Game.DiscContact.SignedWaterDistance(height, n);
++                if (submergedDepth <= -s.Radius)
++                {
++                    result.Sank = true;
++                    result.EndReason = "fully submerged";
++                    break;
++                }
++
++                var acceleration = (forces.Lift + forces.Friction) / s.Mass
++                                   + Vector3.down * s.Gravity;
++                velocity += acceleration * dt;
++                position += velocity * dt;
++                Game.RigidDisc.Integrate(ref attitude, ref angularVelocity,
++                    inContact && !_noTorque ? forces.Torque : Vector3.zero, inertia, dt);
++
++                // A skip is completed when the stone LEAVES the water going up.
++                if (wasInContact && !inContact && velocity.y > 0f)
++                {
++                    result.Skips++;
++                    var gap = position.z - lastContactZ;
++                    if (firstGap < 0f) firstGap = gap;
++                    lastGap = gap;
++                    lastContactZ = position.z;
++
++                    if (_trace)
++                    {
++                        // Tilt of the face away from level: this is the tumble that ends runs.
++                        var tiltNow = Mathf.Acos(Mathf.Clamp(n.y, -1f, 1f)) * Mathf.Rad2Deg;
++                        var spinNow = Vector3.Dot(angularVelocity, n) / (2f * Mathf.PI);
++                        Console.WriteLine($"   {result.Skips,4}{contactStart - elapsed + elapsed,0:F0}"
++                                          + $"{gap,9:F2}{velocity.magnitude,10:F2}"
++                                          + $"{(elapsed - contactStart) * 1000f,11:F2}"
++                                          + $"{tiltNow,10:F1}{spinNow,10:F2}");
++                    }
++                }
++                else if (!wasInContact && inContact)
++                {
++                    lastContactZ = position.z;
++                    contactStart = elapsed;
++                }
++
++                wasInContact = inContact;
++                elapsed += dt;
++
++                // Below the surface and going nowhere: it has stopped skipping.
++                if (position.y < -s.Radius * 2f)
++                {
++                    result.Sank = true;
++                    result.EndReason = "sank below the surface";
++                    break;
++                }
++                if (velocity.z <= 0.01f)
++                {
++                    result.Sank = true;
++                    result.EndReason = "forward motion stopped";
++                    break;
++                }
++            }
++
++            result.EndReason ??= "ran out of time budget";
++
++            result.Distance = position.z;
++            result.FinalSpeed = velocity.magnitude;
++            result.FirstGapMetres = Mathf.Max(0f, firstGap);
++            result.LastGapMetres = Mathf.Max(0f, lastGap);
++            return result;
++        }
++
++        private static void PrintEnvelope(Setup s)
++        {
++            Console.WriteLine($"  stone: R={s.Radius * 100f:F2} cm  M={s.Mass * 1000f:F1} g  "
++                              + $"h={s.Thickness * 1000f:F1} mm   SpeedScale={s.SpeedScale:F3}");
++            Console.WriteLine($"  {"input",-22}{"release m/s",13}{"stone rev/s",13}{"skips",8}{"dist m",10}");
++            Console.WriteLine("  " + new string('-', 66));
++
++            var cases = new (string Label, float Swing, float Spin)[]
++            {
++                ("weakest recorded", MeasuredMinSwing, MeasuredMinSpinDeg),
++                ("median", MeasuredMedianSwing, MeasuredMedianSpinDeg),
++                ("hard (p95/p90)", MeasuredP95Swing, MeasuredP90SpinDeg),
++                ("STRONGEST recorded", MeasuredMaxSwing, MeasuredMaxSpinDeg),
++            };
++
++            foreach (var (label, swing, spin) in cases)
++            {
++                var r = Simulate(s, swing, spin, LaunchTiltDeg);
++                var rev = Game.SpinTransfer.ToStoneSpinRadPerSec(spin, s.Radius) / (2f * Mathf.PI);
++                Console.WriteLine($"  {label,-22}{swing * s.SpeedScale,13:F2}{rev,13:F2}"
++                                  + $"{r.Skips,8}{r.Distance,10:F1}");
++            }
++        }
++
++        private static int Main(string[] args)
++        {
++            var mode = args.Length > 0 ? args[0] : "envelope";
++            var s = Baseline();
++
++            // Optional overrides so a sweep can drive this without a rebuild:
++            //   envelope [radiusCm] [massG] [speedScale]
++            if (args.Length > 1 && mode != "trace") s.Radius = float.Parse(args[1], CultureInfo.InvariantCulture) / 100f;
++            if (args.Length > 2) s.Mass = float.Parse(args[2], CultureInfo.InvariantCulture) / 1000f;
++            if (args.Length > 3) s.SpeedScale = float.Parse(args[3], CultureInfo.InvariantCulture);
++            if (args.Length > 1 && mode != "trace") s.Thickness = s.Radius * 0.22f; // aspect ratio 9.1 ([N])
++
++            // Prove the shim shares Unity's conventions BEFORE trusting a single number.
++            UnityEngine.Quaternion.SelfTest();
++
++            Console.WriteLine("=".PadRight(70, (char)61));
++            Console.WriteLine("HEADLESS SKIP SOLVER — real DiscContact/RigidDisc, no Unity");
++            Console.WriteLine("=".PadRight(70, (char)61));
++            Console.WriteLine($"target: strongest throw = {WorldRecordSkips} skips, weakest = sinks");
++            Console.WriteLine();
++
++            if (mode == "envelope")
++            {
++                PrintEnvelope(s);
++                return 0;
++            }
++
++            if (mode == "sweep")
++            {
++                Console.WriteLine($"  {"R cm",8}{"M g",9}{"scale",8}{"weak",7}{"median",8}{"hard",7}{"STRONG",8}");
++                Console.WriteLine("  " + new string('-', 55));
++                foreach (var radiusCm in new[] { 5f, 4f, 3f, 2f, 1.5f, 1.0f })
++                {
++                    var r = radiusCm / 100f;
++                    var thick = r * 0.22f;
++                    var mass = 2700f * Mathf.PI * r * r * thick; // granite, sp.gr. 2.7 ([N])
++                    foreach (var scale in new[] { 0.15f, 0.19f, 0.23f })
++                    {
++                        var t = s;
++                        t.Radius = r; t.Thickness = thick; t.Mass = mass; t.SpeedScale = scale;
++                        var weak = Simulate(t, MeasuredMinSwing, MeasuredMinSpinDeg, LaunchTiltDeg);
++                        var med = Simulate(t, MeasuredMedianSwing, MeasuredMedianSpinDeg, LaunchTiltDeg);
++                        var hard = Simulate(t, MeasuredP95Swing, MeasuredP90SpinDeg, LaunchTiltDeg);
++                        var strong = Simulate(t, MeasuredMaxSwing, MeasuredMaxSpinDeg, LaunchTiltDeg);
++                        Console.WriteLine($"  {radiusCm,8:F1}{mass * 1000f,9:F1}{scale,8:F2}"
++                                          + $"{weak.Skips,7}{med.Skips,8}{hard.Skips,7}{strong.Skips,8}");
++                    }
++                }
++                return 0;
++            }
++
++            if (mode == "trace")
++            {
++                // Bocquet's own worked examples, in SI, bypassing phone units entirely.
++                // [B] §VI.A: 5 m/s -> 6 bounces, 8 m/s -> 17, 12 m/s -> 38 (world record),
++                // for his standard stone with enough spin not to be the binding limit.
++                var t = Baseline();
++                t.SpeedScale = 1f;
++                if (args.Length > 1) t.LiftCoefficient = float.Parse(args[1], CultureInfo.InvariantCulture);
++                Console.WriteLine($"C_l = {t.LiftCoefficient:F0}\n");
++
++                foreach (var (speed, spinRev, expected) in new[]
++                         {
++                             (5f, 14f, 6), (8f, 14f, 17), (12f, 14f, 38),
++                         })
++                {
++                    Console.WriteLine($"--- {speed:F0} m/s, {spinRev:F0} rev/s "
++                                      + $"(Bocquet expects ~{expected} bounces) ---");
++                    Console.WriteLine($"   {"skip",4}{"",0}{"gap m",9}{"speed",10}"
++                                      + $"{"contact ms",11}{"tilt deg",10}{"rev/s",10}");
++                    _trace = true;
++                    var r = SimulateDirect(t, speed, spinRev * 2f * Mathf.PI, LaunchTiltDeg);
++                    _trace = false;
++                    Console.WriteLine($"   => {r.Skips} skips, {r.Distance:F1} m, ended: {r.EndReason}");
++                    Console.WriteLine();
++                }
++                return 0;
++            }
++
++            if (mode == "calib")
++            {
++                // C_l is the ONE coefficient the literature says is genuinely uncertain.
++                // [B] note 6: "C_l ~ h/a ... the proportionality constant is expected to be
++                // sufficiently large"; [N] fits its own inflection parameter for the same
++                // reason. Everything else here is a measured length, a density, or g — so
++                // C_l is the only honest place to absorb the difference between Bocquet's
++                // V² closed forms and the (v·n)² law that actually produces a magic angle.
++                Console.WriteLine("Calibrating C_l against Bocquet's worked bounce counts");
++                Console.WriteLine("([B] §VI.A: 5 m/s -> 6, 8 m/s -> 17, 12 m/s -> 38)\n");
++                Console.WriteLine($"  {"C_l",8}{"5 m/s",9}{"8 m/s",9}{"12 m/s",9}   (want 6 / 17 / 38)");
++                Console.WriteLine("  " + new string('-', 50));
++
++                foreach (var cl in new[] { 1f, 2f, 4f, 8f, 12f, 16f, 24f, 32f, 48f, 64f })
++                {
++                    var t = Baseline();
++                    t.SpeedScale = 1f;
++                    t.LiftCoefficient = cl;
++                    var a = SimulateDirect(t, 5f, 14f * 2f * Mathf.PI, LaunchTiltDeg);
++                    var b = SimulateDirect(t, 8f, 14f * 2f * Mathf.PI, LaunchTiltDeg);
++                    var c = SimulateDirect(t, 12f, 14f * 2f * Mathf.PI, LaunchTiltDeg);
++                    Console.WriteLine($"  {cl,8:F0}{a.Skips,9}{b.Skips,9}{c.Skips,9}");
++                }
++
++                // Independent check: whatever C_l lands on, the magic angle must survive.
++                // It is a real experimental result; the bounce counts are model output.
++                Console.WriteLine("\nMagic-angle check — tilt minimising the speed needed to bounce");
++                Console.WriteLine($"  {"C_l",8}{"best tilt",12}{"v_min m/s",12}   (want ~20 deg)");
++                Console.WriteLine("  " + new string('-', 46));
++                foreach (var cl in new[] { 1f, 4f, 16f, 32f, 64f })
++                {
++                    var t = Baseline();
++                    t.SpeedScale = 1f;
++                    t.LiftCoefficient = cl;
++                    var bestTilt = 0f;
++                    var bestSpeed = float.MaxValue;
++                    for (var tiltDeg = 5f; tiltDeg <= 60f; tiltDeg += 2.5f)
++                    {
++                        var lo = 0.1f;
++                        var hi = 30f;
++                        if (SimulateDirect(t, hi, 14f * 2f * Mathf.PI, tiltDeg).Skips < 1) continue;
++                        for (var i = 0; i < 16; i++)
++                        {
++                            var mid = 0.5f * (lo + hi);
++                            if (SimulateDirect(t, mid, 14f * 2f * Mathf.PI, tiltDeg).Skips >= 1) hi = mid;
++                            else lo = mid;
++                        }
++                        if (hi < bestSpeed) { bestSpeed = hi; bestTilt = tiltDeg; }
++                    }
++                    Console.WriteLine(bestSpeed < float.MaxValue
++                        ? $"  {cl,8:F0}{bestTilt,12:F1}{bestSpeed,12:F2}"
++                        : $"  {cl,8:F0}{"never bounces",24}");
++                }
++                return 0;
++            }
++
++            if (mode == "converge")
++            {
++                // R9. If halving the contact step changes the answer, the results are
++                // integrator error, not physics. Angular accelerations in contact run to
++                // ~1e6 rad/s^2, so a 20 us step changes omega by ~20 rad/s against a spin
++                // of ~88 rad/s -- more than 20% per step, which would diverge.
++                Console.WriteLine("Contact-step convergence at C_l=16, 12 m/s, 14 rev/s");
++                Console.WriteLine();
++                Console.WriteLine($"  {"step us",10}{"skips",8}{"distance m",13}{"end reason",26}");
++                Console.WriteLine("  " + new string('-', 57));
++                foreach (var stepUs in new[] { 20f, 10f, 5f, 2f, 1f, 0.5f, 0.25f, 0.1f })
++                {
++                    var t = Baseline();
++                    t.SpeedScale = 1f;
++                    t.LiftCoefficient = 16f;
++                    t.ContactStep = stepUs * 1e-6f;
++                    var r = SimulateDirect(t, 12f, 14f * 2f * Mathf.PI, LaunchTiltDeg);
++                    Console.WriteLine($"  {stepUs,10:F2}{r.Skips,8}{r.Distance,13:F1}  {r.EndReason,-24}");
++                }
++                return 0;
++            }
++
++            if (mode == "notorque") { _noTorque = true; mode = "target"; }
++
++            if (mode == "target")
++            {
++                // The actual goal: the STRONGEST throw the phone can produce lands on the
++                // world record, and the WEAKEST sinks. Everything here is either measured
++                // (the phone envelope, the stone's dimensions) or constrained by the
++                // magic-angle check — C_l and SpeedScale are the two free values.
++                Console.WriteLine("Searching for: strongest recorded throw = 38 skips, weakest = 0\n");
++                Console.WriteLine($"  {"C_l",6}{"scale",8}{"R cm",7}{"weak",6}{"med",6}{"hard",6}{"STRONG",8}");
++                Console.WriteLine("  " + new string('-', 47));
++
++                var bestErr = int.MaxValue;
++                (float Cl, float Scale, float R) best = default;
++
++                foreach (var cl in new[] { 8f, 12f, 16f, 24f, 32f })
++                foreach (var radiusCm in new[] { 5f, 4f, 3f })
++                foreach (var scale in new[] { 0.15f, 0.19f, 0.23f, 0.35f, 0.5f, 0.75f, 1f })
++                {
++                    var t = Baseline();
++                    t.LiftCoefficient = cl;
++                    t.SpeedScale = scale;
++                    t.Radius = radiusCm / 100f;
++                    t.Thickness = t.Radius * 0.22f;
++                    t.Mass = 2700f * Mathf.PI * t.Radius * t.Radius * t.Thickness;
++
++                    var weak = Simulate(t, MeasuredMinSwing, MeasuredMinSpinDeg, LaunchTiltDeg);
++                    var med = Simulate(t, MeasuredMedianSwing, MeasuredMedianSpinDeg, LaunchTiltDeg);
++                    var hard = Simulate(t, MeasuredP95Swing, MeasuredP90SpinDeg, LaunchTiltDeg);
++                    var strong = Simulate(t, MeasuredMaxSwing, MeasuredMaxSpinDeg, LaunchTiltDeg);
++
++                    Console.WriteLine($"  {cl,6:F0}{scale,8:F2}{radiusCm,7:F1}"
++                                      + $"{weak.Skips,6}{med.Skips,6}{hard.Skips,6}{strong.Skips,8}");
++
++                    // Score: strongest must hit 38, weakest must be 0. Weight the failure
++                    // to sink heavily — a weak throw that still skips misses the whole point.
++                    var err = Math.Abs(strong.Skips - WorldRecordSkips) + weak.Skips * 20;
++                    if (err < bestErr) { bestErr = err; best = (cl, scale, radiusCm); }
++                }
++
++                Console.WriteLine($"\n  BEST: C_l={best.Cl:F0}  SpeedScale={best.Scale:F2}  "
++                                  + $"R={best.R:F1} cm   (miss score {bestErr})");
++                return 0;
++            }
++
++            Console.Error.WriteLine($"unknown mode '{mode}' — use 'envelope', 'sweep', 'trace', 'calib' or 'target'");
++            return 1;
++        }
++    }
++}
+diff --git a/tools/physics/HeadlessSolver/UnityShim.cs b/tools/physics/HeadlessSolver/UnityShim.cs
+new file mode 100644
+index 0000000..944c545
+--- /dev/null
++++ b/tools/physics/HeadlessSolver/UnityShim.cs
+@@ -0,0 +1,196 @@
++using System;
++
++// Minimal managed stand-ins for the handful of UnityEngine maths types the physics core
++// touches, so the REAL physics files compile and run on plain dotnet.
++//
++// Why a shim rather than referencing UnityEngine.CoreModule.dll: several Quaternion members
++// (Inverse, FromToRotation, AngleAxis, Euler) are native ECalls into the Unity player. The
++// DLL loads fine but throws "ECall methods must be packaged into a system module" the moment
++// one is called. Everything the physics core needs is ordinary maths, so it is reimplemented
++// here from Unity's own documented formulas.
++//
++// These MUST match Unity's conventions exactly or the harness would validate a solver that
++// is not the one that ships. `SelfTest()` checks that, and Program runs it before anything
++// else — see the assertions there for what "matching" is pinned to.
++namespace UnityEngine
++{
++    public static class Mathf
++    {
++        public const float PI = 3.14159274f;
++        public const float Deg2Rad = PI / 180f;
++        public const float Rad2Deg = 180f / PI;
++
++        public static float Sqrt(float f) => (float)Math.Sqrt(f);
++        public static float Acos(float f) => (float)Math.Acos(f);
++        public static float Asin(float f) => (float)Math.Asin(f);
++        public static float Cos(float f) => (float)Math.Cos(f);
++        public static float Sin(float f) => (float)Math.Sin(f);
++        public static float Atan2(float y, float x) => (float)Math.Atan2(y, x);
++        public static float Pow(float f, float p) => (float)Math.Pow(f, p);
++        public static float Abs(float f) => Math.Abs(f);
++        public static float Max(float a, float b) => a > b ? a : b;
++        public static float Min(float a, float b) => a < b ? a : b;
++        public static int Max(int a, int b) => a > b ? a : b;
++
++        public static float Clamp(float value, float min, float max) =>
++            value < min ? min : (value > max ? max : value);
++
++        public static float Clamp01(float value) => Clamp(value, 0f, 1f);
++        public static float Lerp(float a, float b, float t) => a + (b - a) * Clamp01(t);
++        public static int CeilToInt(float f) => (int)Math.Ceiling(f);
++    }
++
++    public struct Vector3
++    {
++        public float x, y, z;
++
++        public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
++
++        public static Vector3 zero => new Vector3(0f, 0f, 0f);
++        public static Vector3 up => new Vector3(0f, 1f, 0f);
++        public static Vector3 down => new Vector3(0f, -1f, 0f);
++        public static Vector3 right => new Vector3(1f, 0f, 0f);
++        public static Vector3 forward => new Vector3(0f, 0f, 1f);
++
++        public float sqrMagnitude => x * x + y * y + z * z;
++        public float magnitude => Mathf.Sqrt(sqrMagnitude);
++
++        public Vector3 normalized
++        {
++            get
++            {
++                var m = magnitude;
++                // Unity returns the zero vector below its 1e-5 epsilon rather than NaN.
++                return m > 1e-5f ? new Vector3(x / m, y / m, z / m) : zero;
++            }
++        }
++
++        public void Normalize() { this = normalized; }
++
++        public static float Dot(Vector3 a, Vector3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
++
++        public static Vector3 Cross(Vector3 a, Vector3 b) => new Vector3(
++            a.y * b.z - a.z * b.y,
++            a.z * b.x - a.x * b.z,
++            a.x * b.y - a.y * b.x);
++
++        public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
++        public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
++        public static Vector3 operator -(Vector3 a) => new Vector3(-a.x, -a.y, -a.z);
++        public static Vector3 operator *(Vector3 a, float d) => new Vector3(a.x * d, a.y * d, a.z * d);
++        public static Vector3 operator *(float d, Vector3 a) => a * d;
++        public static Vector3 operator /(Vector3 a, float d) => new Vector3(a.x / d, a.y / d, a.z / d);
++
++        public override string ToString() => $"({x:F4}, {y:F4}, {z:F4})";
++    }
++
++    public struct Quaternion
++    {
++        public float x, y, z, w;
++
++        public Quaternion(float x, float y, float z, float w)
++        {
++            this.x = x; this.y = y; this.z = z; this.w = w;
++        }
++
++        public static Quaternion identity => new Quaternion(0f, 0f, 0f, 1f);
++
++        /// <summary>Unity's Hamilton product, operand order and all.</summary>
++        public static Quaternion operator *(Quaternion lhs, Quaternion rhs) => new Quaternion(
++            lhs.w * rhs.x + lhs.x * rhs.w + lhs.y * rhs.z - lhs.z * rhs.y,
++            lhs.w * rhs.y + lhs.y * rhs.w + lhs.z * rhs.x - lhs.x * rhs.z,
++            lhs.w * rhs.z + lhs.z * rhs.w + lhs.x * rhs.y - lhs.y * rhs.x,
++            lhs.w * rhs.w - lhs.x * rhs.x - lhs.y * rhs.y - lhs.z * rhs.z);
++
++        /// <summary>Rotate a point. Transcribed from Unity's own implementation.</summary>
++        public static Vector3 operator *(Quaternion rotation, Vector3 point)
++        {
++            float x2 = rotation.x * 2f, y2 = rotation.y * 2f, z2 = rotation.z * 2f;
++            float xx = rotation.x * x2, yy = rotation.y * y2, zz = rotation.z * z2;
++            float xy = rotation.x * y2, xz = rotation.x * z2, yz = rotation.y * z2;
++            float wx = rotation.w * x2, wy = rotation.w * y2, wz = rotation.w * z2;
++
++            return new Vector3(
++                (1f - (yy + zz)) * point.x + (xy - wz) * point.y + (xz + wy) * point.z,
++                (xy + wz) * point.x + (1f - (xx + zz)) * point.y + (yz - wx) * point.z,
++                (xz - wy) * point.x + (yz + wx) * point.y + (1f - (xx + yy)) * point.z);
++        }
++
++        /// <summary>Conjugate over squared norm — the true inverse, not the unit shortcut,
++        /// so a drifting quaternion behaves the same here as in Unity.</summary>
++        public static Quaternion Inverse(Quaternion r)
++        {
++            var n = r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w;
++            if (n < 1e-12f) return identity;
++            return new Quaternion(-r.x / n, -r.y / n, -r.z / n, r.w / n);
++        }
++
++        public static Quaternion AngleAxis(float angleDeg, Vector3 axis)
++        {
++            var a = axis.normalized;
++            var half = angleDeg * Mathf.Deg2Rad * 0.5f;
++            var s = Mathf.Sin(half);
++            return new Quaternion(a.x * s, a.y * s, a.z * s, Mathf.Cos(half));
++        }
++
++        public static Quaternion FromToRotation(Vector3 from, Vector3 to)
++        {
++            var f = from.normalized;
++            var t = to.normalized;
++            var d = Mathf.Clamp(Vector3.Dot(f, t), -1f, 1f);
++
++            if (d > 0.999999f) return identity;
++
++            if (d < -0.999999f)
++            {
++                // Antiparallel: any perpendicular axis is a valid 180-degree rotation.
++                var axis = Vector3.Cross(Vector3.right, f);
++                if (axis.sqrMagnitude < 1e-6f) axis = Vector3.Cross(Vector3.up, f);
++                return AngleAxis(180f, axis.normalized);
++            }
++
++            return AngleAxis(Mathf.Acos(d) * Mathf.Rad2Deg, Vector3.Cross(f, t));
++        }
++
++        public override string ToString() => $"({x:F4}, {y:F4}, {z:F4}, {w:F4})";
++
++        /// <summary>
++        /// Pins the conventions this shim must share with Unity. Program calls it before
++        /// running anything, because a silently-wrong convention here would calibrate a
++        /// solver that is not the one that ships.
++        /// </summary>
++        public static void SelfTest()
++        {
++            void Near(string what, float got, float want)
++            {
++                if (Mathf.Abs(got - want) > 1e-4f)
++                    throw new Exception($"UnityShim.SelfTest FAILED: {what} = {got}, expected {want}");
++            }
++
++            // 90 degrees about +X takes +Y to +Z (Unity's left-handed sense).
++            var q = AngleAxis(90f, Vector3.right);
++            var v = q * Vector3.up;
++            Near("AngleAxis(90,X) * up .y", v.y, 0f);
++            Near("AngleAxis(90,X) * up .z", v.z, 1f);
++
++            // Inverse undoes the rotation.
++            var back = Inverse(q) * v;
++            Near("Inverse round trip .y", back.y, 1f);
++
++            // FromToRotation actually maps from onto to.
++            var target = new Vector3(0f, Mathf.Cos(0.35f), -Mathf.Sin(0.35f)).normalized;
++            var mapped = FromToRotation(Vector3.up, target) * Vector3.up;
++            Near("FromToRotation .y", mapped.y, target.y);
++            Near("FromToRotation .z", mapped.z, target.z);
++
++            // Cross follows the left-handed convention: X cross Y = Z.
++            var c = Vector3.Cross(Vector3.right, Vector3.up);
++            Near("cross(right,up).z", c.z, 1f);
++
++            // Composition order: (a*b) applies b first, then a.
++            var a90 = AngleAxis(90f, Vector3.up);
++            var composed = (a90 * a90) * Vector3.forward;
++            Near("double yaw .z", composed.z, -1f);
++        }
++    }
++}
+diff --git a/tools/physics/analyse-throws.py b/tools/physics/analyse-throws.py
+new file mode 100644
+index 0000000..4318fd9
+--- /dev/null
++++ b/tools/physics/analyse-throws.py
+@@ -0,0 +1,177 @@
++#!/usr/bin/env python3
++"""Summarise recorded real throws, and check them against the published physics.
++
++Why this exists
++---------------
++`SkipConstants.SpeedScale` converts the phone's raw swing speed into a stone's release
++speed. It is the single point where reality enters the launch, so picking it by reasoning
++would put an invented number right back at the front of a solver built to remove them.
++
++`Verification/RockTelemetry` already records every completed throw to `rock-throws.csv` at
++the repo root (it is created by `Bootstrap` and on by default). This reads that file and
++reports what the phone ACTUALLY produces, then works out what SpeedScale would map it onto
++the release speeds the literature uses.
++
++It also checks the recorded spin against Bocquet's stability ceiling, which turns out to be
++the binding constraint — see `docs/Findings-RealSkipPhysics.md` section 6.
++
++Run it (Git Bash or PowerShell, from anywhere):
++    python "C:/Users/aj/Desktop/GameDev/RockSkipping/tools/physics/analyse-throws.py"
++
++Optionally pass a different CSV:
++    python ".../analyse-throws.py" path/to/rock-throws.csv
++"""
++
++import csv
++import os
++import statistics
++import sys
++
++# Bocquet's standard stone — see ReferenceStone.cs and Findings section 3.
++R = 0.05
++G = 9.81
++
++# Mirrors Assets/Scripts/Game/Physics/SpinTransfer.cs. Half a phone's long edge: what is
++# conserved at release is the tangential speed at the grip point, not the angular rate,
++# so stone spin = phone spin * (GRIP_RADIUS / R).
++GRIP_RADIUS = 0.075
++REAL_FLICK_TANGENTIAL_MPS = 4.4  # 88 rad/s * 0.05 m — a real finger flick
++
++DEFAULT_CSV = os.path.join(
++    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
++    "rock-throws.csv",
++)
++
++
++def column(rows, key, absolute=False):
++    out = []
++    for r in rows:
++        v = (r.get(key) or "").strip()
++        if not v:
++            continue
++        try:
++            f = float(v)
++        except ValueError:
++            continue
++        out.append(abs(f) if absolute else f)
++    return sorted(out)
++
++
++def pct(values, p):
++    if not values:
++        return float("nan")
++    i = (len(values) - 1) * p
++    lo = int(i)
++    hi = min(lo + 1, len(values) - 1)
++    return values[lo] + (values[hi] - values[lo]) * (i - lo)
++
++
++def spin_ceiling(rev_per_sec):
++    """Bocquet Eq. (25): N_c = R*Omega^2/g. Bounces before the stone tumbles out."""
++    omega = rev_per_sec * 2.0 * 3.141592653589793
++    return R * omega * omega / G
++
++
++def main():
++    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CSV
++    if not os.path.exists(path):
++        print(f"No telemetry at {path}")
++        print("Play the game and take some throws first — Bootstrap records them automatically.")
++        return 1
++
++    with open(path, newline="", encoding="utf-8") as fh:
++        rows = list(csv.DictReader(fh))
++    if not rows:
++        print(f"{path} has a header but no throws yet.")
++        return 1
++
++    speed = column(rows, "swingSpeed")
++    spin = column(rows, "spinRate", absolute=True)
++
++    print("=" * 72)
++    print(f"RECORDED THROWS — {len(rows)} rows from {os.path.basename(path)}")
++    print("=" * 72)
++
++    print(f"\nSWING SPEED (n={len(speed)}) — raw m/s off the phone, unclamped")
++    for label, p in [("min", 0.0), ("p10", .10), ("median", .50),
++                     ("p90", .90), ("p95", .95), ("p99", .99), ("MAX", 1.0)]:
++        print(f"   {label:>7}: {pct(speed, p):8.2f}")
++    if len(speed) > 1:
++        print(f"   {'mean':>7}: {statistics.mean(speed):8.2f}   "
++              f"stdev {statistics.pstdev(speed):.2f}")
++
++    print(f"\nSPIN (n={len(spin)}) — |deg/s| about the phone's screen normal")
++    for label, p in [("min", 0.0), ("median", .50), ("p90", .90), ("MAX", 1.0)]:
++        v = pct(spin, p)
++        print(f"   {label:>7}: {v:8.1f} deg/s = {v / 360:5.2f} rev/s")
++
++    print("\n" + "-" * 72)
++    print("SPEED CALIBRATION — what SpeedScale maps the phone onto reality")
++    print("-" * 72)
++    p95 = pct(speed, .95)
++    print(f"   Using p95 = {p95:.1f} m/s as 'a hard throw' (max is noisier):")
++    for target, note in [(12.0, "world record, 38 skips"),
++                         (10.0, "very strong throw"),
++                         (8.0, "good adult throw, 17 skips")]:
++        print(f"      -> {target:5.1f} m/s : SpeedScale = {target / p95:.3f}   [{note}]")
++
++    print("\n" + "-" * 72)
++    print("SPIN REALITY CHECK — Bocquet Eq. (25), N_c = R*Omega^2/g")
++    print("-" * 72)
++    print("   Bounces the stone survives before tumbling out, by spin rate.")
++    print("   This ceiling does NOT depend on throw speed, so it binds on its own.\n")
++    print(f"   {'source':<34}{'rev/s':>8}{'max bounces':>14}")
++    print("   " + "-" * 56)
++    for label, rev in [("published: world record", 14.0),
++                       ("published: decent spin", 5.0),
++                       ("published: minimum for stability", 2.0)]:
++        print(f"   {label:<34}{rev:>8.2f}{spin_ceiling(rev):>14.1f}")
++    for label, p in [("MEASURED: your best throw", 1.0),
++                     ("MEASURED: your p90", .90),
++                     ("MEASURED: your median", .50)]:
++        rev = pct(spin, p) / 360.0
++        print(f"   {label:<34}{rev:>8.2f}{spin_ceiling(rev):>14.1f}")
++
++    print()
++    print("-" * 72)
++    print("SPIN TRANSFER — stone spin = phone spin * (grip radius / stone radius)")
++    print("-" * 72)
++    print(f"   SpinTransfer.cs, grip radius {GRIP_RADIUS} m, stone radius {R} m")
++    print(f"   -> ratio {GRIP_RADIUS / R:.2f}x")
++    print()
++    print(f"   {'throw':<28}{'raw rev/s':>11}{'stone rev/s':>13}{'bounces':>10}")
++    print("   " + "-" * 62)
++    for label, p in [("best of the set", 1.0), ("p90", .90), ("median", .50)]:
++        raw = pct(spin, p) / 360.0
++        moved = raw * (GRIP_RADIUS / R)
++        print(f"   {label:<28}{raw:>11.2f}{moved:>13.2f}{spin_ceiling(moved):>10.1f}")
++
++    tangential = pct(spin, 1.0) * 3.141592653589793 / 180.0 * GRIP_RADIUS
++    print()
++    print(f"   Grip tangential speed, best throw : {tangential:.2f} m/s")
++    print(f"   A real finger flick               : {REAL_FLICK_TANGENTIAL_MPS:.2f} m/s")
++    print(f"   -> the gesture captures {tangential / REAL_FLICK_TANGENTIAL_MPS * 100:.0f}% of a real flick.")
++    print("      The rest is a CONTROLLER problem; no Unity constant can recover it.")
++
++    best_rev = pct(spin, 1.0) / 360.0
++    print()
++    if spin_ceiling(best_rev * (GRIP_RADIUS / R)) < 12:
++        print("   *** The phone's measured wrist spin is far below what real skipping needs.")
++        print(f"   *** Best throw: {spin_ceiling(best_rev):.0f} bounces raw, "
++              f"{spin_ceiling(best_rev * (GRIP_RADIUS / R)):.0f} after the transfer model.")
++        print("   *** This is a units/semantics gap, not a tuning gap: a wrist does not")
++        print("   *** rotate at 14 rev/s, but the stone it releases does. See Findings section 6.")
++
++    skips = column(rows, "skips")
++    dist = column(rows, "distance")
++    if skips and dist:
++        print("\n" + "-" * 72)
++        print("CURRENT GAME OUTCOMES (the old solver, for comparison)")
++        print("-" * 72)
++        print(f"   skips    median {pct(skips, .5):.0f}   max {max(skips):.0f}")
++        print(f"   distance median {pct(dist, .5):.1f} m   max {max(dist):.1f} m")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tools/physics/verify-disc-contact.py b/tools/physics/verify-disc-contact.py
+new file mode 100644
+index 0000000..309e928
+--- /dev/null
++++ b/tools/physics/verify-disc-contact.py
+@@ -0,0 +1,213 @@
++#!/usr/bin/env python3
++"""Independent verification of the skip-physics contact model, outside Unity.
++
++Why this exists
++---------------
++Unity holds an exclusive lock on the project, so the C# solver can only be compiled and run
++from the open Editor. That makes it painfully slow to answer questions like "does this force
++law even produce a magic angle?" — and that question has to be answered BEFORE the C# is
++trusted, not after.
++
++So the closed-form parts of `Assets/Scripts/Game/Physics/DiscContact.cs` are re-implemented
++here in ~100 lines of Python and checked two ways:
++
++  1. `verify_geometry()`  — the wetted area and centroid closed forms against brute-force
++     numerical integration over the disc. Pure maths, no physics assumptions.
++  2. `sweep_magic_angle()` — integrates a fixed-attitude 2-D contact and finds the tilt that
++     minimises the speed required to bounce. This is check R1, the single result the whole
++     rewrite rests on.
++
++This is a MODEL check, not a port. It is 2-D, holds attitude fixed through the collision,
++ignores spin and thickness, and uses a coarse sink criterion. It cannot tell you the C# is
++correct — only whether the force law it implements is capable of the published behaviour.
++Treat a disagreement as "investigate", not "the C# is broken".
++
++See `docs/Findings-RealSkipPhysics.md` for the sources and every published number.
++
++Run it (Git Bash or PowerShell, from anywhere):
++    python "C:/Users/aj/Desktop/GameDev/RockSkipping/tools/physics/verify-disc-contact.py"
++"""
++
++import sys
++from math import acos, cos, pi, radians, sin, sqrt
++
++# Bocquet's standard stone (Am. J. Phys. 71, 150 (2003)) — mirrors ReferenceStone.cs.
++R = 0.05      # m, radius (10 cm diameter)
++M = 0.1       # kg
++RHO = 1000.0  # kg/m^3
++G = 9.81      # m/s^2
++
++
++def wetted_area(radius, d):
++    """Bocquet Eq. (9). `d` is the in-plane distance from disc centre to the waterline."""
++    if radius <= 0.0 or d >= radius:
++        return 0.0
++    if d <= -radius:
++        return pi * radius * radius
++    ratio = max(-1.0, min(1.0, d / radius))
++    return radius * radius * acos(ratio) - d * sqrt(max(0.0, radius * radius - d * d))
++
++
++def wetted_centroid(radius, d):
++    """Circular-segment centroid: (2/3)(R^2 - d^2)^1.5 / A."""
++    a = wetted_area(radius, d)
++    if a <= 0.0:
++        return 0.0
++    c = max(-radius, min(radius, d))
++    return (2.0 / 3.0) * max(0.0, radius * radius - c * c) ** 1.5 / a
++
++
++def _numeric(radius, d, n=4000):
++    """Brute-force area and centroid of the region x >= d inside the disc."""
++    area = moment = 0.0
++    h = 2.0 * radius / n
++    for i in range(n):
++        x = -radius + (i + 0.5) * h
++        if x < d:
++            continue
++        da = 2.0 * sqrt(max(0.0, radius * radius - x * x)) * h
++        area += da
++        moment += x * da
++    return area, (moment / area if area > 0 else 0.0)
++
++
++def verify_geometry():
++    print("=" * 70)
++    print("1. GEOMETRY — closed form vs numerical integration")
++    print("=" * 70)
++    worst_a = worst_c = 0.0
++    for k in range(-10, 11):
++        d = R * k / 10.0
++        an, cn = _numeric(R, d)
++        worst_a = max(worst_a, abs(wetted_area(R, d) - an))
++        worst_c = max(worst_c, abs(wetted_centroid(R, d) - cn))
++    print(f"  worst area error     : {worst_a:.2e}")
++    print(f"  worst centroid error : {worst_c:.2e}")
++
++    checks = [
++        ("area at d=0 is a half disc", wetted_area(R, 0.0), pi * R * R / 2.0),
++        ("centroid at d=0 is 4R/3pi", wetted_centroid(R, 0.0), 4.0 * R / (3.0 * pi)),
++        ("area at d=-R is a full disc", wetted_area(R, -R), pi * R * R),
++        ("centroid at d=-R is the centre", wetted_centroid(R, -R), 0.0),
++        ("area at d=+R is zero", wetted_area(R, R), 0.0),
++    ]
++    ok = worst_a < 1e-6 and worst_c < 1e-5
++    for label, got, want in checks:
++        good = abs(got - want) < 1e-9
++        ok = ok and good
++        print(f"  {'PASS' if good else 'FAIL'}  {label}: {got:.8f} vs {want:.8f}")
++    return ok
++
++
++def bounces(v0, tilt_deg, incidence_deg, c_lift=1.0, c_friction=0.0,
++            dt=5e-6, t_max=0.6):
++    """Integrate one fixed-attitude contact. True if the disc clears the water rising.
++
++    c_friction is Bocquet's tangential term (proportional to the FULL speed squared).
++    It defaults to 0 — see `docs/Findings-RealSkipPhysics.md` section 1.3 for why anything
++    near 1.0 sinks the stone at every tilt and every speed.
++    """
++    th = radians(tilt_deg)
++    be = radians(incidence_deg)
++    s = sin(th)
++    if s < 1e-6:
++        return False
++    nx, ny = -s, cos(th)                 # face normal, tilted back by the attack angle
++    vx, vy = v0 * cos(be), -v0 * sin(be)
++    h = R * s                            # centre height at first rim contact
++    t = 0.0
++    while t < t_max:
++        d = h / s
++        if d <= -R:
++            return False                 # fully immersed — it sank
++        area = wetted_area(R, d)
++        ax = ay = 0.0
++        if area > 0.0:
++            vn = vx * nx + vy * ny
++            lift = 0.5 * RHO * c_lift * vn * vn * area
++            fx, fy = lift * nx, lift * ny
++            if c_friction > 0.0:
++                ipx, ipy = vx - vn * nx, vy - vn * ny
++                ipm = sqrt(ipx * ipx + ipy * ipy)
++                if ipm > 1e-9:
++                    fr = 0.5 * RHO * c_friction * (vx * vx + vy * vy) * area
++                    fx -= ipx / ipm * fr
++                    fy -= ipy / ipm * fr
++            ax, ay = fx / M, fy / M
++        ay -= G
++        vx += ax * dt
++        vy += ay * dt
++        h += vy * dt
++        t += dt
++        if vx <= 0.0:
++            return False
++        if h >= R * s and vy > 0.0:
++            return True
++    return False
++
++
++def min_speed(tilt_deg, incidence_deg, c_friction=0.0):
++    """Bisect for the slowest speed that still bounces at this tilt. None if never."""
++    hi = 30.0
++    if not bounces(hi, tilt_deg, incidence_deg, c_friction=c_friction):
++        return None
++    lo = 0.02
++    for _ in range(22):
++        mid = 0.5 * (lo + hi)
++        if bounces(mid, tilt_deg, incidence_deg, c_friction=c_friction):
++            hi = mid
++        else:
++            lo = mid
++    return hi
++
++
++def sweep_magic_angle():
++    print()
++    print("=" * 70)
++    print("2. MAGIC ANGLE (R1) — tilt that minimises the speed needed to bounce")
++    print("=" * 70)
++    print("   Published: ~20 deg, falling slightly as incidence rises (Clanet 2004;")
++    print("   Nagahiro & Hayakawa 2004 Fig. 4).")
++    ok = True
++    for incidence in (10, 15, 20):
++        rows = [(t, min_speed(t, incidence)) for t in range(5, 61, 5)]
++        rows = [(t, v) for t, v in rows if v is not None]
++        if not rows:
++            print(f"\n  incidence {incidence:>2} deg -> NEVER BOUNCES")
++            ok = False
++            continue
++        best = min(rows, key=lambda r: r[1])
++        print(f"\n  incidence {incidence:>2} deg")
++        print("     tilt : " + " ".join(f"{t:>6d}" for t, _ in rows))
++        print("     vmin : " + " ".join(f"{v:>6.2f}" for _, v in rows))
++        print(f"     -> interior optimum at {best[0]} deg ({best[1]:.2f} m/s)")
++        if not 15 <= best[0] <= 40:
++            ok = False
++    return ok
++
++
++def sweep_friction():
++    print()
++    print("=" * 70)
++    print("3. FRICTION SENSITIVITY — why C_f must be 0 with a (v.n)^2 lift")
++    print("=" * 70)
++    for cf in (0.0, 0.05, 0.1, 0.25, 0.5, 1.0):
++        rows = [(t, min_speed(t, 15, c_friction=cf)) for t in range(5, 61, 5)]
++        rows = [(t, v) for t, v in rows if v is not None]
++        if not rows:
++            print(f"  C_f = {cf:<5} -> NEVER BOUNCES at any tilt or speed")
++            continue
++        best = min(rows, key=lambda r: r[1])
++        print(f"  C_f = {cf:<5} -> optimum {best[0]:>3} deg, v_min {best[1]:.2f} m/s")
++
++
++if __name__ == "__main__":
++    geometry_ok = verify_geometry()
++    angle_ok = sweep_magic_angle()
++    sweep_friction()
++    print()
++    print("=" * 70)
++    print(f"GEOMETRY   : {'PASS' if geometry_ok else 'FAIL'}")
++    print(f"MAGIC ANGLE: {'PASS (interior optimum found)' if angle_ok else 'FAIL'}")
++    print("=" * 70)
++    sys.exit(0 if (geometry_ok and angle_ok) else 1)

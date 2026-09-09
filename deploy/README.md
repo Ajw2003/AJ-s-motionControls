@@ -2,7 +2,7 @@
 
 Gets the controller page served from **this PC** over HTTPS, so a phone gets a secure
 context and its motion sensors unlock. Design and reasoning:
-[HostingPlan.md](../docs/HostingPlan.md) §2. Certificate design:
+[docs/systems/HostingAndCertificates.md](../docs/systems/HostingAndCertificates.md). Certificate design:
 [docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md).
 
 > **This replaces the Fly.io deployment.** The hosted relay is gone: `fly.toml`, `Dockerfile`,
@@ -67,7 +67,7 @@ responder. It asks a public resolver, and `play.skiprocking.ca` is a registered 
 public record is the registrar's parking page. Without the hosts entry above, Unity therefore
 connects to a stranger's web server on the internet and retries there forever — which looks
 like anything except a DNS problem. See
-[docs/Findings-DnsAudit.md](../docs/Findings-DnsAudit.md).
+[docs/Findings-DnsAudit.md](../docs/archive/Findings-DnsAudit.md).
 
 ## Why HTTPS at all, rather than plain `ws://`
 
@@ -93,7 +93,7 @@ Two properties of that certificate worth knowing:
 LAN mode used to be selectable by hand-editing `network-mode.txt` to `Lan`, but its
 certificate had already stopped validating — the replacement certificate is single-name for a
 fixed hostname, which a LAN address's varying name can never match — and
-[docs/plans/remove-direct-transport.md](../docs/plans/remove-direct-transport.md) removed the
+[docs/plans/remove-direct-transport.md](../docs/archive/plans/remove-direct-transport.md) removed the
 dead code path outright rather than leaving it deprecated. Hotspot is the only mode there is
 now; `network-mode.txt` is inert if one is still lying around from an older install. See
 [docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md) Phase 3

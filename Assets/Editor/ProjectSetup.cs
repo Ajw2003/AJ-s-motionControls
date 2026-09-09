@@ -131,5 +131,17 @@ namespace RockSkippingEditor
         /// </remarks>
         [MenuItem("RockSkipping/Verify/Print Skip Curve")]
         public static void PrintSkipCurve() => SkipCurve.Run();
+
+        /// <summary>
+        /// The R1-R10 reality check against the published planing-disc model — see
+        /// <see cref="SkipReality"/>. Writes skip-reality.txt at the project root.
+        /// </summary>
+        /// <remarks>
+        /// Also no play mode and no scene: DiscContact/RigidDisc are pure and
+        /// ReferenceStone is asset-free, so this runs standalone against the papers'
+        /// own apparatus rather than anything read from Resources.
+        /// </remarks>
+        [MenuItem("RockSkipping/Verify/Print Reality Check")]
+        public static void PrintRealityCheck() => SkipReality.Run();
     }
 }

@@ -6,7 +6,7 @@ gets the player back in correctly, but the ghost stone and aim arc are never dra
 ## Root cause
 
 `AimPreview.OnAim` drops any frame whose sequence number is not strictly newer than the last
-one it accepted ([AimPreview.cs:345](../Assets/Scripts/Game/AimPreview.cs:345)):
+one it accepted ([AimPreview.cs:345](../../Assets/Scripts/Game/AimPreview.cs:345)):
 
 ```csharp
 if (aim.seq <= _lastSeq) return;
@@ -14,7 +14,7 @@ _lastSeq = aim.seq;
 ```
 
 `ThrowController` starts `this.seq = 0` in its constructor
-([throw.js:379](../controller/js/throw.js:379)), so a page reload restarts the phone's sequence
+([throw.js:379](../../controller/js/throw.js:379)), so a page reload restarts the phone's sequence
 at 1 while the host still holds the pre-disconnect value — after a few minutes of 20 Hz
 streaming that is in the thousands.
 
@@ -26,7 +26,7 @@ itself.
 
 ## Why it never resets
 
-`_lastSeq` is reset in exactly one place ([AimPreview.cs:330](../Assets/Scripts/Game/AimPreview.cs:330)):
+`_lastSeq` is reset in exactly one place ([AimPreview.cs:330](../../Assets/Scripts/Game/AimPreview.cs:330)):
 
 ```csharp
 if (aim.playerId != _lastAimPlayer) { _lastAimPlayer = aim.playerId; _lastSeq = -1; ... }

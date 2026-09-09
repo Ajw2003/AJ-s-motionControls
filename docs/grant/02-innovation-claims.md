@@ -33,7 +33,7 @@ unplugged adapter. The document also records the rejected alternative (Wi-Fi Dir
 exactly why it loses: it leaves `:53` free and builds no DNS proxy.
 
 The certificate half is independently checkable by a reviewer, which is unusual for a claim
-like this: `./deploy/verify-published-cert.sh` downloads the live certificate from the same
+like this: `./deploy/Verify-PublishedCert.ps1` downloads the live certificate from the same
 anonymous public URL a player's machine uses, and validates SAN coverage, issuer, expiry, key
 pairing and chain shape. No credentials, no build, no Unity — a reviewer can run it from a
 fresh clone in about two seconds and watch the claim hold.
