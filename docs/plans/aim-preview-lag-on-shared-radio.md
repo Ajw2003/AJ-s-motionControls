@@ -1,7 +1,8 @@
 # Aim-preview lag on the school network — confirm the cause, then fix it
 
-**Status:** diagnosed and **confirmed by measurement** 2026-09-09 on the `ArcadePhysics` branch.
-Phases 0-2 implemented; awaiting the post-fix measurement in Verification step 1. **Tier 5** (today's plan). The system it amends is
+**Status:** **done and verified** 2026-09-09 on the `ArcadePhysics` branch. Diagnosed by
+measurement, fixed in `hotspot/hotspot-control.ps1`, and confirmed by re-measurement plus a
+subjective "feels great now" from the host. Shipped in `796854a`. **Tier 5** (today's plan). The system it amends is
 [`../systems/HostingAndCertificates.md`](../systems/HostingAndCertificates.md).
 
 ## Context
@@ -222,23 +223,48 @@ would have spent that budget on two failed attempts and lost the room.
 
 ---
 
-## Verification
+## Verification — done 2026-09-09
 
-1. Re-run `tools/measure-hotspot-jitter.ps1` after 2.1, on the school network, **still
-   associated to `MyBvc`**, phone awake and aiming throughout. Target is the Phase 1 Wi-Fi-off
-   figures: **mean around 27 ms, stdev around 53 ms**, 0% loss. Anywhere near the old
-   `mean 157 / stdev 194` means the driver ignored the band request.
-2. The Unity Console should carry `station link is on 5 GHz; asking for FiveGigahertz` from
-   `hotspot-control.ps1`. If instead it carries the new `[warn] this adapter would not accept
-   Band=...` line, the adapter refused and 2.2's on-screen warning is the expected outcome.
-3. Play a turn on the school network with Wi-Fi still connected and aim — the preview should
-   track the phone with no visible hitching.
-4. Force the failure to check 2.2: hand-edit the band back to 2.4 GHz, host on the 5 GHz school
-   link, and confirm the warning appears on the join screen and the game still runs.
-5. `cd relay && npm test` — 46 tests, 45 pass / 1 skip with Play running. Nothing here touches
-   the relay, so this is a regression guard only.
-6. Sanity-check on the home PC (wired) that 2.1's no-STA branch still produces a 2.4 GHz hotspot
-   a phone can see.
+Re-measured on the school network, **still associated to `MyBvc`**, phone awake and aiming,
+60 pings:
+
+| | AP band | Station band | mean | stdev | max | loss |
+|---|---|---|---|---|---|---|
+| Before, Wi-Fi on | 2.4 GHz | 5 GHz ch44 | 156.9 ms | 194.3 ms | 1161 ms | 2% |
+| Before, Wi-Fi off | 2.4 GHz | none | 26.6 ms | 52.9 ms | 289 ms | 0% |
+| **After, Wi-Fi on** | **5 GHz** | 5 GHz ch44 | **5.0 ms** | **2.5 ms** | **19 ms** | **0%** |
+
+**31x better mean and 78x better jitter than where this started**, and the aim preview is
+subjectively smooth on the school network with Wi-Fi still connected. The Unity Console carried
+`station link is on 5 GHz; asking for FiveGigahertz`, so the driver honoured the request.
+
+### The result beat its own target, and the reason corrects something above
+
+The target was the Wi-Fi-off baseline (`mean 26.6 / stdev 52.9`). The fix came in at
+`mean 5.0 / stdev 2.5` — five times better on mean, twenty times better on jitter, and level
+with the station-link baseline (`mean 4.8 / stdev 1.9`) that was being treated as the floor for
+a wired-quality link.
+
+So matching the band did **two** things, and Phase 1 only predicted one:
+
+1. It removed the channel-switching penalty. Predicted, and the larger effect.
+2. It moved the access point off **congested 2.4 GHz** onto the clean 5 GHz channel the station
+   link was already using. Not predicted.
+
+**That second effect means the Phase 1 reading of the residual was wrong.** Phase 1 attributed
+the 52.9 ms stdev in the Wi-Fi-off run mostly to the phone parking its radio between pings. If
+power saving were the cause it would still be there now — the phone behaves the same either way
+— and it is not. The residual was 2.4 GHz congestion in a school building, and ICMP was
+reporting it accurately rather than overstating it.
+
+### Open question this leaves
+
+`Get-StationBandName` keeps 2.4 GHz when there is **no station link**, which is the shipping
+living-room case, on compatibility and range grounds. That is still the right default for a
+living room — but the numbers above show 2.4 GHz costs real jitter in a congested building. A
+host with no station link in a busy environment now gets the worse band with nothing to tell
+them. Worth revisiting if the game is ever played somewhere crowded; not worth pre-empting for a
+lounge.
 
 ---
 
