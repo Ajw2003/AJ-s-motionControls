@@ -67,6 +67,48 @@ function Await-Action {
     $task.Wait(-1) | Out-Null
 }
 
+function Get-StationBandName {
+    # Which TetheringWiFiBand the access point should ask for, given what this radio is
+    # already doing. Returns a band name, plus the human-readable station band for logging.
+    #
+    # WHY THIS EXISTS. Adapters in this class report "Soft AP : Not supported", so Windows
+    # runs Mobile Hotspot as a Wi-Fi Direct GO on the SAME PHYSICAL RADIO as the station
+    # link. Ask for a band the station is not on and the radio has to time-slice between
+    # two channels: packets are queued rather than dropped, and the 20Hz AIM stream reaches
+    # the game in bursts. That is felt directly as a jerky, delayed aim preview.
+    #
+    # Measured 2026-09-09, host on 5 GHz ch44, AP pinned to 2.4 GHz, 60 pings to a joined
+    # phone: mean 156.9ms, stdev 194.3ms, max 1161ms, 2% loss. Disconnecting the station
+    # link and changing nothing else: mean 26.6ms, stdev 52.9ms, max 289ms, 0% loss.
+    # See docs/plans/aim-preview-lag-on-shared-radio.md.
+    #
+    # Matching the band is what lets the GO share the station's channel instead of
+    # alternating with it. It is a request, not a guarantee - the driver places the GO.
+    $text = (netsh wlan show interfaces | Out-String)
+
+    if ($text -notmatch '(?m)^\s*State\s*:\s*connected') {
+        # No station link: the radio is ours alone, so nothing to match and 2.4 GHz is the
+        # better choice on its own merits. This is the shipping living-room case.
+        return @{ Band = 'TwoPointFourGigahertz'; Station = $null; Matched = $true }
+    }
+
+    $stationBand = $null
+    if ($text -match '(?m)^\s*Band\s*:\s*(.+?)\s*$') { $stationBand = $Matches[1] }
+
+    if ($stationBand -like '5*') {
+        return @{ Band = 'FiveGigahertz'; Station = $stationBand; Matched = $true }
+    }
+    if ($stationBand -like '2.4*') {
+        return @{ Band = 'TwoPointFourGigahertz'; Station = $stationBand; Matched = $true }
+    }
+
+    # 6 GHz, or a band string this does not recognise. A GO cannot follow the host onto
+    # 6 GHz in a way most phones can join, so take the compatible band and report that the
+    # split is unavoidable - HotspotService turns Matched=false into an on-screen warning
+    # rather than pretending the link is fine.
+    return @{ Band = 'TwoPointFourGigahertz'; Station = $stationBand; Matched = $false }
+}
+
 function Write-Result {
     param([hashtable] $Result)
     # -Compress: the contract is one line; a pretty-printed object would break that.
@@ -136,11 +178,34 @@ if ($Action -eq 'Start') {
         $cfg = New-Object Windows.Networking.NetworkOperators.NetworkOperatorTetheringAccessPointConfiguration
         $cfg.Ssid = $Ssid
         $cfg.Passphrase = $Passphrase
+        # 2.4 GHz is the default on compatibility grounds - some phones cannot see 5/6 GHz
+        # APs, and 2.4 GHz carries further across a room - but it is NOT the default when
+        # this radio is already holding a 5 GHz station link, because then it costs a
+        # channel switch on every slot and the aim preview is what pays. See
+        # Get-StationBandName.
+        $bandChoice = Get-StationBandName
+        if ($bandChoice.Station) {
+            Write-Progress2 ("  station link is on {0}; asking for {1}" -f $bandChoice.Station, $bandChoice.Band)
+        } else {
+            Write-Progress2 ("  no station link; asking for {0}" -f $bandChoice.Band)
+        }
+
         try {
-            # Compatibility, not speed: some phones cannot see 5/6 GHz APs, and 2.4 GHz
-            # carries further across a room. Best-effort — not every adapter exposes Band.
-            $cfg.Band = [Windows.Networking.NetworkOperators.TetheringWiFiBand]::TwoPointFourGigahertz
-        } catch { }
+            # Best-effort - not every adapter exposes Band.
+            #
+            # The full [Type,Assembly,ContentType=WindowsRuntime] literal, as in
+            # Get-TetheringManager. The bare short form happens to resolve here only because
+            # the literals in that function project the whole Windows.Networking assembly
+            # first, and depending on that is a trap for whoever edits either piece next.
+            # [enum]::Parse rather than a cast: casting a string to a projected WinRT enum
+            # is not reliable across hosts.
+            $bandType = [Windows.Networking.NetworkOperators.TetheringWiFiBand,Windows.Networking,ContentType=WindowsRuntime]
+            $cfg.Band = [enum]::Parse($bandType, $bandChoice.Band)
+        } catch {
+            # Reported, not swallowed. A bare `catch { }` here is why nobody could tell
+            # whether the band was ever being applied at all.
+            Write-Progress2 ("  [warn] this adapter would not accept Band={0}; leaving it to Windows ({1})" -f $bandChoice.Band, $_.Exception.Message)
+        }
 
         try {
             Await-Action $manager.ConfigureAccessPointAsync($cfg)
@@ -210,7 +275,9 @@ if ($Action -eq 'Start') {
         # internet connection or fall back?" in the one line HotspotService already logs,
         # which is the difference between an online and an offline session.
         Write-Result @{ ok = $true; ssid = $Ssid; passphrase = $Passphrase; warning = $warning
-            profile = $script:TetheringProfileName }
+            profile = $script:TetheringProfileName
+            band = $bandChoice.Band; stationBand = $bandChoice.Station
+            bandMatched = $bandChoice.Matched }
     } catch {
         Write-Result @{ ok = $false; error = 'exception'; message = $_.Exception.Message }
     }

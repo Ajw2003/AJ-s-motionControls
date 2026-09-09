@@ -141,6 +141,16 @@ the next launch cannot bind the DNS responder — then reports *"The local DNS r
 bound… Restart and try again"*, advice that cannot work because the cause is still running.
 Observed twice.
 
+**Hosting while the host is associated to Wi-Fi splits one radio across two bands, and the phones
+feel it.** This adapter class reports `Soft AP : Not supported`, so Mobile Hotspot runs as a
+Wi-Fi Direct GO on the *same physical radio* as the station link. With `hotspot-control.ps1`
+pinning the AP to 2.4 GHz and the host associated to a 5 GHz network, the radio time-slices
+between two channels and the 20 Hz `AIM` stream arrives in bursts — the aim preview reads as
+jerky *and* delayed. It disappears the moment the host disconnects from Wi-Fi, which is why it
+looks like a code regression and is not one. Diagnosed 2026-09-09; see
+[`../plans/aim-preview-lag-on-shared-radio.md`](../plans/aim-preview-lag-on-shared-radio.md),
+and measure with `tools/measure-hotspot-jitter.ps1` before believing any other explanation.
+
 **A software-off Wi-Fi radio reports as `tethering-failed:Unknown`,** which reads exactly like
 "Windows cannot do this offline". This confounded two separate investigations. The radio must be
 **on but need not be associated**.
