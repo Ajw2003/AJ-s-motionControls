@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Game;
 using UnityEngine;
 
 namespace Game
@@ -148,7 +149,7 @@ namespace Game
         private const float RollSteerRad = 0.05f;
 
         /// <summary>Below this speed the stone stops skipping and sinks, regardless of angle.</summary>
-        private const float MinSkipSpeed = 2.5f;
+        private const float MinSkipSpeed = 6.5f;
 
         /// <summary>
         /// Leave the water slower than this, vertically, and the stone did not skip — it
@@ -183,7 +184,7 @@ namespace Game
         {
             // Raw pass-through: the only conversion left is hand m/s to stone m/s. No
             // normalisation, no power curve — a harder swing is simply a faster stone.
-            var speed = Mathf.Max(0f, swingSpeed) * constants.SpeedScale;
+            var speed = Mathf.Max(0f, swingSpeed);
 
             // Where the stone is pointing IS where it goes. Both read off the same
             // rotation the mesh is drawn with, so the throw can never disagree with the
@@ -208,7 +209,7 @@ namespace Game
                 // Signed. Which way the wrist turned is mostly visual, but it also widens
                 // every forgiveness band (see EffectiveBand) and, above all, stabilises the
                 // stone against tumbling — see SkipState.WanderDeg.
-                Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.8f, 1.2f),
+                Spin = spinRate,
                 WanderDeg = 0f,
                 SkipCount = 0,
                 HasSunk = false,
@@ -372,5 +373,23 @@ namespace Game
 
             return state;
         }
+
+
     }
+
+}
+
+public class FakeSkip : MonoBehaviour
+{
+    public float energyloss = 0.2f;
+    public float Weight = 1f;
+    public float Thickness = 0.2f;
+    public float minliftforskip;
+
+    //heavyer stone goes further with more effort but is harder to control
+
+    //lighter stone requires less effort and too much can make it fail
+
+
+
 }
