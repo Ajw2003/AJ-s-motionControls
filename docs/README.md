@@ -84,6 +84,7 @@ have already cost someone a day.
 | [`OfflineSetup.md`](OfflineSetup.md) | What a machine needs for fully-offline play, and what `setup-offline.ps1` does to it |
 | [`DeviceMatrix.md`](DeviceMatrix.md) | Which phones have actually been tested, and on what |
 | [`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md) | The 2026-09-08 audit this structure came out of |
+| [`Findings-NetworkAndThrowStability.md`](Findings-NetworkAndThrowStability.md) | 2026-09-10 review of the phone → relay → Unity pipeline: dropped/rejected AIM, broken rounds, over-eager throws, security holes. Findings only, no fixes decided |
 
 ### Runbooks (outside `docs/`)
 
