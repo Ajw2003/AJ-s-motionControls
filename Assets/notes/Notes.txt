@@ -1,4 +1,14 @@
 
+
+Fix network issues with dropped aim frames and rejected aim frames when playing, a second players rejected aim frame seems to trigger sometimes and then break the current players round the stone lagging or disappearing and then forcing them to aim and re throw but when re aimed the stone throws automatically .
+
+stones still triggering a throw too early or with too little movement/acceleration required.
+
+Take a look at the networking logic and the pipeline between unity and the server architecture in js and html
+
+
+
+
 actual level geometry to avoid/ aim for
 
 rock textures, water textures and environment textures
