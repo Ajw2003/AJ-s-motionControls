@@ -85,6 +85,8 @@ have already cost someone a day.
 | [`DeviceMatrix.md`](DeviceMatrix.md) | Which phones have actually been tested, and on what |
 | [`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md) | The 2026-09-08 audit this structure came out of |
 | [`Findings-NetworkAndThrowStability.md`](Findings-NetworkAndThrowStability.md) | 2026-09-10 review of the phone → relay → Unity pipeline: dropped/rejected AIM, broken rounds, over-eager throws, security holes. Findings only, no fixes decided |
+| [`plans/Plan-NetworkAndThrowFixes.md`](plans/Plan-NetworkAndThrowFixes.md) | The priority order for fixing those findings, and the decisions it rests on (seats survive drops, no idle timeout, SpeedScale 1.0, layered throw guard) |
+| [`plans/Impl-NetworkAndThrowFixes.md`](plans/Impl-NetworkAndThrowFixes.md) | Step-by-step outline for each fix group, with the red-first regression tests and hardware checks that keep each fix landed |
 
 ### Runbooks (outside `docs/`)
 
