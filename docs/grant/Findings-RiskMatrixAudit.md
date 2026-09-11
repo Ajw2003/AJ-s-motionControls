@@ -102,12 +102,17 @@ describes (screen lock / backgrounding drops a player's socket):** per
 `docs/Findings-NetworkAndThrowStability.md` finding A2 (CONFIRMED), the relay removes a
 disconnected **player** from Unity's roster immediately, with **no grace period** — hosts get
 one, players don't — which can hand the active turn to someone else mid-throw before the phone's
-own 45s-window reconnect completes. Some related findings (A2-A6, C1-C3) are annotated "Status:
-fixed" in that doc, but the doc is findings-only and that's not confirmed proof of a shipped fix.
+own 45s-window reconnect completes. **A2 itself carries no "Status: fixed" annotation in that
+doc — it is still open.** (Correction to an earlier draft of this section, which wrongly implied
+A2 might be among the fixed findings: only A5, A6, C1, C4, D1 and D2 are marked fixed. A2, A3,
+A4, C2 and C3 are not.) There is a proposed fix — "Group 4" in
+`docs/plans/Impl-NetworkAndThrowFixes.md:222`, a 20-second `disconnectedTurnGraceSeconds` on the
+Unity/TurnManager side — but it is a plan, not shipped code, and its value (20s) doesn't match
+the matrix's claimed "3-5 second" grace window either.
 
 ~65% covered. The infrastructure for what the matrix claims exists; the specific player-grace-
-period behavior it asserts does not, and is a known, already-diagnosed bug rather than an
-unknown risk.
+period behavior it asserts does not, and is a known, already-diagnosed, already-planned-but-
+unbuilt bug rather than an unknown risk.
 
 ---
 
