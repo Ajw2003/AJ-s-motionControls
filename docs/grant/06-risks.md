@@ -129,3 +129,58 @@ steps within the funded period: multi-year domain registration, a documented rec
 for reissuing under a different name, and a seed certificate shipped in the installer so a
 first run never depends on a live fetch (this already exists in `CertificateProvider.cs` and
 should be stated as an existing mitigation, not a promised one).
+
+---
+
+## R8 — Band-matching fixes the bug that was measured; it is not RF management at scale
+
+**Severity: low for the target use case, moderate if scope expands. Likelihood: low in a
+living room, high at a high-density event.**
+
+The host's own Wi-Fi radio band-matches to the phone hotspot at start-up
+(`Get-StationBandName`, `hotspot/hotspot-control.ps1`), asking for whichever band the host's
+station link is already on instead of always defaulting to 2.4 GHz. That removed the dominant
+cause of aim-preview jitter measured on this project's own hardware: mean latency on a
+congested school network went from 156.9 ms to 5.0 ms, jitter (stdev) from 194.3 ms to 2.5 ms
+(`docs/plans/aim-preview-lag-on-shared-radio.md`). It is a fix for one specific failure mode —
+one physical radio time-slicing between two bands — not a general answer to RF-congested
+environments. There is no DFS channel selection, no 6 GHz support (Windows'
+`TetheringWiFiBand` enum has no 6 GHz member), no RSSI monitoring, and no mid-session channel
+switching in response to packet loss. A host with no station Wi-Fi link — the shipping
+default — still starts on 2.4 GHz, the most congested band in a room full of other consumer
+networks.
+
+**Mitigation.** The living-room audience this game targets does not encounter convention-hall
+RF density, and band-matching plus the existing per-socket rate limiting is adequate there —
+that is the honest scope to claim today. RSSI-aware channel selection and DFS support are real,
+unscoped engineering work for a future high-density deployment (classrooms, tournaments,
+conventions), not a solved problem to describe as already handled.
+
+**What is honest to say:** the fix that shipped solves the bug that was actually measured on
+this project's own hardware. It has not been tested against, and does not claim to solve,
+convention-hall-scale interference.
+
+---
+
+## R9 — Sensor polling has no battery-aware throttling; the one power-related choice made runs the other way
+
+**Severity: low. Likelihood: high over a long session.**
+
+`controller/js/sensors.js` reads `devicemotion`/`deviceorientation` events at whatever rate the
+browser delivers them — native, unthrottled, roughly 60 Hz on most devices. The one existing
+rate limit, 20 Hz on outbound AIM messages (`controller/js/app.js:201-203`), caps network
+traffic, not sensor sampling or wake time, so it does nothing for battery life. Separately,
+`requestWakeLock()` (`app.js:791-799`) deliberately keeps the phone's screen on for the whole
+session so players aren't unlocking their phone between turns — the opposite of a power-saving
+measure, chosen for a real usability reason but real nonetheless.
+
+**Mitigation.** For a typical session length (minutes to tens of minutes) this is unlikely to
+matter in practice — screen-on sensor games already run at this duration on every platform
+without complaint. If session length grows — a tournament format, extended lobby waits —
+worthwhile future work is throttling sensor consumption to the game's actual tick rate rather
+than the browser's native delivery rate, and a low-brightness or dark idle state between turns
+that doesn't give up the wake lock's usability win.
+
+**What is honest to say:** nothing in the current build claims or attempts battery-aware
+operation. The wake lock is a deliberate trade of battery for zero-friction between-turn UX,
+not an oversight — but it should never be described as compatible with a power-saving claim.

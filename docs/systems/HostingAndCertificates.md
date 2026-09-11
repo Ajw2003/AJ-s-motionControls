@@ -142,14 +142,24 @@ bound… Restart and try again"*, advice that cannot work because the cause is s
 Observed twice.
 
 **Hosting while the host is associated to Wi-Fi splits one radio across two bands, and the phones
-feel it.** This adapter class reports `Soft AP : Not supported`, so Mobile Hotspot runs as a
-Wi-Fi Direct GO on the *same physical radio* as the station link. With `hotspot-control.ps1`
-pinning the AP to 2.4 GHz and the host associated to a 5 GHz network, the radio time-slices
-between two channels and the 20 Hz `AIM` stream arrives in bursts — the aim preview reads as
-jerky *and* delayed. It disappears the moment the host disconnects from Wi-Fi, which is why it
-looks like a code regression and is not one. Diagnosed 2026-09-09; see
-[`../plans/aim-preview-lag-on-shared-radio.md`](../plans/aim-preview-lag-on-shared-radio.md),
-and measure with `tools/measure-hotspot-jitter.ps1` before believing any other explanation.
+feel it — mitigated, not eliminated, since 2026-09-09 (`796854a`).** This adapter class reports
+`Soft AP : Not supported`, so Mobile Hotspot runs as a Wi-Fi Direct GO on the *same physical
+radio* as the station link. `hotspot-control.ps1`'s `Get-StationBandName` now asks the access
+point for whichever band the host's own station link is already on — 5 GHz instead of always
+2.4 GHz — so the radio serves both on the same channel instead of time-slicing between two. That
+took the school-network measurement from `mean 156.9 / stdev 194.3 ms` to `mean 5.0 / stdev
+2.5 ms` (`../plans/aim-preview-lag-on-shared-radio.md`).
+
+This is a **one-time band match at hotspot start-up, not ongoing RF management.** Windows exposes
+no API to read back the channel actually chosen, so `HotspotService.RadioSharingWarning` reports
+only whether the requested band was honored ("may" feel laggy), never confirms it. There is no
+DFS channel forcing, no 6 GHz support (the `TetheringWiFiBand` enum has no 6 GHz member), no RSSI
+monitoring, and no mid-session channel switching in response to congestion — `Get-StationBandName`
+also still defaults an *unassociated* host to 2.4 GHz for phone compatibility and room range, which
+costs real jitter in a congested building with many other 2.4 GHz networks (see the "Open question"
+in the plan doc, and `../grant/Findings-RiskMatrixAudit.md` item 1 for the gap this leaves against
+convention-hall-scale RF density). `tools/measure-hotspot-jitter.ps1` remains the way to check a
+given machine rather than assume the fix applies.
 
 **A software-off Wi-Fi radio reports as `tethering-failed:Unknown`,** which reads exactly like
 "Windows cannot do this offline". This confounded two separate investigations. The radio must be
