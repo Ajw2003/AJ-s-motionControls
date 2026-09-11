@@ -186,6 +186,8 @@ a TV that did nothing.
   lag or drift sits at `stopAccel` and blocks the 3-calm-sample stop. The throw then fires by the
   900 ms timeout instead.
 
+**Status:** fixed in group 3, test `ThrowController: A5/A6 accidental-throw guard`.
+
 **Evidence in `rock-throws.csv`** (2026-09-10 session, two phones). These rows look like fires the
 player didn't mean to make — low speed with the phone nowhere near flat:
 
@@ -225,6 +227,9 @@ With a scale of 0.3, a tap-jolt fire at ~5 m/s launched at 1.5 m/s and dribbled 
 which reads as "nothing happened". At 1.0–1.2 it leaves the hand like a real throw. That fits a
 trigger that was always too easy becoming *visible again* after the revert. PLAUSIBLE: it has not
 been checked against telemetry from 09-09.
+
+**Status:** fixed in group 3, test `ThrowController: A5/A6 accidental-throw guard` (same tests as
+A5 — the layered guard removes the accidental fire A6 is about, rather than changing launch scaling).
 
 ### A7. The swing speeds reported are too large to be a real hand speed
 
@@ -461,6 +466,7 @@ dropping `* constants.SpeedScale`. But:
 `SpinMultiplier` clamp from launch spin (`:212`).
 
 **Status:** fixed in group 2, test `CreateLaunch_ScalesSwingSpeedBySpeedScale`.
+**Hardware check:** passed 2026-09-10 — five throws felt unchanged, and each new rock-throws.csv swingSpeed matched the phone's Speed readout (Ayden).
 
 ### D2. A stray MonoBehaviour in the pure physics file
 
