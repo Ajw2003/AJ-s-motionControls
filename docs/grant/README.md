@@ -44,5 +44,9 @@ Two claims are easy to overstate and will be checked:
    [06-risks.md](06-risks.md), where this is the funded research question rather than an
    apology.
 
-And one claim that is currently **understated**: iOS and Android support is verified on
-real hardware across multiple device generations. See [../DeviceMatrix.md](../DeviceMatrix.md).
+And one claim that needs care in the other direction: iOS and Android support **works**
+across multiple device generations, from the developer's own hands-on testing — but
+[../DeviceMatrix.md](../DeviceMatrix.md), the file meant to make that checkable, is currently a
+template with every row still `TODO`. Fill it in before citing device verification as evidence
+(tracked in [09-fundability-roadmap.md](09-fundability-roadmap.md)) — citing an empty template
+as proof is worse than not mentioning it at all.

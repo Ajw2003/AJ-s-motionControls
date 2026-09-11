@@ -71,9 +71,11 @@ Every block is written to be quoted more or less directly. Trim rather than rewr
 > enough during a fast wrist flick to inject roughly 19.6 m/s² of acceleration that never
 > happened — enough to make a hard throw and a gentle one read identically.
 >
-> This is verified on real hardware across multiple iPhone generations and multiple Samsung and
-> Pixel generations. The relay and sensor pipeline carry substantial automated test coverage. The
-> project documents what it removed and why as carefully as what it kept.
+> This is reported working on real hardware across multiple iPhone generations and multiple
+> Samsung and Pixel generations, from hands-on testing — not yet backed by a filled-in device
+> record, which is tracked as open work. The relay and sensor pipeline carry substantial
+> automated test coverage. The project documents what it removed and why as carefully as what it
+> kept.
 
 ## What we will build
 
@@ -94,8 +96,9 @@ Every block is written to be quoted more or less directly. Trim rather than rewr
 
 > This project exists. It is not a proposal for a prototype; it is a proposal to generalise a
 > working system. Six weeks of concentrated work produced a tested relay, a tested sensor
-> pipeline, verified operation across two mobile platforms and multiple device generations, and
-> roughly four thousand lines of design and failure documentation.
+> pipeline, operation across two mobile platforms and multiple device generations reported from
+> hands-on testing, and roughly seven thousand four hundred lines of design and failure
+> documentation.
 >
 > That documentation is the strongest evidence of how the work is done. It records a WebRTC
 > transport that was built and then deleted once measurement showed it bought nothing. It records

@@ -1,23 +1,25 @@
 # Asset inventory
 
-What exists today, with the evidence to cite. Line counts and paths verified against the
-tree on 2026-09-07. Everything in this file is checkable by a reviewer who clones the repo,
+What exists today, with the evidence to cite. Line counts and paths re-verified against the
+tree on 2026-09-11 (previously 2026-09-07 — the codebase moves fast; re-check before every
+submission). Everything in this file is checkable by a reviewer who clones the repo,
 which is the point.
 
 ## Scale
 
 | Component | Path | Size |
 |---|---|---|
-| Unity game and host logic | `Assets/Scripts/` | ~19,300 lines C#, 5 scenes |
+| Unity game and host logic | `Assets/Scripts/` | ~15,300 lines C#, 4 scenes |
 | Networking layer (Unity side) | `Assets/Scripts/Net/` | 3,490 lines across 11 files |
-| Relay / DNS / captive portal | `relay/` | `server.js` 962, `dns.js` 409, `funnel.js` 168 |
-| Phone controller web app | `controller/` | `app.js` 872, `sensors.js` 598, `throw.js` 576, `net.js` 248, `identity.js` 83 |
-| Sensor math tests | `controller/test-sensors.js` | 1,139 lines |
-| Relay integration tests | `relay/test-*.js` | 49 tests across 4 files |
-| Design and failure records | `docs/` | ~4,100 lines |
-| Throw dataset | `rock-throws.csv` | 78 logged throws, 11 columns |
+| Relay / DNS / captive portal | `relay/` | `server.js` 1,024, `dns.js` 409, `funnel.js` 168 |
+| Phone controller web app | `controller/` | `app.js` 899, `sensors.js` 605, `throw.js` 640, `net.js` 248, `identity.js` 83 |
+| Sensor math tests | `controller/test-sensors.js` | 1,333 lines |
+| Relay integration tests | `relay/test-*.js` | 48 tests across 4 files (captive 5, dns 11, funnel 19, relay 13) |
+| Design and failure records | `docs/` | ~7,400 lines (excluding this grant kit and docs/archive/) |
+| Throw dataset | `rock-throws.csv` | 265 logged throws, 11 columns |
 
-92 commits, 2026-07-29 to 2026-09-06, single author.
+237 commits, 2026-07-29 to 2026-09-11 — 223 by the developer (across four git identities used
+on different machines) and 14 authored directly by Claude Code under their direction.
 
 ## The offline network stack
 
@@ -34,7 +36,7 @@ origin by construction, so they cannot drift onto different hosts:
   until the player has the page open, so the phone OS pops its portal sheet as a nudge
 
 Host side: `Assets/Scripts/Net/LocalServices.cs` (574) spawns and supervises the relay child
-process; `HotspotService.cs` (568) drives Windows Mobile Hotspot via `hotspot/hotspot-control.ps1`;
+process; `HotspotService.cs` (610) drives Windows Mobile Hotspot via `hotspot/hotspot-control.ps1`;
 `CertificateProvider.cs` (469) fetches and caches the certificate with a seed copy in
 StreamingAssets as the floor; `ChildProcessGroup.cs` / `ProcessUtil.cs` handle child-process
 lifetime so a crashed session does not wedge the next one.
@@ -72,14 +74,18 @@ testing on phones before checking the host.
   `new Quaternion(-x, -z, -y, w)`, with the standing rule "if a rotation comes out mirrored,
   fix it here — never with a negation at a call site."
 
-Verified on real hardware across multiple iPhone generations and multiple Samsung and Pixel
-generations: [../DeviceMatrix.md](../DeviceMatrix.md).
+Reported by the developer as working across multiple iPhone generations and multiple Samsung
+and Pixel generations — but **not yet checkable evidence**: [../DeviceMatrix.md](../DeviceMatrix.md)
+is a template with every row still `TODO`. Filling it in is a tracked Week-1 task
+([09-fundability-roadmap.md](09-fundability-roadmap.md)); cite it only once real rows exist.
 
 ## Gesture recognition and the two-channel protocol
 
 `controller/js/throw.js` is a state machine (IDLE/ARMED) with tunable thresholds exposed as
-`ThrowTuning` (`minValidPeakAccel 3`, `swingAccel 14`, `stopAccel 4`, `stopSamples 3`,
-`maxSwingMs 900`, `spinEnvelopeTauMs 250`). Release is detected as "accelerate hard, then stop
+`ThrowTuning` (`swingAccel 14`, `stopAccel 4`, `stopSamples 3`, `maxSwingMs 900`,
+`spinEnvelopeTauMs 250`, plus the accidental-throw guard added 2026-09-10 — `armGraceMs 250`,
+`swingOnsetSamples`, `minThrowSwingSpeed`; `minValidPeakAccel` was removed as dead code, see
+`controller/js/throw.js:38-42`). Release is detected as "accelerate hard, then stop
 dead" — the stop *is* the release, and orientation is sampled raw at that instant.
 
 The channel split is the transferable idea:
@@ -101,25 +107,25 @@ real phone still counts as a fumble.
 
 The relay tracks each device through ASSOCIATED → PAGE_OPEN → PLAYING and broadcasts
 `DEVICE_FUNNEL` to the host, so the TV can say *where* a phone got stuck rather than that it
-did. `docs/plans/join-failure-reduction.md` (1,013 lines) is the design record. Onboarding
+did. `docs/archive/plans/join-failure-reduction.md` (1,013 lines) is the design record. Onboarding
 drop-off is the real product problem in phone-as-controller, and almost nobody measures it.
 
 ## Recorded negative results
 
 Unusual for a solo project and worth citing directly:
 
-- `docs/Findings-DirectTransportFlapping.md` — a WebRTC DataChannel per phone was built, then
+- `docs/archive/Findings-DirectTransportFlapping.md` — a WebRTC DataChannel per phone was built, then
   removed. Once the relay moved onto the host PC, the direct transport was one hop either way
   and bought nothing but ~510 lines and a native dependency.
-- `docs/plans/remove-direct-transport.md` — plain LAN mode removed, not deprecated, with the
+- `docs/archive/plans/remove-direct-transport.md` — plain LAN mode removed, not deprecated, with the
   certificate reasoning that forced it.
 - `docs/Decision-OfflineHosting.md` — Wi-Fi Direct evaluated and rejected: it works as a radio
   but leaves port 53 free and builds no DNS proxy, so phones cannot resolve a name, so it
   cannot serve an HTTPS origin without also shipping a DHCP server.
-- `docs/Findings-DnsAudit.md`, `docs/Findings-AimPreviewAfterRejoin.md`.
+- `docs/archive/Findings-DnsAudit.md`, `docs/archive/Findings-AimPreviewAfterRejoin.md`.
 
 ## Dataset
 
-`rock-throws.csv` — 78 logged throws from real phones and tablets:
+`rock-throws.csv` — 265 logged throws from real phones and tablets:
 `timestamp, matchSeed, rockId, player, swingSpeed, spinRate, pitchDeg, rollDeg, yawDeg, skips, distance`.
 Small, but empirical, and releasable openly as a gesture-recognition baseline.

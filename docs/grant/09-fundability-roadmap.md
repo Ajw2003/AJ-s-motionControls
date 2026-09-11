@@ -13,18 +13,20 @@ Sequenced by what unblocks what. Nothing here is optional.
 The cheapest work in this document and the highest ratio of impression to effort. A reviewer's
 first action is to open the README.
 
-- [ ] **Fix the broken documentation graph (G8).** `README.md:6` instructs the reader to read
-      `docs/PLAN.md` first, and that file was deleted. So were `docs/HostingPlan.md`,
-      `docs/Reference-Constants.md`, `docs/Reference-PlayerColours.md`, `docs/SecurityReview.md`
-      and `docs/Findings-WiFiDirect.md` — several still linked from the README and from
-      `docs/Decision-OfflineHosting.md`. Either restore them from git history or remove the links
-      and rewrite what they were carrying. Being told to read a 404 is worse than having no README.
-- [ ] **Fix version inconsistencies (G9).** `ProjectSettings/ProjectVersion.txt` says `6000.3.15f1`,
-      the README says `6000.3.10f1`. The README notes the project is on the built-in render
-      pipeline while `Packages/manifest.json` includes URP.
-- [ ] **Correct the iOS undersell (G11).** Done in this change — `docs/DeviceMatrix.md` now
-      carries the record and the stale `UNVERIFIED (iOS)` markers point at it. **Fill in the
-      matrix with your actual devices**; it currently has marked blanks.
+- [x] **Fix the broken documentation graph (G8).** Done — `README.md:6` no longer references
+      `docs/PLAN.md`. `docs/SecurityReview.md` has been re-derived and restored (2026-09-11).
+      Still genuinely absent: `docs/HostingPlan.md`, `docs/Reference-Constants.md`,
+      `docs/Reference-PlayerColours.md`, `docs/Findings-WiFiDirect.md` — sweep for any remaining
+      links to these before submitting.
+- [x] **Fix version inconsistencies (G9) — half done.** `ProjectSettings/ProjectVersion.txt` and
+      the README now both say `6000.3.15f1`. **Still open:** the README notes the project is on
+      the built-in render pipeline while `Packages/manifest.json` includes URP
+      (`com.unity.render-pipelines.universal: 17.3.0`) — resolve which is actually true.
+- [x] **Correct the iOS undersell (G11) — half done.** The stale `UNVERIFIED (iOS)` markers are
+      gone from source. `docs/DeviceMatrix.md` exists as the intended record but is not yet one —
+      every row is still `TODO`. **Fill in the matrix with your actual devices before citing it
+      anywhere** — `01-asset-inventory.md`, `02-innovation-claims.md`, `08-narrative-core.md`, and
+      the grant `README.md` all point to it now and all say so until you do.
 - [ ] **Finish the link cleanup.** `README.md`, `docs/MASTER-PLAN.md`,
       `docs/Decision-OfflineHosting.md` and `docs/OfflineSetup.md` are repaired. Still broken,
       in the older planning docs: `ZeroSetupPlan.md`, `MagicDnsFallback.md`,
@@ -41,8 +43,7 @@ first action is to open the README.
       left, over the 30-day threshold) and to say so; a skip that reports why is the correct
       outcome, a failure is not. Run `./deploy/Verify-PublishedCert.ps1` any time to check the
       live certificate independently of the workflow.
-- [ ] **Add `LICENSE`.** Apache-2.0. A hard gate for open-source funders and a prerequisite for
-      anyone else adopting the work.
+- [x] **Add `LICENSE`.** Done — Apache-2.0 exists at the repo root (`3b1aef3`).
 
 ## Weeks 1–4 — Administrative, in parallel
 
@@ -88,9 +89,10 @@ strong application.
 
 ## Weeks 4–8 — Credibility infrastructure, in parallel with the demo work
 
-- [ ] **Test CI.** The tests already exist and are good — 49 relay integration tests, 1,139 lines
-      of sensor math tests, 7 Unity EditMode cases. Run them on every push. A project with good
-      tests that never run reads exactly like a project with no tests.
+- [ ] **Test CI.** The tests already exist and are good — 48 relay integration tests, 1,333 lines
+      of sensor math tests, 18 Unity EditMode cases (up from the 7 last counted — a third test
+      file, `DiscContactTests.cs`, wasn't in the earlier tally). Run them on every push. A project
+      with good tests that never run reads exactly like a project with no tests.
 - [ ] **Build CI.** Tagged commits produce a downloadable signed installer. This is also how you
       keep the demo reproducible rather than a one-off artifact on your machine.
 - [ ] **Publish the certificate-key threat model (G5).** Before anyone reviews the repository, not

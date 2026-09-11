@@ -28,10 +28,11 @@ applicants and it damages you twice: it signals inexperience, and it leaves you 
 finish, which is the outcome the funder is trying to avoid. Cost the work honestly.
 
 **In-kind contribution is real and should be stated.** Roughly six weeks of full-time work
-already exists in this repository — 92 commits, ~19,300 lines of C#, a tested relay, a tested
-sensor pipeline, verified cross-device operation, and an unusually complete documentation and
-failure record. Many programs weight prior unfunded effort, and all of them read it as evidence
-the applicant finishes things.
+already exists in this repository — 237 commits, ~15,300 lines of C#, a tested relay, a tested
+sensor pipeline, cross-device operation the developer reports from hands-on testing (not yet a
+checkable record — see G11 in [03-gap-analysis.md](03-gap-analysis.md)), and an unusually
+complete documentation and failure record. Many programs weight prior unfunded effort, and all
+of them read it as evidence the applicant finishes things.
 
 **Distinguish what you will do unfunded.** WP0 and WP1 should happen regardless, because they
 gate the demo that gates the application. Saying so is a strength: it shows the grant accelerates

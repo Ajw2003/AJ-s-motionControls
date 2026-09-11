@@ -59,7 +59,7 @@ solo delivery a genuine planning consideration rather than a hypothetical one.
 - Open licence from week one (WP0), so the work survives the developer regardless of outcome
 - A published protocol specification (WP4), so the design is recoverable from documents rather
   than only from source
-- Documentation practice already demonstrated at unusual depth — ~4,100 lines of design and
+- Documentation practice already demonstrated at unusual depth — ~7,400 lines of design and
   failure records, with reasoning written into source comments
 - Contracted specialist time budgeted where solo capability runs out, rather than assuming
   heroics

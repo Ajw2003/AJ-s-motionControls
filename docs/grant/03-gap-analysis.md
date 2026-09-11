@@ -48,14 +48,16 @@ built.
 same direction — asserting something was unproven when it was working. Both times the stale
 claim was more damaging than the underlying state.
 
-### G3. No licence, no eligible entity
-No `LICENSE` file. Open-source funders require one as a hard gate. Most public funders require
-a registered business, sole proprietorship, or academic sponsor before they will read anything.
+### G3. ~~No licence, no eligible entity~~ — LICENSE resolved, entity registration still open
+`LICENSE` (Apache-2.0) now exists at the repo root, added in `3b1aef3` — the hard gate for
+open-source funders is closed. Most public funders still require a registered business, sole
+proprietorship, or academic sponsor before they will read anything, and that half is unstarted.
 
-*Why it matters:* this is a paperwork gap that silently disqualifies you from programs you would
-otherwise win. It costs days, not months, and it blocks everything.
+*Why it matters:* the entity half is a paperwork gap that silently disqualifies you from programs
+you would otherwise win. It costs days, not months, and it blocks everything.
 
-→ **WP0**, and the eligibility checklist in [07-funder-map.md](07-funder-map.md).
+→ **WP0**'s licence step is done; the eligibility checklist in [07-funder-map.md](07-funder-map.md)
+still needs the entity question answered.
 
 ---
 
@@ -108,31 +110,38 @@ precisely the risk a funder is pricing.
 
 ## Cosmetic but embarrassing — cheap to fix, fix them now
 
-### G8. The documentation graph is broken
-`README.md` line 6 used to say "Read `docs/PLAN.md` first" and that file was deleted
-(commits `0b7c500`, `77a44f1`), along with `docs/HostingPlan.md`, `docs/Reference-Constants.md`,
-`docs/Reference-PlayerColours.md`, `docs/SecurityReview.md` and `docs/Findings-WiFiDirect.md` —
-several of which are still linked from the README and from `docs/Decision-OfflineHosting.md`.
+### G8. ~~The documentation graph is broken~~ — mostly resolved
+`README.md` line 6 used to say "Read `docs/PLAN.md` first" and that file was deleted (commits
+`0b7c500`, `77a44f1`); as of this re-check `README.md` no longer references it. Of the other
+files once listed as deleted, `docs/SecurityReview.md` has since been **re-derived and restored**
+(dated 2026-09-11, explicitly rebuilt from the current code rather than recovered from git
+history — treat it as new, not as the old file returned). `docs/HostingPlan.md`,
+`docs/Reference-Constants.md`, `docs/Reference-PlayerColours.md` and `docs/Findings-WiFiDirect.md`
+remain absent; check for any remaining links to them before submitting.
 
 *Why it matters:* it is the first thing a reviewer does. Being told to read a file that 404s is
 a worse first impression than having no README at all.
 
-→ First-week task. Not funded work.
+→ Mostly done. Sweep for the four still-missing files' links as a final first-week check.
 
-### G9. Version and status inconsistencies in the README
-`ProjectSettings/ProjectVersion.txt` says `6000.3.15f1`; `README.md` says `6000.3.10f1`.
-`Packages/manifest.json` includes URP while the README notes the project is actually on the
-built-in pipeline.
+### G9. Version and status inconsistencies in the README — half resolved
+`ProjectSettings/ProjectVersion.txt` and `README.md` now both say `6000.3.15f1` — the version
+mismatch is fixed. Still open: `Packages/manifest.json` includes URP
+(`com.unity.render-pipelines.universal: 17.3.0`) while the README still notes the project is on
+the built-in pipeline — either the package or the README is wrong, and only one commit will tell
+you which.
 
-→ First-week task.
+→ First-week task; version half done, pipeline half still open.
 
-### G10. Unity-side test coverage is thin
-7 EditMode test cases (`SkipPhysicsTests`, `PhoneAttitudeTests`) against 49 relay integration
-tests and 1,139 lines of sensor math tests.
+### G10. Unity-side test coverage — better than last counted
+18 EditMode test cases (`SkipPhysicsTests` 6, `PhoneAttitudeTests` 3, and `DiscContactTests` 9 —
+the last of these wasn't in the previous count at all) against 48 relay integration tests and
+1,333 lines of sensor math tests. More than double the Unity-side figure previously cited.
 
 *How to handle it:* note that coverage is concentrated exactly on the components being proposed
 as the plugin — the relay, the protocol and the sensor pipeline — and that the thin part is the
-game, which is not what is being funded. That is a true and favourable framing.
+game, which is not what is being funded. That is a true and favourable framing, and less of an
+undersell than the old count made it look.
 
 → **WP1**/**WP4**, incrementally.
 
@@ -140,14 +149,20 @@ game, which is not what is being funded. That is a true and favourable framing.
 
 ## Not a gap — an undersell to correct
 
-### G11. Stale `UNVERIFIED (iOS)` markers understate real cross-device verification
-Six markers across `controller/js/sensors.js` and `controller/js/app.js` say iOS branches are
-"written from spec". They are stale. iOS is confirmed working across multiple iPhone
-generations and Android across multiple Samsung and Pixel generations.
+### G11. Stale `UNVERIFIED (iOS)` markers understate real cross-device verification — half fixed
+Six markers across `controller/js/sensors.js` and `controller/js/app.js` said iOS branches were
+"written from spec". Confirmed gone (`grep -rn "UNVERIFIED" controller/js/*.js` returns nothing).
+iOS is reported working across multiple iPhone generations and Android across multiple Samsung
+and Pixel generations, from the developer's own testing.
 
 *Why it matters more than it looks:* cross-device verification is exactly the evidence that
-separates a sensor demo from a plugin other developers can ship. The repository currently
-argues against its own strongest practical claim, and simultaneously contradicts the README —
-which reads to a careful reviewer as carelessness in whichever direction they resolve it.
+separates a sensor demo from a plugin other developers can ship. The repository no longer argues
+against its own strongest practical claim in source — but the undersell moved rather than
+disappeared. **`../DeviceMatrix.md` is not yet the maintained record it's described as being** —
+every row is still `TODO`, by the file's own header warning. Every doc that currently cites it as
+verification evidence (`01-asset-inventory.md`, `02-innovation-claims.md`, `08-narrative-core.md`,
+the grant `README.md`) is citing a template, not a record, until it is filled in.
 
-→ Fixed in this change: [../DeviceMatrix.md](../DeviceMatrix.md) is now the maintained record.
+→ Source markers: fixed. `DeviceMatrix.md`: still a Week-1 task
+([09-fundability-roadmap.md](09-fundability-roadmap.md) already tracks filling it in) — do not
+cite it as evidence before then.

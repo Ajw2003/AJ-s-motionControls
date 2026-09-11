@@ -65,9 +65,10 @@ captured calibration reference — so a game engine never sees a platform differ
    with the tier reported per sample.
 
 **Evidence.** `controller/js/sensors.js`, with the reasoning written into the source rather
-than lost; `controller/test-sensors.js` (1,139 lines of pure-math tests runnable with no
-device); verified on real hardware across multiple iPhone and multiple Samsung/Pixel
-generations ([../DeviceMatrix.md](../DeviceMatrix.md)).
+than lost; `controller/test-sensors.js` (1,333 lines of pure-math tests runnable with no
+device); reported by the developer as working on real hardware across multiple iPhone and
+multiple Samsung/Pixel generations, though not yet recorded as checkable evidence —
+[../DeviceMatrix.md](../DeviceMatrix.md) is still a template awaiting real entries.
 
 **Limitation.** Tuned for one gesture family (a throw). Generalising it to a documented,
 reusable recogniser API is work package WP3, not something already done.
@@ -105,7 +106,7 @@ probes are answered deliberately — reporting "no internet" until the page is o
 OS opens its portal sheet and does the prompting for you.
 
 **Evidence.** `relay/funnel.js`, `relay/test-funnel.js` (19 tests), `relay/test-captive.js`,
-`docs/plans/join-failure-reduction.md` (1,013 lines).
+`docs/archive/plans/join-failure-reduction.md` (1,013 lines).
 
 **Limitation.** The instrument exists; a published dataset of real drop-off across many
 sessions does not. That is WP6.
@@ -123,15 +124,16 @@ this offline" conclusion was re-derived and found to be a four-line bug in this 
 script, and the post-mortem names the process failure (testing on phones before checking the
 host) as more expensive than the technical one.
 
-**Evidence.** `docs/Findings-DirectTransportFlapping.md`, `docs/Decision-OfflineHosting.md`
-(§"What went wrong in getting here"), `docs/plans/remove-direct-transport.md`,
-`docs/Findings-DnsAudit.md`.
+**Evidence.** `docs/archive/Findings-DirectTransportFlapping.md`, `docs/Decision-OfflineHosting.md`
+(§"What went wrong in getting here"), `docs/archive/plans/remove-direct-transport.md`,
+`docs/archive/Findings-DnsAudit.md`.
 
 **Why it belongs in an application.** Most applicants submit only successes. Funders assessing
 whether a solo developer will spend their money well are assessing exactly this.
 
-**Limitation.** The documentation graph has decayed — several referenced files were deleted.
-Repairing it is a first-week task, not a funded one.
+**Limitation.** Previously the documentation graph had decayed (files deleted, dead links). As
+of this re-check (2026-09-11) all four sources above exist, either at their original path or
+under `docs/archive/` (paths corrected above) — this limitation is resolved.
 
 ---
 

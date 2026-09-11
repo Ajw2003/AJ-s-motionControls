@@ -54,7 +54,7 @@ survives without it.
 - Bundle `node.exe`; vendor `relay/node_modules` so nothing installs at runtime
 - Code-sign the installer
 - Build CI: tagged commits produce a downloadable signed installer
-- Test CI: `relay/` (49 tests), `controller/test-sensors.js`, and Unity EditMode tests run on push
+- Test CI: `relay/` (48 tests), `controller/test-sensors.js`, and Unity EditMode tests run on push
 - Confirm an *installed* client picks up a refreshed certificate. The pipeline half of this
   is already proven (see G2) and checkable any time with `deploy/Verify-PublishedCert.ps1`;
   the client half needs a build, which is why it lives here
@@ -107,7 +107,7 @@ Generalise `sensors.js` beyond "throw".
   point-and-click
 - Keep `docs/DeviceMatrix.md` current as the maintained verification record (the stale
   `UNVERIFIED (iOS)` markers are already retired) and extend it as new devices are tested
-- Publish the expanded throw dataset (`rock-throws.csv` grown well beyond its current 78 rows)
+- Publish the expanded throw dataset (`rock-throws.csv` grown well beyond its current 265 rows)
 
 **Deliverable:** a documented sensor/gesture API and an open dataset.
 **Acceptance:** a developer implements a *fourth* gesture, not shipped by us, against the public
