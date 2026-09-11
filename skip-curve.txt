@@ -1,539 +1,327 @@
-Skip curve — 6 rocks x 2 tuning sets, driven through the real solver.
-
-CATALOG PROBLEMS — the readings below are not comparable until these are fixed:
-  Rock_01 (Derived) disagrees with Rock_01 (Authored) on MinSpeed (5 vs 1), MaxSpeed (45 vs 60). See RockCatalog.SharedFieldNames for why these must match.
-  Rock_02 (Derived) disagrees with Rock_01 (Authored) on MinSpeed (5 vs 1), MaxSpeed (45 vs 60). See RockCatalog.SharedFieldNames for why these must match.
-  Rock_03 (Derived) disagrees with Rock_01 (Authored) on MinSpeed (5 vs 1), MaxSpeed (45 vs 60). See RockCatalog.SharedFieldNames for why these must match.
-  Rock_04 (Derived) disagrees with Rock_01 (Authored) on MinSpeed (5 vs 1), MaxSpeed (45 vs 60). See RockCatalog.SharedFieldNames for why these must match.
-  Rock_05 (Derived) disagrees with Rock_01 (Authored) on MinSpeed (5 vs 1), MaxSpeed (45 vs 60). See RockCatalog.SharedFieldNames for why these must match.
-  Rock_06 (Derived) disagrees with Rock_01 (Authored) on MinSpeed (5 vs 1), MaxSpeed (45 vs 60). See RockCatalog.SharedFieldNames for why these must match.
+Skip curve — driven through the real solver.
+Constants: SpeedScale 1   EnergyLoss 0.2   forgiveness pitch/roll/yaw 0/0/0 deg   spin tolerance 0.01   reference speed 30 m/s
 
 ======================================================================
-AUTHORED
+Skimmer (rock_01)
 ======================================================================
 
-Skimmer (rock_01) — Authored: rock_01
-  speed 1..60 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
-  best face 0deg +/- 20deg   min skip speed 5 m/s
+Skimmer  —  spin 1.00  vertical 1.00  horizontal 1.00
 
-Power sweep, at the best face angle (0 deg):
+Speed sweep, at pitch 20 deg (the physical optimum), roll 0:
 
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       2.0 m        0.9 m      0.6 m       0.02 m           0.00 m
-   0.20       8      10.7 m        3.2 m      2.3 m       0.06 m           0.02 m
-   0.35      14      37.9 m        9.5 m      6.9 m       0.19 m           0.06 m
-   0.50      20      88.2 m       19.5 m     14.4 m       0.39 m           0.14 m
-   0.65      26     171.3 m       33.0 m     25.3 m       0.69 m           0.26 m
-   0.80      34     307.6 m       50.9 m     40.0 m       1.10 m           0.45 m
-   1.00      49     632.0 m       81.5 m     66.3 m       1.83 m           0.83 m
+  speed    skips   distance   launch arc   1st height   settled height
+    3.0       0       0.6 m        0.0 m       0.00 m           0.00 m
+    8.0       2       7.8 m        4.1 m       0.35 m           0.11 m
+   15.0       7      41.3 m       14.7 m       1.29 m           0.24 m
+   25.0       9     118.9 m       40.9 m       3.64 m           0.70 m
+   35.0      11     236.4 m       80.2 m       7.18 m           1.40 m
+   45.0      12     389.7 m      131.9 m      11.92 m           2.33 m
+   55.0      12     582.7 m      197.4 m      17.85 m           3.50 m
 
-Face angle sweep, at a strong throw (power 0.8):
+Pitch sweep, at 30.0 m/s, roll 0:
 
-   face   skips   distance
-      0      34     307.6 m
-      5      23     155.3 m
-     10      14      76.1 m
-     15       7      27.8 m
-     20       0       0.2 m
-     30       0       0.2 m
-     45       0       0.2 m
-    -15       7      27.8 m
-    -30       0       0.2 m
+   pitch   skips   distance
+    -10       7      45.8 m
+      0       8      71.4 m
+     10       9     121.8 m
+     20      10     171.7 m
+     30       7     122.7 m
+     45       0      91.6 m
+     60       0      79.2 m
 
-FAIL
-  PASS  harder goes further — 10.7 / 88.2 / 632.0 m
-  PASS  harder skips more times — 8 / 20 / 49
-  PASS  harder hops higher — 0.06 / 0.39 / 1.83 m
-  PASS  a neutral throw is a good throw — 49 skips at the best face angle and full power
-  FAIL  a badly angled throw is punished — 0 skips, dead at 0.2 m off a 0.0 m toss — a neutral throw goes 307.6 m in 34 skips
-  PASS  the opening hop does not out-lob the throw — 66.3 m hop off a 81.5 m arc — 0.81x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.83 m
-  PASS  full power stays on the drawn water — 632.0 m against 1060 m of drawn water
+Roll sweep, at 30.0 m/s, pitch 20 deg:
 
-Slab (rock_02) — Authored: rock_02
-  speed 1..60 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
-  best face 0deg +/- 20deg   min skip speed 5 m/s
-
-Power sweep, at the best face angle (0 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       2.0 m        0.9 m      0.6 m       0.02 m           0.00 m
-   0.20       8      10.7 m        3.2 m      2.3 m       0.06 m           0.02 m
-   0.35      14      37.9 m        9.5 m      6.9 m       0.19 m           0.06 m
-   0.50      20      88.2 m       19.5 m     14.4 m       0.39 m           0.14 m
-   0.65      26     171.3 m       33.0 m     25.3 m       0.69 m           0.26 m
-   0.80      34     307.6 m       50.9 m     40.0 m       1.10 m           0.45 m
-   1.00      49     632.0 m       81.5 m     66.3 m       1.83 m           0.83 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      34     307.6 m
-      5      23     155.3 m
-     10      14      76.1 m
-     15       7      27.8 m
-     20       0       0.2 m
-     30       0       0.2 m
-     45       0       0.2 m
-    -15       7      27.8 m
-    -30       0       0.2 m
+    roll   skips   distance
+    -70       0      58.6 m
+    -40       0      58.6 m
+    -20       0      58.6 m
+      0      10     171.7 m
+     20       0      58.6 m
+     40       0      58.6 m
+     70       0      58.6 m
 
 FAIL
-  PASS  harder goes further — 10.7 / 88.2 / 632.0 m
-  PASS  harder skips more times — 8 / 20 / 49
-  PASS  harder hops higher — 0.06 / 0.39 / 1.83 m
-  PASS  a neutral throw is a good throw — 49 skips at the best face angle and full power
-  FAIL  a badly angled throw is punished — 0 skips, dead at 0.2 m off a 0.0 m toss — a neutral throw goes 307.6 m in 34 skips
-  PASS  the opening hop does not out-lob the throw — 66.3 m hop off a 81.5 m arc — 0.81x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.83 m
-  PASS  full power stays on the drawn water — 632.0 m against 1060 m of drawn water
-
-Pebble (rock_03) — Authored: rock_03
-  speed 1..60 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
-  best face 0deg +/- 20deg   min skip speed 5 m/s
-
-Power sweep, at the best face angle (0 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       2.0 m        0.9 m      0.6 m       0.02 m           0.00 m
-   0.20       8      10.7 m        3.2 m      2.3 m       0.06 m           0.02 m
-   0.35      14      37.9 m        9.5 m      6.9 m       0.19 m           0.06 m
-   0.50      20      88.2 m       19.5 m     14.4 m       0.39 m           0.14 m
-   0.65      26     171.3 m       33.0 m     25.3 m       0.69 m           0.26 m
-   0.80      34     307.6 m       50.9 m     40.0 m       1.10 m           0.45 m
-   1.00      49     632.0 m       81.5 m     66.3 m       1.83 m           0.83 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      34     307.6 m
-      5      23     155.3 m
-     10      14      76.1 m
-     15       7      27.8 m
-     20       0       0.2 m
-     30       0       0.2 m
-     45       0       0.2 m
-    -15       7      27.8 m
-    -30       0       0.2 m
-
-FAIL
-  PASS  harder goes further — 10.7 / 88.2 / 632.0 m
-  PASS  harder skips more times — 8 / 20 / 49
-  PASS  harder hops higher — 0.06 / 0.39 / 1.83 m
-  PASS  a neutral throw is a good throw — 49 skips at the best face angle and full power
-  FAIL  a badly angled throw is punished — 0 skips, dead at 0.2 m off a 0.0 m toss — a neutral throw goes 307.6 m in 34 skips
-  PASS  the opening hop does not out-lob the throw — 66.3 m hop off a 81.5 m arc — 0.81x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.83 m
-  PASS  full power stays on the drawn water — 632.0 m against 1060 m of drawn water
-
-Nugget (rock_04) — Authored: rock_04
-  speed 1..60 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
-  best face 0deg +/- 20deg   min skip speed 5 m/s
-
-Power sweep, at the best face angle (0 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       2.0 m        0.9 m      0.6 m       0.02 m           0.00 m
-   0.20       8      10.7 m        3.2 m      2.3 m       0.06 m           0.02 m
-   0.35      14      37.9 m        9.5 m      6.9 m       0.19 m           0.06 m
-   0.50      20      88.2 m       19.5 m     14.4 m       0.39 m           0.14 m
-   0.65      26     171.3 m       33.0 m     25.3 m       0.69 m           0.26 m
-   0.80      34     307.6 m       50.9 m     40.0 m       1.10 m           0.45 m
-   1.00      49     632.0 m       81.5 m     66.3 m       1.83 m           0.83 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      34     307.6 m
-      5      23     155.3 m
-     10      14      76.1 m
-     15       7      27.8 m
-     20       0       0.2 m
-     30       0       0.2 m
-     45       0       0.2 m
-    -15       7      27.8 m
-    -30       0       0.2 m
-
-FAIL
-  PASS  harder goes further — 10.7 / 88.2 / 632.0 m
-  PASS  harder skips more times — 8 / 20 / 49
-  PASS  harder hops higher — 0.06 / 0.39 / 1.83 m
-  PASS  a neutral throw is a good throw — 49 skips at the best face angle and full power
-  FAIL  a badly angled throw is punished — 0 skips, dead at 0.2 m off a 0.0 m toss — a neutral throw goes 307.6 m in 34 skips
-  PASS  the opening hop does not out-lob the throw — 66.3 m hop off a 81.5 m arc — 0.81x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.83 m
-  PASS  full power stays on the drawn water — 632.0 m against 1060 m of drawn water
-
-Shard (rock_05) — Authored: rock_05
-  speed 1..60 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
-  best face 0deg +/- 20deg   min skip speed 5 m/s
-
-Power sweep, at the best face angle (0 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       2.0 m        0.9 m      0.6 m       0.02 m           0.00 m
-   0.20       8      10.7 m        3.2 m      2.3 m       0.06 m           0.02 m
-   0.35      14      37.9 m        9.5 m      6.9 m       0.19 m           0.06 m
-   0.50      20      88.2 m       19.5 m     14.4 m       0.39 m           0.14 m
-   0.65      26     171.3 m       33.0 m     25.3 m       0.69 m           0.26 m
-   0.80      34     307.6 m       50.9 m     40.0 m       1.10 m           0.45 m
-   1.00      49     632.0 m       81.5 m     66.3 m       1.83 m           0.83 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      34     307.6 m
-      5      23     155.3 m
-     10      14      76.1 m
-     15       7      27.8 m
-     20       0       0.2 m
-     30       0       0.2 m
-     45       0       0.2 m
-    -15       7      27.8 m
-    -30       0       0.2 m
-
-FAIL
-  PASS  harder goes further — 10.7 / 88.2 / 632.0 m
-  PASS  harder skips more times — 8 / 20 / 49
-  PASS  harder hops higher — 0.06 / 0.39 / 1.83 m
-  PASS  a neutral throw is a good throw — 49 skips at the best face angle and full power
-  FAIL  a badly angled throw is punished — 0 skips, dead at 0.2 m off a 0.0 m toss — a neutral throw goes 307.6 m in 34 skips
-  PASS  the opening hop does not out-lob the throw — 66.3 m hop off a 81.5 m arc — 0.81x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.83 m
-  PASS  full power stays on the drawn water — 632.0 m against 1060 m of drawn water
-
-Boulder (rock_06) — Authored: rock_06
-  speed 1..60 m/s   kept 0.75..0.95/bounce   exit 7deg -> 5deg over 3 skips
-  best face 0deg +/- 20deg   min skip speed 5 m/s
-
-Power sweep, at the best face angle (0 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       2.0 m        0.9 m      0.6 m       0.02 m           0.00 m
-   0.20       8      10.7 m        3.2 m      2.3 m       0.06 m           0.02 m
-   0.35      14      37.9 m        9.5 m      6.9 m       0.19 m           0.06 m
-   0.50      20      88.2 m       19.5 m     14.4 m       0.39 m           0.14 m
-   0.65      26     171.3 m       33.0 m     25.3 m       0.69 m           0.26 m
-   0.80      34     307.6 m       50.9 m     40.0 m       1.10 m           0.45 m
-   1.00      49     632.0 m       81.5 m     66.3 m       1.83 m           0.83 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      34     307.6 m
-      5      23     155.3 m
-     10      14      76.1 m
-     15       7      27.8 m
-     20       0       0.2 m
-     30       0       0.2 m
-     45       0       0.2 m
-    -15       7      27.8 m
-    -30       0       0.2 m
-
-FAIL
-  PASS  harder goes further — 10.7 / 88.2 / 632.0 m
-  PASS  harder skips more times — 8 / 20 / 49
-  PASS  harder hops higher — 0.06 / 0.39 / 1.83 m
-  PASS  a neutral throw is a good throw — 49 skips at the best face angle and full power
-  FAIL  a badly angled throw is punished — 0 skips, dead at 0.2 m off a 0.0 m toss — a neutral throw goes 307.6 m in 34 skips
-  PASS  the opening hop does not out-lob the throw — 66.3 m hop off a 81.5 m arc — 0.81x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.83 m
-  PASS  full power stays on the drawn water — 632.0 m against 1060 m of drawn water
-
-Separation, Authored — every rock at power 0.80, thrown at its own best angle:
-
-  rock                skips   distance
-  Skimmer                34     307.6 m
-  Slab                   34     307.6 m
-  Pebble                 34     307.6 m
-  Nugget                 34     307.6 m
-  Shard                  34     307.6 m
-  Boulder                34     307.6 m
-
-  FAIL  skip spread 0 (34..34), needs 4 or more
-  FAIL  Skimmer and Slab are the same rock — 0 skips and 0.0 m apart
-  FAIL  Skimmer and Pebble are the same rock — 0 skips and 0.0 m apart
-  FAIL  Skimmer and Nugget are the same rock — 0 skips and 0.0 m apart
-  FAIL  Skimmer and Shard are the same rock — 0 skips and 0.0 m apart
-  FAIL  Skimmer and Boulder are the same rock — 0 skips and 0.0 m apart
-  FAIL  Slab and Pebble are the same rock — 0 skips and 0.0 m apart
-  FAIL  Slab and Nugget are the same rock — 0 skips and 0.0 m apart
-  FAIL  Slab and Shard are the same rock — 0 skips and 0.0 m apart
-  FAIL  Slab and Boulder are the same rock — 0 skips and 0.0 m apart
-  FAIL  Pebble and Nugget are the same rock — 0 skips and 0.0 m apart
-  FAIL  Pebble and Shard are the same rock — 0 skips and 0.0 m apart
-  FAIL  Pebble and Boulder are the same rock — 0 skips and 0.0 m apart
-  FAIL  Nugget and Shard are the same rock — 0 skips and 0.0 m apart
-  FAIL  Nugget and Boulder are the same rock — 0 skips and 0.0 m apart
-  FAIL  Shard and Boulder are the same rock — 0 skips and 0.0 m apart
+  PASS  every throw sinks — no runaway — all runs ended inside 120 s
+  FAIL  a good throw lands in the intended skip band — 10 skips at 30 m/s (want 15-30; tune SkipConstants.EnergyLoss)
+  PASS  harder goes further — 7.8 / 118.9 / 582.7 m
+  PASS  harder skips more times — 2 / 9 / 12
+  PASS  a good throw at the optimal angle skips well — 10 skips at 30.0 m/s, pitch 20 deg
+  PASS  a badly pitched throw is punished — 0 skips at pitch 80 deg (good throw gets 10)
+  PASS  a badly rolled throw catches and sinks — 0 skips at 90 deg of bank (good throw gets 10)
+  FAIL  a settled hop reads as skipping, not lobbing — 3.50 m
+  PASS  full power stays on the drawn water — 582.7 m against 1060 m of drawn water
 
 ======================================================================
-DERIVED
+Slab (rock_02)
 ======================================================================
 
-Skimmer (rock_01) — Derived: rock_01
-  speed 5..45 m/s   kept 0.67..0.89/bounce   exit 11.2deg -> 9deg over 3 skips
-  best face -4.736738deg +/- 13deg   min skip speed 4.2 m/s
+Slab  —  spin 1.00  vertical 1.00  horizontal 1.00
 
-Power sweep, at the best face angle (-4.736738 deg):
+Speed sweep, at pitch 20 deg (the physical optimum), roll 0:
 
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       4.9 m        1.4 m      1.9 m       0.09 m           0.00 m
-   0.20       5      11.7 m        3.0 m      4.1 m       0.20 m           0.03 m
-   0.35       7      27.3 m        6.3 m      9.0 m       0.44 m           0.07 m
-   0.50       9      50.7 m       11.0 m     15.9 m       0.78 m           0.13 m
-   0.65      10      83.4 m       17.0 m     25.3 m       1.24 m           0.22 m
-   0.80      12     127.5 m       24.1 m     37.2 m       1.83 m           0.36 m
-   1.00      14     207.1 m       35.6 m     57.0 m       2.81 m           0.62 m
+  speed    skips   distance   launch arc   1st height   settled height
+    3.0       0       0.6 m        0.0 m       0.00 m           0.00 m
+    8.0       2       7.8 m        4.1 m       0.35 m           0.11 m
+   15.0       7      41.3 m       14.7 m       1.29 m           0.24 m
+   25.0       9     118.9 m       40.9 m       3.64 m           0.70 m
+   35.0      11     236.4 m       80.2 m       7.18 m           1.40 m
+   45.0      12     389.7 m      131.9 m      11.92 m           2.33 m
+   55.0      12     582.7 m      197.4 m      17.85 m           3.50 m
 
-Face angle sweep, at a strong throw (power 0.8):
+Pitch sweep, at 30.0 m/s, roll 0:
 
-   face   skips   distance
-      0      16     119.8 m
-      5       8      49.4 m
-     10       1      28.0 m
-     15       1      27.8 m
-     20       1      27.8 m
-     30       1      27.8 m
-     45       1      27.8 m
-    -15       4      36.2 m
-    -30       1      27.8 m
+   pitch   skips   distance
+    -10       7      45.8 m
+      0       8      71.4 m
+     10       9     121.8 m
+     20      10     171.7 m
+     30       7     122.7 m
+     45       0      91.6 m
+     60       0      79.2 m
 
-FAIL
-  PASS  harder goes further — 11.7 / 50.7 / 207.1 m
-  PASS  harder skips more times — 5 / 9 / 14
-  PASS  harder hops higher — 0.20 / 0.78 / 2.81 m
-  PASS  a neutral throw is a good throw — 14 skips at the best face angle and full power
-  PASS  a badly angled throw is punished — 1 skips, dead at 27.8 m off a 24.1 m toss — a neutral throw goes 127.5 m in 12 skips
-  FAIL  the opening hop does not out-lob the throw — 57.0 m hop off a 35.6 m arc — 1.60x, ceiling 1.35x
-  FAIL  a settled hop reads as skipping, not lobbing — 0.62 m
-  PASS  full power stays on the drawn water — 207.1 m against 1060 m of drawn water
+Roll sweep, at 30.0 m/s, pitch 20 deg:
 
-Slab (rock_02) — Derived: rock_02
-  speed 5..45 m/s   kept 0.79..0.98/bounce   exit 5.6deg -> 3deg over 3 skips
-  best face -8deg +/- 25deg   min skip speed 8.341341 m/s
-
-Power sweep, at the best face angle (-8 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       1       2.7 m        1.4 m      1.3 m       0.03 m           0.00 m
-   0.20       5      10.2 m        3.0 m      2.7 m       0.06 m           0.01 m
-   0.35      10      27.2 m        6.3 m      6.0 m       0.14 m           0.02 m
-   0.50      14      53.5 m       11.0 m     10.5 m       0.25 m           0.04 m
-   0.65      20      95.0 m       17.0 m     16.6 m       0.40 m           0.07 m
-   0.80      26     156.2 m       24.1 m     24.2 m       0.58 m           0.12 m
-   1.00      39     292.8 m       35.6 m     36.7 m       0.89 m           0.19 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      30     129.3 m
-      5      15      72.5 m
-     10       6      43.3 m
-     15       2      33.6 m
-     20       2      33.3 m
-     30       2      33.2 m
-     45       2      33.2 m
-    -15      16      85.7 m
-    -30       2      33.2 m
-
-PASS
-  PASS  harder goes further — 10.2 / 53.5 / 292.8 m
-  PASS  harder skips more times — 5 / 14 / 39
-  PASS  harder hops higher — 0.06 / 0.25 / 0.89 m
-  PASS  a neutral throw is a good throw — 39 skips at the best face angle and full power
-  PASS  a badly angled throw is punished — 2 skips, dead at 33.2 m off a 24.1 m toss — a neutral throw goes 156.2 m in 26 skips
-  PASS  the opening hop does not out-lob the throw — 36.7 m hop off a 35.6 m arc — 1.03x, ceiling 1.35x
-  PASS  a settled hop reads as skipping, not lobbing — 0.19 m
-  PASS  full power stays on the drawn water — 292.8 m against 1060 m of drawn water
-
-Pebble (rock_03) — Derived: rock_03
-  speed 5..45 m/s   kept 0.7690349..0.9642761/bounce   exit 6.57837deg -> 4.048254deg over 3 skips
-  best face -4.445736deg +/- 22.90349deg   min skip speed 10.5 m/s
-
-Power sweep, at the best face angle (-4.445736 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       0       1.4 m        1.4 m      0.0 m       0.03 m           0.00 m
-   0.20       2       8.1 m        3.0 m      3.0 m       0.09 m           0.00 m
-   0.35       6      25.8 m        6.3 m      6.7 m       0.19 m           0.04 m
-   0.50       9      52.2 m       11.0 m     11.8 m       0.34 m           0.07 m
-   0.65      13      92.7 m       17.0 m     18.6 m       0.53 m           0.12 m
-   0.80      17     150.1 m       24.1 m     27.3 m       0.78 m           0.18 m
-   1.00      23     267.3 m       35.6 m     41.4 m       1.19 m           0.30 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      24     168.2 m
-      5      17     100.1 m
-     10      11      58.6 m
-     15       3      37.6 m
-     20       2      35.5 m
-     30       2      35.3 m
-     45       2      35.3 m
-    -15      10      63.2 m
-    -30       2      35.3 m
-
-PASS
-  PASS  harder goes further — 8.1 / 52.2 / 267.3 m
-  PASS  harder skips more times — 2 / 9 / 23
-  PASS  harder hops higher — 0.09 / 0.34 / 1.19 m
-  PASS  a neutral throw is a good throw — 23 skips at the best face angle and full power
-  PASS  a badly angled throw is punished — 2 skips, dead at 35.3 m off a 24.1 m toss — a neutral throw goes 150.1 m in 17 skips
-  PASS  the opening hop does not out-lob the throw — 41.4 m hop off a 35.6 m arc — 1.16x, ceiling 1.35x
-  PASS  a settled hop reads as skipping, not lobbing — 0.30 m
-  PASS  full power stays on the drawn water — 267.3 m against 1060 m of drawn water
-
-Nugget (rock_04) — Derived: rock_04
-  speed 5..45 m/s   kept 0.7007709..0.9130782/bounce   exit 9.764024deg -> 7.461454deg over 3 skips
-  best face -1.947659deg +/- 16.07709deg   min skip speed 4.967987 m/s
-
-Power sweep, at the best face angle (-1.947659 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       3       4.9 m        1.4 m      1.8 m       0.08 m           0.00 m
-   0.20       5      12.0 m        3.0 m      3.8 m       0.16 m           0.03 m
-   0.35       7      28.4 m        6.3 m      8.5 m       0.36 m           0.06 m
-   0.50      10      53.9 m       11.0 m     15.2 m       0.64 m           0.13 m
-   0.65      12      89.5 m       17.0 m     23.9 m       1.02 m           0.22 m
-   0.80      14     137.7 m       24.1 m     35.0 m       1.50 m           0.34 m
-   1.00      17     227.7 m       35.6 m     53.6 m       2.30 m           0.59 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      15     137.6 m
-      5      17     103.7 m
-     10       8      48.5 m
-     15       1      28.6 m
-     20       1      28.4 m
-     30       1      28.4 m
-     45       1      28.4 m
-    -15       4      34.6 m
-    -30       1      28.4 m
+    roll   skips   distance
+    -70       0      58.6 m
+    -40       0      58.6 m
+    -20       0      58.6 m
+      0      10     171.7 m
+     20       0      58.6 m
+     40       0      58.6 m
+     70       0      58.6 m
 
 FAIL
-  PASS  harder goes further — 12.0 / 53.9 / 227.7 m
-  PASS  harder skips more times — 5 / 10 / 17
-  PASS  harder hops higher — 0.16 / 0.64 / 2.30 m
-  PASS  a neutral throw is a good throw — 17 skips at the best face angle and full power
-  PASS  a badly angled throw is punished — 1 skips, dead at 28.4 m off a 24.1 m toss — a neutral throw goes 137.7 m in 14 skips
-  FAIL  the opening hop does not out-lob the throw — 53.6 m hop off a 35.6 m arc — 1.51x, ceiling 1.35x
-  PASS  a settled hop reads as skipping, not lobbing — 0.59 m
-  PASS  full power stays on the drawn water — 227.7 m against 1060 m of drawn water
-
-Shard (rock_05) — Derived: rock_05
-  speed 5..45 m/s   kept 0.7513934..0.951045/bounce   exit 7.401644deg -> 4.930333deg over 3 skips
-  best face -1deg +/- 21.13933deg   min skip speed 8.556273 m/s
-
-Power sweep, at the best face angle (-1 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       1       2.9 m        1.4 m      1.5 m       0.05 m           0.00 m
-   0.20       3       9.9 m        3.0 m      3.3 m       0.10 m           0.00 m
-   0.35       7      27.9 m        6.3 m      7.2 m       0.23 m           0.04 m
-   0.50       9      53.9 m       11.0 m     12.9 m       0.41 m           0.09 m
-   0.65      12      92.9 m       17.0 m     20.2 m       0.65 m           0.15 m
-   0.80      16     148.9 m       24.1 m     29.6 m       0.95 m           0.23 m
-   1.00      21     257.9 m       35.6 m     45.3 m       1.46 m           0.39 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      17     151.1 m
-      5      21     142.9 m
-     10      15      80.0 m
-     15       7      44.5 m
-     20       2      33.4 m
-     30       2      33.0 m
-     45       2      33.0 m
-    -15       6      44.3 m
-    -30       2      33.0 m
-
-PASS
-  PASS  harder goes further — 9.9 / 53.9 / 257.9 m
-  PASS  harder skips more times — 3 / 9 / 21
-  PASS  harder hops higher — 0.10 / 0.41 / 1.46 m
-  PASS  a neutral throw is a good throw — 21 skips at the best face angle and full power
-  PASS  a badly angled throw is punished — 2 skips, dead at 33.0 m off a 24.1 m toss — a neutral throw goes 148.9 m in 16 skips
-  PASS  the opening hop does not out-lob the throw — 45.3 m hop off a 35.6 m arc — 1.27x, ceiling 1.35x
-  PASS  a settled hop reads as skipping, not lobbing — 0.39 m
-  PASS  full power stays on the drawn water — 257.9 m against 1060 m of drawn water
-
-Boulder (rock_06) — Derived: rock_06
-  speed 5..45 m/s   kept 0.7595224..0.9571418/bounce   exit 7.022289deg -> 4.523881deg over 3 skips
-  best face -7.115371deg +/- 21.95224deg   min skip speed 9.387575 m/s
-
-Power sweep, at the best face angle (-7.115371 deg):
-
-  power   skips   distance   launch arc   1st hop   1st height   settled height
-   0.10       0       1.4 m        1.4 m      0.0 m       0.03 m           0.00 m
-   0.20       3       9.7 m        3.0 m      3.2 m       0.10 m           0.00 m
-   0.35       6      26.6 m        6.3 m      7.0 m       0.21 m           0.04 m
-   0.50       9      53.3 m       11.0 m     12.4 m       0.38 m           0.08 m
-   0.65      13      93.5 m       17.0 m     19.6 m       0.60 m           0.13 m
-   0.80      16     149.1 m       24.1 m     28.5 m       0.87 m           0.21 m
-   1.00      22     262.5 m       35.6 m     43.6 m       1.33 m           0.35 m
-
-Face angle sweep, at a strong throw (power 0.8):
-
-   face   skips   distance
-      0      20     127.8 m
-      5      14      73.0 m
-     10       5      41.3 m
-     15       2      34.2 m
-     20       2      33.8 m
-     30       2      33.8 m
-     45       2      33.8 m
-    -15      11      76.6 m
-    -30       2      33.8 m
-
-PASS
-  PASS  harder goes further — 9.7 / 53.3 / 262.5 m
-  PASS  harder skips more times — 3 / 9 / 22
-  PASS  harder hops higher — 0.10 / 0.38 / 1.33 m
-  PASS  a neutral throw is a good throw — 22 skips at the best face angle and full power
-  PASS  a badly angled throw is punished — 2 skips, dead at 33.8 m off a 24.1 m toss — a neutral throw goes 149.1 m in 16 skips
-  PASS  the opening hop does not out-lob the throw — 43.6 m hop off a 35.6 m arc — 1.22x, ceiling 1.35x
-  PASS  a settled hop reads as skipping, not lobbing — 0.35 m
-  PASS  full power stays on the drawn water — 262.5 m against 1060 m of drawn water
-
-Separation, Derived — every rock at power 0.80, thrown at its own best angle:
-
-  rock                skips   distance
-  Skimmer                12     127.5 m
-  Slab                   26     156.2 m
-  Pebble                 17     150.1 m
-  Nugget                 14     137.7 m
-  Shard                  16     148.9 m
-  Boulder                16     149.1 m
-
-  PASS  skip spread 14 (12..26), needs 4 or more
-  FAIL  Pebble and Shard are the same rock — 1 skip and 1.1 m apart
-  FAIL  Pebble and Boulder are the same rock — 1 skip and 0.9 m apart
-  FAIL  Shard and Boulder are the same rock — 0 skips and 0.2 m apart
+  PASS  every throw sinks — no runaway — all runs ended inside 120 s
+  FAIL  a good throw lands in the intended skip band — 10 skips at 30 m/s (want 15-30; tune SkipConstants.EnergyLoss)
+  PASS  harder goes further — 7.8 / 118.9 / 582.7 m
+  PASS  harder skips more times — 2 / 9 / 12
+  PASS  a good throw at the optimal angle skips well — 10 skips at 30.0 m/s, pitch 20 deg
+  PASS  a badly pitched throw is punished — 0 skips at pitch 80 deg (good throw gets 10)
+  PASS  a badly rolled throw catches and sinks — 0 skips at 90 deg of bank (good throw gets 10)
+  FAIL  a settled hop reads as skipping, not lobbing — 3.50 m
+  PASS  full power stays on the drawn water — 582.7 m against 1060 m of drawn water
 
 ======================================================================
-AUTHORED vs DERIVED
+Pebble (rock_03)
 ======================================================================
 
-Every rock at power 0.80, each thrown at its own best angle.
-delta is derived minus authored, in skips.
+Pebble  —  spin 1.00  vertical 1.00  horizontal 1.00
 
-                       authored               derived
-  rock                skips     dist        skips     dist     delta
-  Skimmer                34     307.6         12     127.5       -22
-  Slab                   34     307.6         26     156.2        -8
-  Pebble                 34     307.6         17     150.1       -17
-  Nugget                 34     307.6         14     137.7       -20
-  Shard                  34     307.6         16     148.9       -18
-  Boulder                34     307.6         16     149.1       -18
+Speed sweep, at pitch 20 deg (the physical optimum), roll 0:
 
-Separation, per set:
-  FAIL  Authored separates the rocks — 0 skips between the weakest and strongest rock
-  FAIL  Derived separates the rocks — 14 skips between the weakest and strongest rock
-  FAIL  every rock passes its own verdict on both sets
+  speed    skips   distance   launch arc   1st height   settled height
+    3.0       0       0.6 m        0.0 m       0.00 m           0.00 m
+    8.0       2       7.8 m        4.1 m       0.35 m           0.11 m
+   15.0       7      41.3 m       14.7 m       1.29 m           0.24 m
+   25.0       9     118.9 m       40.9 m       3.64 m           0.70 m
+   35.0      11     236.4 m       80.2 m       7.18 m           1.40 m
+   45.0      12     389.7 m      131.9 m      11.92 m           2.33 m
+   55.0      12     582.7 m      197.4 m      17.85 m           3.50 m
+
+Pitch sweep, at 30.0 m/s, roll 0:
+
+   pitch   skips   distance
+    -10       7      45.8 m
+      0       8      71.4 m
+     10       9     121.8 m
+     20      10     171.7 m
+     30       7     122.7 m
+     45       0      91.6 m
+     60       0      79.2 m
+
+Roll sweep, at 30.0 m/s, pitch 20 deg:
+
+    roll   skips   distance
+    -70       0      58.6 m
+    -40       0      58.6 m
+    -20       0      58.6 m
+      0      10     171.7 m
+     20       0      58.6 m
+     40       0      58.6 m
+     70       0      58.6 m
 
 FAIL
-  Derived separates better (14 skips of spread against Authored's 0) — mesh bounds alone are enough.
+  PASS  every throw sinks — no runaway — all runs ended inside 120 s
+  FAIL  a good throw lands in the intended skip band — 10 skips at 30 m/s (want 15-30; tune SkipConstants.EnergyLoss)
+  PASS  harder goes further — 7.8 / 118.9 / 582.7 m
+  PASS  harder skips more times — 2 / 9 / 12
+  PASS  a good throw at the optimal angle skips well — 10 skips at 30.0 m/s, pitch 20 deg
+  PASS  a badly pitched throw is punished — 0 skips at pitch 80 deg (good throw gets 10)
+  PASS  a badly rolled throw catches and sinks — 0 skips at 90 deg of bank (good throw gets 10)
+  FAIL  a settled hop reads as skipping, not lobbing — 3.50 m
+  PASS  full power stays on the drawn water — 582.7 m against 1060 m of drawn water
+
+======================================================================
+Nugget (rock_04)
+======================================================================
+
+Nugget  —  spin 1.00  vertical 1.00  horizontal 1.00
+
+Speed sweep, at pitch 20 deg (the physical optimum), roll 0:
+
+  speed    skips   distance   launch arc   1st height   settled height
+    3.0       0       0.6 m        0.0 m       0.00 m           0.00 m
+    8.0       2       7.8 m        4.1 m       0.35 m           0.11 m
+   15.0       7      41.3 m       14.7 m       1.29 m           0.24 m
+   25.0       9     118.9 m       40.9 m       3.64 m           0.70 m
+   35.0      11     236.4 m       80.2 m       7.18 m           1.40 m
+   45.0      12     389.7 m      131.9 m      11.92 m           2.33 m
+   55.0      12     582.7 m      197.4 m      17.85 m           3.50 m
+
+Pitch sweep, at 30.0 m/s, roll 0:
+
+   pitch   skips   distance
+    -10       7      45.8 m
+      0       8      71.4 m
+     10       9     121.8 m
+     20      10     171.7 m
+     30       7     122.7 m
+     45       0      91.6 m
+     60       0      79.2 m
+
+Roll sweep, at 30.0 m/s, pitch 20 deg:
+
+    roll   skips   distance
+    -70       0      58.6 m
+    -40       0      58.6 m
+    -20       0      58.6 m
+      0      10     171.7 m
+     20       0      58.6 m
+     40       0      58.6 m
+     70       0      58.6 m
+
+FAIL
+  PASS  every throw sinks — no runaway — all runs ended inside 120 s
+  FAIL  a good throw lands in the intended skip band — 10 skips at 30 m/s (want 15-30; tune SkipConstants.EnergyLoss)
+  PASS  harder goes further — 7.8 / 118.9 / 582.7 m
+  PASS  harder skips more times — 2 / 9 / 12
+  PASS  a good throw at the optimal angle skips well — 10 skips at 30.0 m/s, pitch 20 deg
+  PASS  a badly pitched throw is punished — 0 skips at pitch 80 deg (good throw gets 10)
+  PASS  a badly rolled throw catches and sinks — 0 skips at 90 deg of bank (good throw gets 10)
+  FAIL  a settled hop reads as skipping, not lobbing — 3.50 m
+  PASS  full power stays on the drawn water — 582.7 m against 1060 m of drawn water
+
+======================================================================
+Shard (rock_05)
+======================================================================
+
+Shard  —  spin 1.00  vertical 1.00  horizontal 1.00
+
+Speed sweep, at pitch 20 deg (the physical optimum), roll 0:
+
+  speed    skips   distance   launch arc   1st height   settled height
+    3.0       0       0.6 m        0.0 m       0.00 m           0.00 m
+    8.0       2       7.8 m        4.1 m       0.35 m           0.11 m
+   15.0       7      41.3 m       14.7 m       1.29 m           0.24 m
+   25.0       9     118.9 m       40.9 m       3.64 m           0.70 m
+   35.0      11     236.4 m       80.2 m       7.18 m           1.40 m
+   45.0      12     389.7 m      131.9 m      11.92 m           2.33 m
+   55.0      12     582.7 m      197.4 m      17.85 m           3.50 m
+
+Pitch sweep, at 30.0 m/s, roll 0:
+
+   pitch   skips   distance
+    -10       7      45.8 m
+      0       8      71.4 m
+     10       9     121.8 m
+     20      10     171.7 m
+     30       7     122.7 m
+     45       0      91.6 m
+     60       0      79.2 m
+
+Roll sweep, at 30.0 m/s, pitch 20 deg:
+
+    roll   skips   distance
+    -70       0      58.6 m
+    -40       0      58.6 m
+    -20       0      58.6 m
+      0      10     171.7 m
+     20       0      58.6 m
+     40       0      58.6 m
+     70       0      58.6 m
+
+FAIL
+  PASS  every throw sinks — no runaway — all runs ended inside 120 s
+  FAIL  a good throw lands in the intended skip band — 10 skips at 30 m/s (want 15-30; tune SkipConstants.EnergyLoss)
+  PASS  harder goes further — 7.8 / 118.9 / 582.7 m
+  PASS  harder skips more times — 2 / 9 / 12
+  PASS  a good throw at the optimal angle skips well — 10 skips at 30.0 m/s, pitch 20 deg
+  PASS  a badly pitched throw is punished — 0 skips at pitch 80 deg (good throw gets 10)
+  PASS  a badly rolled throw catches and sinks — 0 skips at 90 deg of bank (good throw gets 10)
+  FAIL  a settled hop reads as skipping, not lobbing — 3.50 m
+  PASS  full power stays on the drawn water — 582.7 m against 1060 m of drawn water
+
+======================================================================
+Boulder (rock_06)
+======================================================================
+
+Boulder  —  spin 1.00  vertical 1.00  horizontal 1.00
+
+Speed sweep, at pitch 20 deg (the physical optimum), roll 0:
+
+  speed    skips   distance   launch arc   1st height   settled height
+    3.0       0       0.6 m        0.0 m       0.00 m           0.00 m
+    8.0       2       7.8 m        4.1 m       0.35 m           0.11 m
+   15.0       7      41.3 m       14.7 m       1.29 m           0.24 m
+   25.0       9     118.9 m       40.9 m       3.64 m           0.70 m
+   35.0      11     236.4 m       80.2 m       7.18 m           1.40 m
+   45.0      12     389.7 m      131.9 m      11.92 m           2.33 m
+   55.0      12     582.7 m      197.4 m      17.85 m           3.50 m
+
+Pitch sweep, at 30.0 m/s, roll 0:
+
+   pitch   skips   distance
+    -10       7      45.8 m
+      0       8      71.4 m
+     10       9     121.8 m
+     20      10     171.7 m
+     30       7     122.7 m
+     45       0      91.6 m
+     60       0      79.2 m
+
+Roll sweep, at 30.0 m/s, pitch 20 deg:
+
+    roll   skips   distance
+    -70       0      58.6 m
+    -40       0      58.6 m
+    -20       0      58.6 m
+      0      10     171.7 m
+     20       0      58.6 m
+     40       0      58.6 m
+     70       0      58.6 m
+
+FAIL
+  PASS  every throw sinks — no runaway — all runs ended inside 120 s
+  FAIL  a good throw lands in the intended skip band — 10 skips at 30 m/s (want 15-30; tune SkipConstants.EnergyLoss)
+  PASS  harder goes further — 7.8 / 118.9 / 582.7 m
+  PASS  harder skips more times — 2 / 9 / 12
+  PASS  a good throw at the optimal angle skips well — 10 skips at 30.0 m/s, pitch 20 deg
+  PASS  a badly pitched throw is punished — 0 skips at pitch 80 deg (good throw gets 10)
+  PASS  a badly rolled throw catches and sinks — 0 skips at 90 deg of bank (good throw gets 10)
+  FAIL  a settled hop reads as skipping, not lobbing — 3.50 m
+  PASS  full power stays on the drawn water — 582.7 m against 1060 m of drawn water
+
+======================================================================
+REFERENCE
+======================================================================
+
+Every rock at 30.0 m/s, pitch 20 deg, roll 0:
+
+  rock                spin   vert   horiz   skips   distance
+  Skimmer              1.00   1.00    1.00      10     171.7 m
+  Slab                 1.00   1.00    1.00      10     171.7 m
+  Pebble               1.00   1.00    1.00      10     171.7 m
+  Nugget               1.00   1.00    1.00      10     171.7 m
+  Shard                1.00   1.00    1.00      10     171.7 m
+  Boulder              1.00   1.00    1.00      10     171.7 m
+
+Speed vs multiplier — the acceptance criterion:
+
+  base       (30.0 m/s, multipliers 1.00) — 10 skips, 171.7 m
+  2x speed   (60.0 m/s, multipliers 1.00) — 13 skips, 696.8 m
+  best rock  (30.0 m/s, spin 1.20 / vertical 1.30 / horizontal 0.95) — 11 skips, 202.3 m
+
+  PASS  speed vs multiplier — doubling swing speed beats the best rock the tuning ranges can express
+
+
+FAIL

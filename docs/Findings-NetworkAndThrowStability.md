@@ -384,6 +384,7 @@ Nothing on `:80` reaches this path (`handleProbeRequest`, `:923-933`).
 CONFIRMED by reading plus JS semantics; not reproduced against a live relay.
 
 **Status:** fixed in group 1, test `fix: a malformed percent-encoded path answers 400, not a crash`.
+**Hardware check:** passed 2026-09-10 — on a phone, `https://play.skiprocking.ca:8443/%` showed the Bad request page and a joined phone kept playing (Ayden).
 
 ### C2. Phones can send host-only message types, and Unity believes them
 
@@ -459,6 +460,8 @@ dropping `* constants.SpeedScale`. But:
 `SkipCurve`'s speed sweep now means stone speed rather than hand speed. `9c3f201` also dropped the
 `SpinMultiplier` clamp from launch spin (`:212`).
 
+**Status:** fixed in group 2, test `CreateLaunch_ScalesSwingSpeedBySpeedScale`.
+
 ### D2. A stray MonoBehaviour in the pure physics file
 
 `9c3f201` appended `public class FakeSkip : MonoBehaviour` in the **global namespace** to
@@ -467,6 +470,11 @@ dropping `* constants.SpeedScale`. But:
 - **It breaks a documented rule.** `SkipPhysics.cs` is in the `RockSkipping.Physics` assembly,
   which `Assets/CLAUDE.md` says must stay pure and dependency-free.
 - **Unity will complain.** It flags a MonoBehaviour whose class name doesn't match its file name.
+
+**Status:** fixed in group 2 — `FakeSkip` moved to `Assets/Scripts/Game/FakeSkip.cs`
+(Assembly-CSharp), the stray `using Game;` removed from `SkipPhysics.cs`; verified by
+`tools/verify.ps1`'s Unity compile stage (no new Console errors) rather than a dedicated test,
+since there is no behaviour here for an EditMode test to check.
 
 ---
 

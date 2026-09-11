@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Game;
 using UnityEngine;
 
 namespace Game
@@ -184,7 +183,10 @@ namespace Game
         {
             // Raw pass-through: the only conversion left is hand m/s to stone m/s. No
             // normalisation, no power curve — a harder swing is simply a faster stone.
-            var speed = Mathf.Max(0f, swingSpeed);
+            // D1: 9c3f201 dropped `* constants.SpeedScale` here, silently changing what a
+            // rock-throws.csv swingSpeed row meant. Restored — see the SpeedScale tooltip
+            // on SkipConstants for why the asset itself now reads 1.0.
+            var speed = Mathf.Max(0f, swingSpeed) * constants.SpeedScale;
 
             // Where the stone is pointing IS where it goes. Both read off the same
             // rotation the mesh is drawn with, so the throw can never disagree with the
@@ -209,7 +211,9 @@ namespace Game
                 // Signed. Which way the wrist turned is mostly visual, but it also widens
                 // every forgiveness band (see EffectiveBand) and, above all, stabilises the
                 // stone against tumbling — see SkipState.WanderDeg.
-                Spin = spinRate,
+                // D1: 9c3f201 also dropped this clamp, letting a rock's SpinMultiplier
+                // scale spin unbounded. Restored to the authored [0.8, 1.2] range.
+                Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.8f, 1.2f),
                 WanderDeg = 0f,
                 SkipCount = 0,
                 HasSunk = false,
@@ -376,20 +380,5 @@ namespace Game
 
 
     }
-
-}
-
-public class FakeSkip : MonoBehaviour
-{
-    public float energyloss = 0.2f;
-    public float Weight = 1f;
-    public float Thickness = 0.2f;
-    public float minliftforskip;
-
-    //heavyer stone goes further with more effort but is harder to control
-
-    //lighter stone requires less effort and too much can make it fail
-
-
 
 }

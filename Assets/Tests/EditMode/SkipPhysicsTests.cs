@@ -113,6 +113,43 @@ namespace RockSkipping.Physics.Tests
         }
 
         [Test]
+        public void CreateLaunch_ScalesSwingSpeedBySpeedScale()
+        {
+            // D1: 9c3f201 dropped `* constants.SpeedScale` from CreateLaunch, so every
+            // rock-throws.csv row since then under-reported swing speed. Guard it directly:
+            // launch velocity magnitude must scale with SpeedScale, not just pass swingSpeed
+            // straight through.
+            var constants = DefaultConstants();
+            constants.SpeedScale = 2f;
+            var tuning = DefaultTuning();
+            const float swingSpeed = 15f;
+
+            var state = MakeLaunchState(constants, tuning, swingSpeed: swingSpeed, pitchDeg: 0f, rollDeg: 0f);
+
+            Assert.That(state.Velocity.magnitude, Is.EqualTo(swingSpeed * constants.SpeedScale).Within(0.01f),
+                $"CreateLaunch must scale swingSpeed by SpeedScale; expected " +
+                $"{swingSpeed * constants.SpeedScale}, got {state.Velocity.magnitude}.");
+        }
+
+        [Test]
+        public void CreateLaunch_ClampsSpinMultiplier()
+        {
+            // D1: 9c3f201 also dropped the [0.8, 1.2] clamp on SpinMultiplier from launch
+            // spin. A rock authored (or mis-authored) outside that range must still only
+            // ever scale spin within the clamp.
+            var constants = DefaultConstants();
+            var tuning = DefaultTuning();
+            tuning.SpinMultiplier = 5f;
+            const float spinRate = 300f;
+
+            var state = MakeLaunchState(constants, tuning, spinRate: spinRate);
+
+            Assert.That(state.Spin, Is.EqualTo(spinRate * 1.2f).Within(0.01f),
+                $"CreateLaunch must clamp SpinMultiplier to [0.8, 1.2]; expected " +
+                $"{spinRate * 1.2f}, got {state.Spin}.");
+        }
+
+        [Test]
         public void ReferenceThrow_ProducesAtLeastOneSkip()
         {
             var constants = DefaultConstants();

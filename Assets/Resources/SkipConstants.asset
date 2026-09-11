@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Game.SkipConstants
   Gravity: 9.81
   WaterY: 0
-  SpeedScale: 1.2
+  SpeedScale: 1
   EnergyLoss: 0.2
   LiftShare: 0.05
   MinLoss: 0.01

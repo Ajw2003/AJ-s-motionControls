@@ -22,7 +22,12 @@ namespace Game
         [Header("Launch")]
         [Tooltip("Converts the phone's raw swing speed (m/s at the wrist) into a stone's " +
                  "launch speed. The one constant the model cannot remove — everything else " +
-                 "is either raw phone signal or falls out of geometry.")]
+                 "is either raw phone signal or falls out of geometry.\n\n" +
+                 "As of group 2 (2026-09-10, D1) the asset reads 1.0: 9c3f201 had silently " +
+                 "stopped applying this scale in CreateLaunch while leaving the asset at 1.2, " +
+                 "so every throw since was already running at the 1.0 feel Ayden had settled " +
+                 "on without it. Restoring the multiplication and setting the asset to 1.0 " +
+                 "keeps that tuned feel exactly, rather than reintroducing the old 1.2x.")]
         public float SpeedScale = 1f;
 
         [Header("Bounce")]
