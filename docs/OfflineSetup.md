@@ -26,7 +26,7 @@ Why Wi-Fi Direct was tried and dropped: `Findings-WiFiDirect.md` (deleted; in gi
 | DHCP for phones | ICS, automatic |
 | DNS for phones | `relay/dns.js` on `0.0.0.0:53`, bound *before* tethering by `HotspotService` waiting on `LocalServices.ProbeDnsBound` |
 | DNS for the **host** | `hosts` file entry (see below) — the host does not take DHCP from itself |
-| Certificate | Cached `*.local-ip.sh`, valid to **2026-11-17**, no network needed to use it |
+| Certificate | Cached single-name cert for `MagicDomain.HostName` (`play.skiprocking.ca`), renewed by `.github/workflows/renew-cert.yml`; no network needed to *use* it |
 | Phone join | Two QRs: Wi-Fi payload, then the game URL |
 
 ### The three things that made it work
@@ -73,12 +73,21 @@ New-NetFirewallRule -DisplayName "RockSkipping hotspot DNS" -Direction Inbound -
 **3. Hosts entry — so the host can resolve its own relay offline**
 
 ```powershell
-Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`n192.168.137.1  192-168-137-1.local-ip.sh" -Encoding ASCII
+Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`n192.168.137.1  play.skiprocking.ca" -Encoding ASCII
 ```
 
-Safe by construction: `local-ip.sh` names encode their own address, so this duplicates the public
-DNS answer exactly. It is correct online and off, hotspot running or not, and cannot point
-anywhere wrong. TLS validation is unaffected — the name still matches the certificate.
+> **The hostname is not a literal to copy.** It is whatever `MagicDomain.HostName` resolves to on
+> this machine — `play.skiprocking.ca` by default, or the override in `magic-domain.txt`.
+> `deploy/setup-offline.ps1` reads the same override file and is the supported way to install this
+> entry; the command is shown only so the effect on the machine is legible.
+
+The entry is safe because Hotspot mode always uses the fixed ICS address `192.168.137.1`, which is
+the same answer `relay/dns.js` gives every guest — so the host and its guests resolve the name
+identically. TLS validation is unaffected: the name still matches the certificate.
+
+This is a change from the original design, where the name was an IP-encoding `local-ip.sh` label
+that duplicated a public DNS answer by construction. That service is dead; the safety argument now
+rests on the address being fixed rather than on the name encoding it.
 
 ### Not elevated
 
@@ -169,7 +178,8 @@ spawns the relay.
 `SetStateAsync` needs no prompt. Both spikes already do this; it needs porting across.
 
 **3. Certificate renewal is silent until it isn't.**
-The cached certificate is good to 2026-11-17 and renews only when the host is online.
+Renewal itself is a GitHub Actions cron, so it does not depend on the host being online — but
+*collecting* a renewed certificate does.
 `CertificateProvider` already falls back to the cache correctly, but a machine that is *always*
 offline will eventually run one party past expiry with no warning. Surface days-remaining on the
 join screen below some threshold, rather than discovering it at a party.

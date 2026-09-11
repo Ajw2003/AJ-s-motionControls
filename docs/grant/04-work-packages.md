@@ -56,7 +56,7 @@ survives without it.
 - Build CI: tagged commits produce a downloadable signed installer
 - Test CI: `relay/` (49 tests), `controller/test-sensors.js`, and Unity EditMode tests run on push
 - Confirm an *installed* client picks up a refreshed certificate. The pipeline half of this
-  is already proven (see G2) and checkable any time with `deploy/verify-published-cert.sh`;
+  is already proven (see G2) and checkable any time with `deploy/Verify-PublishedCert.ps1`;
   the client half needs a build, which is why it lives here
 
 **Deliverable:** a downloadable installer, and a certificate refresh proven all the way to an

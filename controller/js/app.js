@@ -7,7 +7,7 @@
  */
 
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
-import { ThrowController, ThrowState, buildAimPayload } from './throw.js';
+import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { loadIdentity, ensureDeviceId, updateIdentity } from './identity.js';
 
@@ -51,6 +51,18 @@ const ui = {
 // flattening peak power; too high and it lags when the phone is re-oriented.
 // The right value depends on the device's real sample rate — tune on hardware.
 const GRAVITY_K = Number(new URLSearchParams(location.search).get('gravityK')) || 0.8;
+
+// A5/A6 accidental-throw guard tunables (docs/Findings-NetworkAndThrowStability.md),
+// overridable the same way as GRAVITY_K so Ayden can dial them in on a real phone
+// without a redeploy. A non-numeric or missing value keeps ThrowTuning's default —
+// `Number('')` is 0, which is falsy, so `|| default` behaves the same way here.
+const throwParams = new URLSearchParams(location.search);
+const THROW_TUNING = {
+  ...ThrowTuning,
+  armGraceMs: Number(throwParams.get('armGraceMs')) || ThrowTuning.armGraceMs,
+  swingOnsetSamples: Number(throwParams.get('onsetSamples')) || ThrowTuning.swingOnsetSamples,
+  minThrowSwingSpeed: Number(throwParams.get('minThrowSpeed')) || ThrowTuning.minThrowSwingSpeed,
+};
 
 const motion = new MotionSource({ gravityK: GRAVITY_K });
 let connection = null;
@@ -102,6 +114,7 @@ function setStatus(text, kind = '') {
 // ---------------------------------------------------------------- gesture
 
 const thrower = new ThrowController(motion, {
+  tuning: THROW_TUNING,
   // Through sendAim, not sendInput: the seq the TV orders frames by is stamped there,
   // once, for every producer. See sendAim.
   onAim: (payload) => sendAim(payload),
@@ -800,6 +813,19 @@ function updateDebug() {
   const s = motion.latest;
   ui.debug.textContent = [
     `state    ${thrower.state}   seq ${thrower.seq}   windup ${thrower._windSpeed.toFixed(2)} m/s`,
+    // A5/A6 guard state — onset run toward swingOnsetSamples, and whether the arm
+    // grace window (armGraceMs) is still blocking a swing from starting. Both are
+    // otherwise invisible from outside ThrowController, which is exactly why a
+    // real throw that gets eaten on hardware is hard to tune blind.
+    // The grace countdown reads the same clock the guard does — sample time since
+    // _graceStartT — not performance.now() since arm(). Those two clocks need not
+    // share an origin, and a readout that disagrees with the rule it describes is
+    // worse than none while tuning armGraceMs on a phone.
+    `onset    ${thrower._onsetRun}/${thrower.tuning.swingOnsetSamples}   grace ${
+      thrower._graceStartT === null || !s
+        ? 'n/a'
+        : `${Math.max(0, thrower.tuning.armGraceMs - (s.t - thrower._graceStartT)).toFixed(0)}ms`
+    }`,
     `socket   ${connection?.status ?? 'not connected'}`,
     `calib    ${motion.hasReference() ? 'set' : 'none'}`,
     // The delta quaternion itself. Four numbers rather than three named angles because

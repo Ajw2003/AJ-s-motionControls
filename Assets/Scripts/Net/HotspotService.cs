@@ -74,6 +74,14 @@ namespace Net
 
         public event Action<HotspotState> StateChanged;
 
+        /// <summary>
+        /// Non-empty when the hotspot is up but sharing one radio across two bands, which
+        /// makes the 20Hz AIM stream arrive in bursts and the aim preview read as jerky and
+        /// delayed. Rendered by JoinScreen; never fatal, because a laggy game still beats no
+        /// game. See docs/plans/aim-preview-lag-on-shared-radio.md.
+        /// </summary>
+        public string RadioSharingWarning { get; private set; }
+
         private bool _ownedTethering;
         private ChildProcessGroup _group;
 
@@ -86,6 +94,13 @@ namespace Net
             public string warning;
             public string error;
             public string message;
+
+            // Which band the access point asked for, what the host's own station link is on,
+            // and whether those could be matched. See Get-StationBandName in
+            // hotspot/hotspot-control.ps1 for why a mismatch costs the aim preview.
+            public string band;
+            public string stationBand;
+            public bool bandMatched;
         }
 
         protected override void Awake()
@@ -225,6 +240,23 @@ namespace Net
                      result.Value.warning);
                 yield break;
             }
+
+            // Not a failure, so this is checked after the fatal warning above rather than
+            // beside it. bandMatched is false when the host's station link is on a band the
+            // access point cannot follow it onto (6 GHz), or when the adapter refused the
+            // band outright. Either way one radio is serving two channels, it time-slices,
+            // and the phones feel it long before anyone thinks to blame Wi-Fi.
+            //
+            // Note this reports what was ASKED for. The driver places the access point, and
+            // Windows exposes no way to read back the channel it chose - so the wording says
+            // "may", and tools/measure-hotspot-jitter.ps1 is how you find out for certain.
+            RadioSharingWarning = result.Value.bandMatched
+                ? null
+                : $"Your Wi-Fi ({result.Value.stationBand}) is sharing one radio with the " +
+                  $"game's hotspot ({BandLabel(result.Value.band)}), so controls may feel " +
+                  "laggy. Disconnect from Wi-Fi for a smooth game.";
+
+            if (RadioSharingWarning != null) Debug.LogWarning($"[HotspotService] {RadioSharingWarning}");
 
             _ownedTethering = true;
             SetState(HotspotState.Ready, $"Hotspot \"{Ssid}\" ready.");
@@ -550,6 +582,16 @@ namespace Net
         }
 
         // ------------------------------------------------------------------ state
+
+        /// <summary>
+        /// The WinRT enum name as something readable off a television.
+        /// </summary>
+        private static string BandLabel(string band) => band switch
+        {
+            "TwoPointFourGigahertz" => "2.4 GHz",
+            "FiveGigahertz" => "5 GHz",
+            _ => band
+        };
 
         private void SetState(HotspotState state, string message)
         {

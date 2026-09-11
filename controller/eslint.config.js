@@ -27,6 +27,9 @@ export default [
         DeviceMotionEvent: 'readonly',
         DeviceOrientationEvent: 'readonly',
         performance: 'readonly',
+        // identity.js mints device ids with crypto.getRandomValues; every secure context
+        // this page requires already provides it.
+        crypto: 'readonly',
       },
     },
     rules: {},

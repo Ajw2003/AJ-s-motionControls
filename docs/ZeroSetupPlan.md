@@ -9,8 +9,8 @@ is now built and its certificate source has been replaced wholesale — see the 
 Phase 5's installer script exists and now bakes in a seed certificate. Phases 1, 3 and 4 remain
 design only, so the game still cannot be handed to anyone else — see *The four blockers*.
 
-Companion documents: [SecurityReview.md](SecurityReview.md) for what this design asks of a
-player, and [HostingPlan.md](HostingPlan.md) for the history of how the architecture got here.
+Companion documents: [systems/HostingAndCertificates.md](systems/HostingAndCertificates.md) for what this design asks of a
+player, and [systems/HostingAndCertificates.md](systems/HostingAndCertificates.md) for how the architecture works today.
 
 ---
 
@@ -54,9 +54,9 @@ The real blockers are that **a downloaded build cannot currently start a relay a
 
 | # | Blocker | Where it bites | Evidence |
 |---|---|---|---|
-| 1 | **Node.js is not bundled** | Hard failure: "Install Node 20 or newer from nodejs.org and relaunch" | [LocalServices.cs:175](Assets/Scripts/Net/LocalServices.cs:175) |
-| 2 | **Dependencies install at runtime** | First run shells out to `npm install`, needing npm and internet, 180s timeout | [LocalServices.cs:219](Assets/Scripts/Net/LocalServices.cs:219) |
-| 3 | **`relay/` and `controller/` are not in the build** | Looks for `<exe folder>/relay/server.js`; both live outside `Assets/`, so Unity never copies them | [LocalServices.cs:420](Assets/Scripts/Net/LocalServices.cs:420) |
+| 1 | **Node.js is not bundled** | Hard failure: "Install Node 20 or newer from nodejs.org and relaunch" | [LocalServices.cs:175](../Assets/Scripts/Net/LocalServices.cs:175) |
+| 2 | **Dependencies install at runtime** | First run shells out to `npm install`, needing npm and internet, 180s timeout | [LocalServices.cs:219](../Assets/Scripts/Net/LocalServices.cs:219) |
+| 3 | **`relay/` and `controller/` are not in the build** | Looks for `<exe folder>/relay/server.js`; both live outside `Assets/`, so Unity never copies them | [LocalServices.cs:420](../Assets/Scripts/Net/LocalServices.cs:420) |
 | 4 | ~~**The certificate is manual and expires**~~ **CLOSED** | Was: only `deploy/local-https.ps1` obtained it. That script is deleted; `CertificateProvider` fetches and caches on every launch, and `renew-cert.yml` renews unattended | [CertificateProvider.cs](../Assets/Scripts/Net/CertificateProvider.cs) |
 
 A build handed to somebody else today fails at #3 before it ever reaches #1. This is invisible
@@ -91,7 +91,7 @@ already step 4 of the join flow, it stays in the browser, and it costs one tap.
 Traffic isolation (Phase 4.2) means guests' browsing never reaches the host. **DNS lookups and
 local-subnet chatter still do.** The defensible claim is *"the hotspot does not carry your
 internet traffic, and nothing you do is attributable to the host"* — **not** *"the host can see
-nothing."* [SecurityReview.md](SecurityReview.md) §2 has the precise boundary.
+nothing."* `SecurityReview.md` §2 had the precise boundary; that document was deleted in `0b7c500` and is recoverable only from git history.
 
 ### What is *no longer* a constraint
 
@@ -129,7 +129,7 @@ this is the only phase no spike has de-risked.*
 
 **1.1 Vendor the dependencies.** `relay/node_modules` is **796 KB** — just `ws` and
 `qrcode-generator`. Commit it, or copy it at build time. Deletes the `npm install` path
-([LocalServices.cs:216-243](Assets/Scripts/Net/LocalServices.cs:216)) with its timeout, its
+([LocalServices.cs:216-243](../Assets/Scripts/Net/LocalServices.cs:216)) with its timeout, its
 `cmd.exe` shim handling, and its failure mode.
 
 **1.2 Bundle the Node runtime.** Ship `node.exe` (~50 MB) beside the relay. Replace
@@ -181,12 +181,15 @@ developer escape hatch survives. Phase 4.3's DNS responder landed at the same ti
 **Not done:** confirming the C# path end to end in the editor. `deploy/local-https.ps1` is gone —
 deleted rather than kept broken, which is what retired its dead `test-deployed.js` call.
 
-> **The deadline moved, and the reason is worth recording.** This section previously said the
-> cached certificate expires 2026-09-18. That was true of *that copy* — `%TEMP%` has since been
-> cleared, which took it, and a fresh download now returns a certificate valid to
-> **2026-11-17**. So the calendar pressure is off, but the incident is a live demonstration of
-> why the cache cannot live in `%TEMP%`: `Application.persistentDataPath` is not swept by
-> Storage Sense, which is precisely why the new provider uses it.
+> **The specific dates in this section are historical, and the certificate source has changed
+> wholesale.** Both the 2026-09-18 and 2026-11-17 expiries recorded here belonged to `local-ip.sh`
+> certificates; that service is dead. The certificate is now single-name for
+> `MagicDomain.HostName`, renewed by `.github/workflows/renew-cert.yml` — see
+> [plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).
+>
+> **The incident behind these dates is still the point.** A cached certificate vanished because
+> `%TEMP%` was swept. `Application.persistentDataPath` is not swept by Storage Sense, which is
+> precisely why the provider uses it. That reasoning survives the change of certificate source.
 
 Move certificate handling out of `deploy/local-https.ps1` into a `CertificateProvider` that runs
 before `LocalServices`:
@@ -220,7 +223,7 @@ editor menu item for the desktop dev loop.
 *Small mechanical fixes. Each is independent and none is risky.*
 
 **3.1 Remove the dead compiled-in address.** `relayUrl` still defaults to
-`wss://rockskipping-relay.fly.dev` ([RelayClient.cs:47](Assets/Scripts/Net/RelayClient.cs:47)),
+`wss://rockskipping-relay.fly.dev` ([RelayClient.cs:47](../Assets/Scripts/Net/RelayClient.cs:47)),
 dead since the Fly teardown. Default to the URL Phase 2 derives. `relay-url.txt` stays as a
 developer override.
 
@@ -339,7 +342,7 @@ Two consequences worth designing around:
 **Ship the hardened version, not the naive one.** The spike's first cut was an open recursive
 resolver — a DNS amplification reflector. The shipped code must keep the source guard (drop, do
 not refuse), the per-source rate limit, and the safe-by-default bind.
-[SecurityReview.md](SecurityReview.md) §4 has the reasoning; do not reimplement from memory.
+`SecurityReview.md` §4 had the reasoning (deleted in `0b7c500`, in git history); do not reimplement from memory.
 
 **Scope limit:** hotspot mode only. On a normal LAN phones use the router's DNS, which we do not
 control, so the responder must not run there at all. Two modes, deliberately.
@@ -508,4 +511,4 @@ internet, no shared network, and the host needs no uplink either.
 6. **The security fixes live in spike code, not production.** The DNS source guard in particular
    is load-bearing rather than defence-in-depth, because the narrow bind is unavailable at
    startup. *Mitigation:* port it deliberately, with tests — see
-   [SecurityReview.md](SecurityReview.md).
+   `SecurityReview.md` (deleted in `0b7c500`; in git history).

@@ -35,9 +35,27 @@ function attitudeFields(q) {
 }
 
 export const ThrowTuning = {
-  // Below this peak, treat the gesture as a fumble rather than a throw — stops a
-  // pocket bump or a shaky hand registering as a real attempt.
-  minValidPeakAccel: 3,
+  // --- accidental-throw guard (Findings-NetworkAndThrowStability.md A5/A6) --
+  // `minValidPeakAccel` used to live here as the "fumble" guard, but it never could
+  // trip: reaching computeThrowDescriptor already required a sample past swingAccel
+  // (14), so a peak below this constant's value of 3 was unreachable dead code (A5).
+  // These three fields are its real replacement, layered so no single accelerometer
+  // sample — however hard — can commit a throw by itself.
+
+  // Samples within this long of arm() never start a swing. A5: arm() runs inside
+  // the touchend handler, so without a grace window the jolt of the tap itself (or
+  // of lifting the phone up into a swing) was scored as the start of the gesture.
+  armGraceMs: 250,
+
+  // Consecutive samples at or above swingAccel needed before a gesture counts as a
+  // real swing rather than a single spike or a tap jolt. A5: one sample used to be
+  // enough and nothing could ever un-commit it once _swinging was set.
+  swingOnsetSamples: 3,
+
+  // A computed swingSpeed below this is a swing too weak to be a real throw — a
+  // twitch that still happened to clear the onset run. Discarded in _fire without
+  // cancelling the arm; see ThrowController._fire.
+  minThrowSwingSpeed: 3,
 
   // --- release detection ---------------------------------------------------
   // The gesture is "accelerate hard, then stop dead". There is no button release:
@@ -157,15 +175,6 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
   // is inferred, averaged or reached back for: what the sensors said at that instant
   // is what the stone does.
   const stop = samples[samples.length - 1];
-
-  // Peak, not integral. Peak matches perceived effort and is far more forgiving
-  // of the sample rate wobbling, which it does on real phones.
-  let peak = samples[0];
-  for (const sample of samples) {
-    if (sample.power > peak.power) peak = sample;
-  }
-
-  if (peak.power < tuning.minValidPeakAccel) return null;
 
   const swingSpeed = peakSwingSpeed(samples, tuning);
 
@@ -380,9 +389,23 @@ export class ThrowController {
     this._timer = null;
     this._armedAt = 0;
 
+    // A5: the clock the grace window is measured against. Null means "no motion
+    // sample seen yet since arm()" — see _onSample, which stamps this from the
+    // first sample it gets rather than from performance.now() in arm(). arm()'s
+    // own clock and a sample's `t` are not guaranteed to share an origin (the unit
+    // tests stamp samples from 0), and on a real phone the first sample lands
+    // within about one ~17ms sensor tick of the tap either way, so the behaviour
+    // on hardware is the same.
+    this._graceStartT = null;
+
     this._swinging = false;
     this._peak = null;
     this._calmRun = 0;
+
+    // A5: consecutive samples at or above swingAccel, reset by any sample below
+    // it. Only once this reaches swingOnsetSamples does _swinging get set —
+    // one hard sample is a spike, not a swing.
+    this._onsetRun = 0;
 
     // Live spin for the preview, and when it was last updated. Null rather than 0,
     // because a timestamp of 0 is a legitimate reading and must not be mistaken for
@@ -412,9 +435,8 @@ export class ThrowController {
     if (this.state !== ThrowState.IDLE) return null;
 
     this._armedAt = performance.now();
-    this._swinging = false;
-    this._peak = null;
-    this._calmRun = 0;
+    this._graceStartT = null; // A5: re-armed at the next sample seen, not now
+    this._resetSwingState();
     this._spin = 0;
     this._spinT = null;
     this._windVelocity = { x: 0, y: 0, z: 0 };
@@ -458,9 +480,8 @@ export class ThrowController {
   /** Turn ended or connection dropped while armed — stand down without throwing. */
   cancel() {
     this._stopTimer();
-    this._swinging = false;
-    this._peak = null;
-    this._calmRun = 0;
+    this._graceStartT = null;
+    this._resetSwingState();
     this._spin = 0;
     this._spinT = null;
     this._windVelocity = { x: 0, y: 0, z: 0 };
@@ -499,8 +520,21 @@ export class ThrowController {
 
   // ---------------------------------------------------------------- detection
 
+  /** Onset-run and swing-in-progress state, shared by arm(), cancel() and a discard in _fire(). */
+  _resetSwingState() {
+    this._swinging = false;
+    this._peak = null;
+    this._calmRun = 0;
+    this._onsetRun = 0;
+  }
+
   _onSample(sample) {
     if (this.state !== ThrowState.ARMED) return;
+
+    // A5: the grace window starts at the first sample seen while ARMED, not at
+    // arm()'s own performance.now() — see the comment on _graceStartT's field.
+    if (this._graceStartT === null) this._graceStartT = sample.t;
+    const inGrace = sample.t - this._graceStartT < this.tuning.armGraceMs;
 
     // Tracked here rather than on the aim timer, for the same reason release
     // detection is: a wrist flick peaks and is gone well inside one 20Hz interval,
@@ -517,12 +551,29 @@ export class ThrowController {
     this._trackWindup(sample, dtMs);
 
     if (sample.power >= this.tuning.swingAccel) {
-      this._swinging = true;
+      // A5: a sample inside the grace window can never start a swing, however hard
+      // it reads — that is the tap jolt itself, or the jolt of lifting the phone up
+      // to swing it. Not counted toward the onset run at all.
+      if (inGrace) {
+        this._onsetRun = 0;
+        return;
+      }
+
+      // A5: swingOnsetSamples consecutive samples over threshold, not one, before
+      // this counts as a real swing rather than a single spike.
+      this._onsetRun++;
+      if (this._onsetRun >= this.tuning.swingOnsetSamples) this._swinging = true;
+
       this._calmRun = 0;
       if (this._peak === null || sample.power > this._peak.power) this._peak = sample;
       return;
     }
 
+    this._onsetRun = 0;
+
+    // this._swinging only becomes true once a sustained onset run has landed above,
+    // so both the stop-detection path below and the maxSwingMs fallback after it are
+    // unreachable from a lone spike that never got that far (A5/A6).
     if (!this._swinging) return;
 
     // A swing passes through near-zero acceleration at its own turnaround, so one
@@ -536,7 +587,9 @@ export class ThrowController {
 
     this._calmRun = 0;
 
-    // Never leave a player armed because their phone did not quite settle.
+    // Never leave a player armed because their phone did not quite settle. Only
+    // reachable once _swinging is true, i.e. after a sustained onset run (A5/A6) —
+    // a single spike can no longer arm this fallback and then fire on a timer.
     if (this._peak && sample.t - this._peak.t > this.tuning.maxSwingMs) this._fire();
   }
 
@@ -553,10 +606,21 @@ export class ThrowController {
     }
 
     const descriptor = computeThrowDescriptor(samples, this.tuning, peakSpin);
+
+    // A5/A6: a discarded gesture — no descriptor at all, or a computed swingSpeed
+    // below minThrowSwingSpeed — must not cancel() the arm. cancel() drops the
+    // player back to IDLE, forcing a re-tap, and the re-tap's own jolt is exactly
+    // the kind of accidental sample this guard exists to stop (A5's "re-aims by
+    // itself"). Resetting only the swing-detection state and staying ARMED lets a
+    // player who is still genuinely swinging just keep going. _graceStartT is
+    // deliberately NOT reset here — the grace window applies once, right after
+    // arm(), not again after every discard.
+    if (!descriptor || descriptor.swingSpeed < this.tuning.minThrowSwingSpeed) {
+      this._resetSwingState();
+      return null;
+    }
+
     this.cancel();
-
-    if (!descriptor) return null; // a twitch, not a throw — stay armed-off and let them retry
-
     this.onThrow({ type: 'THROW', ...descriptor });
     return descriptor;
   }

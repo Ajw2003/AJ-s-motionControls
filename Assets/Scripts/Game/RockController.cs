@@ -27,12 +27,12 @@ namespace Game
         [Header("Sink")]
         [Tooltip("How long the stone takes to slip under after a HARD arrival — it is going " +
                  "fast, so it goes quickly.")]
-        [SerializeField] private float fastSinkDuration = 0.45f;
+        [SerializeField] private float fastSinkDuration = 0.25f;
 
         [Tooltip("How long it takes after a run simply ends — no momentum left, so it settles " +
                  "rather than knifing, and needs longer on screen to read as settling instead " +
                  "of vanishing.")]
-        [SerializeField] private float slowSinkDuration = 1f;
+        [SerializeField] private float slowSinkDuration = 0.5f;
 
         [Tooltip("How far a hard arrival drives under. Only needs to beat the point where the " +
                  "water occludes it.")]

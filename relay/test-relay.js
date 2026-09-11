@@ -240,6 +240,47 @@ describe('Relay integration', () => {
     check('/health still answers', health.status === 200 && JSON.parse(health.body).ok === true);
   });
 
+  // ---- C1: a malformed request path must never crash the process -----------
+  // Before the fix, decodeURIComponent threw a URIError with nothing to catch it,
+  // which took the whole process (and every room on it) down with it. See
+  // docs/Findings-NetworkAndThrowStability.md, C1.
+  test('fix: a malformed percent-encoded path answers 400, not a crash', async () => {
+    const bad = await httpGet('/%');
+    check('GET /% answers 400', bad.status === 400, String(bad.status));
+
+    const health = await httpGet('/health');
+    check(
+      '/health still answers after a malformed path',
+      health.status === 200 && JSON.parse(health.body).ok === true,
+      String(health.status),
+    );
+  });
+
+  // ---- C4: static serving is an allowlist, not the whole controller/ tree ---
+  test('fix: static serving is an allowlist, not a directory', async () => {
+    const pkg = await httpGet('/package.json');
+    check('/package.json is not served', pkg.status === 404, String(pkg.status));
+
+    const eslintCfg = await httpGet('/eslint.config.js');
+    check('/eslint.config.js is not served', eslintCfg.status === 404, String(eslintCfg.status));
+
+    const testSensors = await httpGet('/test-sensors.js');
+    check('/test-sensors.js is not served', testSensors.status === 404, String(testSensors.status));
+
+    const appJs = await httpGet('/js/app.js');
+    check('/js/app.js is served', appJs.status === 200, String(appJs.status));
+
+    const index = await httpGet('/');
+    check('/ is served', index.status === 200, String(index.status));
+
+    const traversal = await httpGet('/..%2fpackage.json');
+    check(
+      'path traversal never serves package.json',
+      traversal.status === 404 || traversal.status === 400,
+      String(traversal.status),
+    );
+  });
+
   // ---- a host that comes back keeps its room and its players ---------------
   // This is the party-survival case: a redeploy or a Wi-Fi blip must not eject
   // everyone and force them to retype a code that no longer exists.

@@ -35,7 +35,27 @@ namespace Game
     /// </remarks>
     public static class PlaceholderArt
     {
-        /// <summary>Drawn first, so everything else lands on top of it.</summary>
+        /// <summary>
+        /// The far shoreline — the most distant thing in the scene, drawn BEFORE the water.
+        /// </summary>
+        /// <remarks>
+        /// Below WaterQueue, and the ordering is load-bearing rather than tidy. The water keeps
+        /// its ZWrite OFF except during a sink (see <see cref="SetWaterDepthWrite"/>), so it
+        /// leaves nothing in the depth buffer. Anything drawn AFTER it therefore has nothing to
+        /// be occluded by and paints straight over the lake — which is exactly what happened
+        /// when the shore first shipped sharing WaterQueue.
+        ///
+        /// Drawn first, the relationship comes out right for free: the shore writes depth at its
+        /// own distance, then the water draws over it wherever the water is nearer, and water
+        /// fragments beyond the bank fail the depth test and stay hidden behind it.
+        ///
+        /// The lesson the file's header already states, arrived at from the other direction: a
+        /// NEW ROLE GETS A NEW QUEUE. Do not reuse another role's number because the two happen
+        /// to sit near each other in the world.
+        /// </remarks>
+        public const int ShoreQueue = 1900;
+
+        /// <summary>Drawn after the shore, so the far bank sits behind the lake.</summary>
         public const int WaterQueue = 2000;
 
         /// <summary>

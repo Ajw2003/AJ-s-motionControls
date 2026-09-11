@@ -2,30 +2,33 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> Also read [`../CLAUDE.md`](../CLAUDE.md) at the repo root — it points at
-> [`../docs/Rule-RenderQR.md`](../docs/Rule-RenderQR.md), a binding rule (always render a QR for
-> network/URL joining, never ask someone to type or hunt for one) that applies across the whole
-> project, not just `Assets/`.
+> **Start at [`../docs/README.md`](../docs/README.md)** — the documentation entry point. It is
+> tier 1 of a five-tier structure (landing → roadmap → project state → per-system docs → today's
+> plan) and says which document answers which question.
+>
+> One rule from there is binding across the whole project, not just `Assets/`: **always render a
+> QR for network/URL joining; never ask someone to type or hunt for an address.** It is recorded
+> in [`../docs/systems/HostingAndCertificates.md`](../docs/systems/HostingAndCertificates.md).
 
 ## What this is
 
 A couch party game: Unity runs on a PC driving the TV, and players' phones are motion
 controllers reached through a web page — no app download, Jackbox-style, modelled on Wii Play:
 Motion's "Skip Skimmer". The full design/architecture doc is
-[`../docs/PLAN.md`](../docs/PLAN.md) — read it before touching networking, physics, or the
-event system; large parts of it are marked "Superseded" by later docs (in particular
-[`../docs/HostingPlan.md`](../docs/HostingPlan.md)), so check for a superseding note before
-trusting a section.
+[`../docs/systems/`](../docs/systems/) — one document per runtime-critical system. Read the
+relevant one before touching networking, physics, the motion pipeline, or the event system; each
+states the invariants that must not break and the traps that have already cost someone a day.
+[`../docs/ProjectState.md`](../docs/ProjectState.md) says what is actually built right now.
 
 Three independently-run pieces, only one of which lives under `Assets/`:
 
 | Path | What it is |
 |---|---|
-| `Assets/` (this directory) | Unity 6 project (`6000.3.10f1`) — the game/TV screen |
+| `Assets/` (this directory) | Unity 6 project (`6000.3.15f1`) — the game/TV screen |
 | `../relay/` | Node WebSocket relay + HTTP server that also serves the controller page |
 | `../controller/` | Phone controller web app (vanilla JS): sensors, throw gesture, join/choose screens |
 | `../deploy/` | `setup-offline.ps1` — one-time elevated machine setup for Hotspot mode, run automatically by `HotspotService` on first use (one UAC prompt, no manual step); `LocalServices` hosts the relay+controller over HTTPS itself, on Play |
-| `../docs/` | Design docs, plans, findings — check dates/"Superseded" notes, this project changes hosting/physics decisions often |
+| `../docs/` | Documentation, five tiers, entry point `../docs/README.md`. Inert docs live in `../docs/archive/` and describe nothing current |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
 sensor deltas (`AIM`, `THROW`, `PICK_ROCK`, `PICK_COLOUR`, `ADVANCE`) and receive broadcast
@@ -72,7 +75,8 @@ There is no out-of-band C# compile check — Unity holds an exclusive project lo
 `Unity -batchmode` cannot compile while the Editor has the project open. Don't try to build one;
 verify by checking the open Editor's Console (a prior attempt at this,
 `tools/check-compile.ps1`, was built and then deleted for exactly this reason — see the Build
-log in [`../docs/plans/rock-choosing-system.md`](../docs/plans/rock-choosing-system.md)).
+log in `docs/plans/rock-choosing-system.md`, deleted in `0b7c500` and recoverable from git
+history).
 
 ## Architecture
 
@@ -98,8 +102,8 @@ new events.
 ### Event system (`Scripts/EventSystems/`, `Scripts/EventTypes/`)
 
 Ported from another project (FactoryTM) and patched for multi-scene use — see
-[`../README.md`](../README.md) "Notes for whoever picks this up" and PLAN.md's "Event system"
-section for the three fixes that had to land (persist-on-scene-load, Unity-null-aware
+[`../README.md`](../README.md) "Notes for whoever picks this up" and
+[`../docs/systems/EventSystem.md`](../docs/systems/EventSystem.md) for the fixes that had to land (persist-on-scene-load, Unity-null-aware
 destroyed-subscriber detection, calling `base.OnDestroy()`). New event types live under
 `Scripts/EventTypes/<Category>Events/`, namespaced `EventTypes.<Category>Events`, immutable
 get-only properties set in the constructor — follow an existing file in that folder as the
@@ -112,7 +116,7 @@ template rather than writing from scratch. Publish/subscribe always through
 zero dependencies — sends are thread-affine, hence funneled through one send queue). All
 traffic — `AIM`/`THROW` included — goes over that one relay socket now; the direct WebRTC
 DataChannel transport (`PeerLink`, `com.unity.webrtc`) was removed, see
-`../docs/Findings-DirectTransportFlapping.md` for why it bought nothing once the relay and the
+`../docs/archive/Findings-DirectTransportFlapping.md` for why it bought nothing once the relay and the
 phone were already one hop apart. `LocalServices` owns the relay child process on this machine
 when hosting locally; `HotspotService`/`CertificateProvider` support the PC-hosted-hotspot
 fallback documented in `../deploy/README.md`. `Messages.cs` holds the serializable DTOs
@@ -124,8 +128,8 @@ fields out of `RawMessageReceived`.
 
 Phones normalize sensors *before* sending — Unity never sees a platform (iOS/Android)
 difference. The governing rule and the iOS/Android landmines (no `acceleration` on iOS,
-opposite-direction compass headings, `requestPermission()` gating) are in PLAN.md's "The motion
-pipeline" section; the current heading/attitude conversion used on both the throw path and rock
+opposite-direction compass headings, `requestPermission()` gating) are in
+[`../docs/systems/MotionPipeline.md`](../docs/systems/MotionPipeline.md); the current heading/attitude conversion used on both the throw path and rock
 selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/Physics/PhoneAttitude.cs`) —
 **one conversion, reused everywhere a heading is needed**, no ad-hoc Euler math at call sites.
 
@@ -160,17 +164,30 @@ rather than validator-enforced, because a rock has no field to disagree with. Pr
 (`WaterRipples`, `SfxDirector`, `RockTrail`) normalizes against `SkipConstants.ReferenceSpeed`,
 which is the one speed every such system must agree on.
 
-The **Authored/Derived tuning-set split is gone** (`../docs/plans/Plan-ThrowDrivenSkipModel.md`),
+The **Authored/Derived tuning-set split is gone** (`docs/plans/Plan-ThrowDrivenSkipModel.md`,
+deleted; in git history),
 along with `MatchSettings.TuningSet` and the per-rock `MinSpeed`/`MaxSpeed`/`MinRetention`/
 `MaxRetention`/`Restitution` fields; a stale `tuningSet` key in an old `match-settings.json`
-parses harmlessly and is dropped on the next save. `../docs/Reference-SkipTuning.md` is the
-field-by-field reference, and `../docs/Reference-Constants.md` indexes every constant in the
-project including the ones outside physics.
+parses harmlessly and is dropped on the next save.
+[`../docs/systems/RockCatalogAndTuning.md`](../docs/systems/RockCatalogAndTuning.md) and
+[`../docs/systems/SkipPhysics.md`](../docs/systems/SkipPhysics.md) cover the split and the
+constants; the old `Reference-SkipTuning.md` / `Reference-Constants.md` field-by-field indexes
+were deleted in `0b7c500` and were never rewritten — the `[Tooltip]` text on `SkipConstants` is
+now the most complete per-field reference there is.
 
 Full data-flow, wire format, and the shore-pointing selection UI are in
-[`../docs/plans/rock-choosing-system.md`](../docs/plans/rock-choosing-system.md) — this is the
-plan the current `RockChoosing` branch implements; check its "Build log" section for
-in-progress state and gotchas before assuming something described there is finished.
+[`../docs/systems/RockCatalogAndTuning.md`](../docs/systems/RockCatalogAndTuning.md).
+
+**All six rocks ship identical multipliers, and as of 2026-09-08 that is the design, not a gap.**
+[`../docs/plans/presentation-and-ui.md`](../docs/plans/presentation-and-ui.md) D5 settles that
+rocks differentiate by mesh and silhouette and are named on the scoreboard, while staying
+mechanically identical; milestone 8's acceptance criterion was rewritten to match. Two rules that
+follow, both easy to break by accident:
+
+- **The player's colour always wins the tint.** `RockDefinition.Tint` exists and the catalog
+  builder preserves hand-edits to it, but colour is player identity on a TV — never rock identity.
+- **`Print Skip Curve` showing all six behaving identically is the expected result**, not a
+  failing check. Its job here is the energy invariant.
 
 ### Scoring
 
@@ -186,11 +203,11 @@ not authored clips checked in as assets.
 
 ## Working conventions specific to this repo
 
-- **Docs drift fast and say so.** Several docs (`PLAN.md` especially) contain explicit
+- **Docs drift fast and say so.** Several docs contain explicit
   "Superseded — see X" callouts where a later decision reversed an earlier one (e.g. hosted
   relay → local-PC relay; built-in render pipeline → URP). Read the callout, not just the
   original text, and check `docs/` for a more recent doc on the same topic before acting on an
-  older one.
+  older one. Anything in `docs/archive/` describes nothing current, by definition.
 - **`[SerializeField]` defaults are dead on components built via `AddComponent`.** Several
   tuning components (`AimFeedbackTuning`, `RockSelectTuning`, etc.) exist specifically because
   `Bootstrap`/runtime code builds objects with `AddComponent` rather than instantiating an
@@ -219,7 +236,7 @@ Recorded so a future pass doesn't "fix" these back — each is a deliberate call
   uses Unity's overloaded `==` internally, so the fake-null window is narrow: only the
   `_isQuitting` teardown path can hand back a destroyed instance.
 - **The `*Manager` class names stay** (`AudioManager`, `EventManager`, `ScoreManager`,
-  `TurnManager`) — referenced by name across this file, `docs/PLAN.md`, and the `Bootstrap`
+  `TurnManager`) — referenced by name across this file, `docs/systems/`, and the `Bootstrap`
   ordering comments; renaming is docs-wide churn for a naming-taste win.
 - **`ok` / `resumed` / `reconnected` / `randomRocks` keep their non-question names** — they are
   wire-format field names (matched by string between `Assets/Scripts/Net/Messages.cs` and

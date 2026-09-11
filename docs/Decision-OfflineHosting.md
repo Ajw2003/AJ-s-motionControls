@@ -248,7 +248,7 @@ around the correct ordering before any of this was measured.
 | `LocalServices` Hotspot env | Sets `DNS_RESPOND_IP` / `DNS_ALLOW` / `DNS_SUFFIX`, forces `192.168.137.1` |
 | DNS bind address | `relay/dns.js` defaults to `0.0.0.0`, so it binds before the hotspot address exists |
 | **Ordering** | `HotspotService.BeginTethering()` waits on `LocalServices.ProbeDnsBound` *before* tethering — exactly the order the spike proved is required |
-| Certificate | Cached, `*.local-ip.sh`, valid to **2026-11-17** (88 days). Covers `192-168-137-1.local-ip.sh` |
+| Certificate | Cached single-name cert covering `MagicDomain.HostName` (`play.skiprocking.ca` by default). The `*.local-ip.sh` wildcard recorded here originally is dead — see the box at the top of this file |
 | Scheduled task | `RockSkippingDisableForwarding` present, Ready |
 | Firewall | `RockSkipping relay` TCP/8443 LocalSubnet; `RockSkipping hotspot DNS` UDP/53 on `192.168.137.0/24` |
 | Node + `relay/node_modules` | Present |

@@ -148,7 +148,7 @@ namespace Game
         private const float RollSteerRad = 0.05f;
 
         /// <summary>Below this speed the stone stops skipping and sinks, regardless of angle.</summary>
-        private const float MinSkipSpeed = 2.5f;
+        private const float MinSkipSpeed = 6.5f;
 
         /// <summary>
         /// Leave the water slower than this, vertically, and the stone did not skip — it
@@ -183,6 +183,9 @@ namespace Game
         {
             // Raw pass-through: the only conversion left is hand m/s to stone m/s. No
             // normalisation, no power curve — a harder swing is simply a faster stone.
+            // D1: 9c3f201 dropped `* constants.SpeedScale` here, silently changing what a
+            // rock-throws.csv swingSpeed row meant. Restored — see the SpeedScale tooltip
+            // on SkipConstants for why the asset itself now reads 1.0.
             var speed = Mathf.Max(0f, swingSpeed) * constants.SpeedScale;
 
             // Where the stone is pointing IS where it goes. Both read off the same
@@ -208,6 +211,8 @@ namespace Game
                 // Signed. Which way the wrist turned is mostly visual, but it also widens
                 // every forgiveness band (see EffectiveBand) and, above all, stabilises the
                 // stone against tumbling — see SkipState.WanderDeg.
+                // D1: 9c3f201 also dropped this clamp, letting a rock's SpinMultiplier
+                // scale spin unbounded. Restored to the authored [0.8, 1.2] range.
                 Spin = spinRate * Mathf.Clamp(tuning.SpinMultiplier, 0.8f, 1.2f),
                 WanderDeg = 0f,
                 SkipCount = 0,
@@ -372,5 +377,8 @@ namespace Game
 
             return state;
         }
+
+
     }
+
 }

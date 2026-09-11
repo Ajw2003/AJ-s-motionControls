@@ -636,9 +636,12 @@ console.log('\ncomputeThrowDescriptor');
     `jerk ${jerk.swingSpeed.toFixed(3)} vs pull ${pull.swingSpeed.toFixed(3)}`,
   );
 
-  // A limp gesture should not register as a throw at all.
-  const fumble = [makeSample(0, 1), makeSample(10, 2), makeSample(20, 1)];
-  check('weak gesture returns null', computeThrowDescriptor(fumble) === null);
+  // "weak gesture returns null" (a fumble of samples all below minValidPeakAccel)
+  // is deleted here: it existed only to exercise that dead check (A5 —
+  // computeThrowDescriptor could never actually be reached with a peak that low,
+  // since _fire only calls it after a sample past swingAccel). The real
+  // "too weak to be a throw" guard is minThrowSwingSpeed in ThrowController._fire,
+  // covered under "ThrowController: A5/A6 accidental-throw guard".
 
   check('empty input returns null', computeThrowDescriptor([]) === null);
   check('null input returns null', computeThrowDescriptor(null) === null);
@@ -905,13 +908,20 @@ console.log('\nThrowController: arm, swing, stop');
 
   // Accelerate hard, then stop dead. Exactly three calm samples, because that is
   // the documented threshold — two must not be enough.
+  //
+  // Timestamps start past armGraceMs (A5: samples inside the grace window can never
+  // start a swing) and the onset run is three samples over swingAccel, not one (A5:
+  // swingOnsetSamples), so this fixture still means "a real, sustained swing" under
+  // the group 3 guards, not just "one hard sample".
   const hardSwing = [
     makeSample(0, 2),
-    makeSample(20, 20),
-    makeSample(40, 32), // peak
-    makeSample(60, 3), // calm 1
-    makeSample(80, 2), // calm 2
-    makeSample(100, 1), // calm 3 — fires here
+    makeSample(260, 2), // past armGraceMs (250) — the grace window is over
+    makeSample(280, 60), // onset 1
+    makeSample(300, 80), // onset 2
+    makeSample(320, 100), // onset 3 — sustained, swinging begins here, and the peak
+    makeSample(340, 3), // calm 1
+    makeSample(360, 2), // calm 2
+    makeSample(380, 1), // calm 3 — fires here
   ];
 
   {
@@ -993,6 +1003,190 @@ console.log('\nThrowController: arm, swing, stop');
       aimHz: 1000,
     });
     check('disarming without arming sends nothing', c.disarm() === null && sent.length === 0);
+  }
+}
+
+// ------------------------- A5/A6 layered accidental-throw guard (group 3) -----
+// Findings-NetworkAndThrowStability.md A5: one sample over swingAccel used to
+// commit a throw with nothing able to un-commit it, and the tap that arms the
+// controller (or the jolt of lifting the phone into a swing) was scored from the
+// very first sample. These prove the three-layer guard: an arm grace window, a
+// multi-sample onset run, and a minimum swing speed that discards without
+// cancelling the arm.
+console.log('\nThrowController: A5/A6 accidental-throw guard');
+{
+  const makeMotion = (latest, samples) => ({
+    latest,
+    buffer: { toArray: () => samples, clear() {} },
+    calibrate() {},
+    onSample: () => {},
+  });
+
+  const swing = (controller, motion, samples) => {
+    controller.arm();
+    for (const sample of samples) {
+      motion.latest = sample;
+      motion.onSample(sample);
+    }
+  };
+
+  // Tap jolt ignored: one sample at t=10ms, well inside armGraceMs (250), then calm.
+  {
+    const sent = [];
+    const tapJolt = [
+      makeSample(10, 30), // the tap itself, or lifting the phone — inside grace
+      makeSample(30, 2),
+      makeSample(50, 1),
+      makeSample(70, 2),
+    ];
+    const motion = makeMotion(null, tapJolt);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, tapJolt);
+
+    check('a tap jolt inside the arm grace window never fires', sent.length === 0);
+    check('the controller stays armed after a tap jolt', c.state === ThrowState.ARMED);
+    c.cancel();
+  }
+
+  // Single spike ignored: one sample over swingAccel, past the grace window, alone.
+  {
+    const sent = [];
+    const singleSpike = [
+      makeSample(0, 2),
+      makeSample(400, 30), // past armGraceMs, but a single sample is not an onset run
+      makeSample(420, 2),
+      makeSample(440, 1),
+      makeSample(460, 2),
+    ];
+    const motion = makeMotion(null, singleSpike);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, singleSpike);
+
+    check('a single spike past the grace window never fires', sent.length === 0);
+    check('the controller stays armed after a single spike', c.state === ThrowState.ARMED);
+    c.cancel();
+  }
+
+  // Two-sample spike ignored: short of swingOnsetSamples (3).
+  {
+    const sent = [];
+    const twoSampleSpike = [
+      makeSample(0, 2),
+      makeSample(400, 30), // onset 1
+      makeSample(420, 30), // onset 2 — still one short of swingOnsetSamples
+      makeSample(440, 2),
+      makeSample(460, 1),
+      makeSample(480, 2),
+    ];
+    const motion = makeMotion(null, twoSampleSpike);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, twoSampleSpike);
+
+    check('two consecutive spikes short of swingOnsetSamples never fire', sent.length === 0);
+    check('the controller stays armed after a two-sample spike', c.state === ThrowState.ARMED);
+    c.cancel();
+  }
+
+  // Weak swing kept armed: a sustained swing (3 consecutive onset samples, so it
+  // clears the onset-run guard) whose computed swingSpeed is still below
+  // minThrowSwingSpeed. It must be discarded WITHOUT cancelling the arm, and a real
+  // swing fed right after must still fire exactly once.
+  {
+    const sent = [];
+    let currentSamples = [];
+    const motion = {
+      latest: null,
+      buffer: { toArray: () => currentSamples, clear() {} },
+      calibrate() {},
+      onSample: () => {},
+    };
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    c.arm();
+
+    const weakSwing = [
+      makeSample(0, 2),
+      makeSample(260, 2), // past armGraceMs
+      makeSample(280, 15), // onset 1 — just over swingAccel (14)
+      makeSample(300, 15), // onset 2
+      makeSample(320, 15), // onset 3 — sustained, but weak
+      makeSample(340, 3), // calm 1
+      makeSample(360, 2), // calm 2
+      makeSample(380, 1), // calm 3 — fires, but swingSpeed is below minThrowSwingSpeed
+    ];
+    currentSamples = weakSwing;
+    for (const sample of weakSwing) {
+      motion.latest = sample;
+      motion.onSample(sample);
+    }
+    check(
+      'a weak sustained swing is discarded without cancelling the arm',
+      sent.length === 0 && c.state === ThrowState.ARMED,
+    );
+
+    // A real swing, fed to the same still-armed controller with no re-arm in between.
+    const realSwing = [
+      makeSample(700, 2),
+      makeSample(720, 60),
+      makeSample(740, 80),
+      makeSample(760, 100), // onset run complete, and the peak
+      makeSample(780, 3),
+      makeSample(800, 2),
+      makeSample(820, 1), // fires for real
+    ];
+    currentSamples = realSwing;
+    for (const sample of realSwing) {
+      motion.latest = sample;
+      motion.onSample(sample);
+    }
+    check(
+      'a real swing right after a discard still fires exactly once',
+      sent.length === 1 && !sent[0].simulated,
+    );
+    check('firing returns the controller to idle', c.state === ThrowState.IDLE);
+  }
+
+  // Sustained hard swing still fires — the "abrupt stop fires" behaviour survives
+  // the new guards once the swing is real. Same shape as the updated hardSwing
+  // fixture in the block above (scoped there, so redeclared here).
+  {
+    const sent = [];
+    const sustainedHardSwing = [
+      makeSample(0, 2),
+      makeSample(260, 2), // past armGraceMs (250)
+      makeSample(280, 60), // onset 1
+      makeSample(300, 80), // onset 2
+      makeSample(320, 100), // onset 3 — sustained, and the peak
+      makeSample(340, 3), // calm 1
+      makeSample(360, 2), // calm 2
+      makeSample(380, 1), // calm 3 — fires here
+    ];
+    const motion = makeMotion(null, sustainedHardSwing);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, sustainedHardSwing);
+
+    check('a sustained hard swing still fires exactly once', sent.length === 1);
+    check('firing returns the controller to idle', c.state === ThrowState.IDLE);
+  }
+
+  // Timeout needs a sustained swing: the maxSwingMs fallback is reached only through
+  // the same `if (!this._swinging) return;` guard as the stop-detection path below
+  // it, so a single spike that never clears the onset run can never reach it either,
+  // however long the phone is then held moderately still.
+  {
+    const sent = [];
+    const singleSpikeThenHold = [
+      makeSample(0, 2),
+      makeSample(300, 30), // one spike past grace — onset run of 1, not sustained
+      makeSample(320, 8), // moderate: neither a swing sample nor a calm one
+      makeSample(1300, 8), // 1000ms later — past maxSwingMs (900), if it mattered
+    ];
+    const motion = makeMotion(null, singleSpikeThenHold);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, singleSpikeThenHold);
+
+    check('the maxSwingMs fallback never fires after only a single spike', sent.length === 0);
+    check('the controller stays armed', c.state === ThrowState.ARMED);
+    c.cancel();
   }
 }
 

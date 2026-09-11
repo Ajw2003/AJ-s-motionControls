@@ -484,6 +484,16 @@ namespace Ui
                 // screen text; it's still in the QR for the manual/first-time case.
                 GUILayout.Space(4);
                 GUILayout.Label($"Wi-Fi network: {HotspotService.Instance.Ssid}", _hint);
+
+                // Sits with the Wi-Fi QR rather than in the failure panel, because the
+                // hotspot did start - this is about how it will feel, not whether it works,
+                // and the person who can act on it is the host standing at the TV.
+                var radioWarning = HotspotService.Instance.RadioSharingWarning;
+                if (!string.IsNullOrEmpty(radioWarning))
+                {
+                    GUILayout.Space(4);
+                    GUILayout.Label(radioWarning, _hint);
+                }
             }
             else if (_gameQr.Texture != null)
             {
