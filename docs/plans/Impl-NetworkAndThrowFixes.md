@@ -10,50 +10,83 @@ finding before starting its group.
 1. **Red first.** Write the regression test, run it, and confirm it fails *for the reason the
    finding describes*. A test that passes before the fix does not guard anything. Then implement,
    then go green.
-2. **Run the full suites at the end of every group**, not just the new test (commands below).
-3. **Never run git.** At the end of each group, stop and ask Ayden to commit with the group number
-   in the message. One group per commit is what makes a regression bisectable.
-4. **Unity steps are Ayden's.** The agent writes C#, then hands a step card: focus the Editor,
-   check the Console, run the Test Runner. Never claim Unity code compiles from reading it.
-5. **New Unity files need `.meta` files Unity generates.** Don't hand-write GUIDs; ask Ayden to
-   focus the Editor, and have the metas included in the group's commit.
-6. **Before any Play-mode test after a relay change,** kill the stale relay. `LocalServices` reuses
-   any relay already listening (`docs/systems/Networking.md`, Traps).
-7. **Comments follow the house style.** They explain *why* and name the finding ID. Density must
+2. **Run `tools/verify.ps1` at the end of every group** (see Commands), not just the new test. A
+   group is not done until it prints `VERIFY PASSED`. Put its Summary block in the hand-off note.
+3. **Never run mutating git.** Read-only git (`status`, `diff`, `log`) is fine. At the end of each
+   group, stop and ask Ayden to commit with the group number in the message. One group per commit
+   is what makes a regression bisectable.
+4. **Check Unity yourself, through the open Editor.** `tools/verify.ps1` compiles, reads new
+   Console errors and runs the EditMode tests via the Unity CLI and `com.unity.pipeline`, without
+   closing or focusing Unity. Never claim C# compiles from reading it — the `unity compile` stage
+   is the evidence. If the Editor is unreachable, the script says so: ask Ayden to open Unity on
+   the project; if it is already open, run `unity pipeline list` to check for Safe Mode (compile
+   errors hide the Pipeline server — fix the `error CS####` lines from
+   `%LOCALAPPDATA%\Unity\Editor\Editor.log`, then ask Ayden to restart Unity).
+5. **New Unity files need `.meta` files Unity generates.** Don't hand-write GUIDs. After creating
+   files, run `tools/verify.ps1` (its recompile refreshes the asset database), then confirm with
+   `git status` that each new file has its `.meta`. If one is missing, ask Ayden to focus the
+   Editor. The metas go in the group's commit.
+6. **Before any Play-mode or hardware check after a relay change,** Ayden must kill the stale
+   relay — `LocalServices` reuses any relay already listening (`docs/systems/Networking.md`,
+   Traps). Hand that as a step card; don't kill processes yourself.
+7. **Hardware checks stay Ayden's.** Phones, Play mode and anything on the TV cannot be automated
+   here. Hand each group's hardware check over as step cards after `VERIFY PASSED`.
+8. **Don't overwrite hand tuning.** `Assets/Resources/SkipConstants.asset` carries Ayden's own
+   edits (e.g. `LiftShare: 0.05`). When a group edits that file, change only the named field.
+9. **Comments follow the house style.** They explain *why* and name the finding ID. Density must
    not be trimmed (`Assets/CLAUDE.md`).
-8. **Update the findings doc** with a status line per ID as it lands:
-   `**Status:** fixed in group N, test <name>`.
+10. **Update the findings doc** with a status line per ID as it lands:
+    `**Status:** fixed in group N, test <name>`.
 
 ## Commands
 
-UNTESTED at plan time: these were not run while planning. Group 0 runs them first.
+All run in PowerShell from any folder. Each was run on this machine on 2026-09-10.
 
-- **Relay suite** — PowerShell, runs from anywhere:
-  `npm --prefix "C:\Users\aj\Desktop\GameDev\RockSkipping\relay" test`
-  - **Pass:** `node --test` reports `# fail 0`.
-  - With Unity in Play mode, `test-captive.js` skips one case by design.
-- **Controller suite** — PowerShell:
-  `npm --prefix "C:\Users\aj\Desktop\GameDev\RockSkipping\controller" test`
-  - **Pass:** it ends with `PASS — all controller math checks green`, and no line starts `FAIL`.
-  - Group 6 changes the script to run several files, each printing its own summary.
-- **Relay lint** — PowerShell, only if `relay\node_modules` exists:
-  `npm --prefix "C:\Users\aj\Desktop\GameDev\RockSkipping\relay" run lint`
-  The same command with `controller` covers the controller.
-- **Kill the stale relay** — PowerShell, handed to Ayden as a card:
+- **Everything** — the one to run at the end of every group:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\aj\Desktop\GameDev\RockSkipping\tools\verify.ps1"`
+  - **Pass:** it ends with `VERIFY PASSED` and exits 0.
+  - Stages, in order: `standards` (`tools/audit/check-standards.js`), relay tests and lint,
+    controller tests and lint, then Unity: Editor reachable and not in Play mode, compile, new
+    Console errors since the run started, EditMode tests.
+  - Any stage failing prints the failing tests, compile errors or Console entries, ends with
+    `VERIFY FAILED - N stage(s)`, and exits 1.
+- **While iterating on one area** (still finish the group with the full run):
+  - Unity only, one test class (swap `SkipPhysicsTests` for the class you are working on, e.g.
+    `TurnOrderTests` once group 4 creates it):
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\aj\Desktop\GameDev\RockSkipping\tools\verify.ps1" -Skip standards,relay,controller -TestFilter SkipPhysicsTests`
+    A filter that matches no tests is a FAIL, so a typo can't pass. `-Skip` takes a comma list;
+    an unknown stage name exits 2 before anything runs.
+  - Relay suite: `npm --prefix "C:\Users\aj\Desktop\GameDev\RockSkipping\relay" test`
+    (**pass:** `# fail 0`; with Unity in Play mode `test-captive.js` skips one case by design).
+  - Controller suite: `npm --prefix "C:\Users\aj\Desktop\GameDev\RockSkipping\controller" test`
+    (**pass:** exit 0 and no line starting `FAIL`; group 6 chains more test files).
+- **Unity CLI directly**, for anything the script doesn't cover:
+  `unity command` lists what the Editor exposes (`recompile`, `recompile_status`, `run_tests`,
+  `get_console_logs`, `console`, `editor_status`, …). If `unity` isn't on PATH in an older shell,
+  use `& "$env:LOCALAPPDATA\Unity\bin\unity.exe"`.
+- **Kill the stale relay** — Ayden's step card, never run by the agent:
   `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object CommandLine -like '*server.js*' | ForEach-Object { Stop-Process -Id $_.ProcessId }`
-- **Unity (Ayden, in the Editor):**
-  1. Focus the Editor and wait for the recompile.
-  2. The Console must show no errors.
-  3. Run **Window → General → Test Runner → EditMode → Run All**: everything green.
+
+**Tooling on this machine** (checked 2026-09-10): Node v22.19.0, npm, git; Unity CLI
+1.0.0-beta.9 at `%LOCALAPPDATA%\Unity\bin\unity.exe`; Unity Editor 6000.3.15f1 with
+`com.unity.pipeline` 0.6.0-exp.1; eslint installed in `relay/` and `controller/`.
 
 ---
 
-## Group 0 — Baseline
+## Group 0 — Baseline ✅ done 2026-09-10
 
-1. Run the relay suite and the controller suite, and record the pass counts in the group's
-   hand-off note.
-2. Ask Ayden to run the EditMode Test Runner and report the count.
-3. **If anything is already red, stop and report it.** Don't start group 1 on a red baseline.
+Recorded before any fix:
+
+| Stage | Result |
+|---|---|
+| standards | 23 checks, 0 failing |
+| relay tests | 46 tests, 0 failed (45 + 1 skipped while Unity was in Play mode) |
+| relay lint | clean |
+| controller tests | `PASS — all controller math checks green` |
+| controller lint | clean — after adding the missing `crypto` global to `controller/eslint.config.js` |
+| unity | compiles, no Console errors, EditMode 16 passed |
+
+Nothing is red. Start at group 1.
 
 ---
 

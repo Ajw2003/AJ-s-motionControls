@@ -10,6 +10,18 @@
  * SPECTATE. Anything a player sends goes to the host; anything the host sends
  * goes to every player, or to one player if it carries `targetPlayerId`. New
  * message types can be added to the game without touching this file.
+ *
+ * Static file serving is deliberately an allowlist rather than a directory listing
+ * (see `isAllowedRelativePath`): a bare prefix check on the resolved path let a
+ * phone read anything checked into `controller/` — package.json, eslint config,
+ * test scripts, whatever gets added next to `js/` later — with nothing to notice
+ * a new file had joined the public surface (C4, docs/Findings-NetworkAndThrowStability.md).
+ * Naming exactly what a phone needs (`/`, `index.html`, `js/<name>.js`) keeps that
+ * surface from silently growing. Request handling is also per-request try/catch'd
+ * rather than guarded by a global `uncaughtException` handler, because a malformed
+ * request path used to throw synchronously with nothing catching it and took the
+ * whole process — every room on it — down with it (C1, same doc). A handler scoped
+ * to one request can never do that; a global one would only paper over the crash.
  */
 
 const { WebSocketServer, WebSocket } = require('ws');
@@ -334,13 +346,51 @@ const CONTENT_TYPES = {
   '.ico': 'image/x-icon',
 };
 
+// Only these are ever handed back: `/`, `index.html`, and `js/<name>.js`. This is an
+// allowlist rather than "serve anything under controller/" (C4) — the old prefix check
+// let a phone read package.json, eslint.config.js, test-sensors.js, anything else
+// checked into the folder, since nothing distinguished "the app" from "the repo the
+// app happens to live in". Naming exactly what the phone needs keeps that from
+// silently growing back the next time a file gets added next to js/.
+function isAllowedRelativePath(relative) {
+  if (relative === 'index.html') return true;
+  if (/^js\/[^/]+\.js$/.test(relative)) return true;
+  return false;
+}
+
 function serveStatic(req, res) {
-  const requested = decodeURIComponent((req.url || '/').split('?')[0]);
+  const rawPath = (req.url || '/').split('?')[0];
+  let requested;
+  try {
+    // A malformed escape (e.g. a lone `%`) makes decodeURIComponent throw a URIError.
+    // Before this guard that throw was synchronous inside the request handler with
+    // nothing catching it anywhere in the process, so Node exited and took every room
+    // on the relay down with it (C1) — one phone crashing the whole match. Answering
+    // 400 keeps this request-scoped, like every other malformed-input case here.
+    requested = decodeURIComponent(rawPath);
+  } catch (err) {
+    if (err instanceof URIError) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad request');
+      return;
+    }
+    throw err;
+  }
+
   const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
+
+  if (!isAllowedRelativePath(relative)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+    return;
+  }
+
   const resolved = nodePath.resolve(STATIC_DIR, relative);
 
-  // Refuse anything that escapes the static root.
-  if (!resolved.startsWith(STATIC_DIR)) {
+  // Belt and braces alongside the allowlist above: the allowlist's regex already rules
+  // out `..` segments, but a resolved path is cheap to double-check and this is the
+  // same containment test the rest of the file already reasoned about. `+ path.sep`
+  // (not just `STATIC_DIR`) so a sibling directory whose name merely starts with
+  // "controller" can never pass (C4).
+  if (!resolved.startsWith(STATIC_DIR + nodePath.sep)) {
     res.writeHead(403).end('Forbidden');
     return;
   }
@@ -510,41 +560,53 @@ function sendFunnelSnapshot(ws) {
 let dnsBound = false;
 
 function handleRequest(req, res) {
-  // Base is a formality — only the path and query are ever read.
-  const url = new URL(req.url || '/', 'http://localhost');
+  // Wrapped per-request rather than with a global `process.on('uncaughtException')`
+  // (C1): the latter would keep the process alive but in unknown state — rooms half
+  // torn down, timers possibly stopped — and Node itself only guarantees it's safe to
+  // exit after one, not to keep serving. Catching here means one bad request answers
+  // 500 and every other room and every other request keeps working exactly as before.
+  try {
+    // Base is a formality — only the path and query are ever read.
+    const url = new URL(req.url || '/', 'http://localhost');
 
-  if (url.pathname === '/health') {
-    let players = 0;
-    for (const room of rooms.values()) players += room.players.size;
+    if (url.pathname === '/health') {
+      let players = 0;
+      for (const room of rooms.values()) players += room.players.size;
 
-    const memory = process.memoryUsage();
+      const memory = process.memoryUsage();
 
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end(
-      JSON.stringify({
-        ok: true,
-        rooms: rooms.size,
-        players,
-        connections: wss.clients.size,
-        roomsCreated: metrics.roomsCreated,
-        messagesIn: metrics.messagesIn,
-        messagesOut: metrics.messagesOut,
-        rssMb: Math.round(memory.rss / 1048576),
-        heapMb: Math.round(memory.heapUsed / 1048576),
-        uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
-        dns: { enabled: useDns, bound: dnsBound },
-      }),
-    );
-    return;
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify({
+          ok: true,
+          rooms: rooms.size,
+          players,
+          connections: wss.clients.size,
+          roomsCreated: metrics.roomsCreated,
+          messagesIn: metrics.messagesIn,
+          messagesOut: metrics.messagesOut,
+          rssMb: Math.round(memory.rss / 1048576),
+          heapMb: Math.round(memory.heapUsed / 1048576),
+          uptimeSec: Math.round((Date.now() - metrics.startedAt) / 1000),
+          dns: { enabled: useDns, bound: dnsBound },
+        }),
+      );
+      return;
+    }
+
+    if (url.pathname === '/qr') {
+      serveQr(req, res, url.searchParams);
+      return;
+    }
+
+    if (serveCaptiveProbe(req, res, url.pathname)) return;
+
+    serveStatic(req, res);
+  } catch (err) {
+    log('request handler error:', err && err.message ? err.message : err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' }).end('Internal error');
+    }
   }
-
-  if (url.pathname === '/qr') {
-    serveQr(req, res, url.searchParams);
-    return;
-  }
-
-  if (serveCaptiveProbe(req, res, url.pathname)) return;
-
-  serveStatic(req, res);
 }
 
 /** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */

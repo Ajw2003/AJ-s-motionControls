@@ -16,7 +16,7 @@ MonoBehaviour:
   WaterY: 0
   SpeedScale: 1.2
   EnergyLoss: 0.2
-  LiftShare: 0.0302
+  LiftShare: 0.05
   MinLoss: 0.01
   SpinForStability: 400
   WanderPerBounce: 3

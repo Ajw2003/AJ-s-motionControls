@@ -383,6 +383,8 @@ Nothing on `:80` reaches this path (`handleProbeRequest`, `:923-933`).
 
 CONFIRMED by reading plus JS semantics; not reproduced against a live relay.
 
+**Status:** fixed in group 1, test `fix: a malformed percent-encoded path answers 400, not a crash`.
+
 ### C2. Phones can send host-only message types, and Unity believes them
 
 - **The relay forwards everything.** The default branch sends *any* `type` from a player to the
@@ -418,6 +420,8 @@ directory whose name starts with `controller` would be readable. None exists tod
 
 Everything under `controller/` is served, including `package.json`, `eslint.config.js`,
 `test-sensors.js`, and `node_modules/` if it has been installed there. Information disclosure only.
+
+**Status:** fixed in group 1, test `fix: static serving is an allowlist, not a directory`.
 
 ### C5. Connection and brute-force limits
 
