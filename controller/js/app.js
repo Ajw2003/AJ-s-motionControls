@@ -497,61 +497,102 @@ function bindGrip() {
 // ---------------------------------------------------------------- tutorial
 
 /**
+ * One inline SVG `<g>` for a phone held in a hand — the shared piece every tutorial page
+ * draws its scene from, rather than each page hand-authoring its own phone shape. This is
+ * literal on purpose (a rounded phone body with a camera dot, gripping fingers, a thumb)
+ * rather than an abstract glyph: the walkthrough exists to show what to physically do with
+ * the phone, so the phone needs to actually look like a phone in a hand, at a glance.
+ *
+ * `dim` renders a faint echo (an earlier position in a motion, not the current one) and
+ * `tapRipple` draws the ripple that marks the exact instant a tap is captured.
+ */
+function phoneGlyph({ x = 0, y = 0, rotate = 0, scale = 1, dim = false, tapRipple = false } = {}) {
+  return `<g transform="translate(${x},${y}) rotate(${rotate}) scale(${scale})" opacity="${dim ? 0.3 : 1}">
+    <path d="M -20 4 Q -25 30 -6 35 L 16 35 Q 27 32 25 12 Q 23 -1 10 -1 L -12 -1 Q -20 -1 -20 4 Z" fill="var(--muted)"/>
+    <rect x="-15" y="-32" width="30" height="64" rx="7" fill="var(--surface)" stroke="var(--text)" stroke-width="2.5"/>
+    <rect x="-11" y="-27" width="22" height="47" rx="3" fill="var(--text)" opacity="0.16"/>
+    <circle cx="0" cy="-27" r="1.6" fill="var(--text)" opacity="0.5"/>
+    <ellipse cx="-17" cy="6" rx="4.2" ry="3" fill="var(--muted)"/>
+    <ellipse cx="-18" cy="14" rx="4.6" ry="3.3" fill="var(--muted)"/>
+    <ellipse cx="-17" cy="22" rx="4.2" ry="3" fill="var(--muted)"/>
+    <path d="M 6 19 Q 17 15 19 25 Q 15 33 4 29 Z" fill="var(--muted)"/>
+    ${
+      tapRipple
+        ? `<circle cx="0" cy="-8" r="4" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+           <circle cx="0" cy="-8" r="9" fill="none" stroke="var(--accent)" stroke-width="1" opacity="0.5"/>`
+        : ''
+    }
+  </g>`;
+}
+
+/**
  * The pre-round walkthrough: four short pages mirroring docs/SkipSchool.html, cut down to
- * what fits a phone screen at a glance. Each visual is a small inline SVG rather than an
- * image asset — this page is served from a local relay with nothing else to load one from,
- * same reasoning as the native colour picker in bindColour.
+ * what fits a phone screen at a glance. Each visual is a small illustrated scene built from
+ * phoneGlyph — a real hand-and-phone pose, a motion arrow, an angle or a distance — rather
+ * than an abstract icon, so the point reads before the caption underneath it is even read.
  */
 const TUTORIAL_PAGES = [
   {
     title: 'Tap · Swing · Stop',
     body: 'Tap the stone to aim, swing your arm like a real throw, then stop dead. The stop is the release — there is no button to let go of.',
-    visual: `<svg viewBox="0 0 200 90" fill="none">
-      <circle cx="28" cy="45" r="19" stroke="var(--accent)" stroke-width="4"/>
-      <circle cx="28" cy="45" r="7" fill="var(--accent)"/>
-      <path d="M68 72 Q96 14 150 20" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/>
-      <circle cx="150" cy="20" r="6" fill="var(--accent)"/>
-      <rect x="174" y="4" width="5" height="46" rx="2" fill="var(--bad)"/>
+    visual: `<svg viewBox="0 0 200 150" fill="none">
+      <defs><marker id="tutArrowGo" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="var(--accent)"/></marker></defs>
+      ${phoneGlyph({ x: 38, y: 105, tapRipple: true })}
+      <path d="M62 92 Q95 45 138 40" stroke="var(--accent)" stroke-width="2.5" fill="none" stroke-dasharray="1 7" stroke-linecap="round" marker-end="url(#tutArrowGo)"/>
+      ${phoneGlyph({ x: 158, y: 48, rotate: -58 })}
+      <path d="M180 18 L186 30 M195 22 L198 35 M170 12 L172 25" stroke="var(--bad)" stroke-width="2.5" stroke-linecap="round"/>
     </svg>`,
   },
   {
     title: 'Your tap is the zero',
-    body: 'However you hold the phone the instant you tap becomes flat, facing the TV. Every tilt after that is measured from there — tapped pointing the wrong way? Tap again to re-aim.',
-    visual: `<svg viewBox="0 0 220 130" fill="none">
-      <defs>
-        <marker id="tutArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/>
-        </marker>
-      </defs>
-      <rect x="18" y="35" width="52" height="86" rx="8" stroke="var(--muted)" stroke-width="4"/>
-      <circle cx="44" cy="108" r="3" fill="var(--muted)"/>
-      <line x1="86" y1="78" x2="122" y2="78" stroke="var(--muted)" stroke-width="3" marker-end="url(#tutArrow)"/>
-      <g transform="translate(168,78) rotate(-24)">
-        <rect x="-26" y="-43" width="52" height="86" rx="8" stroke="var(--accent)" stroke-width="4"/>
-        <circle cx="0" cy="38" r="3" fill="var(--accent)"/>
-      </g>
+    body: 'However you hold the phone the instant you tap becomes flat, facing the TV. Every tilt after that is measured from that line — tapped pointing the wrong way? Tap again to re-aim.',
+    visual: `<svg viewBox="0 0 200 150" fill="none">
+      ${phoneGlyph({ x: 42, y: 78, tapRipple: true })}
+      <line x1="8" y1="78" x2="192" y2="78" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 5" opacity="0.8"/>
+      ${phoneGlyph({ x: 148, y: 78, rotate: -32 })}
+      <path d="M180 78 A 32 32 0 0 0 168 49" stroke="var(--accent)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <path d="M166 52 L168 49 L172 55" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`,
   },
   {
     title: 'Swing speed = distance',
     body: 'The harder and faster you swing, the farther the stone flies. That is the only thing that sets distance — a gentle swing stays short no matter how you release it.',
-    visual: `<svg viewBox="0 0 200 100" fill="none">
-      <path d="M14 82 Q55 40 78 58 Q100 76 185 18" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/>
-      <circle cx="185" cy="18" r="6" fill="var(--accent)"/>
-      <path d="M14 82 Q34 60 52 68" stroke="var(--muted)" stroke-width="3" stroke-dasharray="2 7" fill="none" stroke-linecap="round"/>
-      <circle cx="52" cy="68" r="4" fill="var(--muted)"/>
+    visual: `<svg viewBox="0 0 200 150" fill="none">
+      ${phoneGlyph({ x: 30, y: 100, rotate: -12, scale: 0.8 })}
+      <path d="M18 78 Q25 62 38 66" stroke="var(--muted)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M48 98 Q56 112 68 114" stroke="var(--muted)" stroke-width="2" fill="none" stroke-dasharray="1 5" stroke-linecap="round"/>
+      <circle cx="68" cy="114" r="3" fill="var(--muted)"/>
+      <line x1="100" y1="20" x2="100" y2="132" stroke="var(--text)" stroke-width="1" opacity="0.14"/>
+      ${phoneGlyph({ x: 148, y: 105, rotate: -58, scale: 1.05 })}
+      <path d="M104 35 Q118 8 145 16 M100 48 Q113 25 135 30 M96 60 Q107 42 124 45" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M165 82 Q186 105 196 138" stroke="var(--accent)" stroke-width="2.3" fill="none" stroke-dasharray="1 5" stroke-linecap="round"/>
+      <circle cx="196" cy="138" r="3.8" fill="var(--accent)"/>
     </svg>`,
   },
   {
     title: 'Angle + spin = skip or sink',
     body: 'Release roughly level with a flick of the wrist and it skips clean across the water. Get the angle wrong, or forget the flick, and it sinks fast — even off a hard swing.',
-    visual: `<svg viewBox="0 0 200 120" fill="none">
-      <path d="M20 100 A80 80 0 0 1 180 100" stroke="var(--muted)" stroke-width="3" fill="none"/>
-      <path d="M78 26 A80 80 0 0 1 122 30" stroke="var(--good)" stroke-width="6" fill="none" stroke-linecap="round"/>
-      <line x1="100" y1="100" x2="104" y2="30" stroke="var(--accent)" stroke-width="4" stroke-linecap="round"/>
-      <circle cx="100" cy="100" r="4" fill="var(--accent)"/>
-      <path d="M158 84 a13 13 0 1 1 -7 -11" stroke="var(--accent)" stroke-width="3" fill="none" stroke-linecap="round"/>
-      <path d="M148 71 l3 -9 l9 3" stroke="var(--accent)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    visual: `<svg viewBox="0 0 200 150" fill="none">
+      <defs><marker id="tutArrowBad" markerWidth="8" markerHeight="8" refX="4" refY="6" orient="auto"><path d="M0,0 L8,0 L4,8 Z" fill="var(--bad)"/></marker></defs>
+      <circle cx="26" cy="18" r="11" fill="none" stroke="var(--good)" stroke-width="2.5"/>
+      <path d="M21 18 l4 4 l7 -8" stroke="var(--good)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="4" y1="105" x2="90" y2="105" stroke="var(--muted)" stroke-width="2"/>
+      <g transform="translate(24,60) rotate(-14)">
+        <rect x="-17" y="-7" width="34" height="14" rx="4.5" fill="var(--surface)" stroke="var(--good)" stroke-width="2.5"/>
+      </g>
+      <path d="M17 56 a11 11 0 1 1 -3 9" stroke="var(--good)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M9 44 l3 -9 l9 3" stroke="var(--good)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M2 105 Q18 94 34 105 T66 105 T90 100" stroke="var(--good)" stroke-width="2.5" fill="none"/>
+      <circle cx="34" cy="105" r="2.4" fill="var(--good)"/>
+      <circle cx="66" cy="105" r="2" fill="var(--good)"/>
+      <circle cx="174" cy="18" r="11" fill="none" stroke="var(--bad)" stroke-width="2.5"/>
+      <path d="M170 14 l8 8 M178 14 l-8 8" stroke="var(--bad)" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="110" y1="105" x2="196" y2="105" stroke="var(--muted)" stroke-width="2"/>
+      <g transform="translate(155,50) rotate(62)">
+        <rect x="-17" y="-7" width="34" height="14" rx="4.5" fill="var(--surface)" stroke="var(--bad)" stroke-width="2.5"/>
+      </g>
+      <path d="M148 66 L153 100" stroke="var(--bad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#tutArrowBad)"/>
+      <path d="M140 106 Q153 98 166 106 M144 112 Q153 106 162 112" stroke="var(--bad)" stroke-width="2" fill="none" stroke-linecap="round"/>
     </svg>`,
   },
 ];
