@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Skip School</title>
+<style>
+  :root{ color-scheme: light dark; }
+  body{ margin:0; }
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560;9..144,680&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  :root{
+    --ink:#12302c;
+    --ink-soft:#4b6a64;
+    --paper:#f6f1e6;
+    --paper-2:#eae1cd;
+    --water:#1f5f59;
+    --water-deep:#0f3d38;
+    --foam:#deefe8;
+    --line: rgba(18,48,44,0.14);
+    --accent:#d9922e;
+    --accent-ink:#5c3d0e;
+    --sink:#c15a3f;
+    --sink-ink:#5c2415;
+    --good:#2c7a56;
+    --radius: 18px;
+    --font-display: 'Fraunces', 'Iowan Old Style', ui-serif, Georgia, serif;
+    --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#eef4f0;
+      --ink-soft:#a9c1ba;
+      --paper:#0b201d;
+      --paper-2:#112e2a;
+      --water:#1c4e49;
+      --water-deep:#081c19;
+      --foam:#153833;
+      --line: rgba(238,244,240,0.14);
+      --accent:#e8ac52;
+      --accent-ink:#2f2107;
+      --sink:#df8a6d;
+      --sink-ink:#3a1a0f;
+      --good:#5cb98c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#eef4f0;
+    --ink-soft:#a9c1ba;
+    --paper:#0b201d;
+    --paper-2:#112e2a;
+    --water:#1c4e49;
+    --water-deep:#081c19;
+    --foam:#153833;
+    --line: rgba(238,244,240,0.14);
+    --accent:#e8ac52;
+    --accent-ink:#2f2107;
+    --sink:#df8a6d;
+    --sink-ink:#3a1a0f;
+    --good:#5cb98c;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    padding-inline:0;
+  }
+  .wrap{
+    max-width:880px;
+    margin-inline:auto;
+    padding-inline:20px;
+  }
+
+  h1,h2,h3{ font-family:var(--font-display); font-weight:680; text-wrap:balance; margin:0; }
+  p{ line-height:1.55; color:var(--ink); margin:0; }
+  .lede{ color:var(--ink-soft); font-size:1.02rem; }
+
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:0.72rem;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+
+  /* ---------------- hero ---------------- */
+  .hero{
+    background:
+      radial-gradient(120% 90% at 15% -10%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%),
+      linear-gradient(180deg, var(--water-deep), var(--water) 70%, var(--water) 100%);
+    color:var(--foam);
+    padding-block: calc(48px + env(safe-area-inset-top, 0px)) 40px;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero .wrap{ position:relative; z-index:2; }
+  .hero .eyebrow{ color: color-mix(in srgb, var(--foam) 70%, transparent); }
+  .hero h1{
+    font-size: clamp(2.3rem, 6vw, 3.4rem);
+    line-height:1.02;
+    margin-top:8px;
+    color:var(--foam);
+  }
+  .hero .lede{
+    color: color-mix(in srgb, var(--foam) 82%, transparent);
+    max-width:46ch;
+    margin-top:14px;
+    font-size:1.08rem;
+  }
+  .ripples{
+    position:absolute; inset:0; z-index:1; opacity:0.5; pointer-events:none;
+  }
+  .stone-row{
+    display:flex; align-items:center; gap:10px; margin-top:28px;
+  }
+  .gesture-chip{
+    font-family:var(--font-mono); font-size:0.78rem; letter-spacing:0.04em;
+    background: color-mix(in srgb, var(--foam) 14%, transparent);
+    border:1px solid color-mix(in srgb, var(--foam) 30%, transparent);
+    color:var(--foam);
+    padding:7px 12px; border-radius:999px;
+  }
+  .gesture-arrow{ color: color-mix(in srgb, var(--foam) 50%, transparent); font-size:0.85rem; }
+
+  /* ---------------- sections ---------------- */
+  section.block{ padding-block:44px; border-bottom:1px solid var(--line); }
+  section.block:last-of-type{ border-bottom:none; }
+  .block h2{ font-size: clamp(1.5rem, 3.4vw, 1.9rem); }
+  .block .kicker{ margin-bottom:10px; }
+  .block > .wrap > p.lede{ margin-top:10px; max-width:60ch; }
+
+  /* ---------------- three-step gesture ---------------- */
+  .steps{
+    display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-top:26px;
+  }
+  @media (max-width:640px){ .steps{ grid-template-columns:1fr; } }
+  .step-card{
+    background:var(--paper-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .step-num{
+    font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-soft);
+  }
+  .step-card h3{ font-size:1.15rem; }
+  .step-card p{ font-size:0.92rem; color:var(--ink-soft); }
+  .step-icon{ width:40px; height:40px; }
+
+  /* ---------------- calibration diagram ---------------- */
+  .calib-grid{
+    display:grid; grid-template-columns: 1.1fr 1fr; gap:28px; margin-top:26px; align-items:center;
+  }
+  @media (max-width:700px){ .calib-grid{ grid-template-columns:1fr; } }
+  .calib-fig{
+    background:var(--paper-2); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px; display:flex; align-items:center; justify-content:center;
+  }
+  .note-list{ display:flex; flex-direction:column; gap:14px; }
+  .note{ display:flex; gap:12px; }
+  .note .dot{
+    width:8px; height:8px; border-radius:50%; background:var(--accent); margin-top:7px; flex:none;
+  }
+  .note b{ font-weight:600; }
+  .note p{ font-size:0.94rem; color:var(--ink-soft); }
+
+  /* ---------------- two dials interactive ---------------- */
+  .dials{
+    margin-top:28px;
+    background:var(--paper-2); border:1px solid var(--line); border-radius:var(--radius);
+    padding:22px;
+  }
+  .dial-controls{ display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-bottom:10px; }
+  @media (max-width:640px){ .dial-controls{ grid-template-columns:1fr; } }
+  .dial-control label{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:var(--font-mono); font-size:0.78rem; letter-spacing:0.03em; color:var(--ink-soft);
+    margin-bottom:8px;
+  }
+  .dial-control .val{ color:var(--ink); font-weight:600; }
+  input[type=range]{
+    width:100%; accent-color:var(--accent); height:22px;
+  }
+  .spin-toggle{
+    display:flex; gap:8px; margin-top:6px;
+  }
+  .spin-toggle button{
+    flex:1; font-family:var(--font-mono); font-size:0.78rem; letter-spacing:0.02em;
+    padding:9px 10px; border-radius:10px; border:1px solid var(--line);
+    background:var(--paper); color:var(--ink-soft); cursor:pointer;
+  }
+  .spin-toggle button.active{
+    background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600;
+  }
+  .stage{
+    margin-top:18px; border-radius:14px; overflow:hidden; border:1px solid var(--line);
+    background: linear-gradient(180deg, var(--paper), var(--paper) 46%, var(--water) 46%, var(--water-deep) 100%);
+  }
+  .stage svg{ display:block; width:100%; height:auto; }
+  .readout{
+    display:flex; flex-wrap:wrap; gap:10px 22px; margin-top:16px; align-items:baseline;
+  }
+  .readout .item{ display:flex; gap:8px; align-items:baseline; }
+  .readout .label{ font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-soft); letter-spacing:0.05em; text-transform:uppercase; }
+  .readout .num{ font-family:var(--font-mono); font-size:1.05rem; font-weight:600; }
+  .verdict{
+    margin-top:14px; padding:12px 14px; border-radius:12px; font-size:0.95rem; font-weight:600;
+    display:flex; gap:10px; align-items:center;
+  }
+  .verdict.good{ background: color-mix(in srgb, var(--good) 16%, var(--paper)); color: var(--good); }
+  .verdict.bad{ background: color-mix(in srgb, var(--sink) 18%, var(--paper)); color: var(--sink-ink); }
+  :root:not([data-theme="light"]) .verdict.bad, :root[data-theme="dark"] .verdict.bad{ color: var(--sink); }
+
+  /* ---------------- cheat sheet ---------------- */
+  .cheat-grid{
+    display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:26px;
+  }
+  @media (max-width:640px){ .cheat-grid{ grid-template-columns:1fr; } }
+  .cheat-card{
+    border-radius:var(--radius); padding:18px 20px; border:1px solid var(--line);
+  }
+  .cheat-card.strong{ background: color-mix(in srgb, var(--good) 12%, var(--paper-2)); }
+  .cheat-card.weak{ background: var(--paper-2); }
+  .cheat-card.sink{ background: color-mix(in srgb, var(--sink) 14%, var(--paper-2)); }
+  .cheat-card.fumble{ background: var(--paper-2); }
+  .cheat-card h3{ font-size:1.05rem; margin-bottom:8px; }
+  .cheat-card ul{ margin:0; padding-left:18px; font-size:0.9rem; color:var(--ink-soft); display:flex; flex-direction:column; gap:5px; }
+
+  footer.wrap{ padding-block:34px 46px; }
+  footer p{ font-size:0.85rem; color:var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <svg class="ripples" viewBox="0 0 800 260" preserveAspectRatio="none" aria-hidden="true">
+    <g stroke="#deefe8" stroke-opacity="0.18" fill="none" stroke-width="1.5">
+      <ellipse cx="620" cy="205" rx="60" ry="10"/>
+      <ellipse cx="620" cy="205" rx="110" ry="18"/>
+      <ellipse cx="620" cy="205" rx="170" ry="28"/>
+      <ellipse cx="360" cy="230" rx="40" ry="7"/>
+      <ellipse cx="360" cy="230" rx="80" ry="13"/>
+    </g>
+  </svg>
+  <div class="wrap">
+    <div class="eyebrow">Rock Skipping — Player Onboarding</div>
+    <h1>Tap. Swing. Stop.<br>That's the whole throw.</h1>
+    <p class="lede">Your phone is the stone. This page walks through arming the throw, why the
+      tap matters, and the two things that actually decide whether your rock skips clean across
+      the lake or dies on the first bounce.</p>
+    <div class="stone-row">
+      <span class="gesture-chip">① TAP TO AIM</span>
+      <span class="gesture-arrow">→</span>
+      <span class="gesture-chip">② SWING</span>
+      <span class="gesture-arrow">→</span>
+      <span class="gesture-chip">③ STOP DEAD</span>
+    </div>
+  </div>
+</div>
+
+<section class="block">
+  <div class="wrap">
+    <div class="eyebrow kicker">01 — The Gesture</div>
+    <h2>There is no throw button</h2>
+    <p class="lede">Only three moments matter, and the game reads all three straight off the
+      phone's sensors — nothing is inferred or averaged in between.</p>
+
+    <div class="steps">
+      <div class="step-card">
+        <svg class="step-icon" viewBox="0 0 40 40" fill="none">
+          <circle cx="20" cy="20" r="18" stroke="currentColor" stroke-opacity="0.35"/>
+          <circle cx="20" cy="20" r="7" fill="var(--accent)"/>
+        </svg>
+        <div class="step-num">STEP 1</div>
+        <h3>Tap to arm</h3>
+        <p>Hold the phone flat, like the stone itself, pointed at the TV — then tap the button.
+          The tap captures exactly how you're holding the phone right now as the neutral,
+          "flat and facing forward" reference. Everything from here is measured against that
+          instant.</p>
+      </div>
+      <div class="step-card">
+        <svg class="step-icon" viewBox="0 0 40 40" fill="none">
+          <path d="M8 30 Q14 10 32 8" stroke="var(--accent)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <circle cx="32" cy="8" r="3" fill="var(--accent)"/>
+        </svg>
+        <div class="step-num">STEP 2</div>
+        <h3>Swing like you mean it</h3>
+        <p>A real arm swing, not a wrist wave — the game measures peak hand speed through the
+          whole motion. A flick of the wrist as you come through is what puts spin on the stone.</p>
+      </div>
+      <div class="step-card">
+        <svg class="step-icon" viewBox="0 0 40 40" fill="none">
+          <rect x="14" y="6" width="12" height="24" rx="3" stroke="currentColor" stroke-opacity="0.4"/>
+          <line x1="8" y1="20" x2="32" y2="20" stroke="var(--sink)" stroke-width="2"/>
+        </svg>
+        <div class="step-num">STEP 3</div>
+        <h3>Stop dead — that's release</h3>
+        <p>There's no button to let go of. The sudden stop <i>is</i> the throw. Wherever the
+          phone is tilted and pointed the instant it stops is the stone's aim and face angle —
+          so finish your swing pointed where you want the stone to go.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <div class="eyebrow kicker">02 — Calibration</div>
+    <h2>The tap <em>is</em> the calibration</h2>
+    <p class="lede">There's no separate calibration screen. Arming the throw and setting your
+      "zero" happen in the same tap — which is why how you hold the phone at that moment matters.</p>
+
+    <div class="calib-grid">
+      <div class="calib-fig">
+        <svg viewBox="0 0 300 220" width="100%" style="max-width:320px">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="var(--accent)"/>
+            </marker>
+          </defs>
+          <!-- phone at tap: neutral -->
+          <g>
+            <rect x="40" y="70" width="70" height="120" rx="10" fill="none" stroke="currentColor" stroke-opacity="0.5" stroke-width="2"/>
+            <circle cx="75" cy="182" r="3" fill="currentColor" opacity="0.5"/>
+            <text x="75" y="205" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ink-soft)">AT THE TAP</text>
+            <text x="75" y="60" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--accent)">= "0°" REFERENCE</text>
+          </g>
+          <line x1="130" y1="130" x2="170" y2="130" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arrow)"/>
+          <!-- phone tilted later, measured relative -->
+          <g transform="translate(230,130) rotate(-22)">
+            <rect x="-35" y="-60" width="70" height="120" rx="10" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+            <circle cx="0" cy="52" r="3" fill="var(--accent)"/>
+          </g>
+          <text x="230" y="205" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ink-soft)">TILT IS READ FROM THERE</text>
+        </svg>
+      </div>
+      <div class="note-list">
+        <div class="note">
+          <div class="dot"></div>
+          <div>
+            <b>Point at the TV, hold it flat, then tap.</b>
+            <p>That pose becomes "flat, facing forward." Every tilt and turn afterward is measured
+              as a delta from it, not from some fixed absolute direction.</p>
+          </div>
+        </div>
+        <div class="note">
+          <div class="dot"></div>
+          <div>
+            <b>Tapped pointing the wrong way? Tap again.</b>
+            <p>A second tap stands down without throwing, so you can re-aim and tap once more to
+              recalibrate from scratch — no reload, no penalty.</p>
+          </div>
+        </div>
+        <div class="note">
+          <div class="dot"></div>
+          <div>
+            <b>Recentre anytime between throws.</b>
+            <p>If your "flat" has drifted — you sat down, changed grip — use Recentre to capture a
+              fresh reference before you arm the next throw.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <div class="eyebrow kicker">03 — The Two Dials</div>
+    <h2>Speed sets distance. Attitude decides survival.</h2>
+    <p class="lede">Two separate readings come off your swing, and they do completely different
+      jobs. Play with both below and watch what happens to the stone.</p>
+
+    <div class="dials">
+      <div class="dial-controls">
+        <div class="dial-control">
+          <label>Swing speed <span class="val" id="speedVal">7.0 m/s</span></label>
+          <input type="range" id="speed" min="1" max="12" step="0.1" value="7">
+        </div>
+        <div class="dial-control">
+          <label>Face angle at the stop <span class="val" id="angleVal">20°</span></label>
+          <input type="range" id="angle" min="-5" max="55" step="1" value="20">
+        </div>
+      </div>
+      <div class="dial-control">
+        <label>Wrist flick through release</label>
+        <div class="spin-toggle">
+          <button id="spinOn" class="active" type="button">Snapped wrist — full spin</button>
+          <button id="spinOff" type="button">Limp wrist — no spin</button>
+        </div>
+      </div>
+
+      <div class="stage">
+        <svg id="stageSvg" viewBox="0 0 640 260" width="100%" role="img" aria-label="Skip trajectory preview">
+          <line x1="0" y1="130" x2="640" y2="130" stroke="var(--line)" stroke-width="1"/>
+          <text x="10" y="122" font-family="var(--font-mono)" font-size="10" fill="var(--ink-soft)">release</text>
+          <path id="trajPath" d="" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+          <g id="bouncePoints"></g>
+          <g id="sinkMark"></g>
+        </svg>
+      </div>
+
+      <div class="readout">
+        <div class="item"><span class="label">Skips</span><span class="num" id="outSkips">—</span></div>
+        <div class="item"><span class="label">Distance</span><span class="num" id="outDist">—</span></div>
+        <div class="item"><span class="label">Outcome</span><span class="num" id="outOutcome">—</span></div>
+      </div>
+      <div class="verdict" id="verdict"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <div class="eyebrow kicker">04 — Cheat Sheet</div>
+    <h2>What each throw actually looked like</h2>
+    <div class="cheat-grid">
+      <div class="cheat-card strong">
+        <h3>💪 Strong &amp; far</h3>
+        <ul>
+          <li>Fast, full-arm swing — the speed dial is the only thing that buys distance</li>
+          <li>Face angle near the sweet spot, roughly level</li>
+          <li>A real wrist snap through the stop, keeping the stone stable bounce to bounce</li>
+        </ul>
+      </div>
+      <div class="cheat-card weak">
+        <h3>🫳 Short</h3>
+        <ul>
+          <li>Slow, gentle swing — not enough speed for the energy budget</li>
+          <li>Angle and spin can be perfect and it still won't travel far</li>
+          <li>Below the minimum swing speed, the throw doesn't even register — stay armed and try again</li>
+        </ul>
+      </div>
+      <div class="cheat-card sink">
+        <h3>💧 Sinks fast</h3>
+        <ul>
+          <li>Face too flat or too steep at the exact instant you stopped</li>
+          <li>No wrist flick — the stone tumbles instead of holding its face</li>
+          <li>Can happen on an otherwise hard, strong swing — speed alone doesn't save it</li>
+        </ul>
+      </div>
+      <div class="cheat-card fumble">
+        <h3>🚫 Misfire</h3>
+        <ul>
+          <li>Swing was too weak to count as a throw at all</li>
+          <li>You stay armed — no re-tap needed, just swing again</li>
+          <li>Tapping again instead cancels and lets you recalibrate</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <p>Aim is wherever the phone points the instant it stops — not where you're looking. Finish
+    your swing facing the target.</p>
+</footer>
+
+<script>
+(function(){
+  var speedEl = document.getElementById('speed');
+  var angleEl = document.getElementById('angle');
+  var speedVal = document.getElementById('speedVal');
+  var angleVal = document.getElementById('angleVal');
+  var spinOnBtn = document.getElementById('spinOn');
+  var spinOffBtn = document.getElementById('spinOff');
+  var trajPath = document.getElementById('trajPath');
+  var bounceG = document.getElementById('bouncePoints');
+  var sinkG = document.getElementById('sinkMark');
+  var outSkips = document.getElementById('outSkips');
+  var outDist = document.getElementById('outDist');
+  var outOutcome = document.getElementById('outOutcome');
+  var verdict = document.getElementById('verdict');
+
+  var spin = true;
+  var OPTIMAL = 20;
+
+  function css(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function simulate(speed, angle, hasSpin){
+    // Illustrative model only — mirrors the game's real levers (speed -> distance,
+    // angle-vs-optimal and spin -> per-bounce energy loss) without being the physics.
+    var angleErr = Math.abs(angle - OPTIMAL);
+    var anglePenalty = Math.min(1, angleErr / 28); // 0 good .. 1 bad
+    var loss = 0.14 + anglePenalty * 0.34 + (hasSpin ? 0 : 0.30);
+    loss = Math.min(loss, 0.82);
+
+    var v = speed;
+    var minV = 1.1;
+    var bounces = [];
+    var x = 0;
+    var stepX = 22 + speed * 5;
+    var guard = 0;
+    while (v > minV && guard < 40) {
+      guard++;
+      x += stepX * (v / speed);
+      bounces.push({ x: x, v: v });
+      v = v * (1 - loss);
+      stepX *= 0.94;
+    }
+    var sankHard = angleErr > 30 || (!hasSpin && speed > 6 && angleErr > 12);
+    return { bounces: bounces, loss: loss, sankHard: sankHard, finalX: x };
+  }
+
+  function render(){
+    var speed = parseFloat(speedEl.value);
+    var angle = parseFloat(angleEl.value);
+    speedVal.textContent = speed.toFixed(1) + ' m/s';
+    angleVal.textContent = angle.toFixed(0) + '°';
+
+    var res = simulate(speed, angle, spin);
+
+    var W = 640, baseY = 130, waterY = 130;
+    var scaleX = Math.min(1, 560 / Math.max(res.finalX, 200));
+    var pts = res.bounces.map(function(b, i){
+      return { x: 40 + b.x * scaleX, y: waterY, i: i };
+    });
+
+    var d = 'M 20 ' + (waterY - 60);
+    var prev = { x: 20, y: waterY - 60 };
+    pts.forEach(function(p, i){
+      var peakY = waterY - Math.max(6, (res.bounces[i].v / speed) * 55);
+      var midX = (prev.x + p.x) / 2;
+      d += ' Q ' + midX + ' ' + peakY + ' ' + p.x + ' ' + p.y;
+      prev = p;
+    });
+
+    bounceG.innerHTML = '';
+    pts.forEach(function(p){
+      var c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', 3.5);
+      c.setAttribute('fill', css('--foam') || '#deefe8');
+      bounceG.appendChild(c);
+    });
+
+    sinkG.innerHTML = '';
+    var lastX = pts.length ? pts[pts.length-1].x : 40;
+    if (res.sankHard || res.bounces.length <= 2) {
+      d += ' Q ' + (lastX + 16) + ' ' + (waterY + 10) + ' ' + (lastX + 20) + ' ' + (waterY + 46);
+      var ring = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+      ring.setAttribute('cx', lastX + 18); ring.setAttribute('cy', waterY + 6);
+      ring.setAttribute('rx', 16); ring.setAttribute('ry', 5);
+      ring.setAttribute('fill', 'none');
+      ring.setAttribute('stroke', css('--sink') || '#c15a3f');
+      ring.setAttribute('stroke-width', '2');
+      sinkG.appendChild(ring);
+    }
+
+    trajPath.setAttribute('d', d);
+    trajPath.setAttribute('stroke', res.sankHard ? (css('--sink') || '#c15a3f') : (css('--accent') || '#d9922e'));
+
+    outSkips.textContent = res.bounces.length;
+    outDist.textContent = Math.round(res.finalX) + ' ft';
+
+    var goodRun = res.bounces.length >= 5 && !res.sankHard;
+    outOutcome.textContent = goodRun ? 'Clean skip' : (res.bounces.length <= 2 ? 'Fast sink' : 'Short run');
+
+    verdict.className = 'verdict ' + (goodRun ? 'good' : 'bad');
+    if (goodRun) {
+      verdict.textContent = '✓ Level face, real spin — the energy budget from your swing carried it the whole way.';
+    } else if (angle < 5 || angle > 40) {
+      verdict.textContent = '✕ Face angle is way off ' + OPTIMAL + '° — it slapped the water instead of skipping.';
+    } else if (!spin) {
+      verdict.textContent = '✕ No wrist flick — the stone tumbled and burned through its energy in a couple bounces.';
+    } else {
+      verdict.textContent = '~ Close, but not quite dialed in — nudge the angle toward ' + OPTIMAL + '°.';
+    }
+  }
+
+  speedEl.addEventListener('input', render);
+  angleEl.addEventListener('input', render);
+  spinOnBtn.addEventListener('click', function(){ spin = true; spinOnBtn.classList.add('active'); spinOffBtn.classList.remove('active'); render(); });
+  spinOffBtn.addEventListener('click', function(){ spin = false; spinOffBtn.classList.add('active'); spinOnBtn.classList.remove('active'); render(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
