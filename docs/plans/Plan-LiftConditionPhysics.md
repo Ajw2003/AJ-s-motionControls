@@ -16,7 +16,7 @@
 >    misreading.
 >
 > This file was rescued from the never-pushed branch `claude/stone-skipping-physics-34903d`. See
-> [`../Findings-HistoryUntangle.md`](../Findings-HistoryUntangle.md) §4.
+> [`../archive/Findings-HistoryUntangle.md`](../archive/Findings-HistoryUntangle.md) §4.
 
 **Status:** superseded. Originally approved 2026-09-02. Supersedes
 [`Plan-ThrowDrivenSkipModel.md`](Plan-ThrowDrivenSkipModel.md),

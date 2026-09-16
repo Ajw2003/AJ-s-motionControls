@@ -718,7 +718,7 @@ rotation term; it should be passed the angular velocity when R1–R10 are next r
 
 ## 10. Wiring the solver into the game (2026-09-09)
 
-Phase 1's three rewrites — the ones §2 of `Findings-HistoryUntangle.md` found had never been done
+Phase 1's three rewrites — the ones §2 of `archive/Findings-HistoryUntangle.md` found had never been done
 — are now done. `SkipPhysics`, `SkipConstants` and `SkipTuning` no longer resemble what shipped on
 `main`.
 

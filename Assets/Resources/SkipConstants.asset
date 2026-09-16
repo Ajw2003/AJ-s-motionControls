@@ -27,9 +27,9 @@ MonoBehaviour:
   PitchShallowFalloffDeg: 55
   YawFalloffDeg: 40
   MaxIncidenceDeg: 45
-  ForgivenessPitchDeg: 0
-  ForgivenessRollDeg: 0
-  ForgivenessYawDeg: 0
+  ForgivenessPitchDeg: 10
+  ForgivenessRollDeg: 10
+  ForgivenessYawDeg: 10
   SpinToleranceScale: 0.01
   ReferenceSpeed: 30
   FixedStep: 0.02

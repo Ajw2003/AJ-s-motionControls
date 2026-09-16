@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "aj-house-rules-issue-forge-test": {
+      "source": {
+        "source": "directory",
+        "path": "C:\\Users\\aj\\AppData\\Local\\Temp\\claude\\C--Users-aj-Desktop-ClaudeDev-AjsClaudeCodeTools\\78f65979-7c88-4aed-a472-ceb760a423b9\\scratchpad\\issue-forge-branch-test"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "issue-forge@aj-house-rules-issue-forge-test": true
+  }
+}

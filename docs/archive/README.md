@@ -23,6 +23,8 @@ If you need current behaviour, start at [`../README.md`](../README.md).
 | [`plans/seamless-rejoin.md`](plans/seamless-rejoin.md) | One scan per phone, ever | Shipped (PR #8) |
 | [`plans/seamless-rejoin-round2.md`](plans/seamless-rejoin-round2.md) | Fixing what round 1 got wrong — a rejoin screen that gated naming | Shipped (PR #9) |
 | [`plans/network-mode-selection.md`](plans/network-mode-selection.md) | The LAN vs Hotspot picker | The picker was subsequently deleted; Hotspot is the only mode. Its elevated-setup and DNS-race sections were absorbed into [`../systems/HostingAndCertificates.md`](../systems/HostingAndCertificates.md) |
+| [`MASTER-PLAN.md`](MASTER-PLAN.md) | The single entry point into `docs/` — index, milestone table and per-track status all in one file | Split into the tier structure ([`../README.md`](../README.md), [`../Roadmap.md`](../Roadmap.md), [`../ProjectState.md`](../ProjectState.md)) because one file doing three jobs had to be updated in three places for one change. Kept as a redirect stub, now archived since the tiers have fully absorbed it |
+| [`Findings-HistoryUntangle.md`](Findings-HistoryUntangle.md) | A read-only git-archaeology investigation into how the skip-physics session's work ended up buried in a merge commit | Closed 2026-09-09. Its conclusions fed directly into the Phase 1 wiring done in [`../Findings-RealSkipPhysics.md`](../Findings-RealSkipPhysics.md) §10 |
 
 ## Two things in here that are still worth reading
 

@@ -29,7 +29,7 @@ everything is) → [docs/Roadmap.md](docs/Roadmap.md) (what 0-100% means) →
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
 | `deploy/` | Hosting runbook and `setup-offline.ps1`, the one-time elevated machine setup for Hotspot mode |
 | `docs/` | Project documentation and plans |
-| `docs/MASTER-PLAN.md` | Index of the active tracks |
+| `docs/README.md` | Documentation index — start here |
 | `docs/Decision-OfflineHosting.md` | How the host runs a network with no internet, and the evidence for it |
 | `docs/DeviceMatrix.md` | Which phones this is verified on, and what "verified" means |
 | `docs/grant/` | Grant proposal kit — the case for extracting the controller stack as a plugin |

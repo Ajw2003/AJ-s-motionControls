@@ -35,7 +35,7 @@ Only one of them lives under `Assets/`.
 
 ---
 
-## The five tiers
+## The six tiers
 
 Read top-down the first time. After that, go straight to the tier that answers your question.
 
@@ -46,10 +46,11 @@ Read top-down the first time. After that, go straight to the tier that answers y
 | **3** | [`ProjectState.md`](ProjectState.md) | Where the project stands *right now* against tier 2 |
 | **4** | [`systems/`](systems/) | How each runtime-critical system actually works |
 | **5** | [`Today.md`](Today.md) | What is being worked on today, and why that and not something else |
+| **6** | [`Decisions.md`](Decisions.md) | Why a decision was made, and what it replaced |
 
 Tier 5 is rewritten each working session. Tier 3 is updated when a milestone's status changes.
 Tier 2 changes only when the definition of done changes — which should be rare, and is worth
-noticing when it happens.
+noticing when it happens. Tier 6 is never rewritten, only appended to.
 
 ---
 
@@ -80,11 +81,13 @@ have already cost someone a day.
 | [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) | **The plan for most of what is left.** Art direction, the in-play HUD, retiring IMGUI for UI Toolkit, rock differentiation, and the order to do it in. Drives milestone 9, and it rewrote milestone 8's acceptance criterion |
 | [`ZeroSetupPlan.md`](ZeroSetupPlan.md) | The plan for shipping to someone else's PC. Milestone 10; still the authority on the four blockers |
 | [`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md) | Why the certificate is what it is. Executed, and still the reference for the design |
-| [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) | Why Mobile Hotspot beat Wi-Fi Direct. Resolved decision, kept for the reasoning |
+| [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) | Why Mobile Hotspot beat Wi-Fi Direct. Resolved decision, kept for the reasoning — logged in [`Decisions.md`](Decisions.md) |
 | [`OfflineSetup.md`](OfflineSetup.md) | What a machine needs for fully-offline play, and what `setup-offline.ps1` does to it |
+| [`SecurityReview.md`](SecurityReview.md) | Pre-ship gap check against the relay, controller, Unity networking, and the installer — what's already solid and what's still open |
 | [`DeviceMatrix.md`](DeviceMatrix.md) | Which phones have actually been tested, and on what |
 | [`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md) | The 2026-09-08 audit this structure came out of |
 | [`Findings-NetworkAndThrowStability.md`](Findings-NetworkAndThrowStability.md) | 2026-09-10 review of the phone → relay → Unity pipeline: dropped/rejected AIM, broken rounds, over-eager throws, security holes. Findings only, no fixes decided |
+| [`Findings-RealSkipPhysics.md`](Findings-RealSkipPhysics.md) | Step 0 of [`plans/real-skip-physics.md`](plans/real-skip-physics.md): the published stone-skipping physics the new solver is built from and validated against |
 | [`plans/Plan-NetworkAndThrowFixes.md`](plans/Plan-NetworkAndThrowFixes.md) | The priority order for fixing those findings, and the decisions it rests on (seats survive drops, no idle timeout, SpeedScale 1.0, layered throw guard) |
 | [`plans/Impl-NetworkAndThrowFixes.md`](plans/Impl-NetworkAndThrowFixes.md) | Step-by-step outline for each fix group, with the red-first regression tests and hardware checks that keep each fix landed |
 
@@ -111,6 +114,11 @@ Documents that were correct when written and are now inert: shipped plans, fixed
 insurance policy for a disaster that happened and was answered a different way. Kept because the
 reasoning is often the only record of why something is the way it is. **Nothing in `archive/`
 describes current behaviour** — do not build against it. See [`archive/README.md`](archive/README.md).
+
+### Generated — [`generated/`](generated/)
+
+Tool-produced HTML reports (`doc-stack.html`, `milestones.html`). Not hand-edited — if one needs
+to change, it gets regenerated, not patched.
 
 ---
 
