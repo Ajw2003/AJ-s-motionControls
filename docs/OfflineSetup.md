@@ -91,9 +91,13 @@ rests on the address being fixed rather than on the name encoding it.
 
 ### Not elevated
 
-- `npm install` in `relay/`
-- Node 20+ on PATH
 - `network-mode.txt` containing `Hotspot` (written by the main menu picker)
+
+~~`npm install` in `relay/`~~ and ~~Node 20+ on PATH~~ are no longer prerequisites — `LocalServices`
+now runs both automatically the first time a match starts (`NodeProvisioner`: PATH, else a
+downloaded portable copy; `InstallDependencies`: run through that same node.exe rather than
+requiring `npm` on PATH). A machine with neither installed still needs internet the *first* time,
+to fetch Node and the two runtime dependencies; both are cached afterward.
 
 ---
 
@@ -188,12 +192,14 @@ join screen below some threshold, rather than discovering it at a party.
 
 ## Deployment — separate, and still blocked
 
-None of the above helps a build handed to someone else. `ZeroSetupPlan.md` blockers 1–3 are
-unchanged:
+None of the above helps a build handed to someone else. `ZeroSetupPlan.md` blocker 3 is unchanged;
+blockers 1–2 are closed for the *editor* loop but the underlying gap for a **build** is the same
+one:
 
-1. **Node is not bundled** — hard failure on a machine without it.
-2. **Dependencies install at runtime** — needs npm *and internet*, which is exactly what this
-   design removes.
+1. ~~**Node is not bundled**~~ — `NodeProvisioner` downloads a portable copy on first use, but that
+   still needs internet the first time, same as (2) below.
+2. ~~**Dependencies install at runtime**~~ — no longer needs `npm` on PATH, but still needs
+   internet the first time to fetch the two runtime dependencies.
 3. **`relay/` and `controller/` are not in the build** — they live outside `Assets/`, so Unity
    never copies them.
 

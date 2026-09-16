@@ -214,8 +214,8 @@ namespace Net
         /// </summary>
         private void OnLocalServicesStateChanged(ServiceState state)
         {
-            if (state is ServiceState.ObtainingCertificate or ServiceState.InstallingDependencies
-                or ServiceState.StartingRelay) return;
+            if (state is ServiceState.ObtainingCertificate or ServiceState.ProvisioningNode
+                or ServiceState.InstallingDependencies or ServiceState.StartingRelay) return;
 
             LocalServices.Instance.StateChanged -= OnLocalServicesStateChanged;
             _waitingForLocalServices = false;
