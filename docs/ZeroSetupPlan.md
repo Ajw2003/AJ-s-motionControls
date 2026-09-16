@@ -54,14 +54,17 @@ The real blockers are that **a downloaded build cannot currently start a relay a
 
 | # | Blocker | Where it bites | Evidence |
 |---|---|---|---|
-| 1 | **Node.js is not bundled** | Hard failure: "Install Node 20 or newer from nodejs.org and relaunch" | [LocalServices.cs:175](../Assets/Scripts/Net/LocalServices.cs:175) |
-| 2 | **Dependencies install at runtime** | First run shells out to `npm install`, needing npm and internet, 180s timeout | [LocalServices.cs:219](../Assets/Scripts/Net/LocalServices.cs:219) |
+| 1 | ~~**Node.js is not bundled**~~ **CLOSED for the dev/editor loop** | Was: hard failure, "Install Node 20 or newer from nodejs.org and relaunch." Now: `NodeProvisioner.Ensure` checks PATH first, then downloads the official portable Windows zip (no installer, no admin) into `Application.persistentDataPath` on first use | [NodeProvisioner.cs](../Assets/Scripts/Net/NodeProvisioner.cs), wired in [LocalServices.cs](../Assets/Scripts/Net/LocalServices.cs) |
+| 2 | ~~**Dependencies install at runtime**~~ **CLOSED for the dev/editor loop** | Was: shelled out to `cmd.exe /c npm install`, needing `npm` on PATH separately from Node. Now: runs npm's own CLI script through the same resolved node.exe (`--omit=dev`, so eslint/prettier never install), no PATH or shell shim dependency | [NodeProvisioner.NpmCliPathFor](../Assets/Scripts/Net/NodeProvisioner.cs), [LocalServices.InstallDependencies](../Assets/Scripts/Net/LocalServices.cs) |
 | 3 | **`relay/` and `controller/` are not in the build** | Looks for `<exe folder>/relay/server.js`; both live outside `Assets/`, so Unity never copies them | [LocalServices.cs:420](../Assets/Scripts/Net/LocalServices.cs:420) |
 | 4 | ~~**The certificate is manual and expires**~~ **CLOSED** | Was: only `deploy/local-https.ps1` obtained it. That script is deleted; `CertificateProvider` fetches and caches on every launch, and `renew-cert.yml` renews unattended | [CertificateProvider.cs](../Assets/Scripts/Net/CertificateProvider.cs) |
 
-A build handed to somebody else today fails at #3 before it ever reaches #1. This is invisible
-because the developer's machine has Node, a populated `node_modules`, both directories from the
-checkout, and a certificate left over from a run on 2026-08-13.
+**Note the scope of 1–2's fix:** it removes the "Node/npm missing" failure for anyone running the
+**Unity Editor** on a fresh machine (a checkout already has `relay/` and `controller/` next to
+`Assets/`, satisfying blocker 3 for free). A *build* handed to somebody else today still fails at
+#3 before it ever reaches #1 — those directories aren't copied into `<exe folder>/`. Once a
+post-build step closes #3 (Phase 1.3 below), 1–2's fix applies unchanged to a shipped build too,
+since it runs the same resolve-then-download logic regardless of how it got there.
 
 ---
 
@@ -132,9 +135,16 @@ this is the only phase no spike has de-risked.*
 ([LocalServices.cs:216-243](../Assets/Scripts/Net/LocalServices.cs:216)) with its timeout, its
 `cmd.exe` shim handling, and its failure mode.
 
-**1.2 Bundle the Node runtime.** Ship `node.exe` (~50 MB) beside the relay. Replace
+**1.2 Bundle the Node runtime.** ~~Ship `node.exe` (~50 MB) beside the relay. Replace
 `ResolveExecutable("node", …)` with a bundled-first lookup that still falls back to PATH for the
-editor loop.
+editor loop.~~ **Superseded by `NodeProvisioner`:** rather than shipping `node.exe` in the
+installer, it is fetched on first use — checks PATH first, then downloads the official portable
+Windows zip into `Application.persistentDataPath` (no installer, no admin, cached after the first
+run). Works identically whether Node was found on this machine or just downloaded, and needs no
+installer-time step at all. Still needs a machine with **no internet on first launch** covered
+somehow if this is ever bundled into an installer (Phase 5's seed-certificate pattern is the model
+— ship a vendored copy as the fallback, à la 1.1, rather than assuming the download always
+succeeds).
 
 **1.3 Get both directories into the build.** A post-build step (`IPostprocessBuildWithReport`)
 copying `relay/` and `controller/` next to the executable — exactly where `ResolveRelayDirectory`

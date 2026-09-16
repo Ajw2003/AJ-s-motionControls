@@ -16,6 +16,7 @@ namespace Net
     {
         Idle,
         ObtainingCertificate,
+        ProvisioningNode,
         InstallingDependencies,
         StartingRelay,
         Ready,
@@ -264,23 +265,35 @@ namespace Net
                 yield break;
             }
 
+            SetState(ServiceState.ProvisioningNode, "Checking for Node.js…");
+
+            NodeProvisioner.Result nodeResult = default;
+            yield return NodeProvisioner.Ensure(
+                r => nodeResult = r,
+                p => SetState(ServiceState.ProvisioningNode,
+                    $"Downloading Node.js (first run only)… {p * 100f:0}%"));
+
+            if (!nodeResult.Ok)
+            {
+                Fail(nodeResult.Error, nodeResult.Detail);
+                yield break;
+            }
+
+            if (nodeResult.Downloaded)
+            {
+                Debug.Log($"[LocalServices] Downloaded a portable Node.js runtime to {nodeResult.NodePath}.");
+            }
+
+            var node = nodeResult.NodePath;
+
             if (!Directory.Exists(Path.Combine(relayDir, "node_modules")))
             {
                 SetState(ServiceState.InstallingDependencies, "First run — installing relay dependencies…");
-                yield return InstallDependencies(relayDir);
+                yield return InstallDependencies(relayDir, node);
                 if (State == ServiceState.Failed) yield break;
             }
 
             SetState(ServiceState.StartingRelay, "Starting the relay…");
-
-            var node = ProcessUtil.ResolveExecutable("node", new[] { @"C:\Program Files\nodejs" });
-            if (node == null)
-            {
-                Fail("Node.js not found.",
-                     "Install Node 20 or newer from nodejs.org and relaunch. " +
-                     "LocalServices searched PATH and C:\\Program Files\\nodejs.");
-                yield break;
-            }
 
             _relay = Spawn(node, "server.js", relayDir);
             if (_relay == null)
@@ -314,10 +327,18 @@ namespace Net
             }
         }
 
-        private IEnumerator InstallDependencies(string relayDir)
+        private IEnumerator InstallDependencies(string relayDir, string node)
         {
-            // npm is a .cmd shim on Windows, which CreateProcess cannot launch directly.
-            var install = Spawn("cmd.exe", "/c npm install --no-audit --no-fund", relayDir);
+            // Running npm's own CLI script through the same node.exe we already resolved
+            // (system or downloaded) means npm itself never has to be found separately —
+            // it ships inside every Node install, system or portable, at this same
+            // relative path. Only falls back to the cmd.exe shim if that layout is somehow
+            // missing (an unusual Node install), rather than failing outright.
+            var npmCli = NodeProvisioner.NpmCliPathFor(node);
+            var install = npmCli != null
+                ? Spawn(node, $"\"{npmCli}\" install --omit=dev --no-audit --no-fund", relayDir)
+                : Spawn("cmd.exe", "/c npm install --omit=dev --no-audit --no-fund", relayDir);
+
             if (install == null)
             {
                 Fail("Could not run npm install.", $"Run it yourself in {relayDir} and relaunch.");
