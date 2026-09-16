@@ -355,11 +355,86 @@
         color: var(--muted);
         box-shadow: none;
       }
+
+      /* Reopens the tutorial from the lobby or the wait screen. Hidden everywhere else —
+       showScreen owns that, keyed off which screen is active — so it is never on top of
+       the join form or a live throw. */
+      #howToPlayBtn {
+        position: fixed;
+        top: 4px;
+        left: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--muted);
+        box-shadow: none;
+      }
+
+      /* ---------------- tutorial ---------------- */
+      .tutorial-topbar {
+        width: 100%;
+        max-width: 320px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .tutorial-dots {
+        display: flex;
+        gap: 6px;
+      }
+      .tutorial-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #2f3e56;
+      }
+      .tutorial-dot.active {
+        background: var(--accent);
+      }
+      .tutorial-skip {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .tutorial-visual {
+        width: 150px;
+        height: 110px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+      .tutorial-visual svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+      #tutorialScreen h2 {
+        font-size: 21px;
+      }
+      #tutorialScreen p {
+        max-width: 280px;
+      }
+      .tutorial-actions {
+        display: flex;
+        gap: 10px;
+        width: 100%;
+        max-width: 300px;
+        justify-content: center;
+        margin-top: 6px;
+      }
+      .tutorial-actions button:not(.link) {
+        flex: 1;
+      }
     </style>
   </head>
   <body>
     <div id="status">Connecting…</div>
     <button id="debugToggle">debug</button>
+    <button id="howToPlayBtn" title="How to play" hidden>?</button>
 
     <!-- Join -->
     <section id="joinScreen" class="screen active">
@@ -430,6 +505,24 @@
          like RE-CENTRE: a secondary action, not something to compete with PLAY AGAIN. -->
       <button id="nameBtn" class="link"></button>
       <input id="nameEditInput" type="text" placeholder="YOUR NAME" maxlength="12" autocomplete="off" hidden />
+    </section>
+
+    <!-- Pre-round walkthrough. Auto-shown once per device right after joining, and
+       reachable afterward from the "?" button on the lobby/wait screens — see
+       openTutorial/closeTutorial in app.js. A live TURN always closes it: your own
+       throw takes priority over reading about someone else's. -->
+    <section id="tutorialScreen" class="screen">
+      <div class="tutorial-topbar">
+        <div id="tutorialDots" class="tutorial-dots"></div>
+        <button id="tutorialSkipBtn" class="link tutorial-skip">SKIP</button>
+      </div>
+      <div id="tutorialVisual" class="tutorial-visual"></div>
+      <h2 id="tutorialTitle"></h2>
+      <p id="tutorialBody"></p>
+      <div class="tutorial-actions">
+        <button id="tutorialBackBtn" class="link" hidden>BACK</button>
+        <button id="tutorialNextBtn">NEXT</button>
+      </div>
     </section>
 
     <!-- Your turn -->

@@ -19,6 +19,15 @@ const ui = {
   chooseScreen: el('chooseScreen'),
   waitScreen: el('waitScreen'),
   throwScreen: el('throwScreen'),
+  tutorialScreen: el('tutorialScreen'),
+  tutorialDots: el('tutorialDots'),
+  tutorialVisual: el('tutorialVisual'),
+  tutorialTitle: el('tutorialTitle'),
+  tutorialBody: el('tutorialBody'),
+  tutorialSkipBtn: el('tutorialSkipBtn'),
+  tutorialBackBtn: el('tutorialBackBtn'),
+  tutorialNextBtn: el('tutorialNextBtn'),
+  howToPlayBtn: el('howToPlayBtn'),
   confirmBtn: el('confirmBtn'),
   advanceBtn: el('advanceBtn'),
   againBtn: el('againBtn'),
@@ -90,12 +99,29 @@ let hasJoinedOnce = false;
 // override what TURN already told this specific phone — see renderSpectate and startLobbyAim.
 let myTurn = false;
 
+// Which of the five screens is showing right now. Tracked so the "?" button can send
+// openTutorial() back to wherever it was pressed from, without every call site having
+// to name its own screen.
+let activeScreenName = 'join';
+
+// Whether the tutorial is the screen actually on display. showScreen is the single place
+// this flips, in either direction: leaving the tutorial by any path — SKIP, LET'S PLAY, a
+// live TURN, even an ERROR bouncing the phone back to the join form — always routes through
+// showScreen(something-else), so there is no separate path that could leave this stuck true.
+let tutorialOpen = false;
+
 function sendInput(payload) {
   connection?.send(payload);
 }
 
 function showScreen(name) {
-  for (const screen of [ui.joinScreen, ui.chooseScreen, ui.waitScreen, ui.throwScreen]) {
+  for (const screen of [
+    ui.joinScreen,
+    ui.chooseScreen,
+    ui.waitScreen,
+    ui.throwScreen,
+    ui.tutorialScreen,
+  ]) {
     screen.classList.remove('active');
   }
   ({
@@ -103,7 +129,16 @@ function showScreen(name) {
     choose: ui.chooseScreen,
     wait: ui.waitScreen,
     throw: ui.throwScreen,
+    tutorial: ui.tutorialScreen,
   })[name].classList.add('active');
+
+  // Only offered from the lobby and between-turn screens: not on the join form (nothing
+  // to return to yet), not mid-throw (your own turn outranks reading about the game),
+  // and not on the tutorial itself.
+  ui.howToPlayBtn.hidden = name !== 'wait' && name !== 'choose';
+
+  activeScreenName = name;
+  tutorialOpen = name === 'tutorial';
 }
 
 function setStatus(text, kind = '') {
@@ -459,6 +494,123 @@ function bindGrip() {
   });
 }
 
+// ---------------------------------------------------------------- tutorial
+
+/**
+ * The pre-round walkthrough: four short pages mirroring docs/SkipSchool.html, cut down to
+ * what fits a phone screen at a glance. Each visual is a small inline SVG rather than an
+ * image asset — this page is served from a local relay with nothing else to load one from,
+ * same reasoning as the native colour picker in bindColour.
+ */
+const TUTORIAL_PAGES = [
+  {
+    title: 'Tap · Swing · Stop',
+    body: 'Tap the stone to aim, swing your arm like a real throw, then stop dead. The stop is the release — there is no button to let go of.',
+    visual: `<svg viewBox="0 0 200 90" fill="none">
+      <circle cx="28" cy="45" r="19" stroke="var(--accent)" stroke-width="4"/>
+      <circle cx="28" cy="45" r="7" fill="var(--accent)"/>
+      <path d="M68 72 Q96 14 150 20" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle cx="150" cy="20" r="6" fill="var(--accent)"/>
+      <rect x="174" y="4" width="5" height="46" rx="2" fill="var(--bad)"/>
+    </svg>`,
+  },
+  {
+    title: 'Your tap is the zero',
+    body: 'However you hold the phone the instant you tap becomes flat, facing the TV. Every tilt after that is measured from there — tapped pointing the wrong way? Tap again to re-aim.',
+    visual: `<svg viewBox="0 0 220 130" fill="none">
+      <defs>
+        <marker id="tutArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/>
+        </marker>
+      </defs>
+      <rect x="18" y="35" width="52" height="86" rx="8" stroke="var(--muted)" stroke-width="4"/>
+      <circle cx="44" cy="108" r="3" fill="var(--muted)"/>
+      <line x1="86" y1="78" x2="122" y2="78" stroke="var(--muted)" stroke-width="3" marker-end="url(#tutArrow)"/>
+      <g transform="translate(168,78) rotate(-24)">
+        <rect x="-26" y="-43" width="52" height="86" rx="8" stroke="var(--accent)" stroke-width="4"/>
+        <circle cx="0" cy="38" r="3" fill="var(--accent)"/>
+      </g>
+    </svg>`,
+  },
+  {
+    title: 'Swing speed = distance',
+    body: 'The harder and faster you swing, the farther the stone flies. That is the only thing that sets distance — a gentle swing stays short no matter how you release it.',
+    visual: `<svg viewBox="0 0 200 100" fill="none">
+      <path d="M14 82 Q55 40 78 58 Q100 76 185 18" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle cx="185" cy="18" r="6" fill="var(--accent)"/>
+      <path d="M14 82 Q34 60 52 68" stroke="var(--muted)" stroke-width="3" stroke-dasharray="2 7" fill="none" stroke-linecap="round"/>
+      <circle cx="52" cy="68" r="4" fill="var(--muted)"/>
+    </svg>`,
+  },
+  {
+    title: 'Angle + spin = skip or sink',
+    body: 'Release roughly level with a flick of the wrist and it skips clean across the water. Get the angle wrong, or forget the flick, and it sinks fast — even off a hard swing.',
+    visual: `<svg viewBox="0 0 200 120" fill="none">
+      <path d="M20 100 A80 80 0 0 1 180 100" stroke="var(--muted)" stroke-width="3" fill="none"/>
+      <path d="M78 26 A80 80 0 0 1 122 30" stroke="var(--good)" stroke-width="6" fill="none" stroke-linecap="round"/>
+      <line x1="100" y1="100" x2="104" y2="30" stroke="var(--accent)" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="100" cy="100" r="4" fill="var(--accent)"/>
+      <path d="M158 84 a13 13 0 1 1 -7 -11" stroke="var(--accent)" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M148 71 l3 -9 l9 3" stroke="var(--accent)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`,
+  },
+];
+
+let tutorialIndex = 0;
+let tutorialReturnScreen = 'wait';
+
+function renderTutorialPage() {
+  const page = TUTORIAL_PAGES[tutorialIndex];
+  ui.tutorialVisual.innerHTML = page.visual;
+  ui.tutorialTitle.textContent = page.title;
+  ui.tutorialBody.textContent = page.body;
+
+  ui.tutorialDots.replaceChildren();
+  TUTORIAL_PAGES.forEach((_, i) => {
+    const dot = document.createElement('span');
+    dot.className = 'tutorial-dot' + (i === tutorialIndex ? ' active' : '');
+    ui.tutorialDots.appendChild(dot);
+  });
+
+  ui.tutorialBackBtn.hidden = tutorialIndex === 0;
+  const last = tutorialIndex === TUTORIAL_PAGES.length - 1;
+  ui.tutorialNextBtn.textContent = last ? "LET'S PLAY" : 'NEXT';
+}
+
+/**
+ * Opens the walkthrough. `returnTo` is which screen to restore on close — defaults to
+ * whatever was showing, so the "?" button needs no per-screen wiring of its own.
+ */
+function openTutorial(returnTo = activeScreenName) {
+  tutorialReturnScreen = returnTo === 'tutorial' ? 'wait' : returnTo;
+  tutorialIndex = 0;
+  renderTutorialPage();
+  showScreen('tutorial');
+}
+
+function closeTutorial() {
+  showScreen(tutorialReturnScreen);
+}
+
+function bindTutorial() {
+  ui.howToPlayBtn.addEventListener('click', () => openTutorial());
+  ui.tutorialSkipBtn.addEventListener('click', () => closeTutorial());
+  ui.tutorialBackBtn.addEventListener('click', () => {
+    if (tutorialIndex > 0) {
+      tutorialIndex--;
+      renderTutorialPage();
+    }
+  });
+  ui.tutorialNextBtn.addEventListener('click', () => {
+    if (tutorialIndex < TUTORIAL_PAGES.length - 1) {
+      tutorialIndex++;
+      renderTutorialPage();
+    } else {
+      closeTutorial();
+    }
+  });
+}
+
 // ---------------------------------------------------------------- messages
 
 function handleMessage(message) {
@@ -473,6 +625,15 @@ function handleMessage(message) {
       showScreen('wait');
       motion.start();
       requestWakeLock();
+
+      // Auto-shown once per device, right after the first successful join. Marked seen
+      // immediately rather than on dismissal, so a player who gets interrupted by a live
+      // TURN mid-walkthrough isn't shown it again on their next join — it stays reachable
+      // afterward through the "?" button either way.
+      if (!loadIdentity()?.tutorialSeen) {
+        updateIdentity({ tutorialSeen: true });
+        openTutorial('wait');
+      }
 
       // playerId is now the device id, not the typed name (docs/plans/seamless-rejoin.md
       // Workstream C) — the relay has no idea what to display until this arrives. Sent on
@@ -497,6 +658,11 @@ function handleMessage(message) {
       break;
 
     case 'TURN':
+      // A live turn always outranks the tutorial, whether it's this phone's turn or not —
+      // reopen it later from the "?" button. No explicit close needed: the branches below
+      // call showScreen('throw') or showScreen('wait') either way, which is what actually
+      // clears tutorialOpen.
+
       // Any TURN means the match has left the lobby — stop here rather than waiting
       // for the next SPECTATE, so the phone is never streaming AIM into a turn it
       // no longer applies to.
@@ -592,6 +758,7 @@ function renderLastThrow(message, phase) {
 
 function renderSpectate(message) {
   if (thrower.state === ThrowState.ARMED) return; // don't yank the screen mid-throw
+  if (tutorialOpen) return; // don't yank it out from under a player reading the tutorial either
 
   // Without the phase, every idle moment reads "Waiting for the next turn" — including
   // the lobby before anything has started and the results screen after it has ended.
@@ -866,6 +1033,7 @@ function init() {
   bindAdvance();
   bindGrip();
   bindRename();
+  bindTutorial();
   renderGripButton(thrower.state); // see renderGripButton — nothing else paints the initial label
   tryLockPortrait();
 
