@@ -2,11 +2,13 @@
  * Persistent per-device identity, stored in localStorage so a returning phone can rejoin
  * its own seat silently instead of the relay treating a retyped name as a brand-new player.
  *
- * The stored record is `{ deviceId, name, room }`. `deviceId` is what actually goes over the
- * wire as `playerId` — it never changes for this browser/device, so renaming mid-match is a
- * cosmetic SET_NAME, not a new player. `room` records which room code this identity last
- * joined, so app.js can tell "the URL's room code matches what we joined last time" from
- * "this is a different room, the join form should still ask".
+ * The stored record is `{ deviceId, name, room, tutorialSeen }`. `deviceId` is what actually
+ * goes over the wire as `playerId` — it never changes for this browser/device, so renaming
+ * mid-match is a cosmetic SET_NAME, not a new player. `room` records which room code this
+ * identity last joined, so app.js can tell "the URL's room code matches what we joined last
+ * time" from "this is a different room, the join form should still ask". `tutorialSeen` is
+ * whether the pre-round walkthrough has already auto-shown once on this device — it stays
+ * reachable afterward through the on-screen "?" button regardless.
  *
  * Deliberate constraint (see docs/plans/seamless-rejoin.md Workstream C): deviceId is drawn
  * from the same uppercase A-Z2-9 alphabet the relay already generates room codes from, at 12
@@ -52,6 +54,7 @@ export function loadIdentity() {
       deviceId: parsed.deviceId,
       name: typeof parsed.name === 'string' ? parsed.name : '',
       room: typeof parsed.room === 'string' ? parsed.room : '',
+      tutorialSeen: parsed.tutorialSeen === true,
     };
   } catch {
     return null;
