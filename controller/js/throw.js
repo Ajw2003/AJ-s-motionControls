@@ -366,7 +366,15 @@ export function buildAimPayload(sample, seq, spinRate, swingSpeed = 0) {
  * The gesture is: <b>tap to arm, then swing</b>. The throw fires when the phone
  * stops, not when a finger lifts — accelerate hard, stop dead, and the stone goes.
  * A second tap disarms instead, so a player who armed with the phone pointing the
- * wrong way can re-aim and tap again to recalibrate.
+ * wrong way can re-aim.
+ *
+ * Calibration itself is no longer something the tap does. MotionSource tracks a
+ * steadiness-gated reference continuously (Settling ⇄ Aiming — see
+ * docs/systems/MotionPipeline.md), so most of the time the reference is already
+ * wherever the phone actually rests by the time this arms. arm() still calls
+ * `motion.recentre()` for a guaranteed-fresh zero at the exact moment that matters
+ * most, alongside `motion.prepareForThrow()` for the gravity/buffer reset that used
+ * to live in the same call.
  *
  * Firing on the stop is what lets orientation be read raw. A throwing motion ends
  * pointing where it was thrown, so the stop sample already is the aim — nothing has
@@ -442,7 +450,8 @@ export class ThrowController {
     this._windVelocity = { x: 0, y: 0, z: 0 };
     this._windSpeed = 0;
 
-    this.motion.calibrate();
+    this.motion.recentre();
+    this.motion.prepareForThrow();
     this._setState(ThrowState.ARMED);
 
     this._timer = setInterval(() => {

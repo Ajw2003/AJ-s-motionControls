@@ -1,6 +1,12 @@
 # Continuous calibration and intuitiveness pass
 
-**Status:** planned, not started. Design record only — no source touched.
+**Status:** D1, D2, D3, D4, D7 and D8 shipped (phone-side only) — see
+`controller/js/sensors.js` (`MotionSource`'s Settling/Aiming state machine, `CalibrationTuning`),
+`controller/js/throw.js` (`ThrowController.arm()`), and `controller/js/app.js`/`index.html` (the
+tilt indicator, status badge, haptics, arm-progress ring and post-throw recap). D5 (TV mirror
+diagram) and D6 (explicit practice toss) remain deferred — no Unity C# was touched this pass; the
+wire format is unchanged. `CalibrationTuning`'s rotation-rate thresholds and sample counts are
+seed values, not yet felt out on a real phone.
 
 ## Context
 
