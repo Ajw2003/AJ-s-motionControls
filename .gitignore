@@ -38,6 +38,10 @@ sysinfo.txt
 .idea/
 *.DS_Store
 
+# Claude Code agent isolation worktrees — scratch checkouts for background
+# subagents, not source.
+.claude/worktrees/
+
 # Verification harness output
 verification-result.txt
 
