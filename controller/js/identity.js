@@ -77,6 +77,15 @@ export function updateIdentity(patch) {
   saveIdentity({ ...current, ...patch });
 }
 
+/** Wipes the stored identity so this device rejoins as if brand new (fresh deviceId, tutorial unseen). */
+export function clearIdentity() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* private-mode Safari or a full quota — nothing was persisted to begin with */
+  }
+}
+
 function saveIdentity(identity) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(identity));

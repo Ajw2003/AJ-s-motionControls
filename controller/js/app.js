@@ -9,7 +9,7 @@
 import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
 import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
-import { loadIdentity, ensureDeviceId, updateIdentity } from './identity.js';
+import { loadIdentity, ensureDeviceId, updateIdentity, clearIdentity } from './identity.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -1064,6 +1064,13 @@ function updateDebug() {
 
 function init() {
   const params = new URLSearchParams(location.search);
+
+  // ?resetIdentity=1 wipes this device's stored identity before anything below reads it, so
+  // a phone that has already joined once can be put back into its first-run state (new
+  // deviceId, empty name, tutorial unseen) without digging into dev tools. Testing-only —
+  // never set by the app itself.
+  if (params.get('resetIdentity')) clearIdentity();
+
   const prefill = params.get('room');
   const roomFromUrl = prefill ? prefill.toUpperCase() : '';
   if (prefill) ui.codeInput.value = roomFromUrl;
