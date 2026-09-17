@@ -1,0 +1,605 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Steadiness Gate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f2f6f5;
+  --surface:#ffffff;
+  --surface-2:#e7eeec;
+  --ink:#12242a;
+  --ink-soft:#4c6067;
+  --line:#c9d6d4;
+  --accent:#1e7a8c;
+  --accent-soft:#c9e6ea;
+  --gold:#dc9a34;
+  --gold-soft:#f6e2bd;
+  --bad:#b6552f;
+  --bad-soft:#f3ded3;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(18,36,42,.06), 0 8px 24px -12px rgba(18,36,42,.18);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1a1e;
+    --surface:#132a30;
+    --surface-2:#1a343b;
+    --ink:#e9f2f1;
+    --ink-soft:#a8bcbe;
+    --line:#2a464c;
+    --accent:#5fc4d6;
+    --accent-soft:#1c3f46;
+    --gold:#e8b25b;
+    --gold-soft:#3a3220;
+    --bad:#e08a63;
+    --bad-soft:#3d2820;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1a1e;
+  --surface:#132a30;
+  --surface-2:#1a343b;
+  --ink:#e9f2f1;
+  --ink-soft:#a8bcbe;
+  --line:#2a464c;
+  --accent:#5fc4d6;
+  --accent-soft:#1c3f46;
+  --gold:#e8b25b;
+  --gold-soft:#3a3220;
+  --bad:#e08a63;
+  --bad-soft:#3d2820;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  padding-inline:20px;
+  padding-block:48px;
+  line-height:1.55;
+}
+main{max-width:920px;margin:0 auto;}
+h1,h2,h3{font-family:"Zilla Slab",Georgia,serif; text-wrap:balance; margin:0;}
+.kicker{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:500;
+}
+header.hero{margin-bottom:56px;}
+header.hero h1{font-size:clamp(32px,5vw,46px); font-weight:700; margin-top:8px; color:var(--ink);}
+header.hero p{max-width:60ch; color:var(--ink-soft); font-size:16px; margin-top:14px;}
+
+section{margin-bottom:64px;}
+section > h2{font-size:24px; font-weight:600; margin-bottom:6px;}
+section > .lede{color:var(--ink-soft); max-width:64ch; margin-bottom:28px; font-size:15px;}
+
+/* ---- Section 1: state timeline ---- */
+.timeline-block{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:24px;
+  box-shadow:var(--shadow);
+  margin-bottom:18px;
+}
+.timeline-block h3{font-size:15px; font-weight:600; margin-bottom:4px;}
+.timeline-block .tag{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  padding:2px 8px;
+  border-radius:999px;
+  display:inline-block;
+  margin-bottom:10px;
+}
+.tag.today{background:var(--bad-soft); color:var(--bad);}
+.tag.proposed{background:var(--accent-soft); color:var(--accent);}
+svg{display:block; max-width:100%; height:auto;}
+figure{margin:0;}
+figcaption{font-size:13px; color:var(--ink-soft); margin-top:10px;}
+
+/* ---- Section 2: phone mock ----
+   Mobile-first, single column always; two columns only once there is
+   comfortably enough width for both fixed-width cards side by side
+   (260 + 220 + 32 gap = 512), so there is exactly one layout per width
+   and no wrap-vs-column cascade for the two rules to disagree about. */
+.mock-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:28px;
+}
+@media (min-width:720px){
+  .mock-wrap{
+    flex-direction:row;
+    justify-content:center;
+    align-items:flex-start;
+    gap:32px;
+  }
+}
+.pad-area{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:20px;
+  width:100%;
+  max-width:260px;
+}
+.pad-area .hint{font-size:12px; color:var(--ink-soft); text-align:center; margin-top:10px;}
+#dragPad{
+  width:100%;
+  aspect-ratio:1/1;
+  border-radius:12px;
+  background:
+    linear-gradient(var(--surface-2) 1px, transparent 1px) 0 0/100% 25%,
+    linear-gradient(90deg, var(--surface-2) 1px, transparent 1px) 0 0/25% 100%,
+    var(--surface);
+  border:1px solid var(--line);
+  position:relative;
+  touch-action:none;
+  cursor:grab;
+  overflow:hidden;
+}
+#dragPad:active{cursor:grabbing;}
+#padDot{
+  position:absolute;
+  width:18px;height:18px;
+  border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 0 6px var(--accent-soft);
+  left:50%; top:50%;
+  transform:translate(-50%,-50%);
+  transition:background .15s;
+}
+#padDot.locked{background:var(--gold); box-shadow:0 0 0 6px var(--gold-soft);}
+
+.phone{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:28px;
+  box-shadow:var(--shadow);
+  padding:14px;
+  width:100%;
+  max-width:220px;
+}
+.phone-screen{
+  background:var(--surface-2);
+  border-radius:18px;
+  padding:18px 14px;
+  min-height:340px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:16px;
+}
+.badge{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:12px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  padding:6px 14px;
+  border-radius:999px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  color:var(--ink-soft);
+  transition:all .15s;
+}
+.badge.settling{color:var(--ink-soft); border-color:var(--line);}
+.badge.aiming{color:var(--gold); border-color:var(--gold); background:var(--gold-soft);}
+.badge.swinging{color:var(--accent); border-color:var(--accent); background:var(--accent-soft);}
+
+.level-box{
+  width:150px; height:150px;
+  border-radius:50%;
+  background:var(--surface);
+  border:2px solid var(--line);
+  position:relative;
+  overflow:hidden;
+}
+.level-crosshair{position:absolute; inset:0;}
+.level-crosshair::before, .level-crosshair::after{
+  content:"";
+  position:absolute;
+  background:var(--line);
+}
+.level-crosshair::before{ left:0; right:0; top:50%; height:1px; }
+.level-crosshair::after{ top:0; bottom:0; left:50%; width:1px; }
+.level-bubble{
+  position:absolute;
+  width:22px;height:22px;
+  border-radius:50%;
+  background:var(--accent);
+  left:50%; top:50%;
+  transform:translate(-50%,-50%);
+  transition:background .15s;
+}
+.level-bubble.locked{background:var(--gold);}
+.tick-ring{
+  position:absolute; inset:6px;
+  border-radius:50%;
+  border:2px solid var(--gold);
+  opacity:0;
+}
+.tick-ring.show{
+  animation:tickpulse .5s ease-out;
+}
+@keyframes tickpulse{
+  0%{opacity:.9; transform:scale(.7);}
+  100%{opacity:0; transform:scale(1.15);}
+}
+.phone-caption{font-size:11px; color:var(--ink-soft); text-align:center;}
+.readout{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:12px;
+  color:var(--ink-soft);
+  display:flex;
+  gap:14px;
+}
+
+/* ---- Section 3: card grid ---- */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(260px,1fr));
+  gap:16px;
+}
+.card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:20px;
+  box-shadow:var(--shadow);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.card .icon-wrap{
+  width:44px; height:44px;
+  border-radius:10px;
+  background:var(--accent-soft);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--accent);
+}
+.card .icon-wrap svg{width:24px;height:24px;}
+.card h3{font-size:15px; font-weight:600; font-family:"IBM Plex Sans",sans-serif;}
+.card p{font-size:13.5px; color:var(--ink-soft); margin:0;}
+.card .dnum{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  color:var(--ink-soft);
+  letter-spacing:.06em;
+}
+
+footer{
+  margin-top:40px;
+  padding-top:20px;
+  border-top:1px solid var(--line);
+  font-size:12px;
+  color:var(--ink-soft);
+}
+footer code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+</style>
+
+<main>
+  <header class="hero">
+    <div class="kicker">Design record · not started</div>
+    <h1>Steadiness gate</h1>
+    <p>Today's calibration is one invisible snapshot taken the instant a player taps the grip
+    button — any noise in that instant is baked into the whole throw. This page walks through
+    a proposed replacement: a reference that keeps tracking while the phone is still, and freezes
+    the moment the player starts to aim.</p>
+  </header>
+
+  <section id="timelines">
+    <h2>1 · Where the noise gets locked in</h2>
+    <p class="lede">Same throw, two mechanisms. The difference is not what the player does —
+    it's when the reference orientation stops listening.</p>
+
+    <div class="timeline-block">
+      <span class="tag today">Today</span>
+      <h3>Tap → single-sample snapshot → armed</h3>
+      <figure>
+        <svg viewBox="0 0 820 150" role="img" aria-label="Today's flow: rotation jitter happens before the tap, the tap freezes one instant of that jitter as the zero reference, and the error stays fixed for the rest of the throw.">
+          <defs>
+            <marker id="arrTod" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <!-- jitter line before tap -->
+          <polyline points="20,80 50,60 80,95 110,55 140,90 170,65 200,78" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/>
+          <text x="20" y="40" font-size="11" fill="currentColor" opacity=".7">phone settling — small jitter</text>
+          <!-- tap instant -->
+          <line x1="205" y1="20" x2="205" y2="130" stroke="var(--bad)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <circle cx="205" cy="78" r="5" fill="var(--bad)"/>
+          <text x="205" y="140" font-size="11" fill="var(--bad)" text-anchor="middle" font-weight="600">tap: one sample read</text>
+          <!-- frozen reference baked in for rest -->
+          <line x1="205" y1="78" x2="790" y2="78" stroke="var(--bad)" stroke-width="2"/>
+          <rect x="205" y="66" width="585" height="24" fill="var(--bad)" opacity=".08"/>
+          <text x="500" y="60" font-size="11" fill="var(--bad)" text-anchor="middle" font-weight="600">that instant's error is now permanent for the whole throw</text>
+          <line x1="790" y1="78" x2="805" y2="78" stroke="var(--bad)" stroke-width="2" marker-end="url(#arrTod)"/>
+          <text x="805" y="100" font-size="11" fill="currentColor" text-anchor="end">armed</text>
+        </svg>
+        <figcaption><code>MotionSource.calibrate()</code> (sensors.js:462) reads one orientation
+        sample at tap time; <code>ThrowController.arm()</code> (throw.js:433) treats it as ground
+        truth for the rest of the throw.</figcaption>
+      </figure>
+    </div>
+
+    <div class="timeline-block">
+      <span class="tag proposed">Proposed</span>
+      <h3>Settling ⇄ Aiming → Swinging → Release</h3>
+      <figure>
+        <svg viewBox="0 0 820 160" role="img" aria-label="Proposed flow: while the phone is still, the reference continuously tracks it, quietly correcting any noise. Once rotation rate rises the reference freezes and the phone reads as aiming, then swinging, then release." aria-describedby="propcap">
+          <defs>
+            <marker id="arrProp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <!-- settling: reference tracks noisy line closely -->
+          <rect x="10" y="20" width="230" height="110" rx="8" fill="var(--accent)" opacity=".07"/>
+          <text x="125" y="14" font-size="11" fill="var(--accent)" text-anchor="middle" font-weight="600">SETTLING — reference tracks continuously</text>
+          <polyline points="25,85 55,65 85,98 115,60 145,92 175,68 205,80" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/>
+          <polyline points="25,80 55,78 85,82 115,76 145,80 175,78 205,79" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+          <text x="20" y="122" font-size="10" fill="currentColor" opacity=".6">raw tilt</text>
+          <text x="20" y="46" font-size="10" fill="var(--accent)" font-weight="600">low-pass reference</text>
+
+          <!-- lock point -->
+          <line x1="240" y1="14" x2="240" y2="140" stroke="var(--gold)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <circle cx="240" cy="79" r="5" fill="var(--gold)"/>
+          <text x="240" y="150" font-size="11" fill="var(--gold)" text-anchor="middle" font-weight="600">rotation rate rises → lock</text>
+
+          <!-- aiming: frozen reference, tilt reads as aim -->
+          <rect x="240" y="20" width="270" height="110" rx="8" fill="var(--gold)" opacity=".06"/>
+          <text x="375" y="14" font-size="11" fill="var(--gold)" text-anchor="middle" font-weight="600">AIMING — reference frozen</text>
+          <line x1="240" y1="79" x2="510" y2="79" stroke="var(--gold)" stroke-width="2.5" stroke-dasharray="1 0"/>
+          <polyline points="240,79 270,72 300,50 330,44 360,40 390,42 420,44 450,43 480,44 510,44" fill="none" stroke="currentColor" stroke-width="2"/>
+          <text x="500" y="35" font-size="10" fill="currentColor" text-anchor="end">held aim tilt reads correctly</text>
+
+          <!-- swinging/release -->
+          <rect x="510" y="20" width="230" height="110" rx="8" fill="currentColor" opacity=".04"/>
+          <text x="625" y="14" font-size="11" fill="currentColor" text-anchor="middle" font-weight="600" opacity=".75">SWINGING → RELEASE</text>
+          <polyline points="510,44 540,20 570,110 600,30 630,90 660,40" fill="none" stroke="currentColor" stroke-width="2"/>
+          <circle cx="660" cy="40" r="5" fill="currentColor"/>
+          <text x="660" y="128" font-size="10" fill="currentColor" text-anchor="middle" opacity=".7">unchanged swing detector</text>
+          <line x1="740" y1="79" x2="805" y2="79" stroke="currentColor" stroke-width="2" marker-end="url(#arrProp)"/>
+        </svg>
+        <figcaption id="propcap">Rotation rate gates the transition, not a timer: the reference
+        tracks only while the phone is genuinely still, then holds exactly still once the player
+        commits to a tilt — the same threshold/hysteresis idiom the swing detector already uses
+        (throw.js:37-89).</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="mock">
+    <h2>2 · Try the mechanic</h2>
+    <p class="lede">No orientation sensor on a desktop, so drag inside the square to stand in for
+    phone tilt. Hold near centre to stay <strong>Settling</strong>; drag out past the small dead
+    zone to lock into <strong>Aiming</strong>; drag hard and fast toward an edge to trigger
+    <strong>Swinging</strong>. The gold ring on the phone marks the instant a haptic tick would
+    fire — the Settling→Aiming lock.</p>
+
+    <div class="mock-wrap">
+      <div class="pad-area">
+        <div id="dragPad" aria-label="Tilt input pad — drag to simulate phone orientation">
+          <div id="padDot"></div>
+        </div>
+        <div class="hint">drag = phone tilt (pitch / roll)</div>
+      </div>
+
+      <div class="phone">
+        <div class="phone-screen">
+          <span class="badge settling" id="stateBadge">Settling…</span>
+          <div class="level-box">
+            <div class="level-crosshair"></div>
+            <div class="tick-ring" id="tickRing"></div>
+            <div class="level-bubble" id="levelBubble"></div>
+          </div>
+          <div class="phone-caption" id="phoneCaption">holding still — reference is quietly following</div>
+          <div class="readout">
+            <span id="rateReadout">rate: 0.0</span>
+            <span id="tiltReadout">tilt: 0°, 0°</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ideas">
+    <h2>3 · Seven smaller intuitiveness fixes</h2>
+    <p class="lede">Surfaced alongside the calibration redesign — each closes a gap between what
+    the sensors are doing and what the player can see or feel.</p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="14" cy="10" r="2.4" fill="currentColor" stroke="none"/></svg></div>
+        <span class="dnum">D2</span>
+        <h3>On-phone live tilt indicator</h3>
+        <p>A level bubble during Aiming, on the screen the player is actually looking at — not
+        only the TV across the room.</p>
+      </div>
+
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="9" width="16" height="6" rx="3"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+        <span class="dnum">D3</span>
+        <h3>Three-state status badge</h3>
+        <p>Extends the grip button's existing label swap (<code>TAP TO AIM</code> /
+        <code>SWING!</code>) with a middle "Settling…" state, instead of new UI.</p>
+      </div>
+
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"/></svg></div>
+        <span class="dnum">D4</span>
+        <h3>Haptic pulses on lock &amp; release</h3>
+        <p>The Vibration API is unused today. One tick on Settling→Aiming, a distinct one on
+        release — eyes-free confirmation for near-zero cost.</p>
+      </div>
+
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/><path d="M7 12l3-3 2 2 4-4" /></svg></div>
+        <span class="dnum">D5</span>
+        <h3>First-throw TV mirror diagram</h3>
+        <p>A small live phone-tilt → stone-tilt diagram on the TV, shown only for a player's
+        first throw — cause and effect learned in real play, not a slide.</p>
+      </div>
+
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 17c3-6 6-9 8-9s5 3 8 9" /><circle cx="12" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+        <span class="dnum">D6</span>
+        <h3>Explicit practice toss</h3>
+        <p>Reframes the existing disarm/re-arm path as a sanctioned warm-up before a player's
+        first scored throw, not just an error-recovery move.</p>
+      </div>
+
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 12 A8 8 0 0 1 12 4" stroke-width="3"/></svg></div>
+        <span class="dnum">D7</span>
+        <h3>Visible steady-hold gate</h3>
+        <p>A fill-ring on the phone for the existing invisible <code>armGraceMs</code> guard —
+        the hold requirement becomes something the player can watch happen.</p>
+      </div>
+
+      <div class="card">
+        <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19h16M6 19v-6M11 19v-9M16 19v-4"/></svg></div>
+        <span class="dnum">D8</span>
+        <h3>Post-throw numeric recap</h3>
+        <p>"swing: fast · release: 12° low · light spin" on the phone, pairing the TV's
+        pass/fail with the inputs that produced it.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Design record for <code>docs/plans/continuous-calibration.md</code> — planned, not started.
+    Code references: <code>controller/js/sensors.js:462-473</code>,
+    <code>controller/js/throw.js:37-89,433-446</code>, <code>controller/js/app.js:546-556</code>.
+  </footer>
+</main>
+
+<script>
+(function(){
+  try {
+    var pad = document.getElementById('dragPad');
+    var dot = document.getElementById('padDot');
+    var badge = document.getElementById('stateBadge');
+    var bubble = document.getElementById('levelBubble');
+    var ring = document.getElementById('tickRing');
+    var caption = document.getElementById('phoneCaption');
+    var rateReadout = document.getElementById('rateReadout');
+    var tiltReadout = document.getElementById('tiltReadout');
+
+    var state = 'settling'; // settling | aiming | swinging
+    var refX = 0, refY = 0; // frozen reference in pad-fraction coords
+    var lastX = 0, lastY = 0;
+    var lastT = performance.now();
+    var dragging = false;
+    var settleThreshold = 0.55;   // rate that triggers settling->aiming
+    var swingThreshold = 2.4;     // rate that triggers aiming->swinging
+
+    function setPos(clientX, clientY){
+      var rect = pad.getBoundingClientRect();
+      var fx = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      var fy = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+      var now = performance.now();
+      var dt = Math.max(16, now - lastT) / 1000;
+      var dx = fx - lastX, dy = fy - lastY;
+      var rate = Math.hypot(dx, dy) / dt;
+      lastX = fx; lastY = fy; lastT = now;
+
+      dot.style.left = (fx*100) + '%';
+      dot.style.top = (fy*100) + '%';
+
+      var prevState = state;
+
+      if (state === 'settling') {
+        // continuously track: reference follows current position
+        refX = fx; refY = fy;
+        if (rate > settleThreshold) {
+          state = 'aiming';
+        }
+      } else if (state === 'aiming') {
+        if (rate > swingThreshold) {
+          state = 'swinging';
+        } else {
+          // check if we've drifted back near-still near the reference -> settle again
+          var distFromRef = Math.hypot(fx-refX, fy-refY);
+          if (rate < settleThreshold*0.4 && distFromRef < 0.03) {
+            state = 'settling';
+          }
+        }
+      } else if (state === 'swinging') {
+        if (rate < settleThreshold*0.3) {
+          state = 'aiming';
+        }
+      }
+
+      if (prevState !== state) {
+        applyState(state === 'aiming' && prevState === 'settling');
+      }
+
+      var tiltX = ((fx - refX) * 60).toFixed(0);
+      var tiltY = ((fy - refY) * 60).toFixed(0);
+      dot.classList.toggle('locked', state !== 'settling');
+
+      // reflect on phone level bubble: offset from reference, clamped to level-box radius
+      var boxR = 60; // px radius of travel inside 150px box (75 - margin)
+      var bx = Math.min(1, Math.max(-1, (fx - refX) * 4)) * boxR;
+      var by = Math.min(1, Math.max(-1, (fy - refY) * 4)) * boxR;
+      bubble.style.left = (75 + bx) + 'px';
+      bubble.style.top = (75 + by) + 'px';
+      bubble.classList.toggle('locked', state !== 'settling');
+
+      rateReadout.textContent = 'rate: ' + rate.toFixed(2);
+      tiltReadout.textContent = 'tilt: ' + tiltX + '°, ' + tiltY + '°';
+    }
+
+    function applyState(justLocked){
+      badge.className = 'badge ' + state;
+      badge.textContent = state === 'settling' ? 'Settling…' : (state === 'aiming' ? 'Aim locked' : 'Swing!');
+      caption.textContent = state === 'settling'
+        ? 'holding still — reference is quietly following'
+        : (state === 'aiming'
+          ? 'reference frozen — tilt reads as aim'
+          : 'swing detected — release imminent');
+      if (justLocked) {
+        ring.classList.remove('show');
+        void ring.offsetWidth; // restart animation
+        ring.classList.add('show');
+      }
+    }
+
+    pad.addEventListener('pointerdown', function(e){
+      dragging = true;
+      pad.setPointerCapture(e.pointerId);
+      lastT = performance.now();
+      setPos(e.clientX, e.clientY);
+    });
+    pad.addEventListener('pointermove', function(e){
+      if (!dragging) return;
+      setPos(e.clientX, e.clientY);
+    });
+    function release(e){
+      if (!dragging) return;
+      dragging = false;
+      lastT = performance.now();
+    }
+    pad.addEventListener('pointerup', release);
+    pad.addEventListener('pointerleave', release);
+
+    applyState(false);
+  } catch (err) {
+    // fail quietly — page still renders its static content
+  }
+})();
+</script>
+
+</body></html>
