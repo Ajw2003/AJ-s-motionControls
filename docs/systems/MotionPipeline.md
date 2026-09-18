@@ -17,9 +17,9 @@ is a bug in the controller, not something to special-case in C#.
 ## The path
 
 ```
-DeviceOrientationEvent          grip reference quaternion captured on tap
+DeviceOrientationEvent          reference quaternion, tracked continuously (Settling ⇄ Aiming)
 DeviceMotionEvent          ─┐
-                            ├─▶  delta = current ⊗ grip⁻¹        (on the phone)
+                            ├─▶  delta = current ⊗ reference⁻¹   (on the phone)
                             │         ↓ four floats on the wire
                             └─▶  PhoneAttitude.ToUnity(w,x,y,z)  (one basis change)
                                       ↓
@@ -28,6 +28,32 @@ DeviceMotionEvent          ─┐
 
 Tilt the phone ten degrees, the stone tilts ten degrees. That is the whole design goal, and it
 took three attempts.
+
+## Calibration: a tracked reference, not a tap snapshot
+
+The reference orientation used to be a single sample read the instant the player tapped the grip
+button (`MotionSource.calibrate()`) — any noise in that one instant was baked into the whole
+throw. It is now a continuous, steadiness-gated reference, kept in `MotionSource.referenceQuaternion`
+and driven every motion sample by `_advanceCalibration` (`controller/js/sensors.js`):
+
+| State | Trigger | Reference behaviour |
+|---|---|---|
+| **Settling** | Rotation rate below `CalibrationTuning.settleRateThresholdDegS`, for `settleSamples` in a row | Continuously nlerps toward the current attitude, with a `trackingTauMs` time constant — "zero" quietly follows wherever the phone actually rests |
+| **Aiming** | Rotation rate above `CalibrationTuning.aimRateThresholdDegS`, for `aimSamples` in a row | Frozen — tilt from here reads as aim |
+
+Gated on rotation rate rather than a decay window, the same threshold-and-hysteresis idiom
+`ThrowTuning`'s swing detector already uses (`swingOnsetSamples`, `stopSamples`) — there is no
+tracking-vs-held-tilt tradeoff to tune, because tracking simply stops the instant the player
+starts moving on purpose.
+
+`recentre()` is the explicit "zero right now" escape hatch this replaces the old `calibrate()`
+with at the two call sites that still want one outside of arming: the lobby's shore-pointing
+preview, and the RE-CENTRE button. `ThrowController.arm()` calls both `recentre()` (a
+guaranteed-fresh zero at the moment that matters most) and `prepareForThrow()` (the
+gravity-filter/buffer reset the old `calibrate()` also did, now split out because arming no
+longer implies capturing a reference).
+
+Design record: `docs/plans/continuous-calibration.md`.
 
 ## Why quaternions, and why it is not a style preference
 

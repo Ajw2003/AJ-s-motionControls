@@ -115,6 +115,37 @@ export function quaternionFromRotationVector(rx, ry, rz) {
   return { w: Math.cos(half), x: rx * scale, y: ry * scale, z: rz * scale };
 }
 
+/**
+ * Normalized lerp from `a` toward `b` by `t` (0..1), shortest path.
+ *
+ * The low-pass primitive continuous calibration tracking is built on: nlerp rather
+ * than slerp because this runs every motion sample (up to 60Hz) while Settling, and
+ * at the small per-sample steps a tracking filter takes, nlerp and slerp are
+ * indistinguishable but nlerp costs no trig. The dot-product flip is what stops a
+ * lerp between q and -q (the same rotation, opposite sign) taking the long way
+ * around and momentarily reporting a near-180-degree reference jump.
+ */
+export function quaternionNlerp(a, b, t) {
+  const flip = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z < 0 ? -1 : 1;
+  return quaternionNormalize({
+    w: a.w + (flip * b.w - a.w) * t,
+    x: a.x + (flip * b.x - a.x) * t,
+    y: a.y + (flip * b.y - a.y) * t,
+    z: a.z + (flip * b.z - a.z) * t,
+  });
+}
+
+/**
+ * How fast the phone is turning overall, in deg/s, across all three axes.
+ *
+ * The signal the Settling/Aiming gate watches — unsigned and unsplit by axis on
+ * purpose, unlike screenSpinRate: a deliberate tilt to aim can turn about any
+ * combination of axes, so what matters here is "moving at all", not which way.
+ */
+export function rotationRateMagnitude(rate) {
+  return Math.hypot(rate?.alpha ?? 0, rate?.beta ?? 0, rate?.gamma ?? 0);
+}
+
 /** Apply a rotation to a vector. */
 export function rotateVectorByQuaternion(q, v) {
   const tx = 2 * (q.y * v.z - q.z * v.y);
@@ -141,6 +172,25 @@ export function rotateVectorByQuaternion(q, v) {
  */
 export function orientationDelta(qRef, qNow) {
   return quaternionNormalize(quaternionMultiply(quaternionConjugate(qRef), qNow));
+}
+
+/**
+ * How far a device-frame attitude has tilted off level, as pitch/roll degrees.
+ *
+ * Rotates the device's own forward axis (+z, out through the glass) by the attitude
+ * and reads the two axes of tilt off the result via atan2/asin — the same
+ * "rotate a known vector, read the angle back" shape as gravityInDeviceFrame, not a
+ * second decomposition of the quaternion itself. Shared by D2 (the live tilt bubble,
+ * which only needs a pixel offset) and D8 (the post-throw recap's "12° low"), so the
+ * geometry exists in exactly one place.
+ */
+export function tiltAngleDeg(attitude) {
+  const q = attitude ?? { w: 1, x: 0, y: 0, z: 0 };
+  const forward = rotateVectorByQuaternion(q, { x: 0, y: 0, z: 1 });
+  return {
+    pitchDeg: Math.asin(clamp(forward.y, -1, 1)) * (180 / Math.PI),
+    rollDeg: Math.atan2(forward.x, forward.z) * (180 / Math.PI),
+  };
 }
 
 /** Rotate a vector's X/Y about the Z axis by `degrees` (counter-clockwise). */
@@ -350,6 +400,38 @@ export function readRotationRate(event) {
   return { alpha: r.alpha ?? 0, beta: r.beta ?? 0, gamma: r.gamma ?? 0 };
 }
 
+/**
+ * Tuning for the Settling/Aiming reference state machine — see MotionSource._onMotion.
+ * Seed values: the design doc (docs/plans/continuous-calibration.md) defers exact
+ * numbers to on-device feel, the same way ThrowTuning's guard constants were.
+ */
+export const CalibrationTuning = {
+  // Below this rotation rate (deg/s), the phone counts as held still and the
+  // reference keeps tracking it. Below settleRateThresholdDegS while Aiming, for
+  // settleSamples in a row, re-enters Settling.
+  settleRateThresholdDegS: 8,
+
+  // Above this rotation rate (deg/s), for aimSamples in a row, the reference freezes
+  // and the phone is Aiming. Higher than settleRateThresholdDegS on purpose — a
+  // single shared boundary would flicker between the two states on noise sitting
+  // right at the edge; the gap between them is the hysteresis.
+  aimRateThresholdDegS: 20,
+
+  // Consecutive still samples required to re-enter Settling from Aiming, ~200ms at
+  // 60Hz. Slow on purpose: re-entering Settling mid-aim on a brief pause would start
+  // tracking away from a reference the player is still actively holding.
+  settleSamples: 12,
+
+  // Consecutive fast samples required to leave Settling for Aiming, ~50ms at 60Hz.
+  // Quick on purpose, matching the precedent ThrowTuning.swingOnsetSamples already
+  // sets for "commit fast, once it's real."
+  aimSamples: 3,
+
+  // Time constant (ms) for the low-pass tracking nlerp while Settling — same
+  // exp-decay shape as GravityFilter's tauMs.
+  trackingTauMs: 175,
+};
+
 // ---------------------------------------------------------------------------
 // Browser wiring
 // ---------------------------------------------------------------------------
@@ -407,25 +489,41 @@ export class MotionSource {
    * @param {function} [options.now]  clock source, so tests can drive gyro integration
    *   across controlled intervals instead of racing the real one
    */
-  constructor({ gravityK = 0.8, onSample, now: clock } = {}) {
+  constructor({
+    gravityK = 0.8,
+    onSample,
+    now: clock,
+    calibrationTuning = CalibrationTuning,
+    onCalibrationStateChange,
+  } = {}) {
     this.now = clock ?? now;
     this.gravityFilter = new GravityFilter(gravityK);
     this.buffer = new RingBuffer(Math.ceil(SAMPLE_HZ * BUFFER_SECONDS));
+    this.calibrationTuning = calibrationTuning;
 
     // Sample-rate, not poll-rate. Release detection watches for a sharp stop, and
     // polling for that at the 20Hz aim cadence would miss it by up to 50ms and read
     // the orientation well after the phone had already come to rest.
     this.onSample = onSample ?? (() => {});
 
-    this.reference = null;
     this.latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
     this.latest = null;
     this.running = false;
 
     // Grip reference and current attitude, as quaternions. See the quaternion
-    // section above for why these are not three Euler deltas.
+    // section above for why these are not three Euler deltas. null means "not yet
+    // seeded" — lazy-initialised from the first sample in _onMotion, or explicitly by
+    // recentre().
     this.referenceQuaternion = null;
     this.orientationQuaternion = { w: 1, x: 0, y: 0, z: 0 };
+
+    // Settling/Aiming reference state machine — see docs/systems/MotionPipeline.md
+    // and _onMotion. Fires onCalibrationStateChange exactly once per flip, mirroring
+    // ThrowController.onStateChange's edge-triggered shape rather than polling.
+    this.calState = 'settling';
+    this._aimRun = 0;
+    this._settleRun = 0;
+    this.onCalibrationStateChange = onCalibrationStateChange ?? (() => {});
 
     // Attitude carried forward by the gyroscope between orientation events, and the
     // timestamp it is current as of.
@@ -460,20 +558,33 @@ export class MotionSource {
   }
 
   /**
-   * Capture the current orientation as the zero reference. Called on the tap that arms
-   * a throw, which is what makes "however you happen to be holding the phone right now"
-   * mean "flat stone, facing forward" — the player performs a calibration step without
-   * ever being told they are doing one.
+   * Snap the reference to the current attitude immediately, and force the state
+   * machine back to Settling. The direct replacement for what the old tap-triggered
+   * `calibrate()` did to the reference — used by the two non-throw call sites
+   * (the lobby preview aim, and the RE-CENTRE button) that still want an explicit
+   * "zero right now" rather than the continuous Settling/Aiming tracking arm() relies
+   * on. See docs/systems/MotionPipeline.md.
    */
-  calibrate() {
-    this.reference = { ...this.latestOrientation };
+  recentre() {
     this.referenceQuaternion = this._fusedQuaternion;
-    this.gravityFilter.reset();
-    this.buffer.clear();
+    this._aimRun = 0;
+    this._settleRun = 0;
+    if (this.calState !== 'settling') {
+      this.calState = 'settling';
+      this.onCalibrationStateChange('settling');
+    }
   }
 
-  hasReference() {
-    return this.reference !== null;
+  /**
+   * Reset the swing-measurement state ahead of a throw. Renamed from the old
+   * `calibrate()` — arming no longer captures a reference here at all; the
+   * Settling/Aiming state machine in _onMotion already keeps one current, and
+   * ThrowController.arm() calls recentre() alongside this when it wants an
+   * immediate, guaranteed-fresh zero on top of that.
+   */
+  prepareForThrow() {
+    this.gravityFilter.reset();
+    this.buffer.clear();
   }
 
   _onOrientation(event) {
@@ -531,6 +642,62 @@ export class MotionSource {
   }
 
   /**
+   * The Settling/Aiming reference state machine. See docs/systems/MotionPipeline.md.
+   *
+   * Lazy-inits the reference on the very first sample. While Settling, the reference
+   * nlerps toward the current fused attitude by a tau-derived alpha, so it quietly
+   * follows wherever the phone actually rests; while Aiming it is left alone. Gated
+   * on rotation rate rather than a timer, with a hysteresis pair of thresholds and
+   * debounce sample counts — the same threshold-and-hysteresis idiom
+   * ThrowTuning's swing detector already uses, applied to the reference instead.
+   */
+  _advanceCalibration(rotationRate, prevFusedAtMs, tMs) {
+    if (this.referenceQuaternion === null) {
+      this.referenceQuaternion = this._fusedQuaternion;
+    }
+
+    const tuning = this.calibrationTuning;
+    const rateMag = rotationRateMagnitude(rotationRate);
+
+    if (this.calState === 'settling') {
+      const dtMs = prevFusedAtMs === null ? 0 : tMs - prevFusedAtMs;
+      if (dtMs > 0 && dtMs <= MAX_SAMPLE_GAP_MS) {
+        const alpha = 1 - Math.exp(-dtMs / tuning.trackingTauMs);
+        this.referenceQuaternion = quaternionNlerp(
+          this.referenceQuaternion,
+          this._fusedQuaternion,
+          alpha,
+        );
+      }
+
+      if (rateMag > tuning.aimRateThresholdDegS) {
+        this._aimRun++;
+        if (this._aimRun >= tuning.aimSamples) {
+          this.calState = 'aiming';
+          this._aimRun = 0;
+          this._settleRun = 0;
+          this.onCalibrationStateChange('aiming');
+        }
+      } else {
+        this._aimRun = 0;
+      }
+    } else {
+      // Aiming: the reference is frozen — deliberately not touched here.
+      if (rateMag < tuning.settleRateThresholdDegS) {
+        this._settleRun++;
+        if (this._settleRun >= tuning.settleSamples) {
+          this.calState = 'settling';
+          this._aimRun = 0;
+          this._settleRun = 0;
+          this.onCalibrationStateChange('settling');
+        }
+      } else {
+        this._settleRun = 0;
+      }
+    }
+  }
+
+  /**
    * Gravity-free acceleration, by the best method this device supports.
    *
    * Ordered by how much rotation artefact each leaves in the reading, because that
@@ -558,8 +725,14 @@ export class MotionSource {
 
   _onMotion(event) {
     const t = this.now();
+    // Captured before _advanceFused, which overwrites this._fusedAtMs as a side
+    // effect — the calibration tick's own dtMs has to come from the pre-advance
+    // snapshot, or the nlerp alpha below is computed against the wrong interval on
+    // every single frame.
+    const prevFusedAtMs = this._fusedAtMs;
     const rotationRate = readRotationRate(event);
     this._advanceFused(rotationRate, t);
+    this._advanceCalibration(rotationRate, prevFusedAtMs, t);
 
     const { linear: linearRaw, source: gravitySource } = this._linearAcceleration(event, t);
     if (!linearRaw) return;

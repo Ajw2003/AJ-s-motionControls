@@ -27,8 +27,12 @@ import {
   quaternionConjugate,
   quaternionNormalize,
   quaternionFromRotationVector,
+  quaternionNlerp,
+  rotationRateMagnitude,
+  tiltAngleDeg,
   orientationDelta,
   MotionSource,
+  CalibrationTuning,
 } from './js/sensors.js';
 
 import {
@@ -311,8 +315,16 @@ console.log('\nMotionSource orientation');
     return source.latest;
   };
 
+  // A clock that never advances, for the fixed-pose delta assertions below: with no
+  // rotationRate accompanying these direct _onOrientation pokes, the calState stays
+  // Settling throughout, and a real clock's nonzero (if tiny) dt between calls would
+  // let the continuous tracking nlerp the reference a hair toward each new pose —
+  // fine on a real device, but it would turn these single-shot "is the delta exact"
+  // assertions into a race against however fast the test happens to run.
+  const frozenClock = () => 0;
+
   {
-    const m = new MotionSource();
+    const m = new MotionSource({ now: frozenClock });
     const s = drive(m, 12, 34, 56);
     check(
       'uncalibrated reports no deflection',
@@ -322,14 +334,15 @@ console.log('\nMotionSource orientation');
   }
 
   {
-    // Flat, screen up — the pose the game is described in. Tapping here must make
-    // this exact pose mean "flat stone, facing forward", i.e. identity.
-    const m = new MotionSource();
+    // Flat, screen up — the pose the game is described in. recentre() here must make
+    // this exact pose mean "flat stone, facing forward", i.e. identity, exactly as
+    // the old tap-triggered calibrate() did.
+    const m = new MotionSource({ now: frozenClock });
     m._onOrientation({ alpha: 0, beta: 0, gamma: 0 });
     m._onMotion(motionEvent());
-    m.calibrate();
+    m.recentre();
 
-    check('the tap pose itself is identity', sameRotation(drive(m, 0, 0, 0).attitude, IDENTITY));
+    check('the recentre pose itself is identity', sameRotation(drive(m, 0, 0, 0).attitude, IDENTITY));
 
     check(
       'pitching the top edge up 10 degrees is 10 degrees about device x',
@@ -344,12 +357,12 @@ console.log('\nMotionSource orientation');
 
   {
     // Gripped upright — beta 90 is "phone facing you", and precisely where the Euler
-    // version came apart. Calibrating here has to work exactly as well as calibrating
-    // flat: the reference is whatever pose the tap happened in.
-    const m = new MotionSource();
+    // version came apart. Recentring here has to work exactly as well as recentring
+    // flat: the reference is whatever pose it is snapped to.
+    const m = new MotionSource({ now: frozenClock });
     m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
-    m.calibrate();
+    m.recentre();
 
     check(
       'no movement from an upright grip reads as identity',
@@ -360,106 +373,222 @@ console.log('\nMotionSource orientation');
       'pitching 10 degrees forward of an upright grip is a 10 degree turn',
       sameRotation(drive(m, 0, 80, 0).attitude, aboutX(-10)),
     );
-
-    // The headline case. Sweeping through vertical used to flip alpha and fold gamma,
-    // so aim and roll jumped by up to 180 degrees while the phone moved one. Every
-    // step must stay small, and the turn from the grip must grow monotonically as the
-    // phone keeps pitching the same way.
-    let prev = null;
-    let prevAngle = null;
-    let worstJump = 0;
-    let monotonic = true;
-    for (let beta = 100; beta >= 80; beta -= 1) {
-      const s = drive(m, 0, beta, 0);
-      const angle = rotationAngleDeg(s.attitude);
-
-      if (prev !== null) {
-        worstJump = Math.max(
-          worstJump,
-          rotationAngleDeg(orientationDelta(prev.attitude, s.attitude)),
-        );
-        // Past the grip pose the turn shrinks to zero and grows again the other way,
-        // so only the leg on each side has to be monotonic.
-        if (beta > 90 && angle > prevAngle + 1e-9) monotonic = false;
-        if (beta < 90 && angle < prevAngle - 1e-9) monotonic = false;
-      }
-
-      prev = s;
-      prevAngle = angle;
-    }
-    check(
-      'sweeping through vertical never jumps',
-      worstJump < 1.5,
-      `worst step ${worstJump.toFixed(3)} deg`,
-    );
-    check('the turn from the grip changes monotonically across vertical', monotonic);
   }
 
   {
-    // The reference is the tap, not the compass: an arbitrary heading nowhere near
-    // north must behave the same as any other.
-    const m = new MotionSource();
+    // The reference is set explicitly, not the compass: an arbitrary heading nowhere
+    // near north must behave the same as any other.
+    const m = new MotionSource({ now: frozenClock });
     m._onOrientation({ alpha: 200, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
-    m.calibrate();
+    m.recentre();
 
     const yawed = drive(m, 215, 90, 0);
     check(
-      'aim is measured from the tap, not from north',
+      'aim is measured from the reference, not from north',
       near(rotationAngleDeg(yawed.attitude), 15, 1e-6),
       `${rotationAngleDeg(yawed.attitude).toFixed(3)} deg`,
     );
   }
+}
+
+// ---------------------------------------- MotionSource Settling/Aiming calibration
+//
+// D1: the tap-triggered snapshot is gone. The reference now tracks continuously
+// while the phone is held still, and freezes on a sustained rotation-rate burst —
+// the same threshold/hysteresis idiom ThrowTuning's swing detector already uses.
+console.log('\nMotionSource calibration (Settling/Aiming)');
+{
+  const motionEvent = (rate = { alpha: 0, beta: 0, gamma: 0 }) => ({
+    accelerationIncludingGravity: { x: 0, y: 0, z: 9.81 },
+    rotationRate: rate,
+  });
+
+  // Advances a controllable clock by one 16ms frame and feeds a devicemotion sample
+  // at the given rotation rate — no deviceorientation event, so the reference and the
+  // debounce counters are driven purely by dt and rotationRate, the way a real device
+  // reports gyro-only frames between orientation events.
+  const driveMotion = (source, clockRef, rate) => {
+    clockRef.t += 16;
+    source._onMotion(motionEvent(rate));
+    return source.latest;
+  };
+
+  const stillRate = { alpha: 0, beta: 0, gamma: 0 };
+  const aimBurst = { alpha: 0, beta: CalibrationTuning.aimRateThresholdDegS + 40, gamma: 0 };
 
   {
-    // Gyro carry-forward. deviceorientation and devicemotion are separate streams, so
-    // on a device where orientation lags the old code re-stamped a stale triple onto
-    // every sample — a staircase in the aim stream, worst while the phone moves fastest.
-    //
-    // Gripped upright, and turning about the device's Y axis, which at that pose is
-    // world up: this is the player swinging the phone across to aim.
+    const clockRef = { t: 0 };
+    const m = new MotionSource({ now: () => clockRef.t });
+    for (let i = 0; i < 5; i++) driveMotion(m, clockRef, stillRate);
+    check(
+      'held still reads near-identity with no explicit call',
+      sameRotation(m.latest.attitude, IDENTITY, 1e-6),
+      `${rotationAngleDeg(m.latest.attitude).toFixed(4)} deg`,
+    );
+    check('starts in Settling', m.calState === 'settling');
+  }
+
+  {
+    const transitions = [];
+    const clockRef = { t: 0 };
+    const m = new MotionSource({
+      now: () => clockRef.t,
+      onCalibrationStateChange: (state) => transitions.push(state),
+    });
+
+    // A sustained burst past the aim threshold, for aimSamples in a row, freezes the
+    // reference and flips to Aiming.
+    for (let i = 0; i < CalibrationTuning.aimSamples; i++) driveMotion(m, clockRef, aimBurst);
+    check('a sustained burst past the aim threshold locks into Aiming', m.calState === 'aiming');
+    check(
+      'onCalibrationStateChange fires exactly once for the lock',
+      transitions.length === 1 && transitions[0] === 'aiming',
+      JSON.stringify(transitions),
+    );
+
+    // Continued tilting past the lock must not be re-absorbed into the reference —
+    // the turn from the frozen reference has to keep growing.
+    const lockedAngle = rotationAngleDeg(m.latest.attitude);
+    for (let i = 0; i < 10; i++) driveMotion(m, clockRef, aimBurst);
+    check(
+      'continued tilting after the freeze is not re-absorbed',
+      rotationAngleDeg(m.latest.attitude) > lockedAngle + 1,
+      `${lockedAngle.toFixed(2)} -> ${rotationAngleDeg(m.latest.attitude).toFixed(2)} deg`,
+    );
+
+    // settleSamples of stillness re-enters Settling.
+    for (let i = 0; i < CalibrationTuning.settleSamples; i++) driveMotion(m, clockRef, stillRate);
+    check('settleSamples of stillness re-enters Settling', m.calState === 'settling');
+    check(
+      'onCalibrationStateChange fires exactly once per transition',
+      transitions.length === 2 && transitions[1] === 'settling',
+      JSON.stringify(transitions),
+    );
+  }
+
+  {
+    // recentre() is the direct replacement for the old tap-triggered calibrate() at
+    // the two non-throw call sites (lobby preview aim, RE-CENTRE button): it snaps
+    // the reference immediately and forces Settling, regardless of how far into
+    // Aiming the state machine had gotten.
+    const clockRef = { t: 0 };
+    const m = new MotionSource({ now: () => clockRef.t });
+    for (let i = 0; i < CalibrationTuning.aimSamples; i++) driveMotion(m, clockRef, aimBurst);
+    check('locked into Aiming before recentre', m.calState === 'aiming');
+
+    m.recentre();
+    check('recentre forces Settling', m.calState === 'settling');
+
+    const afterRecentre = driveMotion(m, clockRef, stillRate);
+    check(
+      'recentre snaps the reference to the attitude it was called at',
+      sameRotation(afterRecentre.attitude, IDENTITY, 1e-6),
+      `${rotationAngleDeg(afterRecentre.attitude).toFixed(4)} deg`,
+    );
+  }
+
+  {
+    // Gyro carry-forward while Aiming. deviceorientation and devicemotion are
+    // separate streams, so on a device where orientation lags, the old code
+    // re-stamped a stale triple onto every sample — a staircase in the aim stream,
+    // worst while the phone moves fastest. A frozen (Aiming) reference is what makes
+    // the gyro-integrated delta from here exact rather than smeared by tracking.
     let clock = 0;
     const m = new MotionSource({ now: () => clock });
     m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
     m._onMotion(motionEvent());
-    m.calibrate();
+    m.recentre();
 
+    for (let i = 0; i < CalibrationTuning.aimSamples; i++) {
+      clock += 16;
+      m._onMotion(motionEvent(aimBurst));
+    }
+    check('locked into Aiming before the gyro-only swing', m.calState === 'aiming');
+
+    const beforeSwing = m.latest.attitude;
+    const orientationAgeAtLock = m.latest.orientationAgeMs;
     for (let i = 0; i < 6; i++) {
       clock += 16; // one frame of motion with no orientation event
       m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
     }
-
-    // 6 frames x 16ms x 60 deg/s = 5.76 degrees, about the device's own y axis.
     check(
-      'the attitude keeps moving while orientation is stale',
-      sameRotation(m.latest.attitude, aboutY(5.76), 1e-3),
-      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`,
+      'the attitude keeps moving on gyro alone once Aiming',
+      rotationAngleDeg(orientationDelta(beforeSwing, m.latest.attitude)) > 1,
+      `${rotationAngleDeg(orientationDelta(beforeSwing, m.latest.attitude)).toFixed(3)} deg`,
     );
     check(
-      'staleness is reported',
-      m.latest.orientationAgeMs === 96,
-      `${m.latest.orientationAgeMs}`,
-    );
-
-    // A real reading must win, or integration drift accumulates forever.
-    clock += 16;
-    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
-    m._onMotion(motionEvent());
-    check(
-      'a fresh orientation reading overrides the gyro estimate',
-      sameRotation(m.latest.attitude, IDENTITY),
-      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`,
+      'staleness is reported and grows while no orientation event lands',
+      m.latest.orientationAgeMs > orientationAgeAtLock,
+      `${orientationAgeAtLock} -> ${m.latest.orientationAgeMs}`,
     );
 
     // A gap long enough to be a backgrounded tab must not be integrated across.
+    const beforeGap = m.latest.attitude;
     clock += 5000;
     m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma: 60 }));
     check(
       'a long gap is not integrated across',
-      sameRotation(m.latest.attitude, IDENTITY),
-      `${rotationAngleDeg(m.latest.attitude).toFixed(3)} deg`,
+      sameRotation(m.latest.attitude, beforeGap),
+      `${rotationAngleDeg(orientationDelta(beforeGap, m.latest.attitude)).toFixed(3)} deg`,
     );
   }
+}
+
+// -------------------------------------------------- pure calibration math helpers
+console.log('\nquaternionNlerp');
+{
+  const a = { w: 1, x: 0, y: 0, z: 0 };
+  const b = aboutX(60);
+
+  check('t=0 returns the start value', sameRotation(quaternionNlerp(a, b, 0), a));
+  check('t=1 returns the end value', sameRotation(quaternionNlerp(a, b, 1), b));
+
+  const half = quaternionNlerp(a, b, 0.5);
+  check('t=0.5 lands strictly between the two turns', rotationAngleDeg(half) > 0 && rotationAngleDeg(half) < 60);
+  check('the result is always a unit quaternion', near(magnitude({ x: half.x, y: half.y, z: half.z }) ** 2 + half.w ** 2, 1, 1e-9));
+
+  // -b describes the same rotation as b, so lerping toward it must take the same
+  // short path as lerping toward b — a naive lerp without the sign flip takes the
+  // long way around and briefly overshoots through a near-180-degree turn instead.
+  const negB = { w: -b.w, x: -b.x, y: -b.y, z: -b.z };
+  check(
+    'takes the shortest path regardless of the sign of the target',
+    sameRotation(quaternionNlerp(a, b, 0.5), quaternionNlerp(a, negB, 0.5)),
+  );
+}
+
+console.log('\nrotationRateMagnitude');
+{
+  check('a still phone reports zero', rotationRateMagnitude({ alpha: 0, beta: 0, gamma: 0 }) === 0);
+  check(
+    'combines all three axes',
+    near(rotationRateMagnitude({ alpha: 3, beta: 4, gamma: 0 }), 5),
+  );
+  check('a missing rate reads as zero', rotationRateMagnitude(null) === 0);
+  check('missing axes default to zero', near(rotationRateMagnitude({ alpha: 3 }), 3));
+}
+
+console.log('\ntiltAngleDeg');
+{
+  const level = tiltAngleDeg(IDENTITY);
+  check('level reads zero on both axes', near(level.pitchDeg, 0) && near(level.rollDeg, 0));
+
+  const pitched = tiltAngleDeg(aboutX(20));
+  check(
+    'pitching about device x reads on pitchDeg, not rollDeg',
+    near(Math.abs(pitched.pitchDeg), 20, 1e-3) && near(pitched.rollDeg, 0, 1e-3),
+    `${pitched.pitchDeg.toFixed(2)} / ${pitched.rollDeg.toFixed(2)}`,
+  );
+
+  const rolled = tiltAngleDeg(aboutY(20));
+  check(
+    'rolling about device y reads on rollDeg, not pitchDeg',
+    near(Math.abs(rolled.rollDeg), 20, 1e-3) && near(rolled.pitchDeg, 0, 1e-3),
+    `${rolled.pitchDeg.toFixed(2)} / ${rolled.rollDeg.toFixed(2)}`,
+  );
+
+  check('a null attitude is treated as level', near(tiltAngleDeg(null).pitchDeg, 0));
 }
 
 // ---------------------------------------------------------------- rotation
@@ -893,7 +1022,8 @@ console.log('\nThrowController: arm, swing, stop');
   const makeMotion = (latest, samples) => ({
     latest,
     buffer: { toArray: () => samples, clear() {} },
-    calibrate() {},
+    prepareForThrow() {},
+    recentre() {},
     onSample: () => {},
   });
 
@@ -1018,7 +1148,8 @@ console.log('\nThrowController: A5/A6 accidental-throw guard');
   const makeMotion = (latest, samples) => ({
     latest,
     buffer: { toArray: () => samples, clear() {} },
-    calibrate() {},
+    prepareForThrow() {},
+    recentre() {},
     onSample: () => {},
   });
 
@@ -1097,7 +1228,8 @@ console.log('\nThrowController: A5/A6 accidental-throw guard');
     const motion = {
       latest: null,
       buffer: { toArray: () => currentSamples, clear() {} },
-      calibrate() {},
+      prepareForThrow() {},
+    recentre() {},
       onSample: () => {},
     };
     const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
@@ -1200,7 +1332,8 @@ console.log('\nThrowController: live spin on the aim stream');
   const motion = {
     latest: null,
     buffer: { toArray: () => [], clear() {} },
-    calibrate() {},
+    prepareForThrow() {},
+    recentre() {},
     onSample: () => {},
   };
 
@@ -1250,7 +1383,8 @@ console.log('\nThrowController: live windup on the aim stream');
   const makeMotion = () => ({
     latest: null,
     buffer: { toArray: () => [], clear() {} },
-    calibrate() {},
+    prepareForThrow() {},
+    recentre() {},
     onSample: () => {},
   });
 

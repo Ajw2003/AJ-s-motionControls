@@ -172,6 +172,145 @@
           0 0 0 3px var(--good);
       }
 
+      /* D3: Settling/Aiming status badge. Muted at rest, the same accent-vs-good
+       distinction the grip button's own .held state uses, so a locked aim reads
+       consistently across both elements. */
+      .cal-badge {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--muted);
+        transition:
+          color 150ms,
+          background 150ms;
+      }
+      .cal-badge.aiming {
+        color: #06263a;
+        background: var(--good);
+      }
+
+      /* D2: on-phone live tilt indicator. Runs continuously while #throwScreen is
+       active; only the bubble's colour and the lock ring change on the
+       Settling→Aiming edge. */
+      .tilt-box {
+        width: 130px;
+        height: 130px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 2px solid #2f3e56;
+        position: relative;
+        overflow: hidden;
+        flex: 0 0 auto;
+      }
+      .tilt-crosshair {
+        position: absolute;
+        inset: 0;
+      }
+      .tilt-crosshair::before,
+      .tilt-crosshair::after {
+        content: '';
+        position: absolute;
+        background: #2f3e56;
+      }
+      .tilt-crosshair::before {
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 1px;
+      }
+      .tilt-crosshair::after {
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 1px;
+      }
+      .tilt-bubble {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        transition: background 150ms;
+      }
+      .tilt-bubble.locked {
+        background: var(--good);
+      }
+      /* D2's own lock pulse — a burst-and-fade at the instant of the lock. A
+       different shape of animation from #armRing's progressive fill below, even
+       though both are rings, because they mark two different kinds of event: this
+       one an instant, that one a duration. */
+      .tilt-lock-ring {
+        position: absolute;
+        inset: 6px;
+        border-radius: 50%;
+        border: 2px solid var(--good);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .tilt-lock-ring.show {
+        animation: tiltLockPulse 500ms ease-out;
+      }
+      @keyframes tiltLockPulse {
+        0% {
+          opacity: 0.9;
+          transform: scale(0.7);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.15);
+        }
+      }
+
+      /* D7: visible steady-hold gate. #armRing wraps the grip button; the circle
+       fills clockwise over ThrowTuning.armGraceMs, its animationDuration set inline
+       from that same constant (see renderArmRing in app.js) so the visual and the
+       real grace window can never drift apart as two separate magic numbers. */
+      .grip-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .arm-ring {
+        position: absolute;
+        inset: -10px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .arm-ring circle {
+        fill: none;
+        stroke: var(--good);
+        stroke-width: 4;
+        stroke-linecap: round;
+        stroke-dasharray: 289;
+        stroke-dashoffset: 289;
+        transform-origin: 50% 50%;
+        transform: rotate(-90deg);
+      }
+      .arm-ring.filling {
+        opacity: 1;
+      }
+      /* animation-duration is set inline from ThrowTuning.armGraceMs (renderArmRing
+       in app.js), directly on this element rather than on the wrapper. */
+      .arm-ring.filling circle {
+        animation: armRingFillCircle linear forwards;
+      }
+      @keyframes armRingFillCircle {
+        from {
+          stroke-dashoffset: 289;
+        }
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+
       /* Explicit and !important because `hidden` is only a UA rule of `display: none`,
        which any later display declaration on a button quietly beats. The advance
        buttons are hidden most of the time, so this has to be the rule that wins. */
@@ -529,10 +668,37 @@
     <section id="throwScreen" class="screen">
       <h2 id="throwTitle">Your turn!</h2>
       <p id="throwHint">Point your phone at the lake, tap, then swing and stop sharply.</p>
-      <!-- renderGripButton paints this on startup; the markup only covers the instant
-         before the script runs. It used to say HOLD and stayed that way, because
-         onStateChange fires on transitions and the first one is the player's own tap. -->
-      <button id="gripBtn">TAP TO AIM</button>
+
+      <!-- D3: two-state status badge — text/colour driven by onCalibrationStateChange.
+         Deliberately just Settling/Aiming; see the constructor comment on `motion`
+         in app.js for why a third "Swinging" state is dropped from this pass. -->
+      <span id="calBadge" class="cal-badge">Settling…</span>
+
+      <!-- D2: live tilt indicator, running continuously whenever this screen is up —
+         see showScreen's startTiltIndicator/stopTiltIndicator. The lock ring is D2's
+         own burst-and-fade pulse at the Settling→Aiming edge, a distinct animation
+         from D7's progressive fill-ring around the grip button below. -->
+      <div id="tiltBox" class="tilt-box">
+        <div class="tilt-crosshair"></div>
+        <div id="tiltLockRing" class="tilt-lock-ring"></div>
+        <div id="tiltBubble" class="tilt-bubble"></div>
+      </div>
+
+      <!-- renderGripButton paints the button's own label on startup; the markup only
+         covers the instant before the script runs. It used to say HOLD and stayed
+         that way, because onStateChange fires on transitions and the first one is
+         the player's own tap.
+
+         D7: #armRing is the visible steady-hold gate — a progressive fill over
+         ThrowTuning.armGraceMs, started on the ARMED transition (renderArmRing in
+         app.js), separate markup and a separate CSS keyframe from #tiltLockRing's
+         pulse-and-fade above. -->
+      <div id="gripWrap" class="grip-wrap">
+        <svg id="armRing" class="arm-ring" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="46" />
+        </svg>
+        <button id="gripBtn">TAP TO AIM</button>
+      </div>
       <p id="throwResult"></p>
     </section>
 

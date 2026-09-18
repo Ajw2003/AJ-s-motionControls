@@ -6,7 +6,12 @@
  * per-device results and for what "verified" requires.
  */
 
-import { MotionSource, requestMotionPermission, isSecureContextOk } from './sensors.js';
+import {
+  MotionSource,
+  requestMotionPermission,
+  isSecureContextOk,
+  tiltAngleDeg,
+} from './sensors.js';
 import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { loadIdentity, ensureDeviceId, updateIdentity, clearIdentity } from './identity.js';
@@ -40,6 +45,12 @@ const ui = {
   codeInput: el('codeInput'),
   joinBtn: el('joinBtn'),
   gripBtn: el('gripBtn'),
+  gripWrap: el('gripWrap'),
+  armRing: el('armRing'),
+  calBadge: el('calBadge'),
+  tiltBox: el('tiltBox'),
+  tiltBubble: el('tiltBubble'),
+  tiltLockRing: el('tiltLockRing'),
   waitTitle: el('waitTitle'),
   waitDetail: el('waitDetail'),
   lastThrow: el('lastThrow'),
@@ -73,7 +84,82 @@ const THROW_TUNING = {
   minThrowSwingSpeed: Number(throwParams.get('minThrowSpeed')) || ThrowTuning.minThrowSwingSpeed,
 };
 
-const motion = new MotionSource({ gravityK: GRAVITY_K });
+/**
+ * D3/D4: the two-state badge and lock haptic/pulse, driven off MotionSource's
+ * Settling/Aiming edge. Deliberately two states, not three — ThrowController exposes
+ * no hook for its internal _swinging sub-state beyond the existing IDLE/ARMED
+ * onStateChange, and the grip button's own "SWING!" label already covers that
+ * moment, which typically lasts under a second anyway.
+ */
+const motion = new MotionSource({
+  gravityK: GRAVITY_K,
+  onCalibrationStateChange: (state) => {
+    renderCalBadge(state);
+
+    const aiming = state === 'aiming';
+    ui.tiltBubble?.classList.toggle('locked', aiming);
+
+    if (aiming) {
+      // Android only — see bindGrip's own guard comment; iOS support for
+      // navigator.vibrate is unreliable, so this is a bonus, not something the feel
+      // depends on.
+      if (navigator.vibrate) navigator.vibrate(10);
+
+      // D2's lock-tick pulse: a burst-and-fade at the instant of the lock, distinct
+      // from D7's fill-ring below, which is a progressive fill over a duration.
+      if (ui.tiltLockRing) {
+        ui.tiltLockRing.classList.remove('show');
+        void ui.tiltLockRing.offsetWidth; // restart the animation
+        ui.tiltLockRing.classList.add('show');
+      }
+    }
+  },
+});
+
+/** D3: text/colour for the Settling/Aiming badge. */
+function renderCalBadge(state) {
+  if (!ui.calBadge) return;
+  const aiming = state === 'aiming';
+  ui.calBadge.textContent = aiming ? 'Aim locked' : 'Settling…';
+  ui.calBadge.classList.toggle('aiming', aiming);
+}
+
+/**
+ * D7: the fill-ring around the grip button for the existing (invisible) armGraceMs
+ * hold requirement. animationDuration is set here, from the same ThrowTuning
+ * constant the real guard reads, so the visual and the real grace window can never
+ * drift out of sync as two separate magic numbers.
+ */
+function renderArmRing(state) {
+  if (!ui.armRing) return;
+  const circle = ui.armRing.querySelector('circle');
+  if (state === ThrowState.ARMED) {
+    if (circle) circle.style.animationDuration = `${THROW_TUNING.armGraceMs}ms`;
+    ui.armRing.classList.remove('filling');
+    void ui.armRing.offsetWidth; // restart the animation
+    ui.armRing.classList.add('filling');
+  } else {
+    ui.armRing.classList.remove('filling');
+  }
+}
+
+/** D8: a short qualitative line from the throw descriptor's own fields. */
+function describeThrow(payload) {
+  const { pitchDeg } = tiltAngleDeg({ w: payload.qw, x: payload.qx, y: payload.qy, z: payload.qz });
+
+  const speedLabel =
+    payload.swingSpeed < 2 ? 'soft swing' : payload.swingSpeed < 4 ? 'firm swing' : 'fast swing';
+
+  const spinMag = Math.abs(payload.spinRate ?? 0);
+  const spinLabel = spinMag < 100 ? 'no spin' : spinMag < 400 ? 'light spin' : 'heavy spin';
+
+  const angleLabel =
+    Math.abs(pitchDeg) < 3
+      ? 'level release'
+      : `${Math.abs(pitchDeg).toFixed(0)}° ${pitchDeg < 0 ? 'low' : 'high'}`;
+
+  return `${speedLabel} · ${angleLabel} · ${spinLabel}`;
+}
 let connection = null;
 let lastThrow = null;
 let myPlayerId = '';
@@ -139,6 +225,57 @@ function showScreen(name) {
 
   activeScreenName = name;
   tutorialOpen = name === 'tutorial';
+
+  // D2: the live tilt bubble runs continuously whenever #throwScreen is up, not only
+  // while Aiming — showScreen is already the one place that owns screen-transition
+  // side effects, so this is a second lifecycle owner only in the sense of "off
+  // everywhere else", not a second place that decides when the throw screen is shown.
+  if (name === 'throw') startTiltIndicator();
+  else stopTiltIndicator();
+}
+
+// ---------------------------------------------------------------- tilt indicator
+
+// D2 on-phone live tilt indicator. Degrees of tilt past this read as fully deflected
+// against the edge of the level box — a generous swing range for the wrist tilts
+// this game is actually played with, not the phone's full range of motion.
+const TILT_INDICATOR_MAX_DEG = 35;
+
+// Pixel radius the bubble is allowed to travel from centre, sized to the level-box
+// markup in index.html (see .tilt-box).
+const TILT_INDICATOR_RADIUS_PX = 48;
+
+let tiltRafId = null;
+
+function updateTiltIndicator() {
+  const attitude = motion.latest?.attitude;
+  if (attitude && ui.tiltBubble) {
+    const { pitchDeg, rollDeg } = tiltAngleDeg(attitude);
+    const nx = clampTilt(rollDeg / TILT_INDICATOR_MAX_DEG);
+    // Screen Y grows downward; a phone pitched back (nose up) should move the bubble
+    // up on the level box, hence the sign flip here rather than in tiltAngleDeg,
+    // which stays a plain geometric helper with no UI convention baked in.
+    const ny = clampTilt(-pitchDeg / TILT_INDICATOR_MAX_DEG);
+    const x = (nx * TILT_INDICATOR_RADIUS_PX).toFixed(1);
+    const y = (ny * TILT_INDICATOR_RADIUS_PX).toFixed(1);
+    ui.tiltBubble.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  }
+  tiltRafId = requestAnimationFrame(updateTiltIndicator);
+}
+
+function clampTilt(v) {
+  return v < -1 ? -1 : v > 1 ? 1 : v;
+}
+
+function startTiltIndicator() {
+  if (tiltRafId !== null) return;
+  tiltRafId = requestAnimationFrame(updateTiltIndicator);
+}
+
+function stopTiltIndicator() {
+  if (tiltRafId === null) return;
+  cancelAnimationFrame(tiltRafId);
+  tiltRafId = null;
 }
 
 function setStatus(text, kind = '') {
@@ -156,12 +293,18 @@ const thrower = new ThrowController(motion, {
   onThrow: (payload) => {
     sendInput(payload);
     lastThrow = payload;
+
+    // D4: a short pulse on release, distinct from the Settling→Aiming lock tick.
+    if (navigator.vibrate) navigator.vibrate(20);
+
     ui.throwResult.textContent =
       `Speed ${payload.swingSpeed.toFixed(2)} m/s` +
-      (payload.simulated ? ' · simulated (no motion sensors)' : '');
+      (payload.simulated ? ' · simulated (no motion sensors)' : '') +
+      ` · ${describeThrow(payload)}`;
   },
   onStateChange: (state) => {
     renderGripButton(state);
+    renderArmRing(state);
 
     // Hand the AIM stream over rather than running both. Arming replaces the flat
     // preview frames with ThrowController's own, which carry live spin and windup;
@@ -232,7 +375,7 @@ function startPreviewAim() {
   // spin and windup in them, and this one would interleave zeros.
   if (thrower.state === ThrowState.ARMED) return;
 
-  motion.calibrate();
+  motion.recentre();
   previewAimTimer = setInterval(() => {
     sendAim(buildAimPayload(motion.latest, 0, 0, 0));
   }, 50); // 20Hz, matching ThrowController's aimHz default
@@ -368,7 +511,7 @@ function renderNameBtn() {
 
 function bindChoose() {
   ui.confirmBtn.addEventListener('click', () => sendInput({ type: 'PICK_ROCK' }));
-  ui.recentreBtn.addEventListener('click', () => motion.calibrate());
+  ui.recentreBtn.addEventListener('click', () => motion.recentre());
   bindColour();
 }
 
@@ -544,8 +687,8 @@ const TUTORIAL_PAGES = [
     </svg>`,
   },
   {
-    title: 'Your tap is the zero',
-    body: 'However you hold the phone the instant you tap becomes flat, facing the TV. Every tilt after that is measured from that line — tapped pointing the wrong way? Tap again to re-aim.',
+    title: 'Hold still, then aim',
+    body: 'While you hold the phone steady, "flat, facing the TV" quietly follows however you’re gripping it. The moment you start to tilt on purpose, that line locks — every degree from there is your aim.',
     visual: `<svg viewBox="0 0 200 150" fill="none">
       ${phoneGlyph({ x: 42, y: 78, tapRipple: true })}
       <line x1="8" y1="78" x2="192" y2="78" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 5" opacity="0.8"/>
@@ -1035,7 +1178,7 @@ function updateDebug() {
         : `${Math.max(0, thrower.tuning.armGraceMs - (s.t - thrower._graceStartT)).toFixed(0)}ms`
     }`,
     `socket   ${connection?.status ?? 'not connected'}`,
-    `calib    ${motion.hasReference() ? 'set' : 'none'}`,
+    `calib    ${motion.calState}`,
     // The delta quaternion itself. Four numbers rather than three named angles because
     // that is genuinely what is on the wire now — printing a decomposition here would
     // be inventing a representation the rest of the system does not use. All-zeros with
