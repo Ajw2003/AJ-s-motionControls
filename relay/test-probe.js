@@ -1,23 +1,13 @@
 'use strict';
 
 /**
- * Verifies the captive-portal nudge (P2 in docs/plans/join-failure-reduction.md) and the
- * :80 route fix, against a real spawned relay. Run with: npm test
+ * Verifies the connectivity-probe answers and the :80 route fix, against a real spawned
+ * relay. Run with: npm test
  *
- * This is the half of P2 a machine can prove: that the relay's ANSWERS change with the
- * requesting device's funnel stage. It cannot prove the half that matters on party night —
- * that a phone's OS reacts to those answers by opening its portal sheet, and stops flagging
- * "No internet" once the device is playing. That needs a real phone; the procedure is in the
- * plan's Verification section.
- *
- * Both halves are asserted in one direction and then the other, deliberately. Getting the
- * nudge right and the suppression wrong trades a join failure for a mid-match disconnect,
- * which is strictly worse than doing nothing — so "it goes back to 204 afterwards" is as
- * load-bearing a test as "it redirects beforehand".
- *
- * The funnel is keyed by IP and confined to DNS_ALLOW, so the spawned relay is given
- * 127.0.0.0/8 — that makes this test's own loopback requests count as a device, which is
- * exactly the mechanism a phone on 192.168.137.0/24 goes through.
+ * This is the half a machine can prove: that the relay answers Android's and Apple's probes
+ * with the "there is internet here" answer every time, whoever asks and whatever they have
+ * or have not opened. It cannot prove that a phone's OS reacts by not flagging "No internet"
+ * — that needs a real phone.
  */
 
 const { test, describe, before, after } = require('node:test');
@@ -49,7 +39,7 @@ function request(port, requestPath) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-describe('Captive-portal nudge', () => {
+describe('Connectivity probes', () => {
   let server;
 
   before(async () => {
@@ -57,10 +47,10 @@ describe('Captive-portal nudge', () => {
       env: {
         ...process.env,
         PORT: String(PORT),
-        // Enables the funnel. The relay also tries to bind :53 and :80 whenever DNS is on;
-        // both degrade quietly if they cannot, and nothing in this block needs either —
+        // Hotspot mode, as on the host. The relay also tries to bind :53 and :80 whenever DNS
+        // is on; both degrade quietly if they cannot, and nothing in this block needs either —
         // every request below goes to the main port, which routes through the same
-        // serveCaptiveProbe the :80 listener uses.
+        // serveConnectivityProbe the :80 listener uses.
         DNS_RESPOND_IP: '127.0.0.1',
         DNS_ALLOW: '127.0.0.0/8',
         DNS_NAME: HOST_NAME,
@@ -74,32 +64,23 @@ describe('Captive-portal nudge', () => {
     server.kill('SIGKILL');
   });
 
-  test('before the controller is opened, Android is told there is a portal', async () => {
+  test('Android gets a bare 204, even from a device that has not opened the controller', async () => {
     const res = await request(PORT, '/generate_204');
-    assert.equal(res.status, 302, 'a bare 204 here would suppress the sheet we want opened');
-    // The IP literal, not HOST_NAME, is the fix for Defect 3: browsers upgrade http:// URLs
-    // for registrable names to HTTPS and land on :443 where nothing listens. This value is
-    // the DNS_RESPOND_IP the harness starts the server with.
-    assert.equal(res.location, 'http://127.0.0.1/portal');
+    assert.equal(res.status, 204, 'anything but a bare 204 makes Android show a login page');
+    assert.equal(res.body, '');
   });
 
-  test('before the controller is opened, Apple gets the portal page, not "Success"', async () => {
+  test('Apple gets the exact literal "Success", even before the controller is opened', async () => {
     const res = await request(PORT, '/hotspot-detect.html');
     assert.equal(res.status, 200);
-    assert.notEqual(res.body, 'Success');
-    assert.match(res.body, /<!doctype html>/i);
+    assert.equal(
+      res.body,
+      'Success',
+      'Apple needs this exact literal to stop flagging "No internet"',
+    );
   });
 
-  test('the portal page hands off to the game rather than embedding it', async () => {
-    const res = await request(PORT, '/portal');
-    assert.equal(res.status, 200);
-    // The link out is the entire point: the CNA sheet cannot be trusted with
-    // DeviceMotion.requestPermission(), so the controller must never be what loads here.
-    assert.match(res.body, new RegExp(`https://${HOST_NAME}:${PORT}/`));
-    assert.doesNotMatch(res.body, /controller\.js/);
-  });
-
-  test('opening the controller advances the device past the nudge', async () => {
+  test('the answers do not change once the controller has been opened', async () => {
     const page = await request(PORT, '/');
     assert.equal(
       page.status,
@@ -107,17 +88,17 @@ describe('Captive-portal nudge', () => {
       'the controller page itself must still be served on the main port',
     );
 
-    // Same requester, so the funnel now has this IP at PAGE_OPEN.
     const android = await request(PORT, '/generate_204');
-    assert.equal(android.status, 204, 'a device that is in the game must not keep being nudged');
+    assert.equal(android.status, 204);
     assert.equal(android.body, '');
 
     const apple = await request(PORT, '/hotspot-detect.html');
-    assert.equal(
-      apple.body,
-      'Success',
-      'Apple needs this exact literal to stop flagging "No internet"',
-    );
+    assert.equal(apple.body, 'Success');
+  });
+
+  test('there is no /portal page', async () => {
+    const res = await request(PORT, '/portal');
+    assert.equal(res.status, 404);
   });
 });
 

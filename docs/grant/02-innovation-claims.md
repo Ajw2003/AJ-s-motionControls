@@ -22,7 +22,7 @@ stops working — which is why competing products either ship a native app, requ
 or make the player accept a certificate warning.
 
 **How this project closes it.** One process is static server, WebSocket relay, DNS authority
-and captive-portal responder simultaneously (`relay/server.js`, `dns.js`, `funnel.js`), served
+and connectivity-probe responder simultaneously (`relay/server.js`, `dns.js`, `funnel.js`), served
 under a fixed name whose certificate is fetched while online and served locally thereafter
 (`Assets/Scripts/Net/CertificateProvider.cs`). The hotspot is raised by
 `hotspot/hotspot-control.ps1` from a connection profile with no connectivity at all.
@@ -101,11 +101,9 @@ smoothing. Adequate for one-hop local play; explicitly out of scope for internet
 **The claim.** The binding constraint on phone-as-controller is not latency or physics; it is
 that some fraction of players never successfully join. This project instruments that directly:
 each device is tracked ASSOCIATED → PAGE_OPEN → PLAYING and the stage is broadcast to the host
-as `DEVICE_FUNNEL`, so the television can say which player is stuck and where. Captive-portal
-probes are answered deliberately — reporting "no internet" until the page is open, so the phone's
-OS opens its portal sheet and does the prompting for you.
+as `DEVICE_FUNNEL`, so the television can say which player is stuck and where.
 
-**Evidence.** `relay/funnel.js`, `relay/test-funnel.js` (19 tests), `relay/test-captive.js`,
+**Evidence.** `relay/funnel.js`, `relay/test-funnel.js` (16 tests),
 `docs/archive/plans/join-failure-reduction.md` (1,013 lines).
 
 **Limitation.** The instrument exists; a published dataset of real drop-off across many

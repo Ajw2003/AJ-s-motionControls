@@ -10,7 +10,7 @@ RockSkipping solved a problem that blocks every developer who wants phones as mo
 controllers without an app store: browser motion sensors require a secure context, a
 secure context requires a certificate, a certificate requires a resolvable public name,
 and none of that exists on a network with no internet. This repository contains a working
-answer — a host that raises its own Wi-Fi network, answers DNS and captive-portal probes
+answer — a host that raises its own Wi-Fi network, answers DNS and connectivity probes
 for it, serves a trusted HTTPS origin over it, and normalizes phone motion sensors across
 iOS and Android well enough that a thrown gesture reaches a game engine as one authoritative
 quaternion. The proposal is to extract that into a plugin any developer can install.

@@ -39,7 +39,7 @@ There is no longer a setup script to run before Play. `LocalServices` (on `Boots
 ./deploy/setup-offline.ps1 -DryRun    # inspect first — needs no elevation
 ```
 
-This registers the firewall rules (relay TCP 8443, hotspot DNS UDP 53, captive-portal probe
+This registers the firewall rules (relay TCP 8443, hotspot DNS UDP 53, connectivity probe
 TCP 80), the scheduled task that disables IP forwarding each session so guests stay isolated,
 and a hosts entry so the *host* can resolve its own relay while offline. See
 [docs/OfflineSetup.md](../docs/OfflineSetup.md) for the full reasoning behind each item.
@@ -115,8 +115,7 @@ not silently widen anything beyond that.
 |---|---|---|
 | `[LocalServices] Could not get a certificate.` on a fresh install | No network, no cache, and no seed certificate in `StreamingAssets` | Connect this machine to the internet once, or ship a seed cert — see `CertificateProvider.TrySeedCache` |
 | `/health` fails over `https://` | Certificate expired and the renewal workflow hasn't published a fresh one, or a stale cache | Check `.github/workflows/renew-cert.yml`'s last run |
-| Phone shows "No internet" but the game works | Expected on an isolated hotspot unless the captive-portal probes are answered — see `relay/dns.js`/`relay/server.js`'s `/generate_204` and `/hotspot-detect.html` | Confirm the plain HTTP `:80` listener bound; it degrades quietly and logs loudly if `:80` is already taken (IIS, Docker Desktop, etc.) |
-| Phone pops a sign-in / portal page before anyone has opened the game | Deliberate — `serveCaptiveProbe` reports a portal until that device has loaded the controller, so the phone's OS opens the nudge page itself. See `docs/plans/join-failure-reduction.md` P2 | It must stop once the device is playing. If a phone still flags "No internet" mid-match, check `relay/funnel.js` reached `PAGE_OPEN` for it |
+| Phone shows "No internet" but the game works | Expected on an isolated hotspot unless the connectivity probes are answered — see `relay/dns.js`/`relay/server.js`'s `/generate_204` and `/hotspot-detect.html` | Confirm the plain HTTP `:80` listener bound; it degrades quietly and logs loudly if `:80` is already taken (IIS, Docker Desktop, etc.) |
 | Phone opened the game over plain `http://` and no sensors work | Fixed — `:80` redirects everything that is not a probe to the HTTPS origin | If it recurs, check `:80` is served by `handleProbeRequest`, not `handleRequest`: the latter ends in `serveStatic` and would serve the controller insecurely |
 | Phone cannot load the page, PC can | The isolation `setup-offline.ps1`'s scheduled task enforces is working as intended for guest-to-guest traffic; check the guest can still reach the host itself | Open `https://192.168.137.1:8443/health` by raw IP on the phone |
 | Unity connects nowhere | `relay-url.txt` stale (leftover from local development), or the relay is not running | Delete `relay-url.txt` to let `LocalServices` resolve its own origin, or check the relay process is alive |

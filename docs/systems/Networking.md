@@ -112,8 +112,8 @@ connect against an address that silently drops packets never returns on its own.
 cd relay && npm test
 ```
 
-46 tests across `test-relay.js`, `test-dns.js`, `test-funnel.js`, `test-captive.js`. With Play
-running, expect 45 pass / 1 skip — the game's relay owns `:80`, so `test-captive.js` skips that
+45 tests across `test-relay.js`, `test-dns.js`, `test-funnel.js`, `test-probe.js`. With Play
+running, expect 44 pass / 1 skip — the game's relay owns `:80`, so `test-probe.js` skips that
 case by design.
 
 `node relay/diagnose-hotspot.js` walks a phone's whole chain against a live game. It requires Play

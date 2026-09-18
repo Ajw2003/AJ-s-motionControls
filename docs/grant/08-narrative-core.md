@@ -59,8 +59,8 @@ Every block is written to be quoted more or less directly. Trim rather than rewr
 > The host PC raises its own Wi-Fi network with no internet connection present — a capability
 > Windows was widely believed not to expose, which this project established by measurement that
 > it does. Over that network a single process serves the controller page, relays game traffic,
-> answers DNS as the network's authority, and responds to the phone's captive-portal probes so
-> the operating system opens the join page itself. Phones connect by scanning two codes and
+> answers DNS as the network's authority, and answers the phone's internet-connectivity probes so
+> it keeps using the network. Phones connect by scanning two codes and
 > typing a name. Nothing touches the internet during play.
 >
 > On the phone, a sensor layer converts raw motion into values a game engine can trust. It is

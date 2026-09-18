@@ -88,13 +88,15 @@ $FirewallRules = @(
        Why = 'phones reach the relay and the controller page' }
     @{ Name = 'RockSkipping hotspot DNS'; Protocol = 'UDP'; Port = '53';         Remote = $HotspotSubnet
        Why = 'phones resolve the relay address; hotspot subnet only, never a normal LAN' }
-    @{ Name = 'RockSkipping captive portal'; Protocol = 'TCP'; Port = '80';      Remote = $HotspotSubnet
-       Why = 'answers Android/iOS captive-portal probes so phones do not flag "No internet"; hotspot subnet only, see docs/plans/magic-domain-replacement.md Phase 4' }
+    @{ Name = 'RockSkipping connectivity probe'; Protocol = 'TCP'; Port = '80'; Remote = $HotspotSubnet
+       Why = 'answers Android/iOS connectivity probes so phones do not flag "No internet"; hotspot subnet only, see docs/plans/magic-domain-replacement.md Phase 4' }
 )
 
-# Added by the spikes, never used by the game. Removed so a machine set up by this script does
-# not carry a wider firewall surface than it needs.
-$ObsoleteRules = @('RockSkipping spike HTTP', 'RockSkipping spike DNS')
+# Rules an earlier version of the game or its spikes added and nothing uses now. Removed so a
+# machine set up by this script does not carry a wider firewall surface than it needs.
+# 'RockSkipping captive portal' is the previous name of the connectivity probe rule above, so a
+# machine set up before the rename loses the old rule on its next run rather than keeping both.
+$ObsoleteRules = @('RockSkipping spike HTTP', 'RockSkipping spike DNS', 'RockSkipping captive portal')
 
 # Hosts entries this script used to add, for names the game no longer uses. Sync-HostsEntry only
 # ever looks for $RelayHostName, so without this the dead local-ip.sh lines survive every re-run
@@ -210,7 +212,7 @@ function Remove-ObsoleteRules {
     foreach ($name in $ObsoleteRules) {
         $found = @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)
         if (-not $found.Count) { continue }
-        Set-Or-Would "removed $($found.Count) obsolete spike rule(s) '$name'" {
+        Set-Or-Would "removed $($found.Count) obsolete rule(s) '$name'" {
             $found | Remove-NetFirewallRule
         }
     }

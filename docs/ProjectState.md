@@ -125,11 +125,13 @@ Closed 2026-09-07 after ten rounds of hardware testing. Two QRs (Wi-Fi payload, 
 returning phone rejoins itself; SSID, passphrase and room code survive a restart; the device
 funnel reports `associated ≥ pageOpen ≥ playing` so the TV can show who is stuck and where.
 
-The captive portal was **abandoned deliberately, not forgotten** — Android resolves both probe
+The captive portal was **abandoned deliberately, not forgotten**, and its code was removed on
+2026-09-18 — it behaved differently on every phone and OS tested. Android resolves both probe
 hosts every ~60s and issues no HTTP probe, while the same phone's browser completes a full
 request to the same port seconds later. Ten rounds excluded every host-side cause by direct
 measurement. Do not reopen it on a hunch; `archive/plans/join-failure-reduction.md` has the table
-of what died and how.
+of what died and how. What remains on `:80` is the plain connectivity-probe answer (204 /
+`Success`) that stops a phone flagging "No internet" or dropping to cellular mid-match.
 
 ### 8 — Rock variety and selection 🟡
 
@@ -239,7 +241,7 @@ Worth separating, because the difference is where surprises come from.
 
 | Claim | Evidence |
 |---|---|
-| Relay routing, identity stamping, reconnect, DNS, funnel, captive | `cd relay && npm test` — 46 pass |
+| Relay routing, identity stamping, reconnect, DNS, funnel, connectivity probes | `cd relay && npm test` — 45 pass |
 | Event system survives scene loads | `RockSkipping/Verify/Run Event System Verification` |
 | Physics energy invariant holds | `RockSkipping/Verify/Print Skip Curve` |
 | `PhoneAttitude` and `SkipPhysics` behaviour | NUnit EditMode tests in `Assets/Tests/EditMode/` |

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Answers "why did the phone not get a portal sheet?" against a LIVE game.
+ * Answers "why does the phone say No internet?" against a LIVE game.
  *
  * Run it with Unity in Play mode and the hotspot up. It touches the relay the same way a
  * phone does — the same ports, the same paths, the same Host headers — and reports each
@@ -21,7 +21,7 @@ const HOTSPOT_IP = process.env.DNS_RESPOND_IP || '192.168.137.1';
 const RELAY_PORT = Number(process.env.PORT) || 8443;
 const HOST_NAME = process.env.DNS_NAME || 'play.skiprocking.ca';
 
-/** The probe Android actually sends over HTTP. iOS uses captive.apple.com/hotspot-detect.html. */
+/** The connectivity probe Android actually sends over HTTP. iOS uses captive.apple.com/hotspot-detect.html. */
 const ANDROID_PROBE_HOST = 'connectivitycheck.gstatic.com';
 
 const PASS = 'PASS';
@@ -155,7 +155,7 @@ async function main() {
     report(
       FAIL,
       `${ANDROID_PROBE_HOST} resolved to nothing`,
-      'It must be in CAPTIVE_PROBE_DOMAINS in server.js.',
+      'It must be in CONNECTIVITY_PROBE_DOMAINS in server.js.',
     );
   } else {
     report(
@@ -166,8 +166,10 @@ async function main() {
   }
 
   console.log('\n3. Is the :80 probe listener bound and reachable?');
-  console.log('   (this is the step that decides whether a portal sheet can EVER appear)');
-  const loopback80 = await get(http, { host: '127.0.0.1', port: 80, path: '/portal' });
+  console.log(
+    '   (this is the step that decides whether a phone can EVER be told there is internet)',
+  );
+  const loopback80 = await get(http, { host: '127.0.0.1', port: 80, path: '/generate_204' });
   if (loopback80.error === 'ECONNREFUSED') {
     report(
       FAIL,
@@ -178,15 +180,15 @@ async function main() {
   } else if (loopback80.error) {
     report(FAIL, `:80 on loopback failed (${loopback80.error})`);
   } else {
-    report(PASS, ':80 is bound and serving the portal page on loopback');
+    report(PASS, ':80 is bound and answering the probe on loopback');
   }
 
-  const hotspot80 = await get(http, { host: HOTSPOT_IP, port: 80, path: '/portal' });
+  const hotspot80 = await get(http, { host: HOTSPOT_IP, port: 80, path: '/generate_204' });
   if (hotspot80.error) {
     report(
       FAIL,
       `:80 unreachable on ${HOTSPOT_IP} (${hotspot80.error})`,
-      'Bound but blocked. Check the "RockSkipping captive portal" firewall rule.',
+      'Bound but blocked. Check the "RockSkipping connectivity probe" firewall rule.',
     );
   } else {
     // Deliberately hedged. This request originates on the host and is destined for the host's
@@ -221,20 +223,8 @@ async function main() {
       `the probe got no answer (${probe.error})`,
       'This is exactly what makes Android say "connected, no internet" with no sign-in prompt.',
     );
-  } else if (probe.status === 302) {
-    report(
-      PASS,
-      `302 -> ${probe.location}`,
-      'A phone that has NOT yet opened the controller should see a sign-in prompt.',
-    );
   } else if (probe.status === 204) {
-    report(
-      WARN,
-      '204 — the nudge is suppressed for THIS machine',
-      'Expected: the funnel has this address at PAGE_OPEN or above, so it is treated as\n' +
-        '        already playing. A phone with a different address is judged separately.\n' +
-        '        To see the nudge from here, restart the relay (stop and start Play).',
-    );
+    report(PASS, '204 — the phone is told there is internet here');
   } else {
     report(FAIL, `unexpected status ${probe.status}`, probe.body.slice(0, 120));
   }

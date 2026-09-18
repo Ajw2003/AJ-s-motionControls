@@ -11,17 +11,11 @@
  *   PAGE_OPEN   the phone loaded the controller       (index.html served to its IP)
  *   PLAYING     the phone joined a room               (a JOIN_ROOM websocket from its IP)
  *
- * Two callers depend on the distinction:
+ * The TV depends on the distinction, so it can say "phone connected — now scan the second
+ * code" instead of saying nothing.
  *
- *   - The TV, so it can say "phone connected — now scan the second code" instead of
- *     saying nothing.
- *   - The captive-portal probe answers, which are deliberately inverted below PAGE_OPEN
- *     to make the phone's OS open its own portal sheet as a nudge, and restored to the
- *     ordinary "there is internet here" answers at PAGE_OPEN and above so a phone that is
- *     already playing stops flagging "No internet" and stops preferring cellular.
- *
- * Keyed by IP, which is the only identifier available at the DNS and captive-probe
- * layers — there is no cookie, no user agent worth trusting, and no session. That makes a
+ * Keyed by IP, which is the only identifier available at the DNS layer — there is no
+ * cookie, no user agent worth trusting, and no session. That makes a
  * count of devices, never a roster of people: two phones behind one address would count
  * once, and a phone that changes address counts twice. Callers must treat it as a hint.
  */
@@ -47,7 +41,7 @@ const Stage = {
  *
  * That asymmetry is what makes the stale-count symptom self-correct in about two minutes
  * instead of ten. It does not make the count trustworthy — IP keying rules that out, which is
- * why the TV no longer prints it — it just stops the nudge outliving the phone that caused it.
+ * why the TV no longer prints it — it just stops the count outliving the phone that caused it.
  */
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const ASSOCIATED_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -123,7 +117,7 @@ function createFunnel(options) {
    * write and a comparison, on a path that already parses a DNS query or serves a file.
    *
    * A stage never regresses. The signals arrive out of order in practice (a phone that
-   * rejoins a known network sends its captive probes *after* the browser has already been
+   * rejoins a known network sends its connectivity probes *after* the browser has already been
    * restored), and letting a late ASSOCIATED pull a playing device back down would make
    * the TV nag someone who is mid-throw.
    */
@@ -143,20 +137,12 @@ function createFunnel(options) {
     notifyIfChanged();
   }
 
-  /** The stage `address` has reached, for the captive-portal answers to branch on. */
-  function stageOf(address) {
-    const ip = normalizeAddress(address);
-    if (!ip) return Stage.UNKNOWN;
-    const device = devices.get(ip);
-    return device ? device.stage : Stage.UNKNOWN;
-  }
-
   // Deliberately no reset(): a host restart (stopping and starting the Unity Editor, the
   // common case) does not move any phone off the hotspot, so the stages recorded for those
   // devices are still true and clearing them would make the TV re-nag people who are
   // already playing. Devices leave the funnel by going quiet for IDLE_TIMEOUT_MS, which is
   // the only event that actually means "that phone is gone".
-  return { record, stageOf, counts };
+  return { record, counts };
 }
 
 module.exports = {
