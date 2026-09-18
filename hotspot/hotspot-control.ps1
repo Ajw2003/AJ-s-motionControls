@@ -109,6 +109,106 @@ function Get-StationBandName {
     return @{ Band = 'TwoPointFourGigahertz'; Station = $stationBand; Matched = $false }
 }
 
+# wlanapi channel lookup. netsh cannot see the hotspot's virtual adapter, so this is the only
+# unelevated way to learn which channel the GO landed on. C# 5 syntax: Windows PowerShell 5.1's
+# Add-Type compiler. Why the channel matters: docs/plans/aim-preview-lag-on-shared-radio.md.
+$script:WlanSource = @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+public static class RockSkippingWlan
+{
+    [DllImport("wlanapi.dll")] static extern uint WlanOpenHandle(uint clientVersion, IntPtr reserved, out uint negotiated, out IntPtr handle);
+    [DllImport("wlanapi.dll")] static extern uint WlanCloseHandle(IntPtr handle, IntPtr reserved);
+    [DllImport("wlanapi.dll")] static extern uint WlanEnumInterfaces(IntPtr handle, IntPtr reserved, out IntPtr list);
+    [DllImport("wlanapi.dll")] static extern uint WlanQueryInterface(IntPtr handle, ref Guid iface, int opcode, IntPtr reserved, out uint size, out IntPtr data, IntPtr valueType);
+    [DllImport("wlanapi.dll")] static extern void WlanFreeMemory(IntPtr p);
+
+    const int ChannelNumberOpcode = 8;   // wlan_intf_opcode_channel_number
+    const int InterfaceInfoSize = 532;   // GUID(16) + WCHAR[256](512) + state(4)
+
+    public static Guid[] Interfaces()
+    {
+        uint negotiated; IntPtr handle;
+        if (WlanOpenHandle(2, IntPtr.Zero, out negotiated, out handle) != 0) return new Guid[0];
+        var found = new List<Guid>();
+        IntPtr list;
+        if (WlanEnumInterfaces(handle, IntPtr.Zero, out list) == 0)
+        {
+            int count = Marshal.ReadInt32(list, 0);
+            for (int i = 0; i < count; i++)
+                found.Add((Guid)Marshal.PtrToStructure(IntPtr.Add(list, 8 + i * InterfaceInfoSize), typeof(Guid)));
+            WlanFreeMemory(list);
+        }
+        WlanCloseHandle(handle, IntPtr.Zero);
+        return found.ToArray();
+    }
+
+    // The channel, or 0 when the interface is not connected or not readable.
+    public static int Channel(Guid iface)
+    {
+        uint negotiated; IntPtr handle;
+        if (WlanOpenHandle(2, IntPtr.Zero, out negotiated, out handle) != 0) return 0;
+        int channel = 0;
+        uint size; IntPtr data;
+        if (WlanQueryInterface(handle, ref iface, ChannelNumberOpcode, IntPtr.Zero, out size, out data, IntPtr.Zero) == 0)
+        {
+            channel = Marshal.ReadInt32(data);
+            WlanFreeMemory(data);
+        }
+        WlanCloseHandle(handle, IntPtr.Zero);
+        return channel;
+    }
+}
+'@
+
+function Write-ChannelReport {
+    # Diagnostic only: logs which channel the hotspot and the station link ended up on, so a
+    # split radio shows in the log instead of being inferred from a laggy aim preview. Never
+    # throws and never affects the result - a failure here is one more log line.
+    param([hashtable] $BandChoice)
+    try {
+        if (-not ('RockSkippingWlan' -as [type])) { Add-Type -TypeDefinition $script:WlanSource }
+
+        $direct = @(Get-NetAdapter -IncludeHidden -ErrorAction Stop |
+            Where-Object { $_.InterfaceDescription -like 'Microsoft Wi-Fi Direct Virtual Adapter*' } |
+            ForEach-Object { [Guid]$_.InterfaceGuid })
+
+        # The GO can take a moment after StartTetheringAsync to report a channel.
+        $hotspotChannel = 0
+        for ($attempt = 0; $attempt -lt 5 -and $hotspotChannel -le 0 -and $direct.Count -gt 0; $attempt++) {
+            if ($attempt -gt 0) { Start-Sleep -Seconds 1 }
+            foreach ($guid in $direct) {
+                $channel = [RockSkippingWlan]::Channel($guid)
+                if ($channel -gt 0) { $hotspotChannel = $channel }
+            }
+        }
+
+        $stationChannel = 0
+        foreach ($guid in [RockSkippingWlan]::Interfaces()) {
+            if ($direct -contains $guid) { continue }
+            $channel = [RockSkippingWlan]::Channel($guid)
+            if ($channel -gt 0) { $stationChannel = $channel }
+        }
+
+        if ($hotspotChannel -le 0) {
+            Write-Progress2 '  [warn] could not read the hotspot channel, so a split radio cannot be ruled out'
+        } elseif ($stationChannel -le 0) {
+            Write-Progress2 ("  hotspot is on channel {0}; no station link, so the radio is not shared" -f $hotspotChannel)
+        } elseif ($hotspotChannel -eq $stationChannel) {
+            Write-Progress2 ("  hotspot is on channel {0}; station link is on channel {1} (same channel)" -f $hotspotChannel, $stationChannel)
+        } else {
+            # 52-144 are the 5 GHz DFS channels.
+            $dfs = ''
+            if ($BandChoice.Station -like '5*' -and $stationChannel -ge 52 -and $stationChannel -le 144) { $dfs = ' (DFS)' }
+            Write-Progress2 ("  [warn] hotspot is on channel {0} but station link is on channel {1}{2}: the radio will time-slice between them and the aim preview will lag" -f $hotspotChannel, $stationChannel, $dfs)
+        }
+    } catch {
+        Write-Progress2 ("  [warn] could not read channels: {0}" -f $_.Exception.Message)
+    }
+}
+
 function Write-Result {
     param([hashtable] $Result)
     # -Compress: the contract is one line; a pretty-printed object would break that.
@@ -221,6 +321,8 @@ if ($Action -eq 'Start') {
                     message = "StartTetheringAsync returned $($result.Status)." }
             }
         }
+
+        Write-ChannelReport -BandChoice $bandChoice
 
         Write-Progress2 'Tethering is on. Disabling IP forwarding on the hotspot interface...'
         # ICS re-enables forwarding on every tethering start, so this must run fresh each

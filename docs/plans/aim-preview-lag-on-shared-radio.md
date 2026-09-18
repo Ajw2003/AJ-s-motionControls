@@ -268,6 +268,30 @@ lounge.
 
 ---
 
+## Follow-up 2026-09-18 — the band matched and the lag came back
+
+After PR #16 (relay-only, nothing in the aim path) the lag returned on `MyBvc`. The band fix had run
+(`station link is on 5 GHz; asking for FiveGigahertz`), `tools/measure-hotspot-jitter.ps1` read mean
+98 ms / stdev 159 ms / 4% loss, and turning the host's Wi-Fi off removed the lag by feel. So it is
+still the shared radio, and matching the **band** is not the same as matching the **channel**.
+
+What was learned:
+
+- **The school link moves.** The station was on channel 52 (a DFS channel) during the laggy run and
+  on channel 44 minutes later, on a different access point (the BSSID changed). The PC roams between
+  APs, and the hotspot cannot follow a roam after it has started.
+- **The hotspot's channel is readable** without elevation, via `wlanapi`'s
+  `wlan_intf_opcode_channel_number` on the Wi-Fi Direct virtual adapter's GUID. `netsh` cannot see
+  that adapter and the WLAN event log does not record it. With the station on channel 44, the
+  hotspot came up on channel 44 too, so the driver does follow the station when it can.
+- **Not established:** what channel the hotspot was on during the laggy run, and whether it can
+  share a DFS channel at all. The DFS theory is neither confirmed nor ruled out. A mid-session roam
+  fits the evidence and is equally untested.
+
+`hotspot/hotspot-control.ps1` now logs both channels at every hotspot start (`Write-ChannelReport`)
+and warns when they differ, tagging a DFS station channel. It is a start-time snapshot, so a roam
+after start is still invisible to it. Next laggy session, read that line in the Editor log first.
+
 ## Adjacent, out of scope — worth their own pass
 
 Both found while mapping the stack, both specific to a *present-but-restrictive* network, neither
