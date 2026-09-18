@@ -14,7 +14,7 @@
       5. The relay starts with the hotspot environment Unity gives it, over TLS.
       6. /health reports the DNS responder actually bound :53 - the field name Unity reads.
       7. The responder answers the magic domain with the hotspot address.
-      8. It answers the captive-portal probe domains too.
+      8. It answers the connectivity probe domains too.
       9. It refuses everything else, so this is not an open resolver.
 
     Step 3 is the one that matters most and the one nothing used to check. The host takes no
@@ -331,8 +331,8 @@ function Test-Dns {
 
     $cases = @(
         @{ Name = $HostName;                  Expect = $HotspotAddress; Why = 'the game address phones open' }
-        @{ Name = 'captive.apple.com';        Expect = $HotspotAddress; Why = "iOS's captive-portal probe" }
-        @{ Name = 'connectivitycheck.gstatic.com'; Expect = $HotspotAddress; Why = "Android's captive-portal probe" }
+        @{ Name = 'captive.apple.com';        Expect = $HotspotAddress; Why = "iOS's connectivity probe" }
+        @{ Name = 'connectivitycheck.gstatic.com'; Expect = $HotspotAddress; Why = "Android's connectivity probe" }
         @{ Name = 'example.com';              Expect = 'NXDOMAIN';      Why = 'anything else - must not be answered' }
     )
 

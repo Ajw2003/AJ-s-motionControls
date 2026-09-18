@@ -3,10 +3,9 @@
 /**
  * Tests for the per-device join funnel. Run with: npm test
  *
- * The funnel decides two user-visible things — what the TV says while people are joining,
- * and whether a phone's OS pops its captive-portal sheet — off signals that arrive out of
- * order, from three different layers, keyed only by IP. Every case below is one of the ways
- * that combination can lie:
+ * The funnel decides what the TV says while people are joining, off signals that arrive out
+ * of order, from three different layers, keyed only by IP. Every case below is one of the
+ * ways that combination can lie:
  *
  *   - a stage regressing would make the TV nag someone mid-throw,
  *   - an untracked address being counted would invent a phone on a developer's machine,
@@ -99,7 +98,6 @@ describe('stages never regress', () => {
     funnel.record('192.168.137.5', Stage.PLAYING);
     funnel.record('192.168.137.5', Stage.ASSOCIATED);
 
-    assert.equal(funnel.stageOf('192.168.137.5'), Stage.PLAYING);
     assert.equal(funnel.counts().playing, 1);
   });
 
@@ -107,24 +105,6 @@ describe('stages never regress', () => {
     const { funnel } = makeFunnel();
     funnel.record('192.168.137.9', Stage.PLAYING);
     assert.deepEqual(funnel.counts(), { associated: 1, pageOpen: 1, playing: 1 });
-  });
-});
-
-describe('captive-portal branch', () => {
-  test('an unknown device is below PAGE_OPEN, so it gets nudged', () => {
-    const { funnel } = makeFunnel();
-    assert.ok(funnel.stageOf('192.168.137.5') < Stage.PAGE_OPEN);
-  });
-
-  test('a device that opened the page is not nudged again', () => {
-    const { funnel } = makeFunnel();
-    funnel.record('192.168.137.5', Stage.PAGE_OPEN);
-    assert.ok(funnel.stageOf('192.168.137.5') >= Stage.PAGE_OPEN);
-  });
-
-  test('an untracked address reads as UNKNOWN rather than throwing', () => {
-    const { funnel } = makeFunnel();
-    assert.equal(funnel.stageOf(undefined), Stage.UNKNOWN);
   });
 });
 

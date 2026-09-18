@@ -11,10 +11,10 @@ which is the point.
 |---|---|---|
 | Unity game and host logic | `Assets/Scripts/` | ~15,300 lines C#, 4 scenes |
 | Networking layer (Unity side) | `Assets/Scripts/Net/` | 3,490 lines across 11 files |
-| Relay / DNS / captive portal | `relay/` | `server.js` 1,024, `dns.js` 409, `funnel.js` 168 |
+| Relay / DNS / connectivity probes | `relay/` | `server.js` 950, `dns.js` 409, `funnel.js` 154 |
 | Phone controller web app | `controller/` | `app.js` 899, `sensors.js` 605, `throw.js` 640, `net.js` 248, `identity.js` 83 |
 | Sensor math tests | `controller/test-sensors.js` | 1,333 lines |
-| Relay integration tests | `relay/test-*.js` | 48 tests across 4 files (captive 5, dns 11, funnel 19, relay 13) |
+| Relay integration tests | `relay/test-*.js` | 45 tests across 4 files (probe 5, dns 11, funnel 16, relay 13) |
 | Design and failure records | `docs/` | ~7,400 lines (excluding this grant kit and docs/archive/) |
 | Throw dataset | `rock-throws.csv` | 265 logged throws, 11 columns |
 
@@ -32,8 +32,9 @@ origin by construction, so they cannot drift onto different hosts:
   limit, 30 s heartbeat, 60 s host grace period so a host blip does not eject a room
 - `/qr` endpoint (`qrcode-generator`) — Unity fetches the matrix rather than generating it
 - authoritative DNS responder for `play.skiprocking.ca` on the hotspot subnet (`relay/dns.js`)
-- captive-portal probe responder (`relay/funnel.js`) that deliberately reports "no internet"
-  until the player has the page open, so the phone OS pops its portal sheet as a nudge
+- connectivity-probe responder (`relay/server.js`, `relay/dns.js`) that answers the internet
+  checks Android and iOS run after joining, so a phone on the isolated hotspot does not flag
+  "No internet" or fall back to cellular mid-match
 
 Host side: `Assets/Scripts/Net/LocalServices.cs` (574) spawns and supervises the relay child
 process; `HotspotService.cs` (610) drives Windows Mobile Hotspot via `hotspot/hotspot-control.ps1`;

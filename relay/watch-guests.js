@@ -11,7 +11,7 @@
  *
  * The distinction matters most for Android. A network flagged "no internet" is not made the
  * device's default network, so ordinary apps — Chrome included — can route to cellular while
- * the OS's own captive-portal probe stays bound to the Wi-Fi. When that happens the probe
+ * the OS's own connectivity probe stays bound to the Wi-Fi. When that happens the probe
  * shows up here and the browser never does, from the same phone, at the same moment.
  *
  * Read-only: it shells out to `netstat` and prints. It changes nothing and touches no socket.
@@ -30,7 +30,7 @@ const POLL_MS = 1000;
  * a port list. Anything unlisted is printed with its bare number.
  */
 const PORT_MEANING = {
-  80: 'captive-portal probe or portal page (plain HTTP)',
+  80: 'connectivity probe (plain HTTP)',
   443: 'HTTPS — nothing listens here; an HTTPS-upgraded URL lands on this and hangs',
   8443: 'the game itself (controller page / WebSocket)',
 };

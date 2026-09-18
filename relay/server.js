@@ -402,8 +402,8 @@ function serveStatic(req, res) {
     }
 
     // The controller document itself, not its assets: a phone that fetched only a stylesheet
-    // has not opened the game, and counting that as PAGE_OPEN would switch the captive-portal
-    // answers back to "there is internet here" before the nudge had done its job.
+    // has not opened the game, and counting that as PAGE_OPEN would report a phone as ready
+    // to play before it has loaded the page.
     if (funnel && relative === 'index.html') {
       funnel.record(req.socket.remoteAddress, Stage.PAGE_OPEN);
     }
@@ -497,13 +497,11 @@ const useDns = Boolean(DNS_RESPOND_IP);
 // Phase 4 and docs/Decision-OfflineHosting.md.
 //
 // Every name here is one we intend to SERVE: the phone's plain-HTTP probe reaches :80 and gets
-// our portal redirect or a 204. Adding a name in order to have it refused is a different idea
-// and does not belong here — `www.google.com`, Android's HTTPS probe host, was added on exactly
-// that reasoning and removed again when hardware testing falsified it. Android resolved it, got
-// our address, and still issued no HTTP probe. The captive-portal nudge is closed as
-// platform-dependent and P1's TV nudge carries that drop-off instead; see the CLOSED section of
-// docs/plans/join-failure-reduction.md before re-litigating this list.
-const CAPTIVE_PROBE_DOMAINS = [
+// a 204 or "Success". Adding a name in order to have it refused is a different idea and does
+// not belong here — `www.google.com`, Android's HTTPS probe host, was added on exactly that
+// reasoning and removed again when hardware testing falsified it. Android resolved it, got our
+// address, and still issued no HTTP probe.
+const CONNECTIVITY_PROBE_DOMAINS = [
   'connectivitycheck.gstatic.com',
   'connectivitycheck.android.com',
   'clients3.google.com',
@@ -598,7 +596,7 @@ function handleRequest(req, res) {
       return;
     }
 
-    if (serveCaptiveProbe(req, res, url.pathname)) return;
+    if (serveConnectivityProbe(res, url.pathname)) return;
 
     serveStatic(req, res);
   } catch (err) {
@@ -612,100 +610,30 @@ function handleRequest(req, res) {
 /** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */
 const GAME_URL = `https://${DNS_NAME}:${PORT}/`;
 
-// Where a probe redirect points, and deliberately an IP literal rather than DNS_NAME. The
-// portal lives on plain :80, but browsers upgrade http:// URLs for registrable names to
-// HTTPS — which targets :443, where nothing listens, so the portal page fails to load and the
-// platform can fall back to "no internet", the exact symptom the portal exists to remove.
-// Private IP literals are exempt from that upgrade heuristic, so the request stays on the
-// port the portal is actually served from. Off-hotspot runs have no DNS_RESPOND_IP and no
-// captive portal to reach, so the name is a harmless fallback there.
-const PORTAL_URL = `http://${DNS_RESPOND_IP || DNS_NAME}/portal`;
-
 /**
- * The page the phone's own OS opens, unprompted, when the probes below report a portal.
- * Deliberately not the controller: iOS's CNA sheet and Android's portal webview are
- * sandboxed, and `DeviceMotion.requestPermission()` is unreliable-to-impossible inside
- * them, so a controller loaded here would look like it worked and then read no sensors.
- * One tap out to the real browser is the whole job.
+ * Answers Android's and iOS's connectivity probes, and returns true if it handled the request.
+ * Returns false for anything else so the caller keeps routing.
+ *
+ * Always the "there is internet here" answer, so the phone stops flagging "No internet" and
+ * stops preferring cellular — a phone that drops to cellular mid-match is the failure Phase 4
+ * was written to prevent (docs/plans/magic-domain-replacement.md).
  */
-function portalPage() {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rock Skipping</title>
-<style>
-  body { margin: 0; display: grid; place-items: center; min-height: 100vh;
-         font: 16px/1.5 system-ui, sans-serif; background: #0d1220; color: #f2f5ff; }
-  main { padding: 2rem; text-align: center; max-width: 22rem; }
-  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
-  p { color: #9fb0d0; margin: 0 0 1.75rem; }
-  a { display: block; padding: 1rem; border-radius: .75rem; background: #4f7cff;
-      color: #fff; font-weight: 600; text-decoration: none; }
-</style>
-</head>
-<body>
-<main>
-  <h1>You're on the game's Wi-Fi</h1>
-  <p>Open this in your browser to play. If the button does nothing, use this page's menu
-     and choose &ldquo;Open in Browser&rdquo;.</p>
-  <a href="${GAME_URL}">Play Rock Skipping</a>
-</main>
-</body>
-</html>`;
-}
-
-/**
- * Answers Android's and iOS's captive-portal probes, and returns true if it handled the
- * request. Returns false for anything else so the caller keeps routing.
- *
- * The answer is deliberately conditional on the requesting device's funnel stage, which is
- * the whole of P2 in docs/plans/join-failure-reduction.md:
- *
- *   Below PAGE_OPEN — report a portal. The OS then opens a sheet on the phone by itself,
- *   with no scanning, which is the strongest nudge available to a host that cannot reach
- *   the phone any other way.
- *
- *   PAGE_OPEN or above — answer exactly as Phase 4 always did, so the phone stops flagging
- *   "No internet" and stops preferring cellular. This half is not optional: leaving the
- *   portal signal on for a device that is already playing would trade a join failure for a
- *   mid-match disconnect, which is the failure Phase 4 was written to prevent.
- *
- * With no funnel (any non-Hotspot run) there is nobody to nudge and no subnet to confine
- * tracking to, so it degrades to the unconditional Phase 4 behaviour.
- */
-function serveCaptiveProbe(req, res, pathname) {
-  const isProbe = pathname === '/generate_204' || pathname === '/hotspot-detect.html';
-  if (!isProbe && pathname !== '/portal') return false;
-
-  if (pathname === '/portal') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(portalPage());
-    return true;
-  }
-
-  const stage = funnel ? funnel.stageOf(req.socket.remoteAddress) : Stage.PAGE_OPEN;
-  const nudge = stage < Stage.PAGE_OPEN;
-
+function serveConnectivityProbe(res, pathname) {
+  // Android treats anything other than a bare 204 as "there is a login page here" — so the
+  // answer must be an empty body, not JSON, not even an empty object.
   if (pathname === '/generate_204') {
-    // Android treats anything other than a bare 204 as "there is a portal here, show it" —
-    // so the satisfied answer must be an empty body, not JSON, not even an empty object,
-    // and the nudge is a plain redirect to the page we want it to show.
-    if (nudge) {
-      res.writeHead(302, { Location: PORTAL_URL }).end();
-    } else {
-      res.writeHead(204).end();
-    }
+    res.writeHead(204).end();
     return true;
   }
 
   // Apple looks for this exact literal body (no whitespace, no trailing newline) on a plain
-  // page load; anything else and the phone pops its captive-portal browser — which here is
-  // the point, so the nudge simply answers with the portal page itself.
-  res
-    .writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    .end(nudge ? portalPage() : 'Success');
-  return true;
+  // page load.
+  if (pathname === '/hotspot-detect.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end('Success');
+    return true;
+  }
+
+  return false;
 }
 
 // The WebSocket server attaches to either kind of listener unchanged, so wss://
@@ -882,7 +810,7 @@ httpServer.listen(PORT, BIND_HOST, () => {
 
   if (useDns) {
     startDns();
-    // Captive-portal probes are cleartext HTTP on :80, never :8443, so they need their own
+    // Connectivity probes are cleartext HTTP on :80, never :8443, so they need their own
     // listener regardless of whether the main server is TLS. Hotspot-only, same as DNS —
     // gated on useDns rather than a separate flag because there is no reason to want one
     // without the other.
@@ -894,7 +822,7 @@ async function startDns() {
   try {
     dnsResponder = createResponder({
       ip: DNS_RESPOND_IP,
-      names: [DNS_NAME, ...CAPTIVE_PROBE_DOMAINS],
+      names: [DNS_NAME, ...CONNECTIVITY_PROBE_DOMAINS],
       allow: DNS_ALLOW,
       upstream: DNS_UPSTREAM,
       // Teed into probe-access.log as well as stdout: which names the phone asks for is
@@ -944,7 +872,7 @@ async function startDns() {
  * before it has joined, and they are the parts nobody can see: the relay is a child of the
  * Unity Editor, so its stdout reaches the Console only when LocalServices.verboseLogging is
  * on. Three separate diagnoses in this project were blind exactly here — netstat proves a
- * connection arrived but not what it asked for, and "the phone shows no portal" looks
+ * connection arrived but not what it asked for, and "the phone shows No internet" looks
  * identical whether the probe never came, came for a path we do not answer, or was answered
  * correctly and ignored by the platform. A file sidesteps the Unity plumbing entirely, and
  * survives the session that produced it.
@@ -985,7 +913,7 @@ function logDnsLine(...args) {
 function handleProbeRequest(req, res) {
   const url = new URL(req.url || '/', 'http://localhost');
 
-  if (serveCaptiveProbe(req, res, url.pathname)) {
+  if (serveConnectivityProbe(res, url.pathname)) {
     logProbeRequest(req, url.pathname, `answered ${res.statusCode}`);
     return;
   }
@@ -995,7 +923,7 @@ function handleProbeRequest(req, res) {
 }
 
 /**
- * Plain-HTTP listener on :80 for the captive-portal probes and the portal page — the game
+ * Plain-HTTP listener on :80 for the connectivity probes — the game
  * itself is never served here (see handleProbeRequest), only redirected to.
  *
  * Per the plan's resolved open question: some machines already have :80 taken (IIS, Docker
@@ -1009,16 +937,14 @@ function startHttpProbeListener() {
   http80Server = http.createServer(handleProbeRequest);
 
   http80Server.on('error', (err) => {
-    log(`Captive-portal probe listener on :80 FAILED to bind: ${err.code || err.message}`);
+    log(`Connectivity probe listener on :80 FAILED to bind: ${err.code || err.message}`);
     log('  This is cosmetic: guests may see "No internet" on their phone, but the game');
     log('  itself is unaffected — it is served on :8443, not :80.');
     http80Server = null;
   });
 
   http80Server.listen(80, BIND_HOST, () => {
-    log(
-      `Captive-portal probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html, portal)`,
-    );
+    log(`Connectivity probe listener on ${BIND_HOST}:80 (generate_204, hotspot-detect.html)`);
     log(`  everything else on :80 redirects to ${GAME_URL}`);
   });
 }

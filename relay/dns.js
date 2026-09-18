@@ -203,7 +203,7 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  * @param {string}  [options.suffix]   answer anything ending in this
  * @param {string}  [options.name]     or answer exactly this name
  * @param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
- *                                     hostname plus the captive-portal probe domains —
+ *                                     hostname plus the connectivity probe domains —
  *                                     see docs/plans/magic-domain-replacement.md Phase 4)
  * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
  * @param {number}  [options.rate]     max queries per second per source
@@ -211,8 +211,8 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  * @param {function} [options.onQuery] called with the source address of every query that
  *                                     passes the allow-list and rate limit, whatever name it
  *                                     asked for. This is the earliest evidence a phone is on
- *                                     the hotspot at all — both platforms probe for a captive
- *                                     portal within about a second of associating, unprompted —
+ *                                     the hotspot at all — both platforms probe for internet
+ *                                     access within about a second of associating, unprompted —
  *                                     so it is what the join funnel keys ASSOCIATED off.
  *                                     See funnel.js.
  */
@@ -320,7 +320,7 @@ function createResponder(options) {
     stats.refused += 1;
     socket.send(buildReply(query, message, { rcode: RCODE_NXDOMAIN }), remote.port, remote.address);
     // Logged like an answer, because "what else did the phone ask for?" is as diagnostic as
-    // "what did we answer" — a captive-portal check probes several names and only some of
+    // "what did we answer" — a connectivity check probes several names and only some of
     // them are ours, so a log of matches alone cannot show what the platform was doing.
     log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> NXDOMAIN`);
   }

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Captures hotspot traffic at the NIC to settle one question: does the phone's captive-portal
+  Captures hotspot traffic at the NIC to settle one question: does the phone's connectivity
   probe reach this machine at all?
 
 .DESCRIPTION

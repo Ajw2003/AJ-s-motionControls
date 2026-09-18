@@ -173,7 +173,7 @@ describe('Refusing to start unguarded', () => {
 // The game's fixed hostname, now that the certificate is single-name rather than an
 // IP-encoded wildcard label under local-ip.sh — see
 // docs/plans/magic-domain-replacement.md Phase 1/2. `names` covers this plus the
-// captive-portal probe domains added in Phase 4; server.js wires the exact same list.
+// connectivity probe domains added in Phase 4; server.js wires the exact same list.
 const GAME_NAME = 'play.skiprocking.ca';
 const PROBE_NAMES = [
   'connectivitycheck.gstatic.com',
@@ -209,7 +209,7 @@ describe('Responder integration', () => {
     check('matching is case-insensitive', upper && upper.answers[0] === '192.168.137.1');
   });
 
-  test('Captive-portal probe domains are answered too', async () => {
+  test('Connectivity probe domains are answered too', async () => {
     // Android and iOS each probe a domain of their own choosing right after joining a
     // network to decide whether to show "No internet". setup-offline.ps1 disables IP
     // forwarding every session, so these probes would otherwise always fail on a genuinely
@@ -383,7 +383,7 @@ describe('Out-of-range sources are dropped, not refused', () => {
     await expectDropped(GAME_NAME, PORT + 1);
   });
 
-  test('a captive-portal probe query from outside the hotspot CIDR is also dropped', async () => {
+  test('a connectivity probe query from outside the hotspot CIDR is also dropped', async () => {
     // The probe domains are matched by the same exact-name set as the game hostname
     // (dns.js's `exactNames`), so the source guard runs identically for both — this proves
     // it rather than assuming it from the game-hostname case above. A source outside the
