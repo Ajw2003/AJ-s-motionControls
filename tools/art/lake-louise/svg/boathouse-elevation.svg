@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Boathouse and canoe, in metres. READ BY build_lake_louise.py.
+
+  boathouse-walls  gable-end outline of the log walls; extruded by data-depth (metres) and
+                   placed at the boathouse marker in valley-plan.svg, gable facing the lake.
+  boathouse-roof   the roof's gable outline, extruded a little longer than the walls so it
+                   overhangs both ends.
+  canoe            a canoe seen from ABOVE (x = length, y = beam); extruded by data-height and
+                   repeated data-count times along the shore in front of the boathouse.
+
+  At ~210 m from the camera the boathouse is a handful of pixels, as in the photo, so it is a
+  silhouette and a colour, nothing more: brown walls, grey roof, red canoes.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="750" height="350" viewBox="-8 -9 30 14">
+  <rect class="guide" x="-8" y="-9" width="30" height="14" fill="#f3f1ea"/>
+  <line class="guide" x1="-8" y1="0" x2="22" y2="0" stroke="#1d7f88" stroke-width="0.08"/>
+  <polygon id="boathouse-walls" data-depth="10" fill="#6b4a33"
+           points="-6,0 6,0 6,-3.6 0,-6.2 -6,-3.6"/>
+  <polygon id="boathouse-roof" data-depth="11.4" fill="#8a8fa0"
+           points="-7,-3.2 0,-7.2 7,-3.2 7,-3.0 0,-6.6 -7,-3.0"/>
+  <polygon id="canoe" data-height="0.4" data-count="4" fill="#b64b3c"
+           transform="translate(10, 2)"
+           points="0,0 0.8,-0.36 2.5,-0.45 4.2,-0.36 5,0 4.2,0.36 2.5,0.45 0.8,0.36"/>
+</svg>

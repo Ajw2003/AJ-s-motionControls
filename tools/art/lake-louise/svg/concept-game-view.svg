@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Concept frame: Lake Louise as the GAME camera sees it, not as the photo frames it.
+  1920x1080, camera (0, 2, -3), vertical FOV 60, pitched 10.9 degrees down, so the horizon
+  sits at y = 360 (a third of the way down). Peaks must stay inside the top third.
+
+  Screen y for a point at elevation e degrees above the horizon:
+    y = 540 - 540 * tan(e + 10.9) / tan(30)
+  e = 16 -> y 65, e = 12 -> y 145, e = 8 -> y 220, e = -16 (its reflection) -> y 623.
+  The reflection group uses matrix(1 0 0 -0.9 0 684), which lands y 360 -> 360 and
+  y 65 -> 625: close enough to the true projection for a concept.
+
+  This file is the visual target the Blender render is compared against. It is not read by
+  the build script; valley-plan.svg, ridge-profiles.svg and pine-profile.svg are.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f63c9"/>
+      <stop offset="0.55" stop-color="#5b93ef"/>
+      <stop offset="1" stop-color="#a4ccfb"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="360" x2="0" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6fb2bb"/>
+      <stop offset="0.25" stop-color="#3fa2ab"/>
+      <stop offset="1" stop-color="#1d8e98"/>
+    </linearGradient>
+    <!-- Fresnel stand-in: looking down near the camera you see INTO the turquoise water; at
+         grazing angles further out you see the reflection. Opaque at the bottom, clear at
+         the horizon. -->
+    <linearGradient id="waterNear" x1="0" y1="360" x2="0" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a9ea6" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#2a9ea6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#1f959e" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="haze" x1="0" y1="200" x2="0" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a4ccfb" stop-opacity="0"/>
+      <stop offset="1" stop-color="#a4ccfb" stop-opacity="0.35"/>
+    </linearGradient>
+    <pattern id="pines" width="14" height="12" patternUnits="userSpaceOnUse">
+      <path d="M7 0 L12 12 L2 12 Z" fill="#17200f"/>
+    </pattern>
+    <pattern id="pinesFar" width="9" height="7" patternUnits="userSpaceOnUse">
+      <path d="M4.5 0 L8 7 L1 7 Z" fill="#2a3b40"/>
+    </pattern>
+
+    <!-- Everything above the waterline, grouped once so the reflection can reuse it. -->
+    <g id="land">
+      <!-- Far: the glacier (Victoria), seen through the V between the two ridges. Jagged
+           summit ridge, a dark cliff band, the white glacier shelf, grey rock below. -->
+      <path d="M560 340 L600 312 L630 296 L655 282 L680 270 L700 262 L720 250 L745 244 L765 232
+               L790 236 L812 224 L835 228 L860 218 L885 222 L905 214 L930 220 L955 212 L980 218
+               L1005 224 L1030 220 L1060 232 L1090 240 L1120 254 L1150 262 L1185 280 L1220 296
+               L1260 320 L1290 340 L1290 356 L560 356 Z" fill="#76819a"/>
+      <path d="M680 270 L700 262 L720 250 L745 244 L765 232 L790 236 L812 224 L835 228 L860 218
+               L885 222 L905 214 L930 220 L955 212 L980 218 L1005 224 L1030 220 L1060 232
+               L1090 240 L1120 254 L1150 262 L1130 268 L1100 262 L1070 270 L1040 262 L1010 272
+               L980 264 L950 274 L920 266 L890 276 L860 270 L830 280 L800 274 L770 286 L740 282
+               L710 292 Z" fill="#eef2f8"/>
+      <path d="M740 282 L770 286 L800 274 L830 280 L860 270 L890 276 L920 266 L950 274 L980 264
+               L1010 272 L1040 262 L1070 270 L1100 262 L1130 268 L1120 282 L1060 284 L1000 280
+               L940 288 L880 286 L820 292 L760 294 Z" fill="#4c5870"/>
+      <path d="M700 310 L760 300 L830 296 L900 300 L960 296 L1030 300 L1100 298 L1170 306
+               L1220 314 L1170 322 L1080 318 L990 322 L900 320 L810 324 L740 322 Z" fill="#e6ecf5"/>
+      <path d="M860 222 L905 214 L930 220 L920 240 L895 236 L870 246 Z" fill="#b3c1d8"/>
+      <!-- moraine / scree fan down to the water -->
+      <path d="M860 332 L960 326 L1060 334 L1100 356 L820 356 Z" fill="#8e8f93"/>
+      <rect x="560" y="200" width="730" height="160" fill="url(#haze)"/>
+
+      <!-- Right: the lower, forested ridge (Big Beehive side) with a rocky crown. -->
+      <path d="M1920 200 L1880 188 L1850 182 L1820 172 L1790 168 L1760 158 L1730 150 L1700 140
+               L1680 132 L1662 128 L1645 136 L1625 140 L1600 152 L1575 160 L1550 176 L1520 188
+               L1490 202 L1460 214 L1430 230 L1400 240 L1370 252 L1330 266 L1290 278 L1240 294
+               L1190 308 L1140 322 L1090 334 L1030 346 L960 356 L960 362 L1920 362 Z" fill="#9a948a"/>
+      <path d="M1662 128 L1645 136 L1625 140 L1600 152 L1575 160 L1550 176 L1520 188 L1490 202
+               L1460 214 L1430 230 L1450 234 L1490 224 L1520 212 L1555 200 L1590 184 L1620 168
+               L1648 150 Z" fill="#5f626b"/>
+      <path d="M1780 170 L1760 200 L1740 214 L1720 196 L1735 176 L1760 158 Z" fill="#6c6f76"/>
+      <path d="M1920 246 L1895 240 L1880 232 L1860 236 L1840 226 L1815 224 L1800 214 L1780 220
+               L1760 212 L1740 214 L1720 206 L1700 212 L1680 206 L1660 214 L1640 210 L1620 218
+               L1600 214 L1580 224 L1560 222 L1540 232 L1520 230 L1500 240 L1470 244 L1440 254
+               L1410 258 L1380 266 L1340 274 L1310 280 L1270 292 L1240 298 L1200 308 L1170 316
+               L1130 326 L1100 334 L1060 342 L1030 348 L960 356 L960 362 L1920 362 Z" fill="#263024"/>
+      <path d="M1920 246 L1895 240 L1880 232 L1860 236 L1840 226 L1815 224 L1800 214 L1780 220
+               L1760 212 L1740 214 L1720 206 L1700 212 L1680 206 L1660 214 L1640 210 L1620 218
+               L1600 214 L1580 224 L1560 222 L1540 232 L1520 230 L1500 240 L1470 244 L1440 254
+               L1410 258 L1380 266 L1340 274 L1310 280 L1270 292 L1240 298 L1200 308 L1170 316
+               L1130 326 L1100 334 L1060 342 L1030 348 L960 356 L960 362 L1920 362 Z"
+            fill="url(#pines)"/>
+
+      <!-- Left: the tall massif (Fairview) - a sunlit shoulder and a shadowed cliff face
+           dropping into the valley. It dominates the frame, as in the photo. -->
+      <path d="M0 170 L40 150 L70 142 L100 128 L125 120 L150 104 L175 98 L200 84 L228 78
+               L250 66 L275 60 L296 48 L312 44 L326 52 L340 50 L356 62 L372 70 L390 88 L410 100
+               L430 122 L455 140 L475 168 L500 186 L530 210 L560 226 L590 244 L625 262 L660 276
+               L700 290 L740 302 L790 316 L840 328 L900 340 L960 352 L960 362 L0 362 Z"
+            fill="#34445d"/>
+      <path d="M0 170 L40 150 L70 142 L100 128 L125 120 L150 104 L175 98 L200 84 L228 78
+               L250 66 L275 60 L296 48 L312 44 L300 80 L286 110 L264 150 L240 186 L210 214
+               L170 236 L120 250 L60 258 L0 262 Z" fill="#716c65"/>
+      <path d="M150 104 L175 98 L200 84 L190 120 L170 160 L140 190 L150 150 Z" fill="#5d5a57"/>
+      <path d="M326 52 L340 50 L356 62 L372 70 L390 88 L410 100 L430 122 L455 140 L475 168
+               L440 176 L410 160 L380 150 L350 130 L330 100 L318 76 Z" fill="#283750"/>
+      <g stroke="#26344b" stroke-width="3" opacity="0.7">
+        <line x1="330" y1="100" x2="520" y2="230"/>
+        <line x1="360" y1="150" x2="600" y2="270"/>
+        <line x1="300" y1="130" x2="420" y2="220"/>
+      </g>
+      <path d="M0 232 L30 226 L60 230 L85 222 L110 232 L140 236 L170 246 L200 248 L230 258
+               L260 260 L290 268 L320 266 L350 276 L380 278 L420 284 L460 288 L500 294 L540 298
+               L580 304 L620 308 L660 314 L700 318 L740 322 L780 328 L820 332 L860 338 L900 344
+               L960 354 L960 362 L0 362 Z" fill="#1f2a1c"/>
+      <path d="M0 232 L30 226 L60 230 L85 222 L110 232 L140 236 L170 246 L200 248 L230 258
+               L260 260 L290 268 L320 266 L350 276 L380 278 L420 284 L460 288 L500 294 L540 298
+               L580 304 L620 308 L660 314 L700 318 L740 322 L780 328 L820 332 L860 338 L900 344
+               L960 354 L960 362 L0 362 Z" fill="url(#pines)"/>
+      <!-- avalanche chute of scree through the forest, as in the photo -->
+      <path d="M470 170 L500 290 L530 298 L495 176 Z" fill="#6a6c70" opacity="0.85"/>
+
+      <!-- Near-left shore: boathouse and canoes -->
+      <path d="M0 348 L220 350 L260 360 L0 362 Z" fill="#3b4a2f"/>
+      <rect x="92" y="338" width="54" height="12" fill="#6b4a33"/>
+      <path d="M86 340 L119 328 L152 340 Z" fill="#8a8fa0"/>
+      <rect x="160" y="352" width="60" height="4" fill="#b64b3c"/>
+    </g>
+
+    <g id="cloud">
+      <ellipse cx="0" cy="0" rx="60" ry="34" fill="#f4f7fd"/>
+      <ellipse cx="-58" cy="14" rx="46" ry="26" fill="#f4f7fd"/>
+      <ellipse cx="60" cy="12" rx="52" ry="28" fill="#f4f7fd"/>
+      <ellipse cx="18" cy="-22" rx="40" ry="28" fill="#fbfcff"/>
+      <ellipse cx="-30" cy="-12" rx="30" ry="24" fill="#fbfcff"/>
+      <ellipse cx="96" cy="-2" rx="30" ry="22" fill="#f4f7fd"/>
+      <path d="M-104 20 Q0 44 112 20 L112 40 L-104 40 Z" fill="#d3dcee"/>
+    </g>
+  </defs>
+
+  <rect width="1920" height="360" fill="url(#sky)"/>
+  <use xlink:href="#cloud" transform="translate(620 88) scale(1.0 0.8)"/>
+  <use xlink:href="#cloud" transform="translate(1040 52) scale(1.35 1.0)"/>
+  <use xlink:href="#cloud" transform="translate(1420 112) scale(1.1 0.85)"/>
+
+  <use xlink:href="#land"/>
+
+  <rect y="360" width="1920" height="720" fill="url(#water)"/>
+  <!-- Mirrored scenery, darker and bluer, under the water tint. -->
+  <g opacity="0.72" transform="matrix(1 0 0 -0.9 0 684)">
+    <use xlink:href="#land"/>
+  </g>
+  <rect y="360" width="1920" height="720" fill="#1b5f78" opacity="0.22"/>
+  <rect y="360" width="1920" height="720" fill="url(#waterNear)"/>
+  <!-- ripple glints -->
+  <g stroke="#bfe6ea" stroke-width="2" opacity="0.35">
+    <line x1="700" y1="560" x2="780" y2="560"/>
+    <line x1="1120" y1="600" x2="1230" y2="600"/>
+    <line x1="400" y1="700" x2="520" y2="700"/>
+    <line x1="1300" y1="820" x2="1440" y2="820"/>
+    <line x1="820" y1="920" x2="990" y2="920"/>
+  </g>
+</svg>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Ridge crest heights, in world metres. READ BY build_lake_louise.py.
+
+  One panel per ridge in valley-plan.svg. Inside each panel the horizontal axis is a WORLD
+  coordinate (data-axis says which: z for the side ridges, which run along the lake; x for the
+  far ridge, which runs across it) and the vertical axis is height above the water, up the page.
+  Each panel is a <g transform="translate(0, baseline)">, so a profile's y is -height.
+
+  Drawing the height against the world axis, not against distance along the crest, means a
+  bump drawn here lands at the same z as the matching bend in the plan.
+
+  Heights are what the game camera can fit: its frame reaches ~19 degrees above the horizon, so
+  the left summit (172 m at 560 m away) sits at ~17 degrees and stays in shot. The far profile's
+  zig-zag is the jagged summit line of the glacier wall; the build adds noise on top.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="-150 -10 1200 780">
+  <rect class="guide" x="-150" y="-10" width="1200" height="780" fill="#f3f1ea"/>
+
+  <g transform="translate(0, 230)">
+    <line class="guide" x1="-150" y1="0" x2="1050" y2="0" stroke="#1d7f88" stroke-width="2"/>
+    <text class="guide" x="-140" y="-200" font-family="sans-serif" font-size="18">left (Fairview), x axis = world z</text>
+    <polyline id="profile-left" data-axis="z" fill="none" stroke="#34445d" stroke-width="3"
+              points="-150,-85 0,-100 150,-122 300,-150 400,-166 457,-172 520,-160 600,-128
+                      700,-100 800,-112 900,-148 1050,-160"/>
+  </g>
+
+  <g transform="translate(0, 480)">
+    <line class="guide" x1="-150" y1="0" x2="1050" y2="0" stroke="#1d7f88" stroke-width="2"/>
+    <text class="guide" x="-140" y="-200" font-family="sans-serif" font-size="18">right (Big Beehive), x axis = world z</text>
+    <polyline id="profile-right" data-axis="z" fill="none" stroke="#5f626b" stroke-width="3"
+              points="-150,-68 0,-80 200,-100 350,-124 430,-136 477,-140 560,-128 650,-108
+                      750,-96 850,-118 1050,-140"/>
+  </g>
+
+  <g transform="translate(550, 730)">
+    <line class="guide" x1="-700" y1="0" x2="500" y2="0" stroke="#1d7f88" stroke-width="2"/>
+    <text class="guide" x="-690" y="-200" font-family="sans-serif" font-size="18">far (Victoria glacier), x axis = world x</text>
+    <polyline id="profile-far" data-axis="x" fill="none" stroke="#8fa3c4" stroke-width="3"
+              points="-500,-160 -380,-150 -300,-138 -240,-132 -200,-138 -160,-128 -120,-134
+                      -80,-126 -50,-131 -20,-124 10,-132 40,-125 80,-130 120,-122 160,-128
+                      200,-124 260,-136 340,-146 500,-162"/>
+  </g>
+</svg>
