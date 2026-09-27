@@ -11,7 +11,7 @@
   bump drawn here lands at the same z as the matching bend in the plan.
 
   Heights are what the game camera can fit: its frame reaches ~19 degrees above the horizon, so
-  the left summit (172 m at 560 m away) sits at ~17 degrees and stays in shot. The far profile's
+  the left summit (150 m, ~165 m with the build's crest noise, at 560 m away) sits at ~16 degrees and stays in shot. The far profile's
   zig-zag is the jagged summit line of the glacier wall; the build adds noise on top.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="-150 -10 1200 780">
@@ -21,7 +21,7 @@
     <line class="guide" x1="-150" y1="0" x2="1050" y2="0" stroke="#1d7f88" stroke-width="2"/>
     <text class="guide" x="-140" y="-200" font-family="sans-serif" font-size="18">left (Fairview), x axis = world z</text>
     <polyline id="profile-left" data-axis="z" fill="none" stroke="#34445d" stroke-width="3"
-              points="-150,-85 0,-100 150,-122 300,-150 400,-166 457,-172 520,-160 600,-128
+              points="-150,-35 0,-45 150,-58 300,-86 400,-128 457,-150 520,-140 600,-118
                       700,-100 800,-112 900,-148 1050,-160"/>
   </g>
 
@@ -29,7 +29,7 @@
     <line class="guide" x1="-150" y1="0" x2="1050" y2="0" stroke="#1d7f88" stroke-width="2"/>
     <text class="guide" x="-140" y="-200" font-family="sans-serif" font-size="18">right (Big Beehive), x axis = world z</text>
     <polyline id="profile-right" data-axis="z" fill="none" stroke="#5f626b" stroke-width="3"
-              points="-150,-68 0,-80 200,-100 350,-124 430,-136 477,-140 560,-128 650,-108
+              points="-150,-30 0,-38 200,-58 350,-88 430,-114 477,-120 560,-112 650,-100
                       750,-96 850,-118 1050,-140"/>
   </g>
 

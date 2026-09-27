@@ -16,6 +16,9 @@
   Each ridge carries data-profile (the id of its height profile in ridge-profiles.svg) and
   data-slope (metres of drop per metre away from the crest).
 
+  The lake ends at z ~700, where the glacier wall's slope reaches the waterline. Taken further
+  it cuts into rising ground and leaves a vertical cliff at the end of the valley.
+
   Anything with class="guide" is drawing aid only and is ignored.
 
   Why these numbers: the peaks were placed by projecting the concept frame's summit positions
@@ -33,8 +36,8 @@
   </g>
 
   <polygon id="lake" fill="#3fa2ab" stroke="#1d7f88" stroke-width="2"
-           points="-175,120 -165,0 -155,-150 -140,-300 -118,-450 -92,-600 -62,-740 -28,-800
-                   22,-802 60,-745 96,-605 130,-455 158,-305 176,-150 186,0 192,120"/>
+           points="-175,120 -165,0 -155,-150 -140,-300 -118,-450 -92,-600 -62,-668 -28,-700
+                   22,-702 60,-672 96,-605 130,-455 158,-305 176,-150 186,0 192,120"/>
 
   <polyline id="ridge-left" data-profile="profile-left" data-slope="1.15"
             fill="none" stroke="#34445d" stroke-width="6"
@@ -42,11 +45,11 @@
   <polyline id="ridge-right" data-profile="profile-right" data-slope="0.8"
             fill="none" stroke="#5f626b" stroke-width="6"
             points="265,140 275,0 292,-150 360,-477 305,-650 210,-800 150,-900"/>
-  <polyline id="ridge-far" data-profile="profile-far" data-slope="0.85"
+  <polyline id="ridge-far" data-profile="profile-far" data-slope="0.6"
             fill="none" stroke="#b3c1d8" stroke-width="6"
             points="-420,-960 -250,-925 -120,-900 0,-880 150,-895 280,-930 440,-965"/>
 
-  <circle id="boathouse" cx="-160" cy="-130" r="6" fill="#6b4a33"/>
+  <circle id="boathouse" cx="-178" cy="-130" r="6" fill="#6b4a33"/>
 
   <g class="guide" fill="none" stroke="#c0392b" stroke-width="2">
     <!-- camera at (0, -3), horizontal half-FOV 45.7 degrees -->
