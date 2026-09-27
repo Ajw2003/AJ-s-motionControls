@@ -137,12 +137,12 @@ def main():
         return 1
 
     add_game_camera(args.width)
+    configure_cycles(args.samples)   # first: shaders.apply sets the bounces it needs
     if args.mode == "geometry":
         geometry_look()
     else:
         import shaders
         shaders.apply(objects)
-    configure_cycles(args.samples)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     bpy.context.scene.render.filepath = str(args.out.resolve())

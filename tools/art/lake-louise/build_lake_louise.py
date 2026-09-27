@@ -57,16 +57,16 @@ CREST_NOISE_SCALE = 0.012       # jaggedness of crests and faces
 CREST_NOISE_AMPLITUDE = 0.08    # as a fraction of local height
 
 # --- Colour zones (heights in metres above the water) ------------------------------------------
-TREELINE_SIDES = 70.0           # forest stops here on the side ridges...
+TREELINE_SIDES = 85.0           # forest stops here on the side ridges...
 TREELINE_FAR = 8.0              # ...and much lower under the glacier
 SNOWLINE_FAR = 40.0             # the far wall is white above this
 SNOWLINE_SIDES = 190.0          # side ridges are summer rock (no snow in the photo)
 FAR_WALL_START_Y = 650.0        # where "the far end" begins, for snow and treeline
-STEEP_NORMAL_Z = 0.62           # faces steeper than this are rock, whatever their height
+STEEP_NORMAL_Z = 0.50           # faces steeper than this are rock, whatever their height
 
 # sRGB, as picked from the reference photo - written with color_srgb, never .color (linear).
 PALETTE = {
-    "forest": (0.149, 0.188, 0.122),
+    "forest": (0.13, 0.20, 0.10),
     "forest_far": (0.20, 0.26, 0.24),
     "rock": (0.54, 0.53, 0.51),
     "rock_warm": (0.58, 0.54, 0.48),
@@ -74,7 +74,7 @@ PALETTE = {
     "snow": (0.93, 0.95, 0.98),
     "shore": (0.49, 0.48, 0.44),
     "lake_bed": (0.44, 0.70, 0.66),
-    "pine": (0.11, 0.155, 0.10),
+    "pine": (0.09, 0.16, 0.08),
     "boathouse_walls": (0.42, 0.29, 0.20),
     "boathouse_roof": (0.54, 0.56, 0.63),
     "canoe": (0.71, 0.29, 0.24),

@@ -1,0 +1,35 @@
+{
+  "_comment": "The Lake Louise look, in one place. Read by LakeLouiseEnvironment.cs at runtime (as a TextAsset) and by tools/art/lake-louise/shaders.py for the Blender preview, so the two cannot drift apart. Colours are sRGB hex; directions are Unity world space (x right, y up, z down the lake). reflection_tint tints both the mirrored scenery and the mirrored sky. cloud_horizon_fade is [start, end] in view-ray height.",
+  "sun_direction_towards_sun": [
+    -0.62,
+    0.7,
+    -0.36
+  ],
+  "sun_colour": "#fff1dc",
+  "sun_strength": 0.85,
+  "ambient_colour": "#8397bd",
+  "ambient_strength": 0.5,
+  "haze_colour": "#b4cdef",
+  "haze_density": 0.0022,
+  "haze_max": 0.4,
+  "sky_top": "#2a5ec8",
+  "sky_horizon": "#8dbcf6",
+  "sky_exponent": 0.3,
+  "cloud_colour": "#f6f8fd",
+  "cloud_amount": 1.0,
+  "cloud_scale": 1.6,
+  "cloud_cover": 0.56,
+  "reflection_tint": "#6f98a8",
+  "water_body": "#1f9aa3",
+  "water_body_far": "#3fa9b0",
+  "water_f0": 0.02,
+  "water_fresnel_power": 4.0,
+  "water_body_opacity": 0.97,
+  "water_streak_strength": 0.18,
+  "cloud_horizon_fade": [
+    0.03,
+    0.14
+  ],
+  "haze_start": 380.0,
+  "cloud_dome_offset": 0.35
+}

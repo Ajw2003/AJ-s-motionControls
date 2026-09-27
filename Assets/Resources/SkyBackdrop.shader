@@ -37,6 +37,21 @@ Shader "RockSkipping/SkyBackdrop"
         _CloudCover ("Cloud cover", Range(0, 1)) = 0.52
 
         _CloudSpeed ("Cloud drift", Range(0, 0.2)) = 0.012
+
+        // Added for the Lake Louise scene (LakeLouiseEnvironment sets them); every default
+        // reproduces the original look, so the Bootstrap sky is unchanged.
+        //
+        // Mirror: see-through water shows this quad below the horizon, where it would
+        // otherwise be flat horizon colour. With this on, a ray below the horizon is shaded
+        // as its mirror image above it and tinted: that is the reflected sky.
+        [Toggle] _MirrorBelowHorizon ("Mirror below horizon", Float) = 0
+        _ReflectionTint ("Reflection tint", Color) = (1, 1, 1, 1)
+        // 0 = clouds on a flat plane (the original). Above 0 the plane curves into a dome,
+        // which keeps clouds puffy in the low band of sky the game camera actually shows,
+        // instead of squashing them into slivers.
+        _CloudDomeOffset ("Cloud dome offset", Range(0, 1)) = 0
+        _CloudFadeStart ("Cloud horizon fade start", Range(0, 1)) = 0
+        _CloudFadeEnd ("Cloud horizon fade end", Range(0.01, 1)) = 0.35
     }
 
     SubShader
@@ -83,6 +98,11 @@ Shader "RockSkipping/SkyBackdrop"
             float _CloudScale;
             float _CloudCover;
             float _CloudSpeed;
+            float _MirrorBelowHorizon;
+            float4 _ReflectionTint;
+            float _CloudDomeOffset;
+            float _CloudFadeStart;
+            float _CloudFadeEnd;
 
             Varyings vert(Attributes input)
             {
@@ -137,6 +157,9 @@ Shader "RockSkipping/SkyBackdrop"
                 // saturate before pow: below the horizon y is negative, and a negative base with
                 // a fractional exponent is undefined - NaN speckle on some GPUs, nothing on
                 // others, and a miserable bug to track down.
+                bool reflected = _MirrorBelowHorizon > 0.5 && direction.y < 0.0;
+                if (reflected) direction.y = -direction.y;
+
                 float height = saturate(direction.y);
                 float3 sky = lerp(_SkyHorizon.rgb, _SkyTop.rgb, pow(height, _Exponent));
 
@@ -148,7 +171,7 @@ Shader "RockSkipping/SkyBackdrop"
                 // The guard matters. As direction.y approaches 0 the projection runs to
                 // infinity, and sampling noise at astronomical coordinates returns garbage that
                 // flickers frame to frame.
-                float horizonSafe = max(direction.y, 0.06);
+                float horizonSafe = max(direction.y + _CloudDomeOffset, 0.06);
                 float2 cloudUv = direction.xz / horizonSafe * _CloudScale;
                 cloudUv += _Time.y * _CloudSpeed * float2(1.0, 0.35);
 
@@ -156,12 +179,13 @@ Shader "RockSkipping/SkyBackdrop"
 
                 // Fade the clouds out into the horizon band. Without this they run right down to
                 // the waterline, which reads as fog on the lake rather than cloud in the sky.
-                float horizonFade = smoothstep(0.0, 0.35, direction.y);
+                float horizonFade = smoothstep(_CloudFadeStart, _CloudFadeEnd, direction.y);
 
                 float cloud = smoothstep(_CloudCover, _CloudCover + 0.22, n);
                 cloud *= horizonFade * _CloudAmount;
 
                 float3 colour = lerp(sky, _CloudColour.rgb, saturate(cloud));
+                if (reflected) colour *= _ReflectionTint.rgb;
                 return half4(colour, 1.0);
             }
             ENDHLSL

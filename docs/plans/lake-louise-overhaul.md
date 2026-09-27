@@ -1,6 +1,6 @@
 # Lake Louise graphics overhaul — SVG → Blender → shaders
 
-**Status:** in progress, started 2026-09-27. **Tier 5** against [`../Roadmap.md`](../Roadmap.md)
+**Status:** stages 1–3 built and checked in Blender renders, 2026-09-27; **Unity side written, not yet run in the Editor**. **Tier 5** against [`../Roadmap.md`](../Roadmap.md)
 milestone 9. Builds on [`alpine-lake-level.md`](alpine-lake-level.md), which already settled the
 low-poly technique, render-queue rules and budget; this plan keeps all of those and changes
 three things, listed under *What changes from the alpine-lake plan*.
@@ -76,3 +76,39 @@ of the alpine-lake plan) remains.
 
 As the alpine-lake plan: scenery ≤ ~80k tris including reflections, no textures, no depth or
 opaque texture. The build script prints per-object triangle counts and fails over budget.
+
+## Where it stands (2026-09-27)
+
+| Piece | Where | Verified |
+|---|---|---|
+| Concept + data SVGs | `tools/art/lake-louise/svg/` | Rasterised and compared to the photo |
+| Blender build, FBX | `tools/art/lake-louise/build_lake_louise.py` → `Assets/Environments/LakeLouise/LakeLouise.fbx` | Runs; 48,303 tris of a 55,000 budget; FBX read back with all five objects and vertex colours |
+| Look numbers | `Assets/Environments/LakeLouise/LakeLouiseLook.json` | Read by both the preview and Unity |
+| Blender shader stand-ins | `tools/art/lake-louise/shaders.py`, `preview.py` | Rendered from the game camera; two runs pixel-identical |
+| Unity shaders | `Assets/Resources/LakeLouiseBackdrop.shader`, `LakeLouiseWater.shader`, `SkyBackdrop.shader` (new properties, old defaults) | **Not compiled** — no Unity in the cloud session |
+| Scene wiring | `Assets/Scripts/Game/LakeLouiseEnvironment.cs`, `AimPreview.BuildPlaceholderScene`, `Assets/Editor/LakeLouiseSetup.cs` | **Not compiled** |
+
+### Regenerate
+
+```
+python3 tools/art/lake-louise/build_lake_louise.py                     # FBX (or: blender --background --python ...)
+python3 tools/art/lake-louise/preview.py tools/art/out/shaded.png --mode shaded
+```
+Needs the `bpy` 4.5 wheel (`pip install bpy==4.5.0`) plus `pillow` and `cairosvg` for `compare.py`.
+
+### First run in Unity
+
+1. Open the project; the FBX imports with `LakeLouiseModelImport`'s settings.
+2. **RockSkipping → Environments → Create Lake Louise Scene** makes `Assets/Scenes/LakeLouise.unity`.
+3. Press Play in that scene. The Console should show `[LakeLouiseEnvironment] Orientation OK`.
+   An orientation error means the FBX axis mapping (reasoned, not observed) is wrong — fix
+   `export_fbx` and re-export.
+4. If the scenery looks washed out or too dark, toggle `_VertexColourIsSrgb` on the backdrop
+   material first (vertex-colour decoding is the least certain assumption).
+5. Play `Bootstrap.unity` too: it must look exactly as before (sand bank, blue water).
+
+### Known differences between the preview and Unity
+
+- Cloud and water-streak *shapes* differ (Blender Perlin vs the shaders' value noise); amounts match.
+- Reflections: Blender uses a true mirror, Unity mirrored copies. Same image for this
+  flat-lit look, except reflections are hazed slightly more in Unity.
