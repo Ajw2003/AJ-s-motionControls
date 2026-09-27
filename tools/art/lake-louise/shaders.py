@@ -154,12 +154,29 @@ def setup_sky():
     plane = nodes.tree.nodes.new("ShaderNodeCombineXYZ")
     nodes.link(nodes.math("DIVIDE", split.outputs["X"], safe), plane.inputs["X"])
     nodes.link(nodes.math("DIVIDE", split.outputs["Y"], safe), plane.inputs["Y"])
-    noise = nodes.add("ShaderNodeTexNoise", Scale=LOOK["cloud_scale"], Detail=2.0, Roughness=0.5)
+    # Two octaves as in SkyBackdrop's Clouds(), plus finer ones with cloud_detail, which is what
+    # breaks a crisp edge into billows instead of a smooth blob.
+    detail = 2.0 + 3.0 * LOOK["cloud_detail"]
+    noise = nodes.add("ShaderNodeTexNoise", Scale=LOOK["cloud_scale"], Detail=detail, Roughness=0.55)
     nodes.link(plane.outputs[0], noise.inputs["Vector"])
+
+    # Self-shadow: the same noise sampled a little toward the sun. Where density rises toward
+    # the sun the puff faces away from it (shadowed); where it falls, it faces into the light.
+    shifted = nodes.tree.nodes.new("ShaderNodeVectorMath")
+    shifted.operation = "ADD"
+    offset = LOOK["cloud_shade_offset"]
+    shifted.inputs[1].default_value = (offset[0] / LOOK["cloud_scale"], offset[1] / LOOK["cloud_scale"], 0.0)
+    nodes.link(plane.outputs[0], shifted.inputs[0])
+    toward_sun = nodes.add("ShaderNodeTexNoise", Scale=LOOK["cloud_scale"], Detail=detail, Roughness=0.55)
+    nodes.link(shifted.outputs[0], toward_sun.inputs["Vector"])
+    lit = nodes.math("ADD", nodes.math("MULTIPLY", nodes.math("SUBTRACT", noise.outputs["Fac"], toward_sun.outputs["Fac"]), LOOK["cloud_shade"]), 0.5)
+    lit = nodes.math("MINIMUM", nodes.math("MAXIMUM", lit, 0.0), 1.0)
+    puff = nodes.mix_colour(lit, colour("cloud_shadow_colour"), colour("cloud_colour"))
+
     cover = nodes.tree.nodes.new("ShaderNodeMapRange")
     cover.interpolation_type = "SMOOTHSTEP"
     cover.inputs["From Min"].default_value = LOOK["cloud_cover"]
-    cover.inputs["From Max"].default_value = LOOK["cloud_cover"] + 0.12
+    cover.inputs["From Max"].default_value = LOOK["cloud_cover"] + LOOK["cloud_edge"]
     nodes.link(noise.outputs["Fac"], cover.inputs["Value"])
     fade = nodes.tree.nodes.new("ShaderNodeMapRange")
     fade.interpolation_type = "SMOOTHSTEP"
@@ -167,7 +184,7 @@ def setup_sky():
     fade.inputs["From Max"].default_value = LOOK["cloud_horizon_fade"][1]
     nodes.link(up, fade.inputs["Value"])
     cloud = nodes.math("MULTIPLY", nodes.math("MULTIPLY", cover.outputs["Result"], fade.outputs["Result"]), LOOK["cloud_amount"])
-    sky = nodes.mix_colour(cloud, sky, colour("cloud_colour"))
+    sky = nodes.mix_colour(cloud, sky, puff)
 
     reflected = nodes.mix_colour(1.0, sky, colour("reflection_tint"), blend="MULTIPLY")
     final = nodes.mix_colour(below, sky, reflected)

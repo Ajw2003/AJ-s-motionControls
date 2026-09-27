@@ -11,18 +11,24 @@
     ridge-left    polyline - crest line of the tall left massif (Fairview).
     ridge-right   polyline - crest line of the lower right ridge (Big Beehive side).
     ridge-far     polyline - crest line of the glacier wall at the end of the valley (Victoria).
-    boathouse     circle   - where the boathouse stands; its footprint comes from
-                             boathouse-elevation.svg.
-  Each ridge carries data-profile (the id of its height profile in ridge-profiles.svg) and
-  data-slope (metres of drop per metre away from the crest).
+    boathouse     circle   - where the boathouse stands (its lake-facing gable), on the left
+                             shore 31 degrees left of centre as in the photo. data-scale
+                             enlarges it (at ~280 m, life size is ~35 px wide); no pines grow
+                             within data-clearing metres, so none hide it. Its outline comes
+                             from boathouse-elevation.svg.
+  Each ridge carries data-silhouette (the id of the traced skyline in photo-silhouettes.svg
+  that sets its crest heights) and data-slope (metres of drop per metre away from the crest).
+  Both side crests curl in to the lake's end, because in the photo both ridges come down to
+  the water at the V; their azimuth from the camera must only ever increase along the crest,
+  so each direction is set by exactly one crest point.
 
   The lake ends at z ~700, where the glacier wall's slope reaches the waterline. Taken further
   it cuts into rising ground and leaves a vertical cliff at the end of the valley.
 
   Anything with class="guide" is drawing aid only and is ignored.
 
-  Why these numbers: the peaks were placed by projecting the concept frame's summit positions
-  back into the world from the game camera, see concept-game-view.svg. Walls stay at least
+  Why these numbers: crest positions set where each ridge sits; photo-silhouettes.svg sets how
+  high, sighted from the game camera so the skyline matches the reference photo. Walls stay at least
   ~150 m off the throw lane at the near end; throws cover ~50 m. Everything visible sits
   inside z = 950 because the camera's far clip is 1000.
 -->
@@ -39,17 +45,17 @@
            points="-175,120 -165,0 -155,-150 -140,-300 -118,-450 -92,-600 -62,-668 -28,-700
                    22,-702 60,-672 96,-605 130,-455 158,-305 176,-150 186,0 192,120"/>
 
-  <polyline id="ridge-left" data-profile="profile-left" data-slope="1.15"
+  <polyline id="ridge-left" data-silhouette="silhouette-left" data-slope="1.15"
             fill="none" stroke="#34445d" stroke-width="6"
-            points="-270,140 -285,0 -300,-150 -319,-457 -262,-640 -170,-800 -120,-900"/>
-  <polyline id="ridge-right" data-profile="profile-right" data-slope="0.8"
+            points="-270,140 -285,0 -300,-150 -319,-457 -262,-640 -170,-790 -90,-790 -35,-770"/>
+  <polyline id="ridge-right" data-silhouette="silhouette-right" data-slope="0.8"
             fill="none" stroke="#5f626b" stroke-width="6"
-            points="265,140 275,0 292,-150 360,-477 305,-650 210,-800 150,-900"/>
-  <polyline id="ridge-far" data-profile="profile-far" data-slope="0.6"
+            points="265,140 275,0 292,-150 360,-477 305,-650 210,-790 110,-800 40,-770"/>
+  <polyline id="ridge-far" data-silhouette="silhouette-far" data-slope="0.6"
             fill="none" stroke="#b3c1d8" stroke-width="6"
             points="-420,-960 -250,-925 -120,-900 0,-880 150,-895 280,-930 440,-965"/>
 
-  <circle id="boathouse" cx="-178" cy="-130" r="6" fill="#6b4a33"/>
+  <circle id="boathouse" cx="-152" cy="-230" r="6" fill="#6b4a33" data-scale="2" data-clearing="40"/>
 
   <g class="guide" fill="none" stroke="#c0392b" stroke-width="2">
     <!-- camera at (0, -3), horizontal half-FOV 45.7 degrees -->

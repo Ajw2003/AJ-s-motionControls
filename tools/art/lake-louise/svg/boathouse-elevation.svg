@@ -9,8 +9,9 @@
   canoe            a canoe seen from ABOVE (x = length, y = beam); extruded by data-height and
                    repeated data-count times along the shore in front of the boathouse.
 
-  At ~210 m from the camera the boathouse is a handful of pixels, as in the photo, so it is a
-  silhouette and a colour, nothing more: brown walls, grey roof, red canoes.
+  Drawn life size; valley-plan.svg's data-scale enlarges it where it stands (~280 m out), so it
+  reads at the size it has in the photo. It is a silhouette and a colour, nothing more: brown
+  walls, grey roof, red canoes.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="750" height="350" viewBox="-8 -9 30 14">
   <rect class="guide" x="-8" y="-9" width="30" height="14" fill="#f3f1ea"/>

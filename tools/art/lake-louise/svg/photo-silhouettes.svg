@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Lake Louise reference photo's silhouettes, traced by hand in PHOTO PIXELS (1152 x 768).
+  READ BY build_lake_louise.py: this is what sets every crest height. It replaced
+  ridge-profiles.svg, whose heights were fitted to the concept drawing instead of the photo.
+
+  silhouette-left   skyline of the left massif (Fairview), left edge -> down its cliff -> the
+                    forested spur that meets the water at the V.
+  silhouette-right  skyline of the right ridge (Big Beehive side), from the V to the right edge.
+  silhouette-far    the glacier wall (Victoria) seen through the V between them.
+  waterline         the horizon row (y attribute).
+
+  silhouette-left starts at x = -300, past the photo's edge: the game frame is wider than the
+  photo, and holding the edge height out there runs the massif into the frame's top corner.
+
+  How a traced point becomes a height (see crest_heights_from_photo):
+    azimuth   = atan((x - 576) / focal)                 photo centre is 576
+    elevation = atan((waterline - y) / focal) * data-elevation-scale
+    crest height at a plan point = camera height + distance * tan(elevation at its azimuth)
+  focal comes from data-hfov, the photo's assumed horizontal field of view (a ~24 mm landscape
+  lens). Azimuths are kept true, so the photo's composition fills the middle ~80% of the game's
+  wider frame and the ridges continue past it at their edge heights.
+
+  data-elevation-scale is the compromise the game camera forces. The photo's left summit
+  stands ~31 degrees above the water; the game frame shows ~19 degrees at top centre and only
+  ~14 in its top corners (the camera is pitched down). Every height is scaled by 0.47 so the
+  summit stays in shot: proportions left-to-right are the photo's, but slopes are about half
+  as steep. Raising it crops the peaks off the top of the frame.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1152" height="768" viewBox="0 0 1152 768"
+     data-hfov="74" data-elevation-scale="0.47">
+  <rect class="guide" width="1152" height="768" fill="#f3f1ea"/>
+  <line id="waterline" class="guide" x1="0" y1="555" x2="1152" y2="555" stroke="#1d7f88" stroke-width="2" data-y="555"/>
+
+  <polyline id="silhouette-left" fill="none" stroke="#34445d" stroke-width="3"
+            points="-300,190 0,92 60,90 95,105 130,130 165,152 200,168 220,162 240,152 255,158
+                    280,180 320,225 350,255 385,295 420,350 435,375 450,400 470,440
+                    500,480 530,505 570,540 590,552"/>
+  <polyline id="silhouette-far" fill="none" stroke="#8fa3c4" stroke-width="3"
+            points="437,380 455,385 480,400 500,392 520,389 545,395 575,385 602,380 642,370
+                    672,372 702,371 732,374 772,369 802,372 822,360 842,350 862,352"/>
+  <polyline id="silhouette-right" fill="none" stroke="#5f626b" stroke-width="3"
+            points="602,552 632,522 677,482 717,450 752,417 812,382 852,362 877,345 902,320
+                    932,295 952,280 972,272 992,280 1017,295 1032,300 1057,290 1092,289
+                    1127,287 1152,290"/>
+</svg>

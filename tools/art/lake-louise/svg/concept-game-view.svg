@@ -11,7 +11,9 @@
   y 65 -> 625: close enough to the true projection for a concept.
 
   This file is the visual target the Blender render is compared against. It is not read by
-  the build script; valley-plan.svg, ridge-profiles.svg and pine-profile.svg are.
+  the build script; valley-plan.svg, photo-silhouettes.svg, pine-profile.svg and
+  boathouse-elevation.svg are. Since 2026-09-27 the target is the photo itself (photo-silhouettes.svg);
+  this drawing is kept as the first-pass concept.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      width="1920" height="1080" viewBox="0 0 1920 1080">

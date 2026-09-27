@@ -81,8 +81,8 @@ opaque texture. The build script prints per-object triangle counts and fails ove
 
 | Piece | Where | Verified |
 |---|---|---|
-| Concept + data SVGs | `tools/art/lake-louise/svg/` | Rasterised and compared to the photo |
-| Blender build, FBX | `tools/art/lake-louise/build_lake_louise.py` → `Assets/Environments/LakeLouise/LakeLouise.fbx` | Runs; 48,303 tris of a 55,000 budget; FBX read back with all five objects and vertex colours |
+| Concept + data SVGs | `tools/art/lake-louise/svg/` (shape from `photo-silhouettes.svg` since revision 2) | Rasterised and compared to the photo; skyline checked with `skyline_overlay.py` |
+| Blender build, FBX | `tools/art/lake-louise/build_lake_louise.py` → `Assets/Environments/LakeLouise/LakeLouise.fbx` | Runs; 48,304 tris of a 55,000 budget; FBX read back with all five objects, vertex colours and upward terrain normals; two exports geometry-identical |
 | Look numbers | `Assets/Environments/LakeLouise/LakeLouiseLook.json` | Read by both the preview and Unity |
 | Blender shader stand-ins | `tools/art/lake-louise/shaders.py`, `preview.py` | Rendered from the game camera; two runs pixel-identical |
 | Unity shaders | `Assets/Resources/LakeLouiseBackdrop.shader`, `LakeLouiseWater.shader`, `SkyBackdrop.shader` (new properties, old defaults) | **Not compiled** — no Unity in the cloud session |
@@ -112,3 +112,42 @@ Needs the `bpy` 4.5 wheel (`pip install bpy==4.5.0`) plus `pillow` and `cairosvg
 - Cloud and water-streak *shapes* differ (Blender Perlin vs the shaders' value noise); amounts match.
 - Reflections: Blender uses a true mirror, Unity mirrored copies. Same image for this
   flat-lit look, except reflections are hazed slightly more in Unity.
+
+## Revision 2 (2026-09-27): shape from the photo, crisp clouds, visible boathouse
+
+**Shape.** `svg/photo-silhouettes.svg` holds the reference photo's three silhouettes (left
+massif, glacier, right ridge), traced by hand in photo pixels. The build turns each traced point
+into a direction from the camera and sets every crest sample's height so it lands on that line.
+It replaces `ridge-profiles.svg` (deleted), whose heights were fitted to the concept drawing.
+Both side crests now curl in to the lake's end, as the photo's ridges do at the V.
+
+- **The one compromise:** heights are scaled by 0.47 (`data-elevation-scale`). The photo's left
+  summit is ~31° above the water; the game frame reaches ~19° at top centre and ~14° in its
+  corners. Left-to-right positions match the photo; slopes are about half as steep. Getting
+  closer means showing more sky, i.e. moving the horizon lower than 1/3 in
+  `AimPreview.HorizonScreenFraction` - a gameplay framing call, not made here.
+- **Checked by** `skyline_overlay.py`, which draws the traced lines through the game camera onto
+  a render. Measured model skyline vs photo on the right ridge: within 0.3° from 14° to 38°.
+- Colour zones now follow which ridge shapes the ground (glacier wall vs side ridges), not a
+  z cut-off; a cut-off either whitened the side cliffs or forested the glacier's scree.
+- Ground no camera position can see is culled before decimation, so the triangle budget goes
+  to visible crests; grid spacing 7 m → 4.5 m.
+
+**Boathouse.** Moved to the photo's position (left shore, 31° left of centre); at 53° it had been
+outside the game's 45.7° half-frame. Scaled 2× in place (`data-scale`), no pines within 40 m
+(`data-clearing`), canoes turned across the view. **Bug fixed:** the wall block was built
+inside-out - invisible in Blender (both sides drawn) but it would have vanished under Unity's
+back-face culling. Now checked by ray parity: 0 of 51 faces inward.
+
+**Clouds.** Narrow edge (`cloud_edge` 0.03 vs 0.22), a finer noise octave (`cloud_detail`), and
+self-shadowing: the noise is read again toward the sun and each puff is shaded from
+`cloud_shadow_colour` to `cloud_colour`. `SkyBackdrop.shader` gained `_CloudEdge`,
+`_CloudDetail`, `_CloudShadowColour`, `_CloudShade`, `_CloudShadeOffset`; defaults reproduce the
+old clouds, so Bootstrap's sky is unchanged.
+
+**Light.** Sun swung to the left (the photo's left cliff is in full shadow, the right ridge lit),
+haze reduced and started later, sky gradient eased. Sampled against the photo: low sky #7ea9ee
+vs #80b2fd, right rock #8c8987 vs #8d8480; the left cliff (#414b5a vs #263756) and glacier
+(#cacdd5 vs #eeeff0) are still lighter and dimmer than the photo respectively.
+
+Still unverified in Unity, as before: the shaders and C# have not been compiled.

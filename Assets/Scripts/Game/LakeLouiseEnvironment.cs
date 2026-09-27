@@ -56,6 +56,11 @@ namespace Game
             public float cloud_cover;
             public float cloud_dome_offset;
             public float[] cloud_horizon_fade;
+            public float cloud_edge;
+            public float cloud_detail;
+            public string cloud_shadow_colour;
+            public float cloud_shade;
+            public float[] cloud_shade_offset;
             public string reflection_tint;
             public string water_body;
             public string water_body_far;
@@ -177,6 +182,11 @@ namespace Game
             sky.SetFloat("_CloudDomeOffset", _look.cloud_dome_offset);
             sky.SetFloat("_CloudFadeStart", _look.cloud_horizon_fade[0]);
             sky.SetFloat("_CloudFadeEnd", _look.cloud_horizon_fade[1]);
+            sky.SetFloat("_CloudEdge", _look.cloud_edge);
+            sky.SetFloat("_CloudDetail", _look.cloud_detail);
+            sky.SetColor("_CloudShadowColour", Colour(_look.cloud_shadow_colour));
+            sky.SetFloat("_CloudShade", _look.cloud_shade);
+            sky.SetVector("_CloudShadeOffset", new Vector4(_look.cloud_shade_offset[0], _look.cloud_shade_offset[1], 0f, 0f));
             sky.SetFloat("_MirrorBelowHorizon", 1f);
             sky.SetColor("_ReflectionTint", Colour(_look.reflection_tint));
         }
@@ -230,10 +240,11 @@ namespace Game
             }
 
             _look = JsonUtility.FromJson<LookFile>(look.text);
-            if (_look?.sun_direction_towards_sun is not { Length: 3 } || _look.cloud_horizon_fade is not { Length: 2 })
+            if (_look?.sun_direction_towards_sun is not { Length: 3 } || _look.cloud_horizon_fade is not { Length: 2 }
+                || _look.cloud_shade_offset is not { Length: 2 })
             {
                 Debug.LogError("[LakeLouiseEnvironment] LakeLouiseLook.json is missing sun_direction_towards_sun " +
-                               "(3 numbers) or cloud_horizon_fade (2 numbers).");
+                               "(3 numbers), cloud_horizon_fade (2 numbers) or cloud_shade_offset (2 numbers).");
                 _look = null;
                 return false;
             }

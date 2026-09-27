@@ -4,7 +4,7 @@ Run either way - the script is the same:
     python3 tools/art/lake-louise/build_lake_louise.py            (bpy 4.5 Python module)
     blender --background --python tools/art/lake-louise/build_lake_louise.py
 
-Reads   tools/art/lake-louise/svg/{valley-plan,ridge-profiles,pine-profile,boathouse-elevation}.svg
+Reads   tools/art/lake-louise/svg/{valley-plan,photo-silhouettes,pine-profile,boathouse-elevation}.svg
 Writes  Assets/Environments/LakeLouise/LakeLouise.fbx
 
 Coordinates. Everything is built in Blender with X = Unity x (right), Y = Unity z (down the
@@ -42,8 +42,8 @@ FBX_PATH = REPO / "Assets" / "Environments" / "LakeLouise" / "LakeLouise.fbx"
 SEED = 20260927
 
 # --- Terrain -----------------------------------------------------------------------------------
-GRID_SPACING = 7.0              # metres between terrain samples before decimation
-GRID_JITTER = 2.5               # random offset per sample, so the low-poly facets are irregular
+GRID_SPACING = 4.5              # metres between terrain samples before decimation
+GRID_JITTER = 1.5               # random offset per sample, so the low-poly facets are irregular
 GRID_X = (-760.0, 760.0)
 GRID_Y = (-60.0, 1000.0)        # nothing behind the camera is ever seen; far clip is 1000
 VALLEY_TRIANGLE_BUDGET = 16000
@@ -54,19 +54,21 @@ SHORE_SLOPE = 0.10              # how fast the shore rises away from the water
 SHORE_MAX_RISE = 1.2            # steepest rise off any shoreline (~50 degrees): no sheer walls
 
 CREST_NOISE_SCALE = 0.012       # jaggedness of crests and faces
-CREST_NOISE_AMPLITUDE = 0.08    # as a fraction of local height
+CREST_NOISE_AMPLITUDE = 0.02    # as a fraction of local height - small, so crests keep the photo's line
+CAMERA_HEIGHT = 2.0             # AimPreview's camera y; crest heights are sighted from here
+CAMERA_Z = -3.0
 
 # --- Colour zones (heights in metres above the water) ------------------------------------------
 TREELINE_SIDES = 85.0           # forest stops here on the side ridges...
 TREELINE_FAR = 8.0              # ...and much lower under the glacier
 SNOWLINE_FAR = 40.0             # the far wall is white above this
 SNOWLINE_SIDES = 190.0          # side ridges are summer rock (no snow in the photo)
-FAR_WALL_START_Y = 650.0        # where "the far end" begins, for snow and treeline
+FOREST_FAR_START_Y = 750.0      # pines past this go in Forest_Far (grouping only, not colour)
 STEEP_NORMAL_Z = 0.50           # faces steeper than this are rock, whatever their height
 
 # sRGB, as picked from the reference photo - written with color_srgb, never .color (linear).
 PALETTE = {
-    "forest": (0.13, 0.20, 0.10),
+    "forest": (0.24, 0.30, 0.14),
     "forest_far": (0.20, 0.26, 0.24),
     "rock": (0.54, 0.53, 0.51),
     "rock_warm": (0.58, 0.54, 0.48),
@@ -74,7 +76,7 @@ PALETTE = {
     "snow": (0.93, 0.95, 0.98),
     "shore": (0.49, 0.48, 0.44),
     "lake_bed": (0.44, 0.70, 0.66),
-    "pine": (0.09, 0.16, 0.08),
+    "pine": (0.18, 0.25, 0.11),
     "boathouse_walls": (0.42, 0.29, 0.20),
     "boathouse_roof": (0.54, 0.56, 0.63),
     "canoe": (0.71, 0.29, 0.24),
@@ -118,10 +120,9 @@ def translate_of(element):
 def load_svg(name):
     """Returns {id: (element, points)} in each element's LOCAL coordinates.
 
-    Transforms are deliberately not applied. The profile panels in ridge-profiles.svg are each
-    shifted down the page by a translate() only so they can be drawn one under another; inside
-    a panel, local y is exactly -height, which is what the build wants. Only translate() is
-    allowed (translate_of refuses anything else), so nothing rotated or scaled can be misread.
+    Transforms are deliberately not applied: every data element in these files is drawn in the
+    coordinates it means. Only translate() is allowed anywhere (translate_of refuses anything
+    else), so nothing rotated or scaled can be misread.
     """
     tree = ElementTree.parse(SVG_DIR / name)
     found = {}
@@ -153,13 +154,47 @@ def plan_to_world(points):
     return np.array([(x, -y) for x, y in points], dtype=np.float64)
 
 
-def ridge_samples(plan, profiles, ridge_id):
-    """Dense (x, y, height, slope) samples along one crest line."""
+def load_photo_silhouettes():
+    """photo-silhouettes.svg -> {silhouette id: (azimuths, elevations)} in degrees, game-ready.
+
+    Each traced photo pixel becomes a direction: azimuth from its column, elevation from its
+    height above the waterline, both through the photo's assumed focal length. Elevation is then
+    multiplied by data-elevation-scale so the tallest summit fits the game frame; see the
+    header of photo-silhouettes.svg for why that compromise exists.
+    """
+    root = ElementTree.parse(SVG_DIR / "photo-silhouettes.svg").getroot()
+    width = float(root.get("width"))
+    focal = (width / 2.0) / math.tan(math.radians(float(root.get("data-hfov")) / 2.0))
+    scale = float(root.get("data-elevation-scale"))
+    waterline = next(float(e.get("data-y")) for e in root.iter() if e.get("id") == "waterline")
+
+    silhouettes = {}
+    for element_id, (_, points) in load_svg("photo-silhouettes.svg").items():
+        pixels = np.array(sorted(points))
+        azimuths = np.degrees(np.arctan((pixels[:, 0] - width / 2.0) / focal))
+        elevations = np.degrees(np.arctan((waterline - pixels[:, 1]) / focal)) * scale
+        silhouettes[element_id] = (azimuths, np.maximum(elevations, 0.0))
+    return silhouettes
+
+
+def ridge_samples(plan, silhouettes, ridge_id):
+    """Dense crest samples along one ridge, each as high as the photo's silhouette says.
+
+    A crest sample at horizontal distance d from the camera, in a direction where the photo's
+    (scaled) skyline stands e degrees up, gets height CAMERA_HEIGHT + d * tan(e), so it lands
+    exactly on that skyline. Directions past either end of a traced line take its end value,
+    which is how the ridges carry on beyond the photo's edges.
+
+    The crest dominates the skyline because every data-slope (0.6-1.15) is steeper than any
+    sight line to a crest (tan of at most ~15 degrees, 0.27): ground in front of a crest,
+    along the same sight line, always drops away below it.
+    """
     element, points = require(plan, ridge_id, "valley-plan.svg")
     crest = plan_to_world(points)
-    profile_element, profile_points = require(profiles, element.get("data-profile"), "ridge-profiles.svg")
-    axis = profile_element.get("data-axis")
-    profile = np.array(sorted((x, -y) for x, y in profile_points))
+    silhouette_id = element.get("data-silhouette")
+    if silhouette_id not in silhouettes:
+        raise KeyError(f"photo-silhouettes.svg has no element with id={silhouette_id!r}")
+    azimuths, elevations = silhouettes[silhouette_id]
     slope = float(element.get("data-slope"))
 
     samples = []
@@ -170,8 +205,11 @@ def ridge_samples(plan, profiles, ridge_id):
     samples.append(crest[-1])
     samples = np.array(samples)
 
-    along = samples[:, 1] if axis == "z" else samples[:, 0]
-    heights = np.interp(along, profile[:, 0], profile[:, 1])
+    forward = samples[:, 1] - CAMERA_Z
+    distance = np.hypot(samples[:, 0], forward)
+    azimuth = np.degrees(np.arctan2(samples[:, 0], forward))
+    elevation = np.interp(azimuth, azimuths, elevations)
+    heights = CAMERA_HEIGHT + distance * np.tan(np.radians(elevation))
     return samples, heights, slope
 
 
@@ -189,24 +227,35 @@ def polygon_inside_and_distance(points_xy, polygon):
     return inside, distance
 
 
-def terrain_height(points_xy, plan, profiles, lake):
-    height = np.full(len(points_xy), -30.0)
-    for ridge_id in ("ridge-left", "ridge-right", "ridge-far"):
-        samples, crest_heights, slope = ridge_samples(plan, profiles, ridge_id)
-        # A tent under each crest sample; the terrain is the highest tent over it. Done in
-        # chunks so the (points x samples) distance matrix stays small.
+RIDGES = ("ridge-left", "ridge-right", "ridge-far")
+FAR_RIDGE = RIDGES.index("ridge-far")
+
+
+def ridge_tents(points_xy, plan, silhouettes):
+    """Height of each ridge's tent over each point: shape (len(RIDGES), len(points)).
+
+    A tent sits under every crest sample; a ridge's surface is the highest of its tents. Done
+    in chunks so the (points x samples) distance matrix stays small.
+    """
+    tents = np.full((len(RIDGES), len(points_xy)), -30.0)
+    for index, ridge_id in enumerate(RIDGES):
+        samples, crest_heights, slope = ridge_samples(plan, silhouettes, ridge_id)
         for start in range(0, len(points_xy), 4096):
             chunk = points_xy[start:start + 4096]
             d = np.hypot(chunk[:, None, 0] - samples[None, :, 0], chunk[:, None, 1] - samples[None, :, 1])
-            tents = (crest_heights[None, :] - slope * d).max(axis=1)
-            height[start:start + 4096] = np.maximum(height[start:start + 4096], tents)
+            tents[index, start:start + 4096] = (crest_heights[None, :] - slope * d).max(axis=1)
+    return tents
+
+
+def terrain_height(points_xy, plan, silhouettes, lake):
+    height = np.maximum(ridge_tents(points_xy, plan, silhouettes).max(axis=0), -30.0)
 
     # Rugged faces: noise scaled by the height, so peaks break up and the lake shore stays calm.
     rugged = np.array([
         noise.fractal(Vector((x * CREST_NOISE_SCALE, y * CREST_NOISE_SCALE, 0.37)), 0.9, 2.1, 5)
         for x, y in points_xy
     ])
-    height += rugged * CREST_NOISE_AMPLITUDE * np.maximum(height, 0.0) + rugged * 3.0
+    height += rugged * CREST_NOISE_AMPLITUDE * np.maximum(height, 0.0) + rugged * 1.5
 
     inside, distance = polygon_inside_and_distance(points_xy, lake)
     lake_bed = np.maximum(-1.5 - LAKE_BED_SLOPE * distance, -30.0)
@@ -217,12 +266,38 @@ def terrain_height(points_xy, plan, profiles, lake):
     return np.where(inside, np.minimum(height, lake_bed), land)
 
 
-def visible_region(x, y):
-    """Keeps samples the game camera can ever see: in front of it and inside a generous cone."""
-    return (y > GRID_Y[0]) & (np.abs(x) <= 1.2 * (y + 3.0) + 220.0)
+# Where the camera can stand: the throw position, and the chase camera's reach down the lake.
+VISIBILITY_EYES = ((0.0, CAMERA_Z, CAMERA_HEIGHT), (0.0, 60.0, CAMERA_HEIGHT))
+VISIBILITY_MARGIN_DEGREES = 1.0
 
 
-def build_valley(plan, profiles, rng):
+def visible_region(x, y, heights):
+    """True for samples some camera position can see; the rest is culled before decimation.
+
+    Most of the grid is the far side of a ridge, which no camera ever sees. Left in, it took
+    most of the triangle budget and decimation rounded the visible crests off (the right
+    summit came out 20-40 px under the photo's line). A sample is hidden from an eye when
+    something nearer in the same direction stands higher in the view, by more than a margin.
+    """
+    visible = np.zeros(len(x), dtype=bool)
+    for eye_x, eye_y, eye_z in VISIBILITY_EYES:
+        dx, dy = x - eye_x, y - eye_y
+        distance = np.hypot(dx, dy)
+        in_front = dy > 1.0
+        azimuth_bin = np.round(np.degrees(np.arctan2(dx, dy)) * 2.0).astype(int)   # half degrees
+        elevation = np.degrees(np.arctan2(heights - eye_z, np.maximum(distance, 1e-3)))
+        seen = np.zeros(len(x), dtype=bool)
+        order = np.lexsort((distance, azimuth_bin))            # by direction, then nearest first
+        bins, starts = np.unique(azimuth_bin[order], return_index=True)
+        for start, end in zip(starts, list(starts[1:]) + [len(order)]):
+            ray = order[start:end]
+            horizon_before = np.maximum.accumulate(np.concatenate(([-90.0], elevation[ray][:-1])))
+            seen[ray] = elevation[ray] >= horizon_before - VISIBILITY_MARGIN_DEGREES
+        visible |= seen & in_front
+    return visible
+
+
+def build_valley(plan, silhouettes, rng):
     _, lake_points = require(plan, "lake", "valley-plan.svg")
     lake = plan_to_world(lake_points)
 
@@ -234,10 +309,11 @@ def build_valley(plan, profiles, rng):
     gx = np.where(edge, gx, gx + jitter[0])
     gy = np.where(edge, gy, gy + jitter[1])
     points = np.stack([gx.ravel(), gy.ravel()], axis=1)
-    heights = terrain_height(points, plan, profiles, lake)
+    heights = terrain_height(points, plan, silhouettes, lake)
 
     columns = len(xs)
-    keep = visible_region(points[:, 0], points[:, 1])
+    keep = visible_region(points[:, 0], points[:, 1], heights)
+    print(f"Valley: {keep.sum()} of {len(keep)} terrain samples visible from a camera position")
     faces = []
     for row in range(len(ys) - 1):
         for column in range(columns - 1):
@@ -259,7 +335,7 @@ def build_valley(plan, profiles, rng):
 
     remove_unused_vertices(obj)
     decimate_to(obj, VALLEY_TRIANGLE_BUDGET)
-    colour_valley(obj)
+    colour_valley(obj, plan, silhouettes)
     return obj, lake
 
 
@@ -283,9 +359,14 @@ def decimate_to(obj, triangle_budget):
         bpy.ops.object.modifier_apply(modifier=modifier.name)
 
 
-def face_colour(centre, normal_z, rng):
+def face_colour(centre, normal_z, far_end, rng):
+    """far_end: this ground belongs to the glacier wall (its tent is the highest here).
+
+    Decided by which ridge shapes the ground, not by a distance down the lake: the inner ends
+    of both side ridges reach as far as the glacier wall's foot, and a z cut-off either paints
+    their cliffs white or grows forest over the glacier's scree.
+    """
     x, y, h = centre
-    far_end = y > FAR_WALL_START_Y
     treeline = TREELINE_FAR if far_end else TREELINE_SIDES
     snowline = SNOWLINE_FAR if far_end else SNOWLINE_SIDES
     # A ragged line rather than a contour: noise shifts each zone boundary by tens of metres.
@@ -316,14 +397,15 @@ def zone_of(colour):
     return None
 
 
-def colour_valley(obj):
+def colour_valley(obj, plan, silhouettes):
     rng = random.Random(SEED + 1)
     mesh = obj.data
     layer = mesh.color_attributes.new("Col", "BYTE_COLOR", "CORNER")
-    obj["face_zones"] = []
+    centres = np.array([(p.center.x, p.center.y) for p in mesh.polygons])
+    owners = ridge_tents(centres, plan, silhouettes).argmax(axis=0)
     zones = []
-    for polygon in mesh.polygons:
-        colour = face_colour(polygon.center, polygon.normal.z, rng)
+    for polygon, owner in zip(mesh.polygons, owners):
+        colour = face_colour(polygon.center, polygon.normal.z, owner == FAR_RIDGE, rng)
         zones.append(zone_of(colour) or "")
         for loop_index in polygon.loop_indices:
             layer.data[loop_index].color_srgb = (*colour, 1.0)
@@ -360,14 +442,16 @@ def pine_template():
     return vertices, faces
 
 
-def scatter_forest(valley, rng):
+def scatter_forest(valley, rng, clearing_centre, clearing_radius):
+    """Pines on forest faces, none within clearing_radius of clearing_centre (the boathouse)."""
     template_vertices, template_faces = pine_template()
     mesh = valley.data
     zones = list(valley["face_zones"])
 
     candidates = []
     for polygon, zone in zip(mesh.polygons, zones):
-        if zone in ("forest", "forest_far") and polygon.center.y < PINE_MAX_Y:
+        cleared = (polygon.center.xy - clearing_centre.xy).length < clearing_radius
+        if zone in ("forest", "forest_far") and polygon.center.y < PINE_MAX_Y and not cleared:
             candidates.append((polygon, polygon.area))
     if not candidates:
         raise RuntimeError("no forest faces to scatter pines on - check the colour zones")
@@ -388,7 +472,7 @@ def scatter_forest(valley, rng):
         shade = rng.uniform(-0.03, 0.03)
         colour = tuple(max(0.0, c + shade) for c in PALETTE["pine"])
 
-        name = "Forest_Far" if position.y > FAR_WALL_START_Y - 80 else (
+        name = "Forest_Far" if position.y > FOREST_FAR_START_Y else (
             "Forest_Left" if position.x < 0 else "Forest_Right")
         vertices, faces = groups[name]
         base = len(vertices)
@@ -443,12 +527,20 @@ def extrude_gable(outline, depth, colour, origin, facing):
     return vertices, faces
 
 
+def boathouse_marker(plan):
+    """(site, scale, clearing radius) from the boathouse circle in valley-plan.svg."""
+    element, marker = require(plan, "boathouse", "valley-plan.svg")
+    site = Vector((marker[0][0], -marker[0][1], 0.0))
+    return site, float(element.get("data-scale", "1")), float(element.get("data-clearing", "0"))
+
+
 def build_boathouse(plan, valley):
     shapes = load_svg("boathouse-elevation.svg")
-    _, marker = require(plan, "boathouse", "valley-plan.svg")
-    site = Vector((marker[0][0], -marker[0][1], 0.0))
+    site, scale, _ = boathouse_marker(plan)
     site.z = ground_height(valley, site.x, site.y)
-    facing = Vector((1.0, 0.0, 0.0))   # gable end looks out across the lake
+    # Gable ends look along the shore (+/-x), so the long side and the roof face the camera,
+    # as in the photo.
+    facing = Vector((1.0, 0.0, 0.0))
 
     vertices, faces = [], []
 
@@ -460,19 +552,22 @@ def build_boathouse(plan, valley):
 
     walls_element, walls = require(shapes, "boathouse-walls", "boathouse-elevation.svg")
     roof_element, roof = require(shapes, "boathouse-roof", "boathouse-elevation.svg")
-    walls_depth = float(walls_element.get("data-depth"))
-    roof_depth = float(roof_element.get("data-depth"))
+    walls = [(x * scale, y * scale) for x, y in walls]
+    roof = [(x * scale, y * scale) for x, y in roof]
+    walls_depth = float(walls_element.get("data-depth")) * scale
+    roof_depth = float(roof_element.get("data-depth")) * scale
     overhang = (roof_depth - walls_depth) * 0.5
     add(extrude_gable(walls, walls_depth, PALETTE["boathouse_walls"], site, facing))
     add(extrude_gable(roof, roof_depth, PALETTE["boathouse_roof"], site + facing * overhang, facing))
 
     canoe_element, canoe = require(shapes, "canoe", "boathouse-elevation.svg")
-    canoe = [(x - 2.5, y) for x, y in canoe]   # centred on its length
-    canoe_height = float(canoe_element.get("data-height"))
+    canoe = [((x - 2.5) * scale, y * scale) for x, y in canoe]   # centred on its length
+    canoe_height = float(canoe_element.get("data-height")) * scale
     for i in range(int(canoe_element.get("data-count"))):
-        # Pulled up on the shore in front of the boathouse, lying along it, side by side.
-        centre = site + facing * 8.0 + Vector((0.0, 7.0 + i * 1.3, 0.0))
-        outline = [Vector((centre.x + y, centre.y + x, 0.0)) for x, y in canoe]
+        # Moored in a row in front of the boathouse, lying ACROSS the view: end-on to the
+        # camera they were a one-pixel sliver.
+        centre = site + Vector((6.0, -4.0 - i * 1.6, 0.0)) * scale
+        outline = [Vector((centre.x + x, centre.y + y, 0.0)) for x, y in canoe]
         ring = [(p.x, p.y, 0.05) for p in outline]
         top = [(p.x, p.y, 0.05 + canoe_height) for p in outline]
         base = len(vertices)
@@ -483,7 +578,17 @@ def build_boathouse(plan, valley):
             m = (k + 1) % count
             faces.append((base + k, base + m, base + count + m, base + count + k))
 
-    return make_coloured_object("Boathouse", vertices, faces)
+    boathouse = make_coloured_object("Boathouse", vertices, faces)
+    # extrude_gable's winding depends on which way round the SVG outline was drawn, and the
+    # walls came out inside-out: invisible in Blender, which draws both sides, but culled away
+    # in Unity. Every part here is a closed prism (the canoes are open underneath, facing the
+    # water), so recomputing outward normals is reliable.
+    bm = bmesh.new()
+    bm.from_mesh(boathouse.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(boathouse.data)
+    bm.free()
+    return boathouse
 
 
 def ground_height(obj, x, y):
@@ -572,10 +677,11 @@ def build():
     rng = random.Random(SEED)
     np.random.seed(SEED)
     plan = load_svg("valley-plan.svg")
-    profiles = load_svg("ridge-profiles.svg")
+    silhouettes = load_photo_silhouettes()
 
-    valley, _ = build_valley(plan, profiles, np.random.default_rng(SEED))
-    forests = scatter_forest(valley, rng)
+    valley, _ = build_valley(plan, silhouettes, np.random.default_rng(SEED))
+    boathouse_site, _, clearing = boathouse_marker(plan)
+    forests = scatter_forest(valley, rng, boathouse_site, clearing)
     boathouse = build_boathouse(plan, valley)
     objects = [valley, *forests, boathouse]
     flat_shade(objects)
