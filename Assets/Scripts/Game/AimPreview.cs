@@ -750,7 +750,7 @@ namespace Game
             var skyMaterial = BuildSkyBackdrop(camera, horizon);
             AngleTheSun();
 
-            if (environment != null) environment.Build(transform, skyMaterial, constants.WaterY);
+            if (environment != null) environment.Build(transform, skyMaterial, constants.WaterY, camera, water.transform);
             else BuildFarShore();
 
             // The lake is 2000 units across (a 10-unit Plane scaled by 200) but the far

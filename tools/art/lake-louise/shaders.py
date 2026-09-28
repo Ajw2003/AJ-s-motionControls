@@ -91,12 +91,15 @@ class Nodes:
 def haze(nodes, surface_colour):
     """haze = haze_max * (1 - exp(-max(0, distance - haze_start) * density)), toward haze_colour.
 
+    Distances are stretched by scenery_scale, as LakeLouiseEnvironment.SetHaze does.
+
     The start distance matters more than the density: the forest's albedo is so dark in linear
     light that even 10% haze turns it blue-grey, and the photo's near forest has almost none.
     """
     camera = nodes.add("ShaderNodeCameraData")
-    beyond = nodes.math("MAXIMUM", nodes.math("SUBTRACT", camera.outputs["View Distance"], LOOK["haze_start"]), 0.0)
-    decay = nodes.math("EXPONENT", nodes.math("MULTIPLY", beyond, -LOOK["haze_density"]))
+    scale = LOOK["scenery_scale"]
+    beyond = nodes.math("MAXIMUM", nodes.math("SUBTRACT", camera.outputs["View Distance"], LOOK["haze_start"] * scale), 0.0)
+    decay = nodes.math("EXPONENT", nodes.math("MULTIPLY", beyond, -LOOK["haze_density"] / scale))
     amount = nodes.math("MULTIPLY", nodes.math("SUBTRACT", 1.0, decay), LOOK["haze_max"])
     return nodes.mix_colour(amount, surface_colour, colour("haze_colour"))
 
@@ -204,8 +207,10 @@ def add_water():
     out = lerp(body, reflection * reflection_tint, F), then haze
     """
     mesh = bpy.data.meshes.new("LakeWater")
-    # Unity's plane: 2000 m square centred 60 m down the lake (AimPreview.WaterCentreZ).
-    mesh.from_pydata([(-1000, -940, 0), (1000, -940, 0), (1000, 1060, 0), (-1000, 1060, 0)], [], [(0, 1, 2, 3)])
+    # Unity's plane: 2000 m square centred 60 m down the lake (AimPreview.WaterCentreZ),
+    # enlarged by scenery_scale about its centre as LakeLouiseEnvironment.Build does.
+    half = 1000.0 * LOOK["scenery_scale"]
+    mesh.from_pydata([(-half, 60 - half, 0), (half, 60 - half, 0), (half, 60 + half, 0), (-half, 60 + half, 0)], [], [(0, 1, 2, 3)])
     water = bpy.data.objects.new("LakeWater", mesh)
     bpy.context.scene.collection.objects.link(water)
 
@@ -227,7 +232,12 @@ def add_water():
     nodes.link(position.outputs["Position"], stretch.inputs[0])
     streak_noise = nodes.add("ShaderNodeTexNoise", Scale=4.0, Detail=1.0)
     nodes.link(stretch.outputs[0], streak_noise.inputs["Vector"])
-    streak = nodes.math("ADD", 1.0, nodes.math("MULTIPLY", nodes.math("SUBTRACT", streak_noise.outputs["Fac"], 0.5), LOOK["water_streak_strength"] * 2.0))
+    # Faded out with distance, as in the Unity shader: far away the streak cells shrink below a
+    # pixel and alias into hard dark lines.
+    streak_camera = nodes.add("ShaderNodeCameraData")
+    streak_fade = nodes.math("MAXIMUM", nodes.math("SUBTRACT", 1.0, nodes.math("DIVIDE", streak_camera.outputs["View Distance"], LOOK["water_streak_fade_distance"])), 0.0)
+    streak_amount = nodes.math("MULTIPLY", streak_fade, LOOK["water_streak_strength"] * 2.0)
+    streak = nodes.math("ADD", 1.0, nodes.math("MULTIPLY", nodes.math("SUBTRACT", streak_noise.outputs["Fac"], 0.5), streak_amount))
     fresnel = nodes.math("MINIMUM", nodes.math("MULTIPLY", fresnel, streak), 1.0)
 
     camera = nodes.add("ShaderNodeCameraData")
@@ -250,7 +260,20 @@ def add_water():
     return water
 
 
+def scale_scenery(objects):
+    """LakeLouiseEnvironment.Arrange: scale by scenery_scale about the camera at the waterline
+    (Blender (0, -3, 0)), and push the camera's far clip out to match."""
+    scale = LOOK["scenery_scale"]
+    for obj in objects:
+        obj.scale = (scale, scale, scale)
+        obj.location = (0.0, -3.0 + 3.0 * scale, 0.0)
+    camera = bpy.context.scene.camera
+    if camera is not None:
+        camera.data.clip_end = max(camera.data.clip_end, 1000.0 * scale + 200.0)
+
+
 def apply(objects):
+    scale_scenery(objects)
     material = backdrop_material()
     for obj in objects:
         obj.data.materials.clear()

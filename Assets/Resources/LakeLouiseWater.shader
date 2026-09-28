@@ -31,6 +31,9 @@ Shader "RockSkipping/LakeLouiseWater"
         _FresnelPower ("Fresnel power", Range(1, 8)) = 4
         _StreakStrength ("Streak strength", Range(0, 1)) = 0.18
         _StreakScale ("Streak scale (across, along)", Vector) = (0.016, 0.24, 0, 0)
+        // Streaks fade to nothing by this distance. Further out a streak cell shrinks below a
+        // pixel and the pattern aliases into hard dark lines across the far water.
+        _StreakFadeDistance ("Streak fade distance (m)", Float) = 120
 
         _HazeColour ("Haze colour", Color) = (0.706, 0.804, 0.937, 1)
         _HazeStart ("Haze start (m)", Float) = 380
@@ -83,6 +86,7 @@ Shader "RockSkipping/LakeLouiseWater"
                 float _FresnelPower;
                 float _StreakStrength;
                 float4 _StreakScale;
+                float _StreakFadeDistance;
                 float4 _HazeColour;
                 float _HazeStart;
                 float _HazeDensity;
@@ -143,7 +147,8 @@ Shader "RockSkipping/LakeLouiseWater"
 
                 // Streaks drift slowly along the lake; x is stretched so they lie across it.
                 float2 streakUv = input.positionWS.xz * _StreakScale.xy + float2(0.0, _Time.y * 0.05);
-                float streak = 1.0 + (ValueNoise(streakUv) - 0.5) * 2.0 * _StreakStrength;
+                float streakFade = saturate(1.0 - distanceToCamera / max(_StreakFadeDistance, 1.0));
+                float streak = 1.0 + (ValueNoise(streakUv) - 0.5) * 2.0 * _StreakStrength * streakFade;
                 fresnel = saturate(fresnel * streak);
 
                 float wave;

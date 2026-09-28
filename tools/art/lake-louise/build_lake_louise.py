@@ -634,16 +634,16 @@ def flat_shade(objects):
 
 
 def export_fbx(objects):
-    """FBX for Unity.
+    """FBX for Unity: Blender's standard Unity settings, -Z forward, Y up, transform baked.
 
-    axis_forward='Z', axis_up='Y' with the transform baked into the vertices: Blender Y
-    (down the lake) becomes FBX +Z and Blender Z becomes FBX +Y, which forces X to flip to
-    stay right-handed; Unity then flips X back when it converts to left-handed. Net result:
-    Blender (X, Y, Z) -> Unity (x, z, y) with no root rotation. Blender's default (-Z forward)
-    is the famous "model imports turned 180 degrees" setting.
+    The file then stores Blender (X, Y, Z) as (X, Z, -Y), and Unity's importer reads a file's
+    (x, y, z) as (x, y, -z), so Unity gets (X, Z, Y): x right, y up, z down the lake.
 
-    This is reasoning, not a Unity run. LakeLouiseEnvironment.cs checks on load that the left
-    massif landed at negative x and logs an error naming this function if it did not.
+    That importer rule was OBSERVED, not assumed, and at some cost: the first export used
+    axis_forward='Z' on paper reasoning, and in Unity the whole valley came in turned 180
+    degrees - behind the camera and mirrored left-right (2026-09-28). The file then held
+    (-X, Z, Y); Unity showing it turned 180 degrees is what pins the rule down.
+    LakeLouiseEnvironment.cs still checks on load and corrects a 180 degree turn with a warning.
     """
     FBX_PATH.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")
@@ -653,7 +653,7 @@ def export_fbx(objects):
         filepath=str(FBX_PATH),
         use_selection=True,
         object_types={"MESH"},
-        axis_forward="Z",
+        axis_forward="-Z",
         axis_up="Y",
         bake_space_transform=True,
         apply_unit_scale=True,

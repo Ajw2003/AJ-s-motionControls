@@ -151,3 +151,25 @@ vs #80b2fd, right rock #8c8987 vs #8d8480; the left cliff (#414b5a vs #263756) a
 (#cacdd5 vs #eeeff0) are still lighter and dimmer than the photo respectively.
 
 Still unverified in Unity, as before: the shaders and C# have not been compiled.
+
+## Revision 3 (2026-09-28): first Unity test - orientation, scale, water lines
+
+First run in Unity (by the user): everything worked except these three.
+
+- **Valley behind the camera and mirrored.** The export used `axis_forward='Z'`, chosen by
+  reasoning; Unity imported the whole valley turned 180° about y. That observation pins Unity's
+  importer rule down: it reads a file's (x, y, z) as (x, y, -z). `export_fbx` now uses Blender's
+  standard `-Z` forward, whose file holds (X, Z, -Y), so Unity gets (X, Z, Y). Checked on the new
+  file's raw coordinates under that rule: Forest_Left x = -210, valley z = +488; the same rule
+  applied to the old file predicts x = +210, z = -364, which is what the test showed.
+  `LakeLouiseEnvironment` now also corrects a 180° turn itself, with a warning.
+- **Too small - throws reached the mountains.** `scenery_scale` (2.5) in `LakeLouiseLook.json`
+  scales the scenery about the camera at the waterline, so the picture from the throw position is
+  unchanged and everything is 2.5× farther. The water plane, the camera's far clip
+  (1000 → 2700) and the haze distances scale with it. Blender preview renders with the same
+  scale: visually identical to the unscaled render.
+- **Dark lines on the far water.** The wind-streak noise aliases into hard lines once its cells
+  shrink below a pixel. Streaks now fade out by `water_streak_fade_distance` (120 m), in the
+  Unity shader and the preview; the banding visible near the horizon in earlier previews is gone.
+  That this was the cause of the lines seen in Unity is the likely explanation, not yet
+  confirmed there.

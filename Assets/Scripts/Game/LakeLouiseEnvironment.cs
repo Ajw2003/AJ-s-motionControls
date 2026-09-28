@@ -32,6 +32,16 @@ namespace Game
         private const int ReflectionQueue = PlaceholderArt.ShoreQueue - 10;
 
         /// <summary>
+        /// Where the FBX was built to be seen from: AimPreview's camera (0, 2, -3), taken at the
+        /// waterline. The scenery is scaled about this point, so from the throw position the
+        /// picture is unchanged and only its distance grows.
+        /// </summary>
+        private static readonly Vector2 ModelCameraXZ = new(0f, -3f);
+
+        /// <summary>The far clip the FBX was built inside (AimPreview sets 1000).</summary>
+        private const float ModelFarClip = 1000f;
+
+        /// <summary>
         /// Mirrors LakeLouiseLook.json field for field. The snake_case names are the JSON keys:
         /// JsonUtility matches by field name, and the same file is read by Python.
         /// </summary>
@@ -68,6 +78,8 @@ namespace Game
             public float water_fresnel_power;
             public float water_body_opacity;
             public float water_streak_strength;
+            public float water_streak_fade_distance;
+            public float scenery_scale;
         }
 
         private LookFile _look;
@@ -89,16 +101,24 @@ namespace Game
             material.SetFloat("_F0", _look.water_f0);
             material.SetFloat("_FresnelPower", _look.water_fresnel_power);
             material.SetFloat("_StreakStrength", _look.water_streak_strength);
+            material.SetFloat("_StreakFadeDistance", _look.water_streak_fade_distance);
             SetHaze(material);
             return material;
         }
 
         /// <summary>
-        /// Builds the valley and its reflection under <paramref name="parent"/> and restyles the
-        /// sky. <paramref name="skyMaterial"/> may be null (AimPreview logs why); the scenery is
-        /// still built, but the water then shows flat horizon colour where sky should reflect.
+        /// Builds the valley and its reflection under <paramref name="parent"/>, scaled up by
+        /// scenery_scale about the camera, and restyles the sky. <paramref name="skyMaterial"/>
+        /// may be null (AimPreview logs why); the scenery is still built, but the water then
+        /// shows flat horizon colour where sky should reflect.
         /// </summary>
-        public void Build(Transform parent, Material skyMaterial, float waterY)
+        /// <remarks>
+        /// The scale exists because throws reached the mountains at their built size. Scaling
+        /// about the camera keeps every view angle, so the look is unchanged from the throw
+        /// position; the water plane and the camera's far clip must grow with it, or the lake
+        /// ends in a hard edge and the glacier is clipped away.
+        /// </remarks>
+        public void Build(Transform parent, Material skyMaterial, float waterY, Camera camera, Transform water)
         {
             if (!TryLoadLook()) return;
 
@@ -113,26 +133,43 @@ namespace Game
             var shader = LoadShader("LakeLouiseBackdrop");
             if (shader == null) return;
 
-            var scenery = BackdropMaterial(shader, isReflection: false, waterY);
-            var reflection = BackdropMaterial(shader, isReflection: true, waterY);
+            var scale = SceneryScale();
+            var anchor = camera != null
+                ? new Vector2(camera.transform.position.x, camera.transform.position.z)
+                : ModelCameraXZ;
 
-            var real = Place(parent, "LakeLouise", scenery, Vector3.zero, Vector3.one);
-            Place(parent, "LakeLouise_Reflection", reflection, new Vector3(0f, 2f * waterY, 0f), new Vector3(1f, -1f, 1f));
+            var real = Place(parent, "LakeLouise", BackdropMaterial(shader, isReflection: false, waterY));
+            var turn = CorrectiveTurn(real);
+            Arrange(real, turn, scale, anchor, waterY, mirrored: false);
 
-            CheckOrientation(real);
+            var reflection = Place(parent, "LakeLouise_Reflection", BackdropMaterial(shader, isReflection: true, waterY));
+            Arrange(reflection, turn, scale, anchor, waterY, mirrored: true);
+
+            if (water != null)
+            {
+                // Uniformly, about its own centre: every metre of lake the scenery gained.
+                water.localScale = new Vector3(water.localScale.x * scale, water.localScale.y, water.localScale.z * scale);
+            }
+
+            if (camera != null) camera.farClipPlane = Mathf.Max(camera.farClipPlane, ModelFarClip * scale + 200f);
 
             if (skyMaterial != null) StyleSky(skyMaterial);
             else Debug.LogWarning("[LakeLouiseEnvironment] No sky material - the water will reflect " +
                                   "flat horizon colour instead of sky.");
         }
 
-        private GameObject Place(Transform parent, string objectName, Material material, Vector3 position, Vector3 scale)
+        private float SceneryScale()
         {
-            var instance = Instantiate(backdropModel);
+            if (_look.scenery_scale > 0f) return _look.scenery_scale;
+            Debug.LogWarning("[LakeLouiseEnvironment] scenery_scale missing or not positive in " +
+                             "LakeLouiseLook.json - using 1 (the size the FBX was built at).");
+            return 1f;
+        }
+
+        private GameObject Place(Transform parent, string objectName, Material material)
+        {
+            var instance = Instantiate(backdropModel, parent, false);
             instance.name = objectName;
-            instance.transform.SetPositionAndRotation(position, Quaternion.identity);
-            instance.transform.localScale = scale;
-            instance.transform.SetParent(parent, true);
 
             foreach (var renderer in instance.GetComponentsInChildren<MeshRenderer>())
             {
@@ -147,6 +184,22 @@ namespace Game
             }
 
             return instance;
+        }
+
+        /// <summary>
+        /// Maps model point p to anchor + turn * (S * (p - modelAnchor)), where S scales by
+        /// <paramref name="scale"/> and, for the reflection, mirrors y about the waterline.
+        /// Anchors sit at the waterline, so the water level never moves.
+        /// </summary>
+        private static void Arrange(GameObject instance, Quaternion turn, float scale, Vector2 anchor, float waterY, bool mirrored)
+        {
+            var scaling = new Vector3(scale, mirrored ? -scale : scale, scale);
+            var modelAnchor = new Vector3(ModelCameraXZ.x, waterY, ModelCameraXZ.y);
+            var worldAnchor = new Vector3(anchor.x, waterY, anchor.y);
+
+            instance.transform.SetPositionAndRotation(
+                worldAnchor - turn * Vector3.Scale(scaling, modelAnchor), turn);
+            instance.transform.localScale = scaling;
         }
 
         private Material BackdropMaterial(Shader shader, bool isReflection, float waterY)
@@ -191,20 +244,27 @@ namespace Game
             sky.SetColor("_ReflectionTint", Colour(_look.reflection_tint));
         }
 
+        /// <summary>Haze distances stretch with the scenery, so it hazes exactly as built.</summary>
         private void SetHaze(Material material)
         {
+            var scale = SceneryScale();
             material.SetColor("_HazeColour", Colour(_look.haze_colour));
-            material.SetFloat("_HazeStart", _look.haze_start);
-            material.SetFloat("_HazeDensity", _look.haze_density);
+            material.SetFloat("_HazeStart", _look.haze_start * scale);
+            material.SetFloat("_HazeDensity", _look.haze_density / scale);
             material.SetFloat("_HazeMax", _look.haze_max);
         }
 
         /// <summary>
-        /// The FBX axis mapping was reasoned, not observed in Unity (see export_fbx in
-        /// tools/art/lake-louise/build_lake_louise.py). If it is wrong the valley arrives
-        /// rotated or mirrored, and that must say so rather than just look odd.
+        /// The turn that puts the valley in front of the camera, measured on the raw instance.
         /// </summary>
-        private static void CheckOrientation(GameObject scenery)
+        /// <remarks>
+        /// The first export imported turned 180 degrees about y - behind the camera and
+        /// mirrored left-right - because its axis setting was reasoned rather than observed
+        /// (see export_fbx in tools/art/lake-louise/build_lake_louise.py, now fixed). A 180 degree
+        /// turn is corrected here with a warning, so an old or mis-set FBX still plays; anything
+        /// else is an error, since no rotation about y can fix it.
+        /// </remarks>
+        private static Quaternion CorrectiveTurn(GameObject scenery)
         {
             var forestLeft = scenery.transform.Find("Forest_Left");
             var valley = scenery.transform.Find("Valley");
@@ -212,20 +272,30 @@ namespace Game
             {
                 Debug.LogError("[LakeLouiseEnvironment] LakeLouise.fbx has no Forest_Left/Valley child - " +
                                "was it exported by tools/art/lake-louise/build_lake_louise.py?");
-                return;
+                return Quaternion.identity;
             }
 
             var left = forestLeft.GetComponent<Renderer>().bounds.center;
             var lake = valley.GetComponent<Renderer>().bounds.center;
+
             if (left.x < 0f && lake.z > 0f)
             {
                 Debug.Log($"[LakeLouiseEnvironment] Orientation OK: Forest_Left at x={left.x:F0}, valley centre z={lake.z:F0}.");
-                return;
+                return Quaternion.identity;
             }
 
-            Debug.LogError($"[LakeLouiseEnvironment] LakeLouise.fbx is oriented wrongly: Forest_Left " +
-                           $"centre x={left.x:F0} (expected < 0), valley centre z={lake.z:F0} (expected > 0). " +
-                           "Fix the axis settings in export_fbx (build_lake_louise.py) and re-export.");
+            if (left.x > 0f && lake.z < 0f)
+            {
+                Debug.LogWarning("[LakeLouiseEnvironment] LakeLouise.fbx imported turned 180 degrees " +
+                                 $"(Forest_Left x={left.x:F0}, valley centre z={lake.z:F0}); turning it back. " +
+                                 "Re-export with build_lake_louise.py to remove this warning.");
+                return Quaternion.Euler(0f, 180f, 0f);
+            }
+
+            Debug.LogError($"[LakeLouiseEnvironment] LakeLouise.fbx is oriented wrongly and not by a simple " +
+                           $"turn: Forest_Left centre x={left.x:F0} (expected < 0), valley centre z={lake.z:F0} " +
+                           "(expected > 0). Check the axis settings in export_fbx (build_lake_louise.py).");
+            return Quaternion.identity;
         }
 
         private bool TryLoadLook()
