@@ -562,7 +562,7 @@ namespace Game
         private Transform CreateOrigin()
         {
             var origin = new GameObject("ThrowOrigin").transform;
-            origin.position = new Vector3(0f, 0f, 0f);
+            origin.position = new Vector3(0f, 0f, 1f);
             return origin;
         }
 
@@ -685,7 +685,7 @@ namespace Game
             water.transform.localScale = new Vector3(WaterPlaneScale, 1f, WaterPlaneScale);
             Destroy(water.GetComponent<Collider>());
 
-            
+
             // A LakeLouiseEnvironment in the scene swaps in its own water, scenery and sky;
             // without one (the Bootstrap scene) nothing below changes.
             var environment = FindFirstObjectByType<LakeLouiseEnvironment>();
