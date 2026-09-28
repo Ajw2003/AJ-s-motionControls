@@ -15,8 +15,8 @@ MonoBehaviour:
   Id: rock_06
   DisplayName: Boulder
   Blurb: Heavy going. Needs a real throw to stay up at all.
-  Mesh: {fileID: 6101039361786916549, guid: 1799593868c9d8b4eb5f1fed0447979a, type: 3}
-  LocalScale: {x: 0.4797927, y: 0.2494922, z: 0.4797927}
+  Mesh: {fileID: -9118251881202346318, guid: 06cc252767237e944a0a4af999a709bf, type: 3}
+  LocalScale: {x: 1, y: 1, z: 1}
   MeshRotation: {x: 0, y: 0, z: 0}
   Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
   Tuning: {fileID: 11400000, guid: 22f079e32e5c930258c5a7e4b5082571, type: 2}

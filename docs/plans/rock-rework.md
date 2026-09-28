@@ -82,6 +82,40 @@ Units are world metres at `LocalScale = (1,1,1)`. The current stone's footprint 
 (`RockObject.prefab`, read by `ReadReferenceStone`), so Pebble is 0.75 m long — the size every
 player has seen until now.
 
+> **Wrong — see "Finding: rocks are 2.4× too small" below (2026-09-28).** 0.75 is the prefab's
+> `LocalScale`, not its world footprint. The measured footprint is 1.83 m.
+
+### Finding: rocks are 2.4× too small (2026-09-28)
+
+**Symptom.** In game, the owner saw Boulder in flight and reported the sizing was off.
+
+**Evidence.**
+- The import is correct. `Rocks.fbx.meta` has `globalScale: 1` and `useFileScale: 1`. The
+  owner's `Build Catalog from FBX` run logged Boulder at `world 0.89 x 0.20 x 0.75 m`, which
+  matches `rocks.json` exactly. `Rock_06.asset` has `LocalScale: {1, 1, 1}`.
+- The same log line reads `reference footprint 1.83 m`. That is the old stone's real world width:
+  `ReadReferenceStone` multiplies the mesh bounds by the prefab's scale. Every old rock was
+  normalised to that 1.83 m footprint.
+
+**Root cause.** This spec's own error. It read the prefab's `LocalScale` of 0.75 as a world size
+in metres. So every new rock is built at about 0.41× the size the camera, shore layout and chase
+framing were tuned for. Pebble is 0.74 m where the old stones were 1.83 m.
+
+**Not the cause.** It is not the FBX export axes or units, and not the builder's `LocalScale`
+change: the builder does exactly what the spec asked.
+
+**Fix options — owner to choose.**
+1. **Match the old size (recommended).** Add one catalog-wide `worldScale` to `rocks.json`,
+   about 2.47, so Pebble's length equals the 1.83 m reference. Sheets and FBX stay single-source,
+   and relative sizes and the 0.25 thickness rule are unchanged, because a uniform scale keeps
+   every ratio. Boulder becomes about 2.2 m.
+2. **A size in between**, if 2.2 m reads too large. Same mechanism, different factor.
+
+**Knock-on to check after the fix.** Shore spacing: neighbours are 1.58 m apart centre to
+centre (`RockSelectTuning` defaults). At 2.47×, Boulder and Shard are 2.2 m and 2.1 m long, so
+they would overlap if their long axes lie along the arc. The old 1.83 m stones had the same
+arithmetic, so check the shore in game before assuming it is a problem.
+
 | Field | Meaning |
 |---|---|
 | `a`, `b` | top-outline half-length (x, long axis) and half-width (z) |
