@@ -562,7 +562,7 @@ namespace Game
         private Transform CreateOrigin()
         {
             var origin = new GameObject("ThrowOrigin").transform;
-            origin.position = new Vector3(0f, 0f, 0f);
+            origin.position = new Vector3(0f, 0f, 1f);
             return origin;
         }
 
@@ -685,8 +685,13 @@ namespace Game
             water.transform.localScale = new Vector3(WaterPlaneScale, 1f, WaterPlaneScale);
             Destroy(water.GetComponent<Collider>());
 
-            
-            var waterMaterial = Resources.Load<Material>("RockSkipping_WaterRipple");
+
+            // A LakeLouiseEnvironment in the scene swaps in its own water, scenery and sky;
+            // without one (the Bootstrap scene) nothing below changes.
+            var environment = FindFirstObjectByType<LakeLouiseEnvironment>();
+
+            var waterMaterial = environment != null ? environment.CreateWaterMaterial() : null;
+            if (waterMaterial == null) waterMaterial = Resources.Load<Material>("RockSkipping_WaterRipple");
             if (waterMaterial == null)
             {
                 waterMaterial = PlaceholderArt.CreateWater(new Color(0.06f, 0.16f, 0.28f));
@@ -742,9 +747,11 @@ namespace Game
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 1000f;
 
-            BuildSkyBackdrop(camera, horizon);
+            var skyMaterial = BuildSkyBackdrop(camera, horizon);
             AngleTheSun();
-            BuildFarShore();
+
+            if (environment != null) environment.Build(transform, skyMaterial, constants.WaterY, camera, water.transform);
+            else BuildFarShore();
 
             // The lake is 2000 units across (a 10-unit Plane scaled by 200) but the far
             // clip is 1000, so the far half is cut off by the frustum and the cut shows as
@@ -792,8 +799,10 @@ namespace Game
         /// Failure leaves the flat clear colour, which is the previous look rather than a broken
         /// one, and says WHICH failure it was: not found, versus found but failed to compile.
         /// Both render identically and need entirely different fixes.
+        ///
+        /// Returns the material (null on failure) so a LakeLouiseEnvironment can restyle it.
         /// </remarks>
-        private void BuildSkyBackdrop(Camera camera, Color horizon)
+        private Material BuildSkyBackdrop(Camera camera, Color horizon)
         {
             var shader = Resources.Load<Shader>("SkyBackdrop");
 
@@ -801,14 +810,14 @@ namespace Game
             {
                 Debug.LogWarning("[AimPreview] Resources/SkyBackdrop.shader NOT FOUND — keeping " +
                                  "the flat sky. Expected at Assets/Resources/SkyBackdrop.shader.");
-                return;
+                return null;
             }
 
             if (!shader.isSupported)
             {
                 Debug.LogWarning("[AimPreview] Resources/SkyBackdrop.shader FAILED TO COMPILE — " +
                                  "keeping the flat sky. The shader error is logged above this.");
-                return;
+                return null;
             }
 
             var material = new Material(shader) { renderQueue = 1000 };
@@ -838,6 +847,7 @@ namespace Game
             var height = 2f * SkyQuadDistance * Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             var width = height * Mathf.Max(camera.aspect, 2.4f);
             quad.transform.localScale = new Vector3(width * 1.2f, height * 1.2f, 1f);
+            return material;
         }
 
         /// <summary>

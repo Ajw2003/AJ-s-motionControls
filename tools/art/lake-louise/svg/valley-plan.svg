@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Valley plan: Lake Louise from above, in world metres. READ BY build_lake_louise.py.
+
+  Axes: SVG x = world x (right), SVG y = -world z, so the lake runs UP the page away from the
+  camera. viewBox is x -700..700, z -150..1050.
+
+  What the build script reads, by id:
+    lake          polygon  - the water. Terrain inside is pushed below y = 0; outside, a
+                             shore rises gently from it.
+    ridge-left    polyline - crest line of the tall left massif (Fairview).
+    ridge-right   polyline - crest line of the lower right ridge (Big Beehive side).
+    ridge-far     polyline - crest line of the glacier wall at the end of the valley (Victoria).
+    boathouse     circle   - where the boathouse stands (its lake-facing gable), on the left
+                             shore 31 degrees left of centre as in the photo. data-scale
+                             enlarges it (at ~280 m, life size is ~35 px wide); no pines grow
+                             within data-clearing metres, so none hide it. Its outline comes
+                             from boathouse-elevation.svg.
+  Each ridge carries data-silhouette (the id of the traced skyline in photo-silhouettes.svg
+  that sets its crest heights) and data-slope (metres of drop per metre away from the crest).
+  Both side crests curl in to the lake's end, because in the photo both ridges come down to
+  the water at the V; their azimuth from the camera must only ever increase along the crest,
+  so each direction is set by exactly one crest point.
+
+  The lake ends at z ~700, where the glacier wall's slope reaches the waterline. Taken further
+  it cuts into rising ground and leaves a vertical cliff at the end of the valley.
+
+  Anything with class="guide" is drawing aid only and is ignored.
+
+  Why these numbers: crest positions set where each ridge sits; photo-silhouettes.svg sets how
+  high, sighted from the game camera so the skyline matches the reference photo. Walls stay at least
+  ~150 m off the throw lane at the near end; throws cover ~50 m. Everything visible sits
+  inside z = 950 because the camera's far clip is 1000.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1200" viewBox="-700 -1050 1400 1200">
+  <rect class="guide" x="-700" y="-1050" width="1400" height="1200" fill="#f3f1ea"/>
+  <g class="guide" stroke="#d8d4c8" stroke-width="1">
+    <line x1="-700" y1="0" x2="700" y2="0"/>
+    <line x1="0" y1="-1050" x2="0" y2="150"/>
+    <line x1="-700" y1="-500" x2="700" y2="-500"/>
+    <line x1="-700" y1="-1000" x2="700" y2="-1000"/>
+  </g>
+
+  <polygon id="lake" fill="#3fa2ab" stroke="#1d7f88" stroke-width="2"
+           points="-175,120 -165,0 -155,-150 -140,-300 -118,-450 -92,-600 -62,-668 -28,-700
+                   22,-702 60,-672 96,-605 130,-455 158,-305 176,-150 186,0 192,120"/>
+
+  <polyline id="ridge-left" data-silhouette="silhouette-left" data-slope="1.15"
+            fill="none" stroke="#34445d" stroke-width="6"
+            points="-270,140 -285,0 -300,-150 -319,-457 -262,-640 -170,-790 -90,-790 -35,-770"/>
+  <polyline id="ridge-right" data-silhouette="silhouette-right" data-slope="0.8"
+            fill="none" stroke="#5f626b" stroke-width="6"
+            points="265,140 275,0 292,-150 360,-477 305,-650 210,-790 110,-800 40,-770"/>
+  <polyline id="ridge-far" data-silhouette="silhouette-far" data-slope="0.6"
+            fill="none" stroke="#b3c1d8" stroke-width="6"
+            points="-420,-960 -250,-925 -120,-900 0,-880 150,-895 280,-930 440,-965"/>
+
+  <circle id="boathouse" cx="-152" cy="-230" r="6" fill="#6b4a33" data-scale="2" data-clearing="40"/>
+
+  <g class="guide" fill="none" stroke="#c0392b" stroke-width="2">
+    <!-- camera at (0, -3), horizontal half-FOV 45.7 degrees -->
+    <circle cx="0" cy="3" r="5"/>
+    <line x1="0" y1="3" x2="-1000" y2="-1020"/>
+    <line x1="0" y1="3" x2="1000" y2="-1020"/>
+    <!-- throw lane: about 50 m straight ahead -->
+    <rect x="-6" y="-60" width="12" height="60" fill="#c0392b" opacity="0.4"/>
+  </g>
+  <g class="guide" font-family="sans-serif" font-size="22" fill="#555">
+    <text x="-690" y="-1020">far clip ~ z 1000</text>
+    <text x="10" y="30">camera (0, 2, -3)</text>
+    <text x="-440" y="-470">Fairview</text>
+    <text x="380" y="-480">Big Beehive</text>
+    <text x="-60" y="-940">Victoria glacier</text>
+  </g>
+</svg>

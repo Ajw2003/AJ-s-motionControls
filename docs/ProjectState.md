@@ -36,6 +36,11 @@ differentiation and sequencing. Read it before starting anything below.
 
 ---
 
+**2026-09-27 — Lake Louise environment.** SVG → Blender → shader pipeline built and checked in
+Blender renders; Unity shaders, `LakeLouiseEnvironment` and a scene-creation menu are written
+but not yet compiled or run in the Editor. Status and first-run steps:
+[`plans/lake-louise-overhaul.md`](plans/lake-louise-overhaul.md).
+
 ## The one thing that is not what it looks like
 
 **The game has no in-play HUD, and this reads as a polish gap when it is a gameplay one.**
