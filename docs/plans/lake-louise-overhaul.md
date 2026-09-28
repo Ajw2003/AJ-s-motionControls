@@ -173,3 +173,20 @@ First run in Unity (by the user): everything worked except these three.
   Unity shader and the preview; the banding visible near the horizon in earlier previews is gone.
   That this was the cause of the lines seen in Unity is the likely explanation, not yet
   confirmed there.
+
+### Open: dark horizontal lines on the far water (2026-09-28)
+
+Still seen in Unity after revision 3. What is known, from the user's screenshots and renders here:
+
+- **Before revision 3** the lines were a green-only oscillation in the far water. Green is the
+  channel that differs between the water body and what shows through it, so that was the water's
+  opacity flickering: the unfaded wind streaks. Fixed by the streak fade.
+- **After revision 3** what remains are thin dark rows in all channels, only inside the
+  reflected forest and mountains: a problem in the mirrored scenery, not the water surface.
+- **Ruled out here:** (1) back-face culling of the mirrored copy - a Blender render that skips
+  back faces on reflection rays shows no lines; (2) a full Unity-style reconstruction (mirrored
+  copies clipped at the waterline, culled, under alpha-blended water) shows no lines;
+  (3) colour banding from URP's R11G11B10 HDR buffer - quantising a float render to it changes
+  52 blue levels to 48 and adds no lines.
+- **Next:** isolate in the Editor (disable `LakeLouise_Reflection` during Play; a lossless PNG
+  screenshot), since nothing reproduces outside Unity yet.
