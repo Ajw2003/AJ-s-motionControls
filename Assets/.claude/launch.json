@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rock-sheets",
+      "runtimeExecutable": "C:\\Python313\\python.exe",
+      "runtimeArgs": ["-m", "http.server", "8791", "--directory", "C:\\Users\\aj\\Desktop\\GameDev\\RockSkipping\\tools\\art\\rocks\\svg"],
+      "port": 8791
+    }
+  ]
+}

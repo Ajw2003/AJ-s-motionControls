@@ -6,10 +6,9 @@ namespace Game
     /// One stone: what it looks like, what it is called, and how it skips.
     /// </summary>
     /// <remarks>
-    /// Resources/Fbx/RocksRemeshed.fbx has held six meshes since it was imported and the
-    /// game has only ever drawn one of them — RockObject.prefab pins a single mesh by
-    /// fileID and nothing in the scripts has ever chosen between them. This is what turns
-    /// the other five into rocks rather than unused sub-assets.
+    /// Resources/Fbx/Rocks.fbx holds six meshes, generated at world size by
+    /// tools/art/rocks/build_rocks.py (docs/plans/rock-rework.md). This is what turns each
+    /// of them into a selectable rock rather than an unused sub-asset.
     ///
     /// A rock is a mesh AND a tuning, and the pairing is the whole feature. A flat stone
     /// that skips exactly like a chunky one is a reskin, not a choice.
@@ -40,8 +39,8 @@ namespace Game
         public string Blurb = string.Empty;
 
         [Header("Look")]
-        [Tooltip("A mesh out of Resources/Fbx/RocksRemeshed.fbx. Assigned by the catalog " +
-                 "builder; the FBX is not readable, so only bounds are available from it.")]
+        [Tooltip("A mesh out of Resources/Fbx/Rocks.fbx. Assigned by the catalog " +
+                 "builder; rely on bounds, not vertices, from it.")]
         public Mesh Mesh;
 
         [Tooltip("Scale that brings this mesh to a common footprint. Computed by the catalog " +
