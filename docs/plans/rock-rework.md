@@ -1,6 +1,11 @@
 # Rock rework — 2D references, then 3D models
 
-**Tier 5 plan.** Status, 2026-09-28: **Phase 2 built.** `rock_shape.py --check` passes, including
+**Tier 5 plan.** Status, 2026-09-28: **Phase 2 built; size fix applied in C#, not yet re-run in
+Unity.** The rocks came out 2.4× too small in game (see the finding below). The fix is
+`RockCatalogBuilder.CatalogScale = 2.47`, owner's choice over rebuilding the FBX. The owner must
+recompile and re-run `Build Catalog from FBX`; the log should show Pebble at about 1.83 m.
+
+Earlier status: `rock_shape.py --check` passes, including
 the thickness rule (every rock is under 0.25), and `make_sheets.py` writes the sheets. Nugget and
 Boulder were raised on the owner's call so Boulder is the thickest: Boulder 19.8 cm (0.22), Pebble
 15.8, Nugget 14.7 (0.24). The Slab outline was also adjusted on the owner's call to be less
@@ -85,7 +90,13 @@ player has seen until now.
 > **Wrong — see "Finding: rocks are 2.4× too small" below (2026-09-28).** 0.75 is the prefab's
 > `LocalScale`, not its world footprint. The measured footprint is 1.83 m.
 
-### Finding: rocks are 2.4× too small (2026-09-28)
+### Finding: rocks are 2.4× too small (2026-09-28) — fixed in C#
+
+**Fix applied (2026-09-28).** The owner chose to scale in Unity rather than in `rocks.json`.
+`RockCatalogBuilder.CatalogScale = 2.47f`, and `LocalScale = Vector3.one * CatalogScale` for every
+rock. The FBX and the sheets stay at authoring size. Expected game lengths: Skimmer 1.73 m,
+Slab 2.07, Pebble 1.83, Nugget 1.53, Shard 2.08, Boulder 2.20. The build log prints all three
+axes. Untested until the owner recompiles and re-runs the builder.
 
 **Symptom.** In game, the owner saw Boulder in flight and reported the sizing was off.
 
