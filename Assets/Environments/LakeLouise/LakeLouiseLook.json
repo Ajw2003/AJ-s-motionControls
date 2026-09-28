@@ -1,5 +1,5 @@
 {
-  "_comment": "The Lake Louise look, in one place. Read by LakeLouiseEnvironment.cs at runtime (as a TextAsset) and by tools/art/lake-louise/shaders.py for the Blender preview, so the two cannot drift apart. Colours are sRGB hex; directions are Unity world space (x right, y up, z down the lake). reflection_tint tints both the mirrored scenery and the mirrored sky. cloud_horizon_fade is [start, end] in view-ray height. Clouds: cloud_edge is the width of the soft rim (smaller = crisper); cloud_detail adds a finer noise octave for billowy edges; cloud_shade_offset (in noise units, toward the sun) and cloud_shade shade each puff from cloud_shadow_colour underneath to cloud_colour on its sunward side. scenery_scale enlarges the whole scene about the camera (same picture from the throw position, everything farther away so throws cannot reach it); haze distances, the water plane and the camera's far clip scale with it. water_streak_fade_distance fades the wind streaks out with distance, where they alias into lines.",
+  "_comment": "The Lake Louise look, in one place. Read by LakeLouiseEnvironment.cs at runtime (as a TextAsset) and by tools/art/lake-louise/shaders.py for the Blender preview, so the two cannot drift apart. Colours are sRGB hex; directions are Unity world space (x right, y up, z down the lake). reflection_tint tints both the mirrored scenery and the mirrored sky. cloud_horizon_fade is [start, end] in view-ray height. Clouds: cloud_edge is the width of the soft rim (smaller = crisper); cloud_detail adds a finer noise octave for billowy edges; cloud_shade_offset (in noise units, toward the sun) and cloud_shade shade each puff from cloud_shadow_colour underneath to cloud_colour on its sunward side. scenery_scale enlarges the whole scene about the camera (same picture from the throw position, everything farther away so throws cannot reach it); haze distances, the water plane and the camera's far clip scale with it. water_streak_fade_distance fades the wind streaks out with distance, where they alias into lines. water_streak_strength is 0: at the game's grazing view angle the streak pattern shrinks to a pixel or two per cell 50-120 m out and flickers into lines; the photo shows no streaks anyway.",
   "sun_direction_towards_sun": [
     -0.8,
     0.5,
@@ -25,7 +25,7 @@
   "water_f0": 0.02,
   "water_fresnel_power": 4.0,
   "water_body_opacity": 0.97,
-  "water_streak_strength": 0.18,
+  "water_streak_strength": 0.0,
   "cloud_horizon_fade": [
     0.03,
     0.14

@@ -188,5 +188,11 @@ Still seen in Unity after revision 3. What is known, from the user's screenshots
   copies clipped at the waterline, culled, under alpha-blended water) shows no lines;
   (3) colour banding from URP's R11G11B10 HDR buffer - quantising a float render to it changes
   52 blue levels to 48 and adds no lines.
-- **Next:** isolate in the Editor (disable `LakeLouise_Reflection` during Play; a lossless PNG
-  screenshot), since nothing reproduces outside Unity yet.
+- **Isolated in the Editor (user, 2026-09-28):** the lines come from BOTH the water and the
+  mirrored copy; only with both disabled is the (mirrored-sky) water clean.
+  - Water share: the wind streaks, still partly on 50-120 m out, where a streak cell is a pixel
+    or two tall at the game's grazing angle. `water_streak_strength` is now 0.
+  - Mirror share: the mirrored copy was drawn with back faces culled; Blender's mirror (the
+    clean previews) never culls. The mirrored copy is now double-sided (`_Cull` Off on the
+    reflection material only). **Unverified** - Blender cannot show the difference; needs a
+    Unity run.

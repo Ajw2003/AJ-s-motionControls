@@ -11,7 +11,7 @@
 //     that, the real lake bed (y < 0) sits nearer the camera than the mirrored mountains and
 //     hides them wherever the water is see-through;
 //   - it is multiplied by _ReflectionTint, the same tint the sky applies below the horizon.
-// Unity flips winding for a negatively scaled renderer, so Cull Back is right for both copies.
+// The mirrored copy is drawn double-sided (_Cull = Off); see the _Cull property for why.
 Shader "RockSkipping/LakeLouiseBackdrop"
 {
     Properties
@@ -35,6 +35,13 @@ Shader "RockSkipping/LakeLouiseBackdrop"
         // them, and this project renders in linear space. If the scenery looks washed out or
         // too dark after an importer change, this is the switch to check first.
         [Toggle] _VertexColourIsSrgb ("Vertex colour is sRGB", Float) = 1
+
+        // Back for the real scenery, Off for the mirrored copy (LakeLouiseEnvironment sets it).
+        // Culled, the mirrored copy dropped every facet that happens to face away from the
+        // camera in the mirror; on faceted terrain at a grazing angle those alternate, and the
+        // gaps showed as thin dark horizontal lines across the reflection (2026-09-28). The
+        // Blender preview's mirror never culls, which is why it never showed them.
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
     }
 
     SubShader
@@ -51,7 +58,7 @@ Shader "RockSkipping/LakeLouiseBackdrop"
         Pass
         {
             Tags { "LightMode" = "UniversalForward" }
-            Cull Back
+            Cull [_Cull]
             ZWrite On
 
             HLSLPROGRAM
@@ -74,6 +81,7 @@ Shader "RockSkipping/LakeLouiseBackdrop"
                 float _Reflection;
                 float _WaterY;
                 float _VertexColourIsSrgb;
+                float _Cull;
             CBUFFER_END
 
             struct Attributes

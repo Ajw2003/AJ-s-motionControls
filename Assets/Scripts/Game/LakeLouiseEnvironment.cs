@@ -218,6 +218,11 @@ namespace Game
             material.SetFloat("_AmbientStrength", _look.ambient_strength);
             material.SetColor("_ReflectionTint", Colour(_look.reflection_tint));
             material.SetFloat("_Reflection", isReflection ? 1f : 0f);
+            // Double-sided for the mirror only: culling it left rows of missing facets that
+            // showed as dark lines across the reflection. See _Cull in LakeLouiseBackdrop.shader.
+            material.SetFloat("_Cull", (float)(isReflection
+                ? UnityEngine.Rendering.CullMode.Off
+                : UnityEngine.Rendering.CullMode.Back));
             material.SetFloat("_WaterY", waterY);
             SetHaze(material);
             return material;
