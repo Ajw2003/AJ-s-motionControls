@@ -382,6 +382,10 @@ function startPreviewAim() {
 }
 
 function stopPreviewAim() {
+  // Before the early return: whatever stream was or was not running, leaving it means
+  // leaving the lobby's no-tracking mode (startLobbyAim), so the next arm or turn-start
+  // stream gets the normal Settling tracking back.
+  motion.trackingEnabled = true;
   if (previewAimTimer === null) return;
   clearInterval(previewAimTimer);
   previewAimTimer = null;
@@ -396,6 +400,12 @@ function stopPreviewAim() {
  */
 function startLobbyAim() {
   if (myTurn) return;
+
+  // Pointing at a rock and holding still is exactly what Settling reads as "the phone
+  // is at rest, move zero here" — so the pointer slid back to centre on its own (issue
+  // #23). The lobby's zero is the recentre() in startPreviewAim and the RE-CENTRE
+  // button, nothing else. stopPreviewAim turns tracking back on.
+  motion.trackingEnabled = false;
   startPreviewAim();
 }
 

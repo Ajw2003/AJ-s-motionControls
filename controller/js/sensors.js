@@ -521,6 +521,13 @@ export class MotionSource {
     // and _onMotion. Fires onCalibrationStateChange exactly once per flip, mirroring
     // ThrowController.onStateChange's edge-triggered shape rather than polling.
     this.calState = 'settling';
+
+    // Whether Settling actually moves the reference. On for throwing, where "zero follows
+    // wherever the phone rests" is the point. Off for the lobby's shore-pointing picker,
+    // where the same tracking dragged the pointer back to centre while a player held it
+    // on a rock (issue #23) — there, the zero is the explicit recentre() alone. The state
+    // machine and its badge edges still run either way; only the nlerp is gated.
+    this.trackingEnabled = true;
     this._aimRun = 0;
     this._settleRun = 0;
     this.onCalibrationStateChange = onCalibrationStateChange ?? (() => {});
@@ -661,7 +668,7 @@ export class MotionSource {
 
     if (this.calState === 'settling') {
       const dtMs = prevFusedAtMs === null ? 0 : tMs - prevFusedAtMs;
-      if (dtMs > 0 && dtMs <= MAX_SAMPLE_GAP_MS) {
+      if (this.trackingEnabled && dtMs > 0 && dtMs <= MAX_SAMPLE_GAP_MS) {
         const alpha = 1 - Math.exp(-dtMs / tuning.trackingTauMs);
         this.referenceQuaternion = quaternionNlerp(
           this.referenceQuaternion,
