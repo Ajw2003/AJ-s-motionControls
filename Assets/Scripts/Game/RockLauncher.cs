@@ -254,7 +254,6 @@ namespace Game
             }
 
             var baseTint = rock != null ? rock.Tint : Color.gray3;
-            var playerColour = PlayerColours.HasInstance ? PlayerColours.Instance.For(playerId) : Color.white;
 
             // Taken as a parameter and applied here rather than re-tinted after the object
             // exists, so the stone is never visibly the wrong colour for a frame between
@@ -272,10 +271,11 @@ namespace Game
             // After the controller, because the trail reads IsFlying and Speed off it. The
             // same constants the throw is about to be simulated with are handed over so the
             // trail's speed thresholds cannot drift from the launch speed they scale
-            // against — see TrailTuning's remarks on why they are fractions. The player's
-            // full colour goes to the trail rather than the blended stone tint — see
-            // RockTrail.ApplySpeedTint's remarks on why the trail has nothing to preserve.
-            RockTrail.Attach(go, constants, playerColour);
+            // against — see TrailTuning's remarks on why they are fractions. The stone's
+            // own tint goes to the trail, not the raw player colour, so the ribbon is the
+            // colour of the rock it streams from. After localScale is set above, because
+            // the trail sizes itself off the stone's world width.
+            RockTrail.Attach(go, constants, tint);
 
             return controller;
         }

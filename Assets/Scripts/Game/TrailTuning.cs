@@ -61,8 +61,11 @@ namespace Game
                  "well as the look knob — it is a length cap, not a lifetime.")]
         [Range(0.05f, 4f)] public float Time = 0.55f;
 
-        [Tooltip("Width at the stone, tapering along the curve below.")]
-        [Range(0f, 2f)] public float WidthMultiplier = 0.18f;
+        [Tooltip("Width at the stone as a FRACTION OF THE STONE'S OWN WIDTH, tapering along " +
+                 "the curve below. 1 is as wide as the rock, so a Boulder gets a wider " +
+                 "ribbon than a Shard and the trail follows any catalog rescale. " +
+                 "Measured per throw in RockTrail.StoneWidth.")]
+        [Range(0f, 2f)] public float WidthMultiplier = 1f;
 
         [Tooltip("Width along the trail: time 0 is at the stone, time 1 at the tail. " +
                  "Set by Reset() to a linear taper to zero.")]
@@ -74,8 +77,10 @@ namespace Game
         [Range(0.01f, 2f)] public float MinVertexDistance = 0.15f;
 
         [Header("Colour")]
-        [Tooltip("Colour head-to-tail. Alpha does the fading, so the tail should end at " +
-                 "zero alpha or the ribbon will stop dead instead of dissolving.")]
+        [Tooltip("Fade head-to-tail. ONLY THE ALPHA IS USED — the colour is always the " +
+                 "stone's own (player colour blended onto the rock), so the colour keys " +
+                 "here are ignored. The tail should end at zero alpha or the ribbon will " +
+                 "stop dead instead of dissolving.")]
         public Gradient Colour = DefaultColour();
 
         [Tooltip("Tint the whole trail by how much speed the stone has left, so a dying run " +
