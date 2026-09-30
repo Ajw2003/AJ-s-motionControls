@@ -16,7 +16,7 @@ MonoBehaviour:
   DisplayName: Shard
   Blurb: Barely there. Skitters on long after it should have sunk.
   Mesh: {fileID: 8049120161792624443, guid: 06cc252767237e944a0a4af999a709bf, type: 3}
-  LocalScale: {x: 1, y: 1, z: 1}
+  LocalScale: {x: 2.47, y: 2.47, z: 2.47}
   MeshRotation: {x: 0, y: 0, z: 0}
   Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
   Tuning: {fileID: 11400000, guid: 4263c837317ea22889082d1fc6e78adb, type: 2}
