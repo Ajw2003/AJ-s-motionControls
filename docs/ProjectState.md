@@ -157,6 +157,14 @@ grey reads as a bug, and colour is how five people tell themselves apart on a TV
 Built: `AudioManager`, the six audio events, the core SFX set (skip pitch ladder, sink, fail,
 score, win), trails, water ripples, the URP migration, arc colour and ghost glow.
 
+**2026-09-30 — trail and lobby-aim fixes** (branch `claude/rock-rework`, compiled headlessly
+with 0 errors; not yet seen in Play). The trail is now the stone's own colour
+(`PlayerColours.StoneColourFor`, the blend the rock uses) and `TrailTuning.Colour` supplies only
+the alpha fade (#25). `TrailTuning.WidthMultiplier` is now a fraction of the stone's measured
+world width, not metres, so it follows each rock and the ×2.47 catalog scale (#24). In the
+lobby's shore-pointing picker the phone no longer re-zeroes itself while held still
+(`MotionSource.trackingEnabled`, #23). Audio replacement and music are tracked in #26.
+
 Not built, and this is now most of the remaining project: the entire art direction, the in-play
 HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame
 sound-collision scheduler.

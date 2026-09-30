@@ -1,6 +1,9 @@
 # Rock rework — 2D references, then 3D models
 
-**Tier 5 plan.** Status, 2026-09-28: **Phase 2 built; size fix applied in C#, not yet re-run in
+**Tier 5 plan.** Status, 2026-09-30: the size fix has been re-run — every `Rock_0N.asset` now
+carries `LocalScale` 2.47 and the owner played on it at 11:27 on 2026-09-28 (`rock-throws.csv`).
+Issue #22 tracks it; the knock-on, the trail not following rock size, was #24 and is fixed.
+Earlier status, 2026-09-28: **Phase 2 built; size fix applied in C#, not yet re-run in
 Unity.** The rocks came out 2.4× too small in game (see the finding below). The fix is
 `RockCatalogBuilder.CatalogScale = 2.47`, owner's choice over rebuilding the FBX. The owner must
 recompile and re-run `Build Catalog from FBX`; the log should show Pebble at about 1.83 m.
