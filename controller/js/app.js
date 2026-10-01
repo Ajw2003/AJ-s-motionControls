@@ -42,7 +42,6 @@ const ui = {
   chooseRock: el('chooseRock'),
   joinError: el('joinError'),
   nameInput: el('nameInput'),
-  codeInput: el('codeInput'),
   joinBtn: el('joinBtn'),
   gripBtn: el('gripBtn'),
   gripWrap: el('gripWrap'),
@@ -1116,12 +1115,18 @@ function joinOnceConnected(code, deviceId) {
   }, 100);
 }
 
+// #44: the room code the join screen used to show, now just a remembered value. Filled from
+// ?room= (a QR scan) or the stored identity, empty otherwise; the relay accepts empty or stale.
+let hiddenRoomCode = '';
+
 async function join() {
   const name = ui.nameInput.value.trim();
-  const code = ui.codeInput.value.trim().toUpperCase();
+  // #44: there is no code box any more. Send whatever came from ?room= or storage (the relay
+  // falls back to its only open room if it is stale), or an empty code if there is none.
+  const code = hiddenRoomCode;
 
-  if (!name || code.length !== 4) {
-    ui.joinError.textContent = 'Enter your name and the 4-letter code.';
+  if (!name) {
+    ui.joinError.textContent = 'Enter your name.';
     return;
   }
 
@@ -1236,8 +1241,7 @@ function init() {
   if (params.get('resetIdentity')) clearIdentity();
 
   const prefill = params.get('room');
-  const roomFromUrl = prefill ? prefill.toUpperCase() : '';
-  if (prefill) ui.codeInput.value = roomFromUrl;
+  if (prefill) hiddenRoomCode = prefill.trim().toUpperCase();
 
   ui.joinBtn.addEventListener('click', join);
   // A sensor readout for testing, not for players: shown only with ?debug=1 (#48).
@@ -1270,7 +1274,7 @@ function init() {
   // above, and stays the URL's business.
   const identity = loadIdentity();
   if (identity?.name) ui.nameInput.value = identity.name;
-  if (!ui.codeInput.value && identity?.room) ui.codeInput.value = identity.room;
+  if (!hiddenRoomCode && identity?.room) hiddenRoomCode = identity.room;
 
   setInterval(updateDebug, 100);
   document.addEventListener('visibilitychange', () => {
