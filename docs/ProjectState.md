@@ -190,8 +190,9 @@ debug button shows only with `?debug=1` (#48). After CONFIRM, START MATCH become
 is now your stone: the choose screen shows your actual rock, drawn from its real mesh by
 `tools/art/rocks/make_phone_art.py` into `controller/js/rock-art.js` and tinted with your colour;
 tapping it opens a panel of the eight palette colours (others' colours faded with their initial)
-plus a + for the phone's colour wheel (#51). The aiming camera is at (0, 4.5, -3), pitched 15°
-(owner's numbers, `AimPreview.cs`); not compiled — this project's Editor wasn't reachable.
+plus a + for the phone's colour wheel (#51). The aiming camera is at (0, 4.5, -4.5), pitched 15°
+(owner's height and angle, moved back 1.5 m so the stone is in frame; `AimPreview.cs`).
+The phone fixes were play-tested by the owner on 2026-10-01; #51 still needs an iPhone.
 
 **2026-09-30 — readable rock-choosing shore** (#41, #42). Shore labels scale with the screen
 (name 38 px, description 22 px at 1080p), sit above each rock's real top, wrap to the gap to the

@@ -727,7 +727,11 @@ namespace Game
             // Owner-chosen framing (2026-10-01, #42): higher and steeper than the old 2 m /
             // horizon-at-a-third pitch, so the six shore rocks read larger on the TV.
             // RockLauncher captures this as its "home" and returns here after every throw.
-            camera.transform.position = new Vector3(0, 4.5f, -3);
+            // z = -4.5, not the owner's first -3: at -3 the stone (ThrowOrigin, z = 1) sat 48°
+            // below horizontal, past the frame's bottom edge at 45° (15° pitch + half the 60° FOV),
+            // and was cut off. At -4.5 it sits ~39° down, inside the frame (owner: "a little too
+            // close", 2026-10-01).
+            camera.transform.position = new Vector3(0, 4.5f, -4.5f);
             camera.transform.rotation = Quaternion.Euler(15f, 0f, 0f);
             camera.backgroundColor = horizon;
 

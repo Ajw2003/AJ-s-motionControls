@@ -19,13 +19,14 @@ Branch: `claude/rock-rework`, pushed. Tracking issue for finishing this work: #4
 
 Closed after the owner confirmed: #22, #23, #25, #29, #30.
 
-**#42 follow-up (2026-10-01):** the owner set the aiming camera to position (0, 4.5, -3),
-rotation (15, 0, 0), from a screenshot of the Inspector, in `AimPreview.cs` (`2ae63a0`). Not yet
-compiled or play-tested: the Unity Editor for this project wasn't reachable from the `unity` CLI.
+**#42 follow-up (2026-10-01):** the owner set the aiming camera to (0, 4.5, -3), rotation (15, 0, 0)
+(`2ae63a0`), play-tested it, and found it a little too close: the stone was cut off at the
+bottom. Moved back to (0, 4.5, -4.5) in `AimPreview.cs`; not yet seen in Play.
 
 ## Built, waiting on a phone play-test: the phone fixes
 
-The owner picked every audit fix plus colour picker direction B. Each is its own child of #39:
+The owner picked every audit fix plus colour picker direction B. Each is its own child of #39.
+Closed after the owner's play-test on 2026-10-01: #44–#50. #51 stays open for an iPhone test.
 
 | Issue | What | Commit |
 |---|---|---|
