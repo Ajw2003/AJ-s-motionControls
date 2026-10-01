@@ -356,6 +356,37 @@
         display: none;
       }
 
+      /* The stone on the choose screen. It is a button for part 2 of #51, so it sheds the
+       default button chrome; colour comes from --accent, and the art's currentColor
+       silhouette picks it up. */
+      .stone-btn {
+        background: none;
+        border: 0;
+        padding: 0;
+        width: auto;
+        color: var(--accent);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+      }
+      .stone-btn[hidden] {
+        display: none;
+      }
+      .stone-art {
+        display: block;
+        width: 160px;
+      }
+      .stone-art svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .stone-name {
+        font-weight: 600;
+      }
+
       .scores {
         width: 100%;
         max-width: 320px;
@@ -623,7 +654,13 @@
     <section id="chooseScreen" class="screen">
       <h2>Choose your stone</h2>
       <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
-      <p id="chooseRock" class="last-throw"></p>
+      <!-- Your actual stone, tinted with your colour (#51). A button because part 2 makes
+         tapping it open the colour panel; until then the tap does nothing. Hidden until
+         SPECTATE says which rock this phone holds. -->
+      <button id="chooseRock" type="button" class="stone-btn" aria-label="Change colour" hidden>
+        <span id="chooseRockArt" class="stone-art"></span>
+        <span id="chooseRockName" class="stone-name"></span>
+      </button>
       <button id="confirmBtn">CONFIRM</button>
 
       <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
