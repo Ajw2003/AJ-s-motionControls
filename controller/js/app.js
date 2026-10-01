@@ -504,6 +504,7 @@ function bindRename() {
     }
 
     myName = name;
+    if (myPlayerId) setConnectedStatus();
     updateIdentity({ name });
     renderNameBtn();
     connection?.send({ type: 'SET_NAME', name: myName });
@@ -814,7 +815,7 @@ function handleMessage(message) {
       myTurn = false; // a fresh join/rejoin has no standing TURN yet — wait for one
       stopPreviewAim(); // and no standing stream either; the next SPECTATE/TURN starts one
       hasJoinedOnce = true; // a later ERROR/ROOM_CLOSED now means "get back in", not "unknown player"
-      setStatus(`Connected as ${myPlayerId}`, 'ok');
+      setConnectedStatus();
       renderNameBtn();
       showScreen('wait');
       motion.start();
@@ -895,7 +896,7 @@ function handleMessage(message) {
       break;
 
     case 'HOST_RESUMED':
-      setStatus(`Connected as ${myPlayerId}`, 'ok');
+      setConnectedStatus();
       break;
 
     case 'ROOM_CLOSED':
@@ -936,6 +937,14 @@ function leader(scores) {
  * Blank in the lobby and on the results screen: the first has no throw behind it, and
  * the second is already showing final standings, where one player's last throw is noise.
  */
+/**
+ * The status bar once connected. The display name, not myPlayerId: that is the relay's
+ * device id (e.g. 4XO7R9DH4R33), meaningless to the person holding the phone (#45).
+ */
+function setConnectedStatus() {
+  setStatus(myName ? `Connected as ${myName}` : 'Connected', 'ok');
+}
+
 function renderLastThrow(message, phase) {
   if (phase !== 'PLAYING') return '';
   if (!message.lastPlayer || typeof message.lastSkips !== 'number') return '';
@@ -945,9 +954,11 @@ function renderLastThrow(message, phase) {
   // docs/plans/seamless-rejoin.md Workstream C. Falls back to the raw id so a build without
   // PlayerNames running (or a name that hasn't arrived yet) still shows something.
   const who = message.lastPlayer === myPlayerId ? 'You' : (message.names?.[message.lastPlayer] ?? message.lastPlayer);
-  const parts = [`${who}: ${message.lastSkips} skip${message.lastSkips === 1 ? '' : 's'}`];
-  if (typeof message.lastDistance === 'number') parts.push(`${message.lastDistance.toFixed(1)} m`);
-  return parts.join(' · ');
+  // The TV's format, MatchHud.FormatThrow ("143m   9sk"), so one throw reads the same on
+  // the phone as on the TV (#47). Rounded to whole metres there too.
+  const skips = `${message.lastSkips}sk`;
+  if (typeof message.lastDistance !== 'number') return `${who}: ${skips}`;
+  return `${who}: ${Math.round(message.lastDistance)}m\u2003${skips}`;
 }
 
 function renderSpectate(message) {
@@ -1229,6 +1240,8 @@ function init() {
   if (prefill) ui.codeInput.value = roomFromUrl;
 
   ui.joinBtn.addEventListener('click', join);
+  // A sensor readout for testing, not for players: shown only with ?debug=1 (#48).
+  ui.debugToggle.hidden = params.get('debug') !== '1';
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));
   bindChoose();
   bindAdvance();
