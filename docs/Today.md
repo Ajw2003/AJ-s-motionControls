@@ -28,7 +28,9 @@ compiled or play-tested: the Unity Editor for this project wasn't reachable from
 Findings are written to [`Findings-PhoneUiAudit.md`](Findings-PhoneUiAudit.md), ranked. Fixes
 1, 2, 3+4 and 5+6 are drawn as now/after mockups in
 [`mockups/phone-ui-fixes.html`](mockups/phone-ui-fixes.html). **Next step:** the owner picks from
-those. Each picked fix gets its own child issue of #39, then code. For fix 1 the owner chose
+those, and the owner also wants the colour picker rehauled: three directions (A palette on screen,
+B stone as picker, C colour at join) are on the same page. Each picked fix gets its own child
+issue of #39, then code. For fix 1 the owner chose
 option (b): the relay hands out its one room when the page has no code.
 
 ## After the UI: audio (#26)
