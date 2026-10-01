@@ -165,6 +165,15 @@ world width, not metres, so it follows each rock and the ×2.47 catalog scale (#
 lobby's shore-pointing picker the phone no longer re-zeroes itself while held still
 (`MotionSource.trackingEnabled`, #23). Audio replacement and music are tracked in #26.
 
+**2026-09-30 — party-usable TV screens, first cut** (IMGUI, owner's call; UI Toolkit port still
+D3). The lobby is only the two QR codes, Wi-Fi top-left and game top-right, so the shore rocks are
+the screen (`JoinScreen.DrawLobbyCorners`); the old centre panel's room code, address, player list
+and start prompt are gone from the lobby. `MatchHud` shows the current/last throw top-centre in
+the thrower's colour and a leaderboard top-left (`143m   9sk   418pts`, sorted by total).
+`RelayDebugHud` now starts hidden (F1). Seen working in the owner's play-test on Lake Louise,
+2026-09-30; screenshot `media/ui-party/lobby-lakelouise.png`. The final-scores screen is not
+yet reworked.
+
 Not built, and this is now most of the remaining project: the entire art direction, the in-play
 HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame
 sound-collision scheduler.
