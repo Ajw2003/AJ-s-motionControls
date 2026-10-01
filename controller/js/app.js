@@ -459,6 +459,11 @@ function bindAdvance() {
   }
 }
 
+// #49: once this phone has confirmed a stone, START MATCH becomes the primary button and
+// CONFIRM steps down. Local flag because SPECTATE carries no confirmed state — "rocks"
+// is filled for every player with the catalog default until they pick.
+let stoneConfirmed = false;
+
 /**
  * Show whichever advance button belongs to this phase, and label it for what it
  * actually does.
@@ -470,6 +475,9 @@ function bindAdvance() {
  */
 function renderAdvance(phase, message) {
   const canChoose = phase === 'LOBBY';
+  // A new choose round starts unconfirmed: the flag lives only while we sit in LOBBY.
+  if (!canChoose) stoneConfirmed = false;
+  ui.chooseScreen.classList.toggle('stone-confirmed', stoneConfirmed);
   ui.advanceBtn.hidden = !canChoose;
   if (canChoose) ui.advanceBtn.textContent = message.choosing ? 'RESUME MATCH' : 'START MATCH';
 
@@ -521,7 +529,11 @@ function renderNameBtn() {
 }
 
 function bindChoose() {
-  ui.confirmBtn.addEventListener('click', () => sendInput({ type: 'PICK_ROCK' }));
+  ui.confirmBtn.addEventListener('click', () => {
+    sendInput({ type: 'PICK_ROCK' });
+    stoneConfirmed = true;
+    ui.chooseScreen.classList.add('stone-confirmed');
+  });
   ui.recentreBtn.addEventListener('click', () => motion.recentre());
   bindColour();
 }

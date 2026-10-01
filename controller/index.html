@@ -135,6 +135,24 @@
         text-decoration: underline;
       }
 
+      /* #49: after a stone is confirmed the next step is starting the match, so START
+       MATCH takes the generic button look at full width and CONFIRM steps down to an
+       outline (still tappable: re-confirming picks a different stone). */
+      #chooseScreen.stone-confirmed #advanceBtn {
+        width: 100%;
+        padding: 16px 36px;
+        background: var(--accent);
+        color: #06263a;
+        font-size: 18px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      #chooseScreen.stone-confirmed #confirmBtn {
+        background: transparent;
+        color: var(--accent);
+        border: 2px solid var(--accent);
+      }
+
       /* A stone, not a button. Irregular radii give it a worn, asymmetric outline, and
        the off-centre highlight reads as a lit surface rather than flat fill. */
       #gripBtn {
