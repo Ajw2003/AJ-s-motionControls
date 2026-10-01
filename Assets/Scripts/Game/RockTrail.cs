@@ -116,11 +116,10 @@ namespace Game
         /// The stone's width in world metres, across its flat face.
         /// </summary>
         /// <remarks>
-        /// Measured, not assumed, because a TrailRenderer's width is in world units and
-        /// ignores its transform's scale entirely. The ribbon hangs off a child of the rock,
-        /// so the rock's LocalScale (×2.47 since the rock rework) never reached it: every
-        /// stone got the same fixed-metre ribbon, too thin on a Boulder and unchanged when
-        /// the whole catalog grew.
+        /// Measured, not assumed, so each rock gets a ribbon its own width — a Boulder's wider
+        /// than a Shard's — rather than one fixed number for every stone. This is the stone's
+        /// WORLD width; Init divides the rock's scale back out before handing it to the
+        /// TrailRenderer, which multiplies its width by the transform's scale (see Init).
         ///
         /// Mean of the two face-plane axes (local X and Z) rather than either one. The stone
         /// spins about its face normal in flight, so which axis lies across the direction
@@ -159,7 +158,16 @@ namespace Game
 
             _trail.time = tuning.Time;
             _trail.minVertexDistance = tuning.MinVertexDistance;
-            _trail.widthMultiplier = tuning.WidthMultiplier * stoneWidth * (wake ? tuning.WakeWidthScale : 1f);
+            // Divided by the trail's own world scale because, with LineAlignment.TransformZ, a
+            // TrailRenderer's width IS multiplied by its transform's scale — measured in the
+            // Editor on 2026-09-30: widthMultiplier 1 baked 1 m wide under a parent at scale 1
+            // and 2.47 m under one at 2.47. The ribbon hangs off the rock, which is scaled ×2.47,
+            // so without this the world-width measurement above was scaled a second time and
+            // every trail came out about 2.5× wider than its stone (issue #24). Uniform scale is
+            // assumed, as everywhere else that reads rock.LocalScale.
+            var trailScale = Mathf.Max(Mathf.Abs(transform.lossyScale.x), 0.0001f);
+            _trail.widthMultiplier = tuning.WidthMultiplier * stoneWidth / trailScale *
+                                     (wake ? tuning.WakeWidthScale : 1f);
             _trail.widthCurve = tuning.WidthCurve;
             _trail.colorGradient = AlphaOnly(tuning.Colour, wake ? tuning.WakeAlphaScale : 1f);
 

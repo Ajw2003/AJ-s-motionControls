@@ -161,7 +161,10 @@ score, win), trails, water ripples, the URP migration, arc colour and ghost glow
 with 0 errors; not yet seen in Play). The trail is now the stone's own colour
 (`PlayerColours.StoneColourFor`, the blend the rock uses) and `TrailTuning.Colour` supplies only
 the alpha fade (#25). `TrailTuning.WidthMultiplier` is now a fraction of the stone's measured
-world width, not metres, so it follows each rock and the ×2.47 catalog scale (#24). In the
+world width, not metres, so it follows each rock and the ×2.47 catalog scale (#24). A second fix on
+2026-09-30: the TrailRenderer also multiplies width by the rock's own ×2.47 transform scale, so
+the trail came out ~2.5× too wide; `RockTrail.Init` now divides it back out. Measured in the
+Editor afterwards: Boulder stone 2.03 m / trail 2.03 m, Shard 1.55 m / 1.55 m. In the
 lobby's shore-pointing picker the phone no longer re-zeroes itself while held still
 (`MotionSource.trackingEnabled`, #23). Audio replacement and music are tracked in #26.
 
