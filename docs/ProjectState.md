@@ -179,6 +179,20 @@ centred and sized to its rows, in the leaderboard's style with each player's bes
 skips, distance breaking ties) beside the total, and only "Tap PLAY AGAIN on your phone" as a
 hint; the corner QR card is labelled "Play". Compiled; not yet seen in Play.
 
+**2026-10-01 — phone controller fixes** (#44–#51, children of #39; lint and controller tests
+pass, relay tests 48/48; not yet seen on a phone). The join page has no room-code box: a JOIN
+with no code, or a stale one, joins the relay's only open room, and two open rooms give
+`ROOM_AMBIGUOUS` (`relay/server.js`, #44). The status bar shows the player's name, not the device
+id (#45). The phone scoreboard is sorted, ranked (1, 2, 2, 4) and marks your own row
+(`controller/js/ranking.js`, #46). The last throw uses the TV's `143m 9sk` format (#47). The
+debug button shows only with `?debug=1` (#48). After CONFIRM, START MATCH becomes the main button
+(a local flag: SPECTATE carries no confirmed state, #49). Text is larger (#50). The colour picker
+is now your stone: the choose screen shows your actual rock, drawn from its real mesh by
+`tools/art/rocks/make_phone_art.py` into `controller/js/rock-art.js` and tinted with your colour;
+tapping it opens a panel of the eight palette colours (others' colours faded with their initial)
+plus a + for the phone's colour wheel (#51). The aiming camera is at (0, 4.5, -3), pitched 15°
+(owner's numbers, `AimPreview.cs`); not compiled — this project's Editor wasn't reachable.
+
 **2026-09-30 — readable rock-choosing shore** (#41, #42). Shore labels scale with the screen
 (name 38 px, description 22 px at 1080p), sit above each rock's real top, wrap to the gap to the
 next rock instead of a fixed 160 px box that cut them off, and carry a dark edge. Confirmation

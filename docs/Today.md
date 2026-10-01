@@ -23,15 +23,26 @@ Closed after the owner confirmed: #22, #23, #25, #29, #30.
 rotation (15, 0, 0), from a screenshot of the Inspector, in `AimPreview.cs` (`2ae63a0`). Not yet
 compiled or play-tested: the Unity Editor for this project wasn't reachable from the `unity` CLI.
 
-## In progress: the phone audit (#40)
+## Built, waiting on a phone play-test: the phone fixes
 
-Findings are written to [`Findings-PhoneUiAudit.md`](Findings-PhoneUiAudit.md), ranked. Fixes
-1, 2, 3+4 and 5+6 are drawn as now/after mockups in
-[`mockups/phone-ui-fixes.html`](mockups/phone-ui-fixes.html). **Next step:** the owner picks from
-those, and the owner also wants the colour picker rehauled: three directions (A palette on screen,
-B stone as picker, C colour at join) are on the same page. Each picked fix gets its own child
-issue of #39, then code. For fix 1 the owner chose
-option (b): the relay hands out its one room when the page has no code.
+The owner picked every audit fix plus colour picker direction B. Each is its own child of #39:
+
+| Issue | What | Commit |
+|---|---|---|
+| #44 | Join with no room code; the relay hands out its only room | `5666292`, `47e959a` |
+| #45 | Status bar shows your name | `02728de` |
+| #46 | Scoreboard sorted, ranked, your row marked | `b860464` |
+| #47 | Last throw in the TV's `143m 9sk` format | `02728de` |
+| #48 | Debug button only with `?debug=1` | `02728de` |
+| #49 | START MATCH becomes the main button after CONFIRM | `8a81ab2` |
+| #50 | Bigger text | `166e95b` |
+| #51 | Your stone, in your colour, is the colour picker | `8a25905`, `7772e61`, `aab1783` |
+
+Not seen on a phone yet: the browser pane blocks `js/app.js`, so only lint, the controller and
+relay tests, and static renders of the stone art and the colour panel were checked. Things to
+look at on a phone: the stone colours look a little washed out; the + tile opening the colour
+wheel on iOS; CONFIRM stepping down after a tap. Audit finding 8 (busy throw screen) still needs a
+phone session before it has a fix.
 
 ## After the UI: audio (#26)
 
