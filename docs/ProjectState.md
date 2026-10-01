@@ -179,6 +179,13 @@ centred and sized to its rows, in the leaderboard's style with each player's bes
 skips, distance breaking ties) beside the total, and only "Tap PLAY AGAIN on your phone" as a
 hint; the corner QR card is labelled "Play". Compiled; not yet seen in Play.
 
+**2026-09-30 — readable rock-choosing shore** (#41, #42). Shore labels scale with the screen
+(name 38 px, description 22 px at 1080p), sit above each rock's real top, wrap to the gap to the
+next rock instead of a fixed 160 px box that cut them off, and carry a dark edge. Confirmation
+ticks show the player's name in their colour, stacked under the rock, instead of the raw device
+id. Shore layout defaults moved to 9 m / +-44 deg (was 6 m / +-38 deg): no rocks overlap now;
+measured edge gaps 0.11-1.07 m in Lake Louise Play mode. Screenshot `media/ui-party/shore-after.png`.
+
 Not built, and this is now most of the remaining project: the entire art direction, the in-play
 HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame
 sound-collision scheduler.

@@ -24,10 +24,16 @@ namespace Game
         [Tooltip("Half-width of the fan the stones are spread across, in degrees either " +
                  "side of centre. A phone's identity quaternion — however it was held at " +
                  "the tap — is yaw 0, so this is centred on the player, not the TV.")]
-        [Range(5f, 90f)] public float FanDegrees = 38f;
+        [Range(5f, 90f)] public float FanDegrees = 44f;
 
-        [Tooltip("Distance from the throw origin the stones sit at.")]
-        public float ShoreRadius = 6f;
+        [Tooltip("Distance from the throw origin the stones sit at.\n\n" +
+                 "With FanDegrees this sets the gap between neighbours: arc length is " +
+                 "radius x 2 x FanDegrees (radians), shared by count-1 gaps. At 9 m and 44 deg " +
+                 "six stones sit ~2.76 m apart centre to centre, clear of the longest (Boulder, " +
+                 "~2.2 m) since the x2.47 rock rescale; the old 6 m / 38 deg gave 1.58 m and " +
+                 "they overlapped (issue #42). Radius does most of the work so the phone turn " +
+                 "needed to reach the end stones only grows by 6 deg.")]
+        public float ShoreRadius = 9f;
 
         [Tooltip("Height above the throw origin the stones and pointers sit at.")]
         public float ShoreHeight = 0f;

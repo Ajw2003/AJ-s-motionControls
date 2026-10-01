@@ -51,6 +51,7 @@ namespace Game
         {
             public RockDefinition Definition;
             public Transform Transform;
+            public Renderer Renderer;
             public Material Material;
             public Color BaseColour;
             public Vector3 BaseScale;
@@ -146,6 +147,7 @@ namespace Game
                 _stones[i] = new Stone
                 {
                     Definition = rock,
+                    Renderer = renderer,
                     Transform = go.transform,
                     Material = material,
                     BaseColour = rock.Tint,
@@ -417,36 +419,117 @@ namespace Game
 
             EnsureStyles();
 
-            foreach (var stone in _stones)
+            for (var i = 0; i < _stones.Length; i++)
             {
-                DrawWorldLabel(_camera, stone.Transform.position + Vector3.up * 0.8f,
-                    stone.Definition.DisplayName, _nameStyle);
-
-                if (!string.IsNullOrEmpty(stone.Definition.Blurb))
-                {
-                    DrawWorldLabel(_camera, stone.Transform.position + Vector3.up * 0.5f,
-                        stone.Definition.Blurb, _blurbStyle);
-                }
+                DrawStoneLabel(i);
             }
+
+            DrawConfirmations();
+        }
+
+        /// <summary>
+        /// The rock's name over its description, as one block whose bottom sits just above
+        /// the rock's actual top, and whose description wraps to the gap between this rock and
+        /// its nearest neighbour on screen.
+        /// </summary>
+        /// <remarks>
+        /// Anchored to renderer bounds rather than a fixed height above the centre: the old
+        /// +0.8 m / +0.5 m offsets were set for 0.75-scale stones, and at x2.47 they put the
+        /// text inside the rock. Wrapping to the neighbour gap is what lets the description be
+        /// full size without running into the next one, and without the old fixed 160 px box
+        /// that cut most descriptions off mid-sentence (issue #41).
+        /// </remarks>
+        private void DrawStoneLabel(int index)
+        {
+            var stone = _stones[index];
+            if (stone?.Renderer == null) return;
+
+            var bounds = stone.Renderer.bounds;
+            var anchor = _camera.WorldToScreenPoint(new Vector3(bounds.center.x, bounds.max.y + 0.25f, bounds.center.z));
+            if (anchor.z <= 0f) return;
+
+            var width = LabelWidthFor(index, anchor.x);
+            var x = anchor.x - width * 0.5f;
+            var bottom = Screen.height - anchor.y;
+
+            var blurb = stone.Definition.Blurb;
+            var blurbHeight = string.IsNullOrEmpty(blurb) ? 0f : _blurbStyle.CalcHeight(new GUIContent(blurb), width);
+            var nameHeight = _nameStyle.CalcHeight(new GUIContent(stone.Definition.DisplayName), width);
+
+            var top = bottom - blurbHeight - nameHeight;
+            DrawShadowed(new Rect(x, top, width, nameHeight), stone.Definition.DisplayName, _nameStyle);
+            if (blurbHeight > 0f) DrawShadowed(new Rect(x, top + nameHeight, width, blurbHeight), blurb, _blurbStyle);
+        }
+
+        /// <summary>
+        /// Screen width a label may take: the distance to the nearer neighbouring rock, so
+        /// adjacent descriptions never overlap, capped so a lone rock's text stays a column.
+        /// </summary>
+        private float LabelWidthFor(int index, float screenX)
+        {
+            var cap = _blurbStyle.fontSize * 16f;
+            var nearest = cap;
+
+            foreach (var neighbour in new[] { index - 1, index + 1 })
+            {
+                if (neighbour < 0 || neighbour >= _stones.Length || _stones[neighbour]?.Renderer == null) continue;
+
+                var other = _camera.WorldToScreenPoint(_stones[neighbour].Renderer.bounds.center);
+                if (other.z <= 0f) continue;
+                nearest = Mathf.Min(nearest, Mathf.Abs(other.x - screenX) * 0.92f);
+            }
+
+            return Mathf.Max(nearest, _blurbStyle.fontSize * 6f);
+        }
+
+        /// <summary>
+        /// Who has confirmed each rock, stacked under it: a tick and their display name in
+        /// their own colour. Stacked because two players may confirm the same rock - they
+        /// used to be drawn on the same spot - and the name, not the raw device id the old
+        /// label printed.
+        /// </summary>
+        private void DrawConfirmations()
+        {
+            var stacked = new int[_stones.Length];
 
             foreach (var pair in _pointers)
             {
                 if (!pair.Value.Confirmed) continue;
 
                 var index = pair.Value.ConfirmedIndex;
-                if (index < 0 || index >= _stones.Length) continue;
+                if (index < 0 || index >= _stones.Length || _stones[index]?.Renderer == null) continue;
 
-                DrawWorldLabel(_camera, _stones[index].Transform.position + Vector3.up * 1.1f,
-                    $"✓ {pair.Key}", _tickStyle);
+                var bounds = _stones[index].Renderer.bounds;
+                var anchor = _camera.WorldToScreenPoint(new Vector3(bounds.center.x, bounds.min.y - 0.15f, bounds.center.z));
+                if (anchor.z <= 0f) continue;
+
+                var lineHeight = _tickStyle.fontSize * 1.4f;
+                var width = LabelWidthFor(index, anchor.x);
+                var rect = new Rect(anchor.x - width * 0.5f, Screen.height - anchor.y + lineHeight * stacked[index],
+                                    width, lineHeight);
+                stacked[index]++;
+
+                var name = PlayerNames.HasInstance ? PlayerNames.Instance.DisplayNameFor(pair.Key) : pair.Key;
+                var previous = GUI.color;
+                GUI.color = PlayerColours.HasInstance ? PlayerColours.Instance.For(pair.Key) : Color.white;
+                DrawShadowed(rect, "\u2713 " + name, _tickStyle);
+                GUI.color = previous;
             }
         }
 
-        private static void DrawWorldLabel(Camera camera, Vector3 worldPosition, string text, GUIStyle style)
+        /// <summary>
+        /// Text with a dark copy under it, so it reads against bright sky and pale water
+        /// alike. The shadow ignores GUI.color so a player-coloured label keeps a dark edge.
+        /// </summary>
+        private static void DrawShadowed(Rect rect, string text, GUIStyle style)
         {
-            var screen = camera.WorldToScreenPoint(worldPosition);
-            if (screen.z <= 0f) return;
+            var offset = Mathf.Max(1f, style.fontSize * 0.08f);
+            var previous = GUI.color;
 
-            var rect = new Rect(screen.x - 80f, Screen.height - screen.y - 20f, 160f, 24f);
+            GUI.color = new Color(0f, 0f, 0f, 0.75f * previous.a);
+            GUI.Label(new Rect(rect.x + offset, rect.y + offset, rect.width, rect.height), text, style);
+
+            GUI.color = previous;
             GUI.Label(rect, text, style);
         }
 
@@ -454,28 +537,37 @@ namespace Game
         {
             if (_nameStyle != null) return;
 
+            // Scaled off screen height like every other TV screen, so the names read from a
+            // couch on a TV and not only in a small editor Game view. They were fixed at 16 and
+            // 12 px before - about the size of a phone's fine print on a 1080p TV.
+            var scale = Mathf.Clamp(Screen.height / 1080f, 0.5f, 3f);
+
+            // White text everywhere: GUI.color multiplies into it, which is how the shadow and
+            // the player-coloured confirmation ticks get their colours from DrawShadowed.
             _nameStyle = new GUIStyle(GUI.skin.label)
             {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 16,
+                alignment = TextAnchor.LowerCenter,
+                fontSize = Mathf.RoundToInt(38 * scale),
                 fontStyle = FontStyle.Bold,
+                wordWrap = true,
             };
             _nameStyle.normal.textColor = Color.white;
 
             _blurbStyle = new GUIStyle(GUI.skin.label)
             {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 12,
+                alignment = TextAnchor.UpperCenter,
+                fontSize = Mathf.RoundToInt(22 * scale),
+                wordWrap = true,
             };
-            _blurbStyle.normal.textColor = new Color(0.85f, 0.85f, 0.85f);
+            _blurbStyle.normal.textColor = Color.white;
 
             _tickStyle = new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter,
-                fontSize = 14,
+                fontSize = Mathf.RoundToInt(26 * scale),
                 fontStyle = FontStyle.Bold,
             };
-            _tickStyle.normal.textColor = new Color(0.4f, 0.9f, 0.5f);
+            _tickStyle.normal.textColor = Color.white;
         }
     }
 }
