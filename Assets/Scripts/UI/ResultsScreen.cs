@@ -27,14 +27,17 @@ namespace Ui
         private TurnManager _turns;
         private IReadOnlyList<PlayerStanding> _standings;
 
-        private GUIStyle _title, _subtitle, _row, _winnerRow, _hint;
-        private Texture2D _panelTexture;
+        private MatchHud _hud;
+
+        private GUIStyle _title, _subtitle, _row, _winnerRow, _rowRight, _winnerRowRight, _hint;
+        private Texture2D _panelTexture, _dotTexture;
 
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
 
             if (_turns == null && TurnManager.HasInstance) _turns = TurnManager.Instance;
+            if (_hud == null) _hud = FindFirstObjectByType<MatchHud>();
             if (_turns == null || _turns.Phase != MatchPhase.Results) return;
 
             // Once per frame, not once per OnGUI — OnGUI runs several times a frame and
@@ -45,6 +48,7 @@ namespace Ui
         private void OnDestroy()
         {
             if (_panelTexture != null) Destroy(_panelTexture);
+            if (_dotTexture != null) Destroy(_dotTexture);
         }
 
         private void EnsureStyles()
@@ -74,6 +78,8 @@ namespace Ui
                 fontSize = Mathf.RoundToInt(44 * scale),
                 fontStyle = FontStyle.Bold,
             };
+            _rowRight = new GUIStyle(_row) { alignment = TextAnchor.MiddleRight };
+            _winnerRowRight = new GUIStyle(_winnerRow) { alignment = TextAnchor.MiddleRight };
             _hint = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Mathf.RoundToInt(24 * scale),
@@ -83,8 +89,19 @@ namespace Ui
             _panelTexture = new Texture2D(1, 1);
             _panelTexture.SetPixel(0, 0, new Color(0.04f, 0.06f, 0.10f, 0.95f));
             _panelTexture.Apply();
+
+            _dotTexture = new Texture2D(1, 1);
+            _dotTexture.SetPixel(0, 0, Color.white);
+            _dotTexture.Apply();
         }
 
+        /// <remarks>
+        /// Centred and sized to its rows rather than a fixed 80%-tall panel, so one player's
+        /// result is not a small line in a big empty box and the lake shows around it. Rows
+        /// match MatchHud's leaderboard — colour dot, name, numbers — and add each player's
+        /// best throw of the match beside the total. Keyboard hints are gone: Space and F4
+        /// still work for the host, but the screen speaks to the phones.
+        /// </remarks>
         private void OnGUI()
         {
             if (!isVisible) return;
@@ -92,65 +109,92 @@ namespace Ui
 
             EnsureStyles();
 
-            var panel = new Rect(Screen.width * 0.18f, Screen.height * 0.10f,
-                                 Screen.width * 0.44f, Screen.height * 0.80f);
+            var rowCount = _standings == null || _standings.Count == 0 ? 1 : _standings.Count;
+            var tied = IsTied();
+
+            var pad = Mathf.Round(_row.fontSize * 1.2f);
+            var titleHeight = _title.fontSize * 1.4f;
+            var subtitleHeight = _subtitle.fontSize * 1.6f;
+            var rowHeight = _winnerRow.fontSize * 1.5f;
+            var tieHeight = tied ? subtitleHeight : 0f;
+            var hintHeight = _hint.fontSize * 2.2f;
+
+            var width = Mathf.Min(Screen.width * 0.6f, _row.fontSize * 26f);
+            var height = pad + titleHeight + subtitleHeight + pad * 0.5f + rowHeight * rowCount +
+                         tieHeight + pad * 0.5f + hintHeight + pad * 0.5f;
+            var panel = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
 
             GUI.DrawTexture(panel, _panelTexture);
-            GUILayout.BeginArea(new Rect(panel.x + 30, panel.y + 24, panel.width - 60, panel.height - 48));
 
-            GUILayout.Label("FINAL SCORES", _title);
-            GUILayout.Label($"after {_turns.RoundsPerMatch} round{(_turns.RoundsPerMatch == 1 ? "" : "s")}", _subtitle);
-            GUILayout.Space(24);
+            var inner = new Rect(panel.x + pad, panel.y + pad, panel.width - pad * 2, panel.height - pad * 2);
+            var y = inner.y;
 
-            DrawStandings();
+            GUI.Label(new Rect(inner.x, y, inner.width, titleHeight), "FINAL SCORES", _title);
+            y += titleHeight;
+            GUI.Label(new Rect(inner.x, y, inner.width, subtitleHeight),
+                      $"after {_turns.RoundsPerMatch} round{(_turns.RoundsPerMatch == 1 ? "" : "s")}", _subtitle);
+            y += subtitleHeight + pad * 0.5f;
 
-            GUILayout.FlexibleSpace();
-            GUILayout.Label($"Press {_turns.StartMatchKey} — or tap PLAY AGAIN on a phone", _hint);
-            GUILayout.Label("Press F4 for match settings", _hint);
-            GUILayout.Label($"{toggleKey} hides this screen", _hint);
+            y = DrawStandings(inner, y, rowHeight, tied);
 
-            GUILayout.EndArea();
+            if (tied)
+            {
+                GUI.Label(new Rect(inner.x, y, inner.width, tieHeight),
+                          $"Tied at {_standings[0].Score} — no winner", _subtitle);
+                y += tieHeight;
+            }
+
+            y += pad * 0.5f;
+            GUI.Label(new Rect(inner.x, y, inner.width, hintHeight), "Tap PLAY AGAIN on your phone", _hint);
         }
 
-        private void DrawStandings()
+        /// <summary>
+        /// A shared top score means no winner. Highlighting the first row anyway would
+        /// silently pick one arbitrarily, off nothing but sort order.
+        /// </summary>
+        private bool IsTied() =>
+            _standings != null && _standings.Count > 1 && _standings[1].Score == _standings[0].Score;
+
+        /// <returns>The y just below the last row drawn.</returns>
+        private float DrawStandings(Rect inner, float y, float rowHeight, bool tied)
         {
             if (_standings == null || _standings.Count == 0)
             {
-                GUILayout.Label("Everybody left before the end.", _subtitle);
-                return;
+                GUI.Label(new Rect(inner.x, y, inner.width, rowHeight), "Everybody left before the end.", _subtitle);
+                return y + rowHeight;
             }
-
-            // A shared top score means no winner. Highlighting the first row anyway would
-            // silently pick one arbitrarily, off nothing but sort order.
-            var top = _standings[0].Score;
-            var tied = _standings.Count > 1 && _standings[1].Score == top;
 
             for (var i = 0; i < _standings.Count; i++)
             {
                 var standing = _standings[i];
                 var isWinner = !tied && i == 0;
-                var style = isWinner ? _winnerRow : _row;
+                var nameStyle = isWinner ? _winnerRow : _row;
+                var numbersStyle = isWinner ? _winnerRowRight : _rowRight;
 
+                var dot = nameStyle.fontSize * 0.55f;
                 var previous = GUI.color;
-                if (isWinner) GUI.color = new Color(1f, 0.85f, 0.4f);
+                GUI.color = PlayerColours.HasInstance ? PlayerColours.Instance.For(standing.PlayerId) : Color.white;
+                GUI.DrawTexture(new Rect(inner.x, y + (rowHeight - dot) * 0.5f, dot, dot), _dotTexture);
 
-                GUILayout.BeginHorizontal();
+                GUI.color = isWinner ? new Color(1f, 0.85f, 0.4f) : previous;
+
                 var displayName = PlayerNames.HasInstance
                     ? PlayerNames.Instance.DisplayNameFor(standing.PlayerId)
                     : standing.PlayerId;
-                GUILayout.Label($"{i + 1}.  {displayName}", style);
-                GUILayout.FlexibleSpace();
-                GUILayout.Label(standing.Score.ToString(), style);
-                GUILayout.EndHorizontal();
+                var textX = inner.x + dot * 1.8f;
+                GUI.Label(new Rect(textX, y, inner.width * 0.45f, rowHeight), $"{i + 1}.  {displayName}", nameStyle);
+
+                var best = _hud != null ? _hud.BestThrowText(standing.PlayerId) : null;
+                var numbers = best != null
+                    ? $"{best}{MatchHud.Separator}{standing.Score}pts"
+                    : $"{standing.Score}pts";
+                GUI.Label(new Rect(textX, y, inner.xMax - textX, rowHeight), numbers, numbersStyle);
 
                 GUI.color = previous;
+                y += rowHeight;
             }
 
-            if (tied)
-            {
-                GUILayout.Space(12);
-                GUILayout.Label($"Tied at {top} — no winner", _subtitle);
-            }
+            return y;
         }
     }
 }

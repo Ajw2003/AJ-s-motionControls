@@ -171,8 +171,10 @@ the screen (`JoinScreen.DrawLobbyCorners`); the old centre panel's room code, ad
 and start prompt are gone from the lobby. `MatchHud` shows the current/last throw top-centre in
 the thrower's colour and a leaderboard top-left (`143m   9sk   418pts`, sorted by total).
 `RelayDebugHud` now starts hidden (F1). Seen working in the owner's play-test on Lake Louise,
-2026-09-30; screenshot `media/ui-party/lobby-lakelouise.png`. The final-scores screen is not
-yet reworked.
+2026-09-30; screenshot `media/ui-party/lobby-lakelouise.png`. The final-scores screen is now
+centred and sized to its rows, in the leaderboard's style with each player's best throw (most
+skips, distance breaking ties) beside the total, and only "Tap PLAY AGAIN on your phone" as a
+hint; the corner QR card is labelled "Play". Compiled; not yet seen in Play.
 
 Not built, and this is now most of the remaining project: the entire art direction, the in-play
 HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame

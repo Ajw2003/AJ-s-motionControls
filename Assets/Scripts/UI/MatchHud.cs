@@ -28,7 +28,7 @@ namespace Ui
     /// </remarks>
     public class MatchHud : MonoBehaviour
     {
-        private const string Separator = "   ";
+        internal const string Separator = "   ";
 
         private readonly struct ThrowResult
         {
@@ -43,6 +43,10 @@ namespace Ui
         }
 
         private readonly Dictionary<string, ThrowResult> _lastThrows = new();
+
+        // Most skips, distance breaking a tie — skips are the headline number. Read by
+        // ResultsScreen, so the final standings can show each player's best alongside the total.
+        private readonly Dictionary<string, ThrowResult> _bestThrows = new();
 
         // The throw the top-centre readout is about: live while in flight, held after it lands
         // until the next stone is launched, so the room has the whole next player's aim to read it.
@@ -95,6 +99,13 @@ namespace Ui
             if (!string.IsNullOrEmpty(e.PlayerId))
             {
                 _lastThrows[e.PlayerId] = result;
+
+                if (!_bestThrows.TryGetValue(e.PlayerId, out var best) ||
+                    result.Skips > best.Skips ||
+                    (result.Skips == best.Skips && result.Distance > best.Distance))
+                {
+                    _bestThrows[e.PlayerId] = result;
+                }
                 _readoutPlayer = e.PlayerId;
             }
 
@@ -104,11 +115,12 @@ namespace Ui
 
         private void OnPhaseChanged(MatchPhaseChangedEvent e)
         {
-            // A fresh match starts from Lobby; a re-pick pause (Choosing) keeps the match going,
-            // so only leaving the lobby clears last match's throws.
-            if (e.From != MatchPhase.Lobby || e.To != MatchPhase.Playing) return;
+            // Any start of play is a fresh match except resuming from a re-pick pause (Choosing),
+            // which keeps the match — and its throws — going.
+            if (e.To != MatchPhase.Playing || e.From == MatchPhase.Choosing) return;
 
             _lastThrows.Clear();
+            _bestThrows.Clear();
             _readoutPlayer = null;
             _readoutResult = null;
             _inFlight = false;
@@ -199,8 +211,15 @@ namespace Ui
             }
         }
 
-        private static string FormatThrow(ThrowResult result) =>
-            $"{Mathf.RoundToInt(result.Distance)}m{Separator}{result.Skips}sk";
+        /// <summary>This match's best throw for a player, formatted, or null if they have not thrown.</summary>
+        public string BestThrowText(string playerId) =>
+            _bestThrows.TryGetValue(playerId, out var best) ? FormatThrow(best) : null;
+
+        private static string FormatThrow(ThrowResult result) => FormatThrow(result.Distance, result.Skips);
+
+        /// <summary>The one number format both TV screens use: "143m   9sk".</summary>
+        internal static string FormatThrow(float distance, int skips) =>
+            $"{Mathf.RoundToInt(distance)}m{Separator}{skips}sk";
 
         private static Color ColourOf(string playerId) =>
             !string.IsNullOrEmpty(playerId) && PlayerColours.HasInstance

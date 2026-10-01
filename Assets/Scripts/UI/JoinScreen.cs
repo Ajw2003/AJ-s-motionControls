@@ -473,7 +473,9 @@ namespace Ui
             if (_gameQr.Texture != null)
                 GUI.DrawTexture(CenteredSquare(panel.width - 40f), _gameQr.Texture, ScaleMode.ScaleToFit);
 
-            GUILayout.Label(_client?.RoomCode ?? "----", _body);
+            // "Play", as in the lobby's corner: the QR is the way in, and a bare room code read
+            // as a stray word. The code only shows when there is no QR to scan.
+            GUILayout.Label(_gameQr.Texture != null ? "Play" : _client?.RoomCode ?? "----", _body);
             GUILayout.EndArea();
         }
 
