@@ -19,16 +19,17 @@ Branch: `claude/rock-rework`, pushed. Tracking issue for finishing this work: #4
 
 Closed after the owner confirmed: #22, #23, #25, #29, #30.
 
-**Open question for the owner from #42:** at 9 m out the rocks themselves look smaller on the
-TV. Screenshot: `docs/media/ui-party/shore-after.png`. A wider fan at a shorter radius would keep
-them bigger, but players would have to turn the phone further to reach the end rocks.
+**#42 follow-up (2026-10-01):** the owner set the aiming camera to position (0, 4.5, -3),
+rotation (15, 0, 0), from a screenshot of the Inspector, in `AimPreview.cs` (`2ae63a0`). Not yet
+compiled or play-tested: the Unity Editor for this project wasn't reachable from the `unity` CLI.
 
 ## In progress: the phone audit (#40)
 
-Findings are written to [`Findings-PhoneUiAudit.md`](Findings-PhoneUiAudit.md), ranked. **Next
-step:** the owner picks which to fix. Each picked fix gets its own child issue of #39, then code.
-Finding 1 (the join page asks for a room code the TV no longer shows) was caused by #28, and is
-the one most worth fixing first.
+Findings are written to [`Findings-PhoneUiAudit.md`](Findings-PhoneUiAudit.md), ranked. Fixes
+1, 2, 3+4 and 5+6 are drawn as now/after mockups in
+[`mockups/phone-ui-fixes.html`](mockups/phone-ui-fixes.html). **Next step:** the owner picks from
+those. Each picked fix gets its own child issue of #39, then code. For fix 1 the owner chose
+option (b): the relay hands out its one room when the page has no code.
 
 ## After the UI: audio (#26)
 

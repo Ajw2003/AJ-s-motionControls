@@ -1,0 +1,266 @@
+<title>Phone Controller Fixes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+  /* Layout: a short intro, then one band per fix (now beside after), then the three combined screens. */
+  :root {
+    --bg: #eef2f6;
+    --fg: #14202e;
+    --muted: #5b6878;
+    --line: #d3dbe4;
+    --mark: #e07a1f;
+    --panel: #ffffff;
+    /* The phone always renders in the game's own palette, from controller/index.html. */
+    --g-bg: #0d1b2a;
+    --g-surface: #1b263b;
+    --g-accent: #4cc9f0;
+    --g-good: #57cc99;
+    --g-text: #e0e1dd;
+    --g-muted: #7d8597;
+    --g-ink: #06263a;
+    --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+    --body: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif;
+    --phone: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0a1018; --fg: #e3e9ef; --muted: #93a0ae; --line: #223042; --mark: #f29a4a; --panel: #111a25; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #0a1018; --fg: #e3e9ef; --muted: #93a0ae; --line: #223042; --mark: #f29a4a; --panel: #111a25; color-scheme: dark; }
+
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; }
+  h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 800; letter-spacing: -0.01em; }
+  h2 { font-size: 24px; font-weight: 600; }
+  .intro { display: flex; flex-direction: column; gap: 10px; max-width: 64ch; }
+  .intro p, .fix-text p { margin: 0; color: var(--muted); }
+  .eyebrow { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mark); font-weight: 700; }
+  .key { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+  .key i { width: 18px; height: 12px; border-radius: 4px; outline: 2px dashed var(--mark); outline-offset: 1px; }
+
+  .fix { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 40px; padding-top: 28px; border-top: 1px solid var(--line); align-items: start; }
+  .fix-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; max-width: 46ch; }
+  .fix-text ul { margin: 0; padding-left: 18px; color: var(--muted); }
+  .pair { display: flex; gap: 20px; flex-wrap: wrap; }
+  .shot { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .shot-label { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .shot-label.after { color: var(--mark); }
+  @media (max-width: 760px) { .fix { grid-template-columns: minmax(0, 1fr); } }
+
+  /* ---- The phone ---- */
+  .phone { width: 236px; max-width: 100%; aspect-ratio: 9 / 18.5; border-radius: 30px; padding: 8px; background: #05080d; box-shadow: 0 1px 0 var(--line), 0 14px 30px -14px rgba(10, 20, 35, 0.45); }
+  .screen { position: relative; height: 100%; border-radius: 23px; overflow: hidden; background: var(--g-bg); color: var(--g-text); font-family: var(--phone); display: flex; flex-direction: column; }
+  .status { padding: 7px 10px; font-size: 9px; text-align: center; color: var(--g-good); background: rgba(0, 0, 0, 0.25); }
+  .status.big { font-size: 11px; }
+  .debug { position: absolute; top: 3px; right: 6px; font-size: 7.5px; color: var(--g-muted); padding: 2px 4px; }
+  .body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 14px; text-align: center; }
+  .p-h1 { font-size: 21px; font-weight: 800; letter-spacing: 1.4px; }
+  .p-h2 { font-size: 15px; font-weight: 600; }
+  .p-h2.big { font-size: 19px; }
+  .p-p { font-size: 10.5px; color: var(--g-muted); line-height: 1.45; }
+  .input { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid #2f3e56; background: var(--g-surface); color: var(--g-muted); font-size: 12px; letter-spacing: 0.06em; }
+  .input.filled { color: var(--g-text); }
+  .btn { padding: 10px 22px; border-radius: 999px; background: var(--g-accent); color: var(--g-ink); font-size: 12px; font-weight: 700; }
+  .btn.wide { align-self: stretch; }
+  .btn.ghost { background: transparent; color: var(--g-accent); outline: 1.5px solid var(--g-accent); }
+  .link { font-size: 9.5px; font-weight: 600; color: var(--g-muted); text-decoration: underline; padding: 3px; }
+  .chosen { font-size: 11px; color: var(--g-text); }
+  .chosen b { color: var(--g-accent); }
+  .swatches { display: flex; gap: 6px; }
+  .swatches span { width: 16px; height: 16px; border-radius: 50%; }
+  .last { font-size: 10.5px; color: var(--g-text); }
+  .last.tv { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .scores { align-self: stretch; display: flex; flex-direction: column; gap: 4px; }
+  .row { display: flex; align-items: center; gap: 7px; padding: 7px 9px; background: var(--g-surface); border-radius: 7px; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .row.big { font-size: 13px; padding: 8px 10px; }
+  .row .n { flex: 1; text-align: left; display: flex; align-items: center; gap: 6px; }
+  .row .rank { width: 12px; color: var(--g-muted); font-weight: 700; }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .row.me { background: #22405a; outline: 1.5px solid var(--g-accent); }
+  .row .you { font-size: 8px; color: var(--g-accent); letter-spacing: 0.08em; font-weight: 700; }
+  .win { font-size: 11px; color: var(--g-good); font-weight: 700; }
+
+  /* Marks what changed between the two phones. */
+  .changed { outline: 2px dashed var(--mark); outline-offset: 3px; border-radius: 6px; }
+  .gone { opacity: 0.35; text-decoration: line-through; }
+
+  .together .pair { justify-content: flex-start; }
+  .decide { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 64ch; }
+  .decide p { margin: 0; color: var(--muted); }
+  .decide code { font-size: 14px; }
+</style>
+
+<div class="wrap">
+  <header class="intro">
+    <span class="eyebrow">Rock Skipping · phone audit · #40</span>
+    <h1>Phone controller fixes</h1>
+    <p>Four fixes from the phone audit, drawn as mockups. Each one shows the phone as it is now next to how it would look after the fix, then all four together. These are drawings, not screenshots. The names and scores are made up.</p>
+    <span class="key"><i></i> marks what changes</span>
+  </header>
+
+  <!-- 1 -->
+  <section class="fix">
+    <div class="fix-text">
+      <span class="eyebrow">Fix 1 · high</span>
+      <h2>No more room code</h2>
+      <p>The TV stopped showing the room code in #28, but the join page still asks for one. You picked option (b): when the page has no code, the relay hands over the one room it runs.</p>
+      <ul>
+        <li>The room code box goes away.</li>
+        <li>The hint now tells you you're joining the game on the TV.</li>
+        <li>A QR scan still works the same way as before.</li>
+      </ul>
+    </div>
+    <div class="pair">
+      <div class="shot"><span class="shot-label">Now</span>
+        <div class="phone"><div class="screen"><div class="status">Connecting…</div><span class="debug">debug</span><div class="body">
+          <div class="p-h1">ROCK SKIPPING</div>
+          <div class="input">YOUR NAME</div>
+          <div class="input">ROOM CODE</div>
+          <div class="btn">JOIN GAME</div>
+          <div class="p-p">Enter the code shown on the TV.</div>
+        </div></div></div></div>
+      <div class="shot"><span class="shot-label after">After</span>
+        <div class="phone"><div class="screen"><div class="status">Connecting…</div><span class="debug">debug</span><div class="body">
+          <div class="p-h1">ROCK SKIPPING</div>
+          <div class="input">YOUR NAME</div>
+          <div class="btn">JOIN GAME</div>
+          <div class="p-p changed">You'll join the game on the TV.</div>
+        </div></div></div></div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="fix">
+    <div class="fix-text">
+      <span class="eyebrow">Fix 2 · high</span>
+      <h2>Your name, not a device id</h2>
+      <p>The bar at the top shows the relay's internal id for the phone. After the fix it shows the name you typed.</p>
+    </div>
+    <div class="pair">
+      <div class="shot"><span class="shot-label">Now</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as 4XO7R9DH4R33</div><span class="debug">debug</span><div class="body">
+          <div class="p-h2">Waiting for your turn</div>
+          <div class="p-p">Watch the TV.</div>
+        </div></div></div></div>
+      <div class="shot"><span class="shot-label after">After</span>
+        <div class="phone"><div class="screen"><div class="status changed">Connected as Mira</div><span class="debug">debug</span><div class="body">
+          <div class="p-h2">Waiting for your turn</div>
+          <div class="p-p">Watch the TV.</div>
+        </div></div></div></div>
+    </div>
+  </section>
+
+  <!-- 3+4 -->
+  <section class="fix">
+    <div class="fix-text">
+      <span class="eyebrow">Fixes 3 + 4 · medium</span>
+      <h2>A ranked scoreboard that matches the TV</h2>
+      <p>The phone lists players in the order they joined, so on the results screen the winner can be third in the list. After the fix the list is sorted and numbered, and your own row stands out.</p>
+      <p>Your last throw uses the TV's wording, so a throw reads the same on the phone and on the TV.</p>
+    </div>
+    <div class="pair">
+      <div class="shot"><span class="shot-label">Now</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as 4XO7R9DH4R33</div><span class="debug">debug</span><div class="body">
+          <div class="p-h2">Waiting for your turn</div>
+          <div class="last">You: 9 skips · 143.0 m</div>
+          <div class="scores">
+            <div class="row"><span class="n"><span class="dot" style="background:#f4a261"></span>Jonah</span>210</div>
+            <div class="row"><span class="n"><span class="dot" style="background:#4cc9f0"></span>Mira</span>486</div>
+            <div class="row"><span class="n"><span class="dot" style="background:#b5e48c"></span>Sam</span>95</div>
+            <div class="row"><span class="n"><span class="dot" style="background:#e5989b"></span>Priya</span>352</div>
+          </div>
+        </div></div></div></div>
+      <div class="shot"><span class="shot-label after">After</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as 4XO7R9DH4R33</div><span class="debug">debug</span><div class="body">
+          <div class="p-h2">Waiting for your turn</div>
+          <div class="last tv changed">You: 143m &nbsp; 9sk</div>
+          <div class="scores changed">
+            <div class="row me"><span class="rank">1</span><span class="n"><span class="dot" style="background:#4cc9f0"></span>Mira <span class="you">YOU</span></span>486</div>
+            <div class="row"><span class="rank">2</span><span class="n"><span class="dot" style="background:#e5989b"></span>Priya</span>352</div>
+            <div class="row"><span class="rank">3</span><span class="n"><span class="dot" style="background:#f4a261"></span>Jonah</span>210</div>
+            <div class="row"><span class="rank">4</span><span class="n"><span class="dot" style="background:#b5e48c"></span>Sam</span>95</div>
+          </div>
+        </div></div></div></div>
+    </div>
+  </section>
+
+  <!-- 5+6 -->
+  <section class="fix">
+    <div class="fix-text">
+      <span class="eyebrow">Fixes 5 + 6 · medium</span>
+      <h2>Hide debug, promote Start Match</h2>
+      <p>The small "debug" button in the corner only shows up if you add <code>?debug=1</code> to the address.</p>
+      <p>Once you've confirmed your rock, START MATCH turns into the big button. Before that, CONFIRM is still the main button.</p>
+    </div>
+    <div class="pair">
+      <div class="shot"><span class="shot-label">Now</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as 4XO7R9DH4R33</div><span class="debug">debug</span><div class="body">
+          <div class="p-h2">Choose your stone</div>
+          <div class="p-p">Point your phone at a stone on the TV, then tap CONFIRM.</div>
+          <div class="chosen">Picked: <b>Skimmer</b></div>
+          <div class="btn">CONFIRM</div>
+          <div class="p-p">Your colour</div>
+          <div class="swatches"><span style="background:#4cc9f0"></span><span style="background:#f4a261"></span><span style="background:#b5e48c"></span></div>
+          <div class="link">START MATCH</div>
+          <div class="link">RE-CENTRE</div>
+        </div></div></div></div>
+      <div class="shot"><span class="shot-label after">After you confirm</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as 4XO7R9DH4R33</div><span class="debug changed gone">debug</span><div class="body">
+          <div class="p-h2">Choose your stone</div>
+          <div class="p-p">Point your phone at a stone on the TV, then tap CONFIRM.</div>
+          <div class="chosen">Picked: <b>Skimmer</b></div>
+          <div class="btn ghost">CONFIRM</div>
+          <div class="p-p">Your colour</div>
+          <div class="swatches"><span style="background:#4cc9f0"></span><span style="background:#f4a261"></span><span style="background:#b5e48c"></span></div>
+          <div class="btn wide changed">START MATCH</div>
+          <div class="link">RE-CENTRE</div>
+        </div></div></div></div>
+    </div>
+  </section>
+
+  <!-- All together -->
+  <section class="fix together">
+    <div class="fix-text">
+      <span class="eyebrow">All four together</span>
+      <h2>Join, choose, results</h2>
+      <p>The three screens a player sees most, with every fix above applied. The results screen shows the sorted scoreboard, and the status bar shows the player's name.</p>
+    </div>
+    <div class="pair">
+      <div class="shot"><span class="shot-label after">Join</span>
+        <div class="phone"><div class="screen"><div class="status">Connecting…</div><div class="body">
+          <div class="p-h1">ROCK SKIPPING</div>
+          <div class="input filled">MIRA</div>
+          <div class="btn">JOIN GAME</div>
+          <div class="p-p">You'll join the game on the TV.</div>
+        </div></div></div></div>
+      <div class="shot"><span class="shot-label after">Choose</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as Mira</div><div class="body">
+          <div class="p-h2">Choose your stone</div>
+          <div class="p-p">Point your phone at a stone on the TV, then tap CONFIRM.</div>
+          <div class="chosen">Picked: <b>Skimmer</b></div>
+          <div class="btn ghost">CONFIRM</div>
+          <div class="p-p">Your colour</div>
+          <div class="swatches"><span style="background:#4cc9f0"></span><span style="background:#f4a261"></span><span style="background:#b5e48c"></span></div>
+          <div class="btn wide">START MATCH</div>
+          <div class="link">RE-CENTRE</div>
+        </div></div></div></div>
+      <div class="shot"><span class="shot-label after">Results</span>
+        <div class="phone"><div class="screen"><div class="status">Connected as Mira</div><div class="body">
+          <div class="p-h2">Final scores</div>
+          <div class="win">Mira wins!</div>
+          <div class="btn">PLAY AGAIN</div>
+          <div class="scores">
+            <div class="row me"><span class="rank">1</span><span class="n"><span class="dot" style="background:#4cc9f0"></span>Mira <span class="you">YOU</span></span>486</div>
+            <div class="row"><span class="rank">2</span><span class="n"><span class="dot" style="background:#e5989b"></span>Priya</span>352</div>
+            <div class="row"><span class="rank">3</span><span class="n"><span class="dot" style="background:#f4a261"></span>Jonah</span>210</div>
+            <div class="row"><span class="rank">4</span><span class="n"><span class="dot" style="background:#b5e48c"></span>Sam</span>95</div>
+          </div>
+        </div></div></div></div>
+    </div>
+  </section>
+
+  <aside class="decide">
+    <span class="eyebrow">Your decision</span>
+    <p>Reply in chat with the fixes you want: any of 1, 2, 3+4, 5+6, or "all". Each one you pick gets its own child issue of #39 before any code changes. Text size (fix 7) and the busy throw screen (fix 8) need a test on a real phone first, so they aren't drawn here.</p>
+  </aside>
+</div>
