@@ -20,9 +20,9 @@ function check(label, ok, detail) {
   assert.ok(ok, `${label}${detail ? ` — ${detail}` : ''}`);
 }
 
-function connect() {
+function connect(url = URL) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(URL);
+    const ws = new WebSocket(url);
     ws.inbox = [];
     ws.waiters = [];
     ws.on('message', (raw) => {
@@ -108,17 +108,9 @@ describe('Relay integration', () => {
     check('room code avoids ambiguous I/O', !/[IO]/.test(code), code);
   });
 
-  test('fix: joins to a missing room must be answered, not ignored', async () => {
-    stranger = await connect();
-    send(stranger, { type: 'JOIN_ROOM', roomCode: 'ZZZZ', playerId: 'NOBODY' });
-    const rejected = await next(stranger);
-    check(
-      'join to unknown room is rejected',
-      rejected.type === 'ERROR' && rejected.code === 'ROOM_NOT_FOUND',
-      `${rejected.type}/${rejected.code}`,
-    );
-    stranger.close();
-  });
+  // The old "join to an unknown room is rejected" case lived here. Since #44 a stale code
+  // with exactly one room open falls back to that room, so the rejection cases moved to the
+  // 'join without a room code' suite at the bottom, which controls the room count.
 
   test('normal join', async () => {
     player = await connect();
@@ -346,5 +338,70 @@ describe('Relay integration', () => {
     player.close();
     rejoin.close();
     await sleep(100);
+  });
+});
+
+// #44: phones no longer type a room code. A JOIN with no code, or a stale one, falls back
+// to the relay's only open room. Own server and port so the room count is under control
+// (the suite above keeps one room open throughout, which would mask the zero/two cases).
+describe('Relay join without a room code (#44)', () => {
+  const PORT2 = 3998;
+  const URL2 = `ws://127.0.0.1:${PORT2}`;
+  let server2;
+  const open = [];
+  const conn = async () => {
+    const ws = await connect(URL2);
+    open.push(ws);
+    return ws;
+  };
+  const createRoom = async () => {
+    const h = await conn();
+    send(h, { type: 'CREATE_ROOM' });
+    const created = await next(h);
+    return { h, code: created.roomCode };
+  };
+
+  before(async () => {
+    server2 = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
+      env: { ...process.env, PORT: String(PORT2), HOST_GRACE_MS: '1500' },
+      stdio: ['ignore', 'ignore', 'inherit'],
+    });
+    await sleep(600);
+  });
+
+  after(async () => {
+    for (const ws of open) ws.close();
+    server2.kill('SIGKILL');
+  });
+
+  test('no code and zero rooms is an error', async () => {
+    const p = await conn();
+    send(p, { type: 'JOIN_ROOM', playerId: 'NOROOM' });
+    const r = await next(p);
+    check('rejected with ROOM_NOT_FOUND', r.type === 'ERROR' && r.code === 'ROOM_NOT_FOUND', `${r.type}/${r.code}`);
+  });
+
+  let first;
+  test('no code and one room joins that room', async () => {
+    first = await createRoom();
+    const p = await conn();
+    send(p, { type: 'JOIN_ROOM', playerId: 'ONE' });
+    const r = await next(p);
+    check('JOINED the only room', r.type === 'JOINED' && r.roomCode === first.code, `${r.type}/${r.roomCode}`);
+  });
+
+  test('stale code and one room joins that room', async () => {
+    const p = await conn();
+    send(p, { type: 'JOIN_ROOM', roomCode: 'ZZZZ', playerId: 'STALE' });
+    const r = await next(p);
+    check('JOINED the only room', r.type === 'JOINED' && r.roomCode === first.code, `${r.type}/${r.roomCode}`);
+  });
+
+  test('no code and two rooms is ROOM_AMBIGUOUS', async () => {
+    await createRoom();
+    const p = await conn();
+    send(p, { type: 'JOIN_ROOM', playerId: 'TWO' });
+    const r = await next(p);
+    check('rejected with ROOM_AMBIGUOUS', r.type === 'ERROR' && r.code === 'ROOM_AMBIGUOUS', `${r.type}/${r.code}`);
   });
 });
