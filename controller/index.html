@@ -356,6 +356,22 @@
       .score-row.active {
         border-left: 4px solid var(--accent);
       }
+      /* This phone's own row (#46): tint plus outline, independent of .active. */
+      .score-row.me {
+        background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+        outline: 1.5px solid var(--accent);
+      }
+      .score-rank {
+        min-width: 1.2em;
+        color: var(--muted, #8a8f98);
+        font-size: 14px;
+      }
+      .you-tag {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: var(--accent);
+      }
 
       /* Colour picker. Swatch targets are 44px, the smallest thing a thumb hits
        reliably on a phone — the same reason the throw button is as large as it is. */

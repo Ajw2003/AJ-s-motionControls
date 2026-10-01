@@ -13,6 +13,7 @@ import {
   tiltAngleDeg,
 } from './sensors.js';
 import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
+import { rankScores } from './ranking.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
 import { loadIdentity, ensureDeviceId, updateIdentity, clearIdentity } from './identity.js';
 
@@ -1046,9 +1047,13 @@ function renderSpectate(message) {
   ui.lastThrow.textContent = renderLastThrow(message, phase);
 
   ui.scores.replaceChildren();
-  for (const [player, score] of Object.entries(message.scores ?? {})) {
+  // Sorted and numbered (#46). `.me` marks this phone's own row, `.active` whose turn
+  // it is — separate things that can land on the same row.
+  for (const { player, score, rank } of rankScores(message.scores)) {
     const row = document.createElement('div');
-    row.className = 'score-row' + (player === message.activePlayer ? ' active' : '');
+    row.className = 'score-row'
+      + (player === message.activePlayer ? ' active' : '')
+      + (player === myPlayerId ? ' me' : '');
 
     // textContent, never innerHTML. A display name is attacker-controlled text that every
     // other phone renders, exactly as the typed name used to be before Workstream C moved
@@ -1058,6 +1063,11 @@ function renderSpectate(message) {
     // still rules that out.
     const name = document.createElement('span');
     name.className = 'name';
+
+    const rankEl = document.createElement('span');
+    rankEl.className = 'score-rank';
+    rankEl.textContent = rank;
+    name.appendChild(rankEl);
 
     // Their colour, matching their dot on the TV. A span with a background, never
     // interpolated markup — the colour string is host-generated, but the name beside
@@ -1077,6 +1087,13 @@ function renderSpectate(message) {
     const label = document.createElement('span');
     label.textContent = message.names?.[player] ?? player;
     name.appendChild(label);
+
+    if (player === myPlayerId) {
+      const you = document.createElement('span');
+      you.className = 'you-tag';
+      you.textContent = 'YOU';
+      name.appendChild(you);
+    }
 
     const points = document.createElement('span');
     points.textContent = score;
