@@ -22,23 +22,23 @@ RTX 5070, not sample libraries and not better synthesis.
 
 ## Steps
 
-1. **Environment.** A Python virtual environment at `tools/audio/ai/.venv` (git-ignored) with
+1. **Environment.** (#32) A Python virtual environment at `tools/audio/ai/.venv` (git-ignored) with
    PyTorch cu128, `diffusers`, `transformers` and ACE-Step, plus a `setup.ps1` that builds it from
    scratch. About 10 GB of model downloads on the first run.
-2. **Owner, once: unlock Stable Audio Open.** Accept the licence on its Hugging Face page and sign in
+2. **Owner, once: unlock Stable Audio Open.** (#33) Accept the licence on its Hugging Face page and sign in
    with `hf auth login`. The exact steps will be handed over when step 1 is done.
-3. **Sound effects.** `tools/audio/ai/generate_sfx.py`: one text prompt per sound, several takes
+3. **Sound effects.** (#34) `tools/audio/ai/generate_sfx.py`: one text prompt per sound, several takes
    each, ranked by CLAP, then trimmed, loudness-normalised and written as 48 kHz 16-bit `.wav` to
    `Assets/Audio/` under **the same 22 file names**, so `AudioBank` needs no code change. The prompts
    live in one table in the script, so re-rolling a sound is one edit and one run. The synthesised
    originals stay reproducible with `node tools/audio/generate-sfx.js`.
-4. **Music.** `tools/audio/ai/generate_music.py`: a calm lobby/choosing track and an in-match
+4. **Music.** (#35) `tools/audio/ai/generate_music.py`: a calm lobby/choosing track and an in-match
    track, each made loopable with an ffmpeg crossfade at the seam, written to `Assets/Audio/Music/`.
-5. **Play the music in Unity.** `AudioChannel.Music` exists but nothing plays music yet. A small
+5. **Play the music in Unity.** (#36) `AudioChannel.Music` exists but nothing plays music yet. A small
    `MusicDirector` switches track on the match phase and crossfades. It should be built through
    `AudioManager`, so the music goes through the existing volume channel.
-6. **Licences recorded.** `Assets/Audio/LICENSES.md` names the model and licence behind every file.
-7. **Owner listens in game** and names the sounds to re-roll. This is the acceptance check, and it
+6. **Licences recorded.** (#37) `Assets/Audio/LICENSES.md` names the model and licence behind every file.
+7. **Owner listens in game** (#38) and names the sounds to re-roll. This is the acceptance check, and it
    cannot be skipped.
 
 ## Risks
