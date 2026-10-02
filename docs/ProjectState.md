@@ -295,13 +295,14 @@ Worth separating, because the difference is where surprises come from.
 
 | Claim | Evidence |
 |---|---|
-| Relay routing, identity stamping, reconnect, DNS, funnel, connectivity probes | `cd relay && npm test` — 45 pass |
+| Relay routing, identity stamping, reconnect, DNS, funnel, connectivity probes | `cd relay && npm test` — 55 pass (2026-10-02) |
 | Event system survives scene loads | `RockSkipping/Verify/Run Event System Verification` |
 | Physics energy invariant holds | `RockSkipping/Verify/Print Skip Curve` |
 | `PhoneAttitude` and `SkipPhysics` behaviour | NUnit EditMode tests in `Assets/Tests/EditMode/` |
 | Offline play works | Direct observation, plus `deploy/spike/hotspot-offline-spike.ps1` as an unattended regression check |
 | Guest isolation (sharing off only) | Forwarding flag read back, not assumed |
 | Internet sharing (default) | Samsung S26 rejoined itself in 5-15 s; Play-mode session, iPhones, other Android brands, Wi-Fi upstream, rejoin after days **not tested** |
+| iPhone join fixes (#77: #78–#81) | Relay half `npm test` 55/55 and a live run, 2026-10-02; hotspot WPA2 and per-PC credentials **not run on Windows or compiled**; no iPhone test yet. See `Findings-iPhoneWifiJoin-2026-10-02.md` |
 | Five-player cross-platform match | One real session — **not** recorded per-device; see the `DeviceMatrix.md` caveat |
 | Six rocks play differently | **Not verified, and currently false** |
 | A stranger can install and play | **Never attempted** |

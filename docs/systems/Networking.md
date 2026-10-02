@@ -23,6 +23,12 @@ phone browser ──wss──┘         relay/server.js
 (and the phones' connectivity probes, with a 1.5 s local fallback) to the host's resolver; see
 [`HostingAndCertificates.md`](HostingAndCertificates.md).
 
+In both modes it answers `mask.icloud.com` and `mask-h2.icloud.com` with NXDOMAIN, which turns
+iCloud Private Relay off for this network. Otherwise Safari would resolve the game name through
+Apple and reach the public parking page (#79). On `:80`, any path on an Apple probe host gets
+Apple's exact Success page. A redirect there is what iOS reads as a captive portal (#78). See
+[`../Findings-iPhoneWifiJoin-2026-10-02.md`](../Findings-iPhoneWifiJoin-2026-10-02.md).
+
 One socket, one hop. The relay is a child process of the game itself, started by `LocalServices`
 on Play — **not** a dev convenience and not a service anyone deploys. The Fly.io deployment this
 replaced is torn down and its files deleted; there is no hosted fallback.
@@ -135,8 +141,8 @@ connect against an address that silently drops packets never returns on its own.
 cd relay && npm test
 ```
 
-45 tests across `test-relay.js`, `test-dns.js`, `test-funnel.js`, `test-probe.js`. With Play
-running, expect 44 pass / 1 skip — the game's relay owns `:80`, so `test-probe.js` skips that
+55 tests across `test-relay.js`, `test-dns.js`, `test-funnel.js`, `test-probe.js`. With Play
+running, expect 54 pass / 1 skip — the game's relay owns `:80`, so `test-probe.js` skips that
 case by design.
 
 `node relay/diagnose-hotspot.js` walks a phone's whole chain against a live game. It requires Play
