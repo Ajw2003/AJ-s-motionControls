@@ -530,8 +530,8 @@ function pickSharingUpstream() {
 // Android and iOS each probe a domain of their choosing right after joining a network, to
 // decide whether to show "No internet" and whether to keep cellular as the default route.
 // Unless SHARE_INTERNET is on, guests are isolated from the host's internet by design, so
-// these probes always fail on their own, and "it just stopped working" reports are very likely a phone that decided this
-// network was useless rather than an actual game bug. Answering them ourselves (this list, plus
+// these probes always fail on their own, and "it just stopped working" reports are very
+// likely a phone that decided this network was useless rather than an actual game bug. Answering them ourselves (this list, plus
 // /generate_204 and /hotspot-detect.html below) fixes the symptom without re-enabling
 // forwarding and undoing the isolation decision — see docs/plans/magic-domain-replacement.md
 // Phase 4 and docs/Decision-OfflineHosting.md.
