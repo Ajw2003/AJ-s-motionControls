@@ -264,6 +264,40 @@ real internet (Part 2). With guests isolated, phones will show "no internet", an
 reliably rejoin by itself. Returning players keep scanning the Wi-Fi QR. A phone already on the
 home Wi-Fi would not switch in any case.
 
+### Reopened (2026-10-02, from Ayden): unfenced sharing is acceptable
+
+Ayden's call: guests reaching the home router is no new exposure, since party guests are already
+on the home Wi-Fi, and a venue where it matters can run the host offline. So the question
+became whether **unfenced** sharing actually delivers the goal: phones rejoining by themselves.
+
+### Rejoin spike result (MEASURED, #71, S26, `deploy/spike/hotspot-rejoin-spike.ps1`)
+
+Hotspot started the game's way, then forwarding re-enabled. The phone forgot the old saved
+network and joined fresh by QR. Client count was logged once a second
+(`deploy/spike/hotspot-rejoin-results.txt`):
+
+```
+00:13:03  hotspot clients: 1
+00:13:49  Joined, and the phone shows it Connected with no 'no internet' warning -> y
+00:14:07  hotspot clients: 0
+00:14:12  hotspot clients: 1
+00:14:41  hotspot clients: 0
+00:14:56  hotspot clients: 1
+00:15:08  Test A: did the phone rejoin 'Rock Skipping CPt5' by itself -> y
+00:15:32  hotspot clients: 0
+00:16:07  Test B: did it pick 'Rock Skipping CPt5' over your home Wi-Fi -> n
+```
+
+- **Test A (home Wi-Fi auto-reconnect off, i.e. a venue):** it rejoined by itself twice, within
+  5 s and 15 s of Wi-Fi coming back on.
+- **Test B (home Wi-Fi auto-reconnect on):** it went to the home Wi-Fi and had not come back
+  35 s later.
+
+So with internet shared, **one QR is enough wherever the phone knows no other Wi-Fi**. At the
+host's own house, a phone already on the home Wi-Fi stays there and still needs the Wi-Fi QR.
+Not tested: iPhone, other Android brands, a host whose upstream is Wi-Fi rather than Ethernet,
+and rejoin across days rather than minutes.
+
 ### Recommendation (superseded by the conclusion above)
 
 Keep **A** as the default, and add **C** as a host-side opt-in ("Share this PC's internet with
