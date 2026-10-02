@@ -210,6 +210,8 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  *                                     `fallbackMs` or errors. For sharing mode, where the probe
  *                                     domains must resolve for real if the internet is up.
  *                                     With no `upstream` they behave exactly like `names`.
+ * @param {string[]} [options.blockedNames] names always answered NXDOMAIN, never forwarded —
+ *                                     iCloud Private Relay's opt-out signal (#79)
  * @param {number}  [options.fallbackMs] how long to wait for upstream before answering a
  *                                     fallback name locally (default 1500)
  * @param {number}  [options.upstreamPort] upstream's UDP port (default 53; tests override)
@@ -231,6 +233,7 @@ function createResponder(options) {
     name = null,
     names = null,
     fallbackNames = null,
+    blockedNames = null,
     fallbackMs = 1500,
     upstreamPort = 53,
     port = 53,
@@ -261,6 +264,8 @@ function createResponder(options) {
 
   // Only forwarded-first when there is an upstream; without one these are just more exact names.
   const fallbackSet = new Set((fallbackNames || []).map((n) => n.toLowerCase()));
+
+  const blockedSet = new Set((blockedNames || []).map((n) => n.toLowerCase()));
 
   let socket = null;
 
@@ -321,6 +326,19 @@ function createResponder(options) {
         buildReply(query, message, { rcode: RCODE_REFUSED }),
         remote.port,
         remote.address,
+      );
+      return;
+    }
+
+    if (blockedSet.has(query.name.toLowerCase())) {
+      stats.refused += 1;
+      socket.send(
+        buildReply(query, message, { rcode: RCODE_NXDOMAIN }),
+        remote.port,
+        remote.address,
+      );
+      log(
+        `dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> NXDOMAIN (blocked)`,
       );
       return;
     }

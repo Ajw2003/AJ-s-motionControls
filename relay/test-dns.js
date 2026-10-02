@@ -503,6 +503,28 @@ describe('Fallback names', () => {
     }
   });
 
+  test('Private Relay names are NXDOMAIN and never forwarded, even with an upstream (#79)', async () => {
+    const up = await startFakeUpstream(UP_PORT, realAnswer);
+    try {
+      await withResponder(
+        {
+          upstream: '127.0.0.1',
+          upstreamPort: UP_PORT,
+          blockedNames: ['mask.icloud.com', 'mask-h2.icloud.com'],
+        },
+        async () => {
+          for (const name of ['mask.icloud.com', 'MASK-H2.icloud.com']) {
+            const r = await askFallback(name);
+            check(`${name} is NXDOMAIN`, r && r.rcode === 3, r ? `rcode ${r.rcode}` : 'no reply');
+          }
+          check('upstream was never asked', up.seen.length === 0, `saw ${up.seen.length}`);
+        },
+      );
+    } finally {
+      up.sock.close();
+    }
+  });
+
   test('with no upstream a fallback name is answered locally', async () => {
     await withResponder({}, async () => {
       const r = await askFallback(PROBE_NAMES[0]);

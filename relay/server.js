@@ -549,6 +549,16 @@ const CONNECTIVITY_PROBE_DOMAINS = [
   'www.appleiphonecell.com',
 ];
 
+const APPLE_PROBE_HOSTS = new Set(['captive.apple.com', 'www.appleiphonecell.com']);
+const APPLE_SUCCESS_PAGE = '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>';
+
+// Apple's documented "this network does not allow iCloud Private Relay" signal (#79): a
+// negative answer for these names, and iOS turns Private Relay off for this network alone.
+// With it on, Safari looks names up through Apple instead of us, and the game's public
+// record is the registrar's parking page, not 192.168.137.1. NXDOMAIN, never a timeout:
+// Apple warns a silent drop makes the phone wait.
+const PRIVATE_RELAY_DOMAINS = ['mask.icloud.com', 'mask-h2.icloud.com'];
+
 let dnsResponder = null;
 let http80Server = null;
 
@@ -636,7 +646,7 @@ function handleRequest(req, res) {
       return;
     }
 
-    if (serveConnectivityProbe(res, url.pathname)) return;
+    if (serveConnectivityProbe(req, res, url.pathname)) return;
 
     serveStatic(req, res);
   } catch (err) {
@@ -658,7 +668,7 @@ const GAME_URL = `https://${DNS_NAME}:${PORT}/`;
  * stops preferring cellular — a phone that drops to cellular mid-match is the failure Phase 4
  * was written to prevent (docs/plans/magic-domain-replacement.md).
  */
-function serveConnectivityProbe(res, pathname) {
+function serveConnectivityProbe(req, res, pathname) {
   // Android treats anything other than a bare 204 as "there is a login page here" — so the
   // answer must be an empty body, not JSON, not even an empty object.
   if (pathname === '/generate_204') {
@@ -666,10 +676,13 @@ function serveConnectivityProbe(res, pathname) {
     return true;
   }
 
-  // Apple looks for this exact literal body (no whitespace, no trailing newline) on a plain
-  // page load.
-  if (pathname === '/hotspot-detect.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end('Success');
+  // Apple's own page, byte for byte. The bare word "Success" served here until #78 was never
+  // seen to work on an iPhone, and iPhones on the hotspot kept opening the login sheet,
+  // whose Cancel button disconnects them. Any path on an Apple probe host gets it too: a
+  // redirect there is, to iOS, the definition of a captive portal.
+  const host = (req.headers.host || '').split(':')[0].toLowerCase();
+  if (pathname === '/hotspot-detect.html' || APPLE_PROBE_HOSTS.has(host)) {
+    res.writeHead(200, { 'Content-Type': 'text/html' }).end(APPLE_SUCCESS_PAGE);
     return true;
   }
 
@@ -879,6 +892,7 @@ async function startDns() {
       ip: DNS_RESPOND_IP,
       names: sharing ? [DNS_NAME] : [DNS_NAME, ...CONNECTIVITY_PROBE_DOMAINS],
       fallbackNames: sharing ? CONNECTIVITY_PROBE_DOMAINS : null,
+      blockedNames: PRIVATE_RELAY_DOMAINS,
       allow: DNS_ALLOW,
       upstream: sharing ? sharingUpstream : DNS_UPSTREAM,
       // Teed into probe-access.log as well as stdout: which names the phone asks for is
@@ -969,7 +983,7 @@ function logDnsLine(...args) {
 function handleProbeRequest(req, res) {
   const url = new URL(req.url || '/', 'http://localhost');
 
-  if (serveConnectivityProbe(res, url.pathname)) {
+  if (serveConnectivityProbe(req, res, url.pathname)) {
     logProbeRequest(req, url.pathname, `answered ${res.statusCode}`);
     return;
   }
