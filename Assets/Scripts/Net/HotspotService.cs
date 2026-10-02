@@ -238,8 +238,9 @@ namespace Net
             if (!string.IsNullOrEmpty(result.Value.warning))
             {
                 // Only arises when not sharing: the hotspot came up but forwarding-disable
-                // could not be confirmed — that means it is NOT isolated. Treated as a failure rather than a soft caveat,
-                // because running an open hotspot silently defeats the reason this exists.
+                // could not be confirmed — that means it is NOT isolated. Treated as a failure
+                // rather than a soft caveat, because running an open hotspot silently defeats
+                // the reason this exists.
                 // Best-effort tear-down rather than leave it running unconfirmed.
                 _ownedTethering = true;
                 StopTetheringBlocking();
