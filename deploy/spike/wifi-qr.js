@@ -11,6 +11,9 @@
  *
  *   node wifi-qr.js --ssid "RockSkip ABCD" --pass "hunter2000"
  *   node wifi-qr.js --ssid "RockSkip ABCD" --pass "hunter2000" --url https://play.local-ip.sh:8443
+ *   node wifi-qr.js --ssid "RockSkip ABCD" --pass "hunter2000" --svg C:/path/join.svg
+ *
+ * --svg writes the Wi-Fi QR as an image instead, for consoles that garble the block characters.
  */
 
 'use strict';
@@ -26,7 +29,7 @@ try {
   process.exit(1);
 }
 
-const args = { ssid: null, pass: null, auth: 'WPA', hidden: 'false', url: null };
+const args = { ssid: null, pass: null, auth: 'WPA', hidden: 'false', url: null, svg: null };
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i].replace(/^--/, '');
   if (!(key in args)) {
@@ -82,6 +85,17 @@ function render(text, label) {
 }
 
 const payload = `WIFI:T:${args.auth};S:${escapeValue(args.ssid)};P:${escapeValue(args.pass || '')};H:${args.hidden};;`;
+
+if (args.svg) {
+  const qr = qrcode(0, 'M');
+  qr.addData(payload);
+  qr.make();
+  const svg = qr.createSvgTag({ cellSize: 10, margin: 4, scalable: true })
+    .replace('<svg', '<svg width="480" height="480" style="background:#fff"');
+  require('fs').writeFileSync(args.svg, svg);
+  console.log(`Wrote ${args.svg}`);
+  process.exit(0);
+}
 render(payload, `SCAN 1 of 2 — join the network "${args.ssid}"`);
 
 if (args.url) {

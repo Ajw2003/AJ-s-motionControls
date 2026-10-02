@@ -98,9 +98,14 @@ try {
     $manager = $mgrType::CreateFromConnectionProfile($ni::GetInternetConnectionProfile())
     Log "hotspot $($manager.TetheringOperationalState), forwarding Enabled (internet shared)"
 
+    # A QR image, not typed credentials: the project rule, and this console garbles block characters.
+    $qr = Join-Path $env:TEMP 'rockskipping-join-qr.svg'
+    & node (Join-Path $PSScriptRoot 'wifi-qr.js') --ssid $creds.ssid --pass $creds.passphrase --svg $qr | Out-Null
+    Start-Process $qr
+
     Say "SETUP. On the phone: Settings > Wi-Fi. If '$($creds.ssid)' is listed, tap its gear > Forget,
-because it may be saved as 'no internet'. Then join '$($creds.ssid)' (password $($creds.passphrase)).
-Leave mobile data ON."
+because it may be saved as 'no internet'. Then scan the QR code that just opened with the camera
+to join '$($creds.ssid)'. Leave mobile data ON."
     Ask $manager $nic.InterfaceIndex "Joined, and the phone shows it Connected with no 'no internet' warning"
 
     Say "TEST A - a venue. On the phone: tap your HOME Wi-Fi's gear > turn 'Auto reconnect' OFF.
