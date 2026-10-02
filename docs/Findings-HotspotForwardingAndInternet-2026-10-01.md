@@ -86,8 +86,13 @@ Enabled, and reports isolation only after 6 s of continuous Disabled (20 s ceili
 - a hotspot start takes about 6 s longer;
 - forwarding is briefly on for up to about 0.6 s, seconds after the network first appears.
 
-**Still unmeasured:** whether ICS re-enables forwarding later in a session, for example when a
-phone joins. That needs a trace with a phone connecting.
+**Measured with a phone (Ayden, 60 s trace):** ICS re-enabled forwarding once, at 5.83 s, and
+the retry disabled it at 6.40 s. It then stayed Disabled for the rest of the 60 s while a phone
+joined. A phone joining does not undo isolation.
+
+The phone reported "no internet" during that trace. That is expected: the tracer starts only the
+hotspot, not the relay, so nothing answers the DNS or connectivity probes. It says nothing about
+validation in a real session.
 
 The original proposal:
 
