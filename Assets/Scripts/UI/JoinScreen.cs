@@ -81,20 +81,35 @@ namespace Ui
 
             if (RelayClient.HasInstance) _client = RelayClient.Instance;
             else Debug.LogWarning("[JoinScreen] No RelayClient at Start; no QR code or room code will be shown.");
+
+            StartCoroutine(KeepQrsCurrent());
         }
 
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
+        }
 
-            EnsureQrMatchesJoinUrl();
-            EnsureWifiQrMatchesHotspot();
+        /// <summary>
+        /// Once a second rather than every frame (#64): the checks below build the join URL
+        /// and Wi-Fi payload strings just to compare them, and both only change when the
+        /// room code or hotspot does.
+        /// </summary>
+        private IEnumerator KeepQrsCurrent()
+        {
+            var wait = new WaitForSecondsRealtime(1f);
+            while (true)
+            {
+                EnsureQrMatchesJoinUrl();
+                EnsureWifiQrMatchesHotspot();
+                yield return wait;
+            }
         }
 
         /// <summary>
         /// The room code and the tunnel URL arrive from different systems at different
         /// times, and either can change (a reconnect issues a new room). Rather than
-        /// coordinating both, this re-derives the join URL each frame and refetches only
+        /// coordinating both, this re-derives the join URL once a second and refetches only
         /// when it actually differs from what is on screen.
         /// </summary>
         private void EnsureQrMatchesJoinUrl()
