@@ -410,11 +410,9 @@ namespace Game
             // phone through — latent until ShoreRocks started streaming AIM during
             // selection, at which point it would have yanked this ghost around a lobby it
             // has no business appearing in. See the plan's constraints section.
-            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing)
-            {
-                LogRejectedAim($"phase is {(TurnManager.HasInstance ? TurnManager.Instance.Phase.ToString() : "no TurnManager")}, not Playing");
-                return;
-            }
+            // Not logged: outside Playing these frames are ShoreRocks' lobby pointing, used
+            // legitimately there, and logging them as "rejected" read like lost input (#59).
+            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing) return;
 
             var active = TurnManager.Instance.ActivePlayer;
             if (aim.playerId != active)
