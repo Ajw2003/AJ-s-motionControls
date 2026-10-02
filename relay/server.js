@@ -55,7 +55,11 @@ const ROOM_SWEEP_MS = 5 * 60 * 1000;
 const HOST_GRACE_MS = Number(process.env.HOST_GRACE_MS) || 60_000;
 const HOST_GRACE_SWEEP_MS = 2_000;
 const RATE_WINDOW_MS = 1000;
-const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
+// AIM is lossy and streams at 20Hz, so it gets its own budget; everything else (THROW,
+// JOIN_ROOM, the host's TURN/SPECTATE) only meets a flood cap. One shared budget let a
+// stall's AIM backlog push the THROW behind it over the limit (#58).
+const RATE_MAX_AIM = 60;
+const RATE_MAX_MESSAGES = 300;
 
 // No I and no O — these are read aloud off a TV and typed on a phone.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -126,14 +130,16 @@ function normalizeRoomCode(raw) {
   return trimmed.length === CODE_LENGTH ? trimmed : null;
 }
 
-/** Rolling-window rate limit. Returns true if the message should be dropped. */
-function isRateLimited(meta) {
+/** Fixed 1 s window per socket. Returns true if the message should be dropped. */
+function isRateLimited(meta, type) {
   const now = Date.now();
   if (now - meta.rateWindowStart >= RATE_WINDOW_MS) {
     meta.rateWindowStart = now;
     meta.rateCount = 0;
+    meta.aimCount = 0;
   }
   meta.rateCount++;
+  if (type === 'AIM' && ++meta.aimCount > RATE_MAX_AIM) return true;
   return meta.rateCount > RATE_MAX_MESSAGES;
 }
 
@@ -668,6 +674,7 @@ wss.on('connection', (ws, req) => {
     isAlive: true,
     rateWindowStart: Date.now(),
     rateCount: 0,
+    aimCount: 0,
     // Captured here rather than read at JOIN time: by then the socket may be mid-close and
     // remoteAddress reads back undefined. Only the funnel uses it, and only to count devices.
     remoteAddress: req && req.socket ? req.socket.remoteAddress : null,
@@ -679,7 +686,6 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (raw) => {
     metrics.messagesIn++;
-    if (isRateLimited(ws.meta)) return; // drop silently; a flooding client gets no feedback loop
 
     let data;
     try {
@@ -687,6 +693,7 @@ wss.on('connection', (ws, req) => {
     } catch {
       // The prototype let this throw, which killed the whole process and every
       // other room with it. One bad client must never take down the server.
+      if (isRateLimited(ws.meta, null)) return;
       sendError(ws, 'BAD_JSON', 'Message was not valid JSON.');
       return;
     }
@@ -695,6 +702,10 @@ wss.on('connection', (ws, req) => {
       sendError(ws, 'BAD_MESSAGE', 'Message must be an object with a "type".');
       return;
     }
+
+    // After parsing, so the budget can tell AIM from THROW (#58). Drops silently; a
+    // flooding client gets no feedback loop.
+    if (isRateLimited(ws.meta, data.type)) return;
 
     switch (data.type) {
       case 'CREATE_ROOM':

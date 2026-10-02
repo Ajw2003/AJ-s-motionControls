@@ -141,6 +141,27 @@ describe('Relay integration', () => {
     );
   });
 
+  // #58: a stall releases a burst of AIM; the THROW behind it must still get through,
+  // while the AIM budget itself still caps a flood.
+  test('fix: an AIM burst cannot rate-limit the THROW behind it', async () => {
+    for (let i = 0; i < 80; i++) send(player, { type: 'AIM', seq: i });
+    send(player, { type: 'THROW', swingSpeed: 9 });
+
+    let aims = 0;
+    let gotThrow = false;
+    try {
+      while (!gotThrow) {
+        const msg = await next(host, 1000);
+        if (msg.type === 'AIM') aims++;
+        if (msg.type === 'THROW') gotThrow = true;
+      }
+    } catch {
+      // timed out: the THROW never came
+    }
+    check('the THROW after an 80-frame AIM burst reaches the host', gotThrow);
+    check('AIM is still capped per second', aims <= 60, `${aims} AIM delivered`);
+  });
+
   test('host -> players', async () => {
     send(host, { type: 'SPECTATE', liveSkips: 3 });
     const spectate = await next(player);
