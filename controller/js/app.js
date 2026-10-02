@@ -204,6 +204,30 @@ function sendInput(payload) {
   connection?.send(payload);
 }
 
+// True from this phone's THROW until the next TURN (#55). TURN only moves once the stone
+// has settled, so without this the grip came straight back to TAP TO AIM mid-flight, and
+// a second throw there was dropped by the TV or launched a second stone. Nothing from the
+// TV acknowledges a THROW yet, so a THROW lost on the way would leave the grip locked
+// forever; STONE_OUT_FALLBACK_MS is the bound on that.
+let stoneOut = false;
+let stoneOutTimer = null;
+const STONE_OUT_FALLBACK_MS = 30_000;
+
+function setStoneOut(out) {
+  clearTimeout(stoneOutTimer);
+  stoneOutTimer = null;
+  stoneOut = out;
+
+  if (out) {
+    stopPreviewAim(); // no AIM through the flight; the TV hides the ghost then anyway
+    stoneOutTimer = setTimeout(() => {
+      setStoneOut(false);
+      startTurnAim();
+    }, STONE_OUT_FALLBACK_MS);
+  }
+  renderGripButton(thrower.state);
+}
+
 function showScreen(name) {
   for (const screen of [
     ui.joinScreen,
@@ -297,6 +321,7 @@ const thrower = new ThrowController(motion, {
   onThrow: (payload) => {
     sendInput(payload);
     lastThrow = payload;
+    setStoneOut(true);
 
     // D4: a short pulse on release, distinct from the Settling→Aiming lock tick.
     if (navigator.vibrate) navigator.vibrate(20);
@@ -314,8 +339,10 @@ const thrower = new ThrowController(motion, {
     // preview frames with ThrowController's own, which carry live spin and windup;
     // standing down again (a second tap, a throw, a cancelled turn) hands it back so
     // the ghost survives until TURN says the turn is over.
+    // _fire() reaches here (IDLE) just before onThrow, so the stream this starts is
+    // stopped again by setStoneOut a moment later.
     if (state === ThrowState.ARMED) stopPreviewAim();
-    else startTurnAim();
+    else if (!stoneOut) startTurnAim();
   },
 });
 
@@ -329,7 +356,8 @@ const thrower = new ThrowController(motion, {
 function renderGripButton(state) {
   const armed = state === ThrowState.ARMED;
   ui.gripBtn.classList.toggle('held', armed);
-  ui.gripBtn.textContent = armed ? 'SWING!' : 'TAP TO AIM';
+  ui.gripBtn.classList.toggle('out', stoneOut);
+  ui.gripBtn.textContent = stoneOut ? 'STONE IN THE AIR' : armed ? 'SWING!' : 'TAP TO AIM';
 }
 
 // ---------------------------------------------------------------- aim streams
@@ -670,6 +698,7 @@ function bindGrip() {
   // does not count.
   const tap = (event) => {
     event.preventDefault(); // stop the tap turning into a scroll, zoom or click
+    if (stoneOut) return; // your stone is still out; the next TURN re-opens this (#55)
     const descriptor = thrower.toggle();
 
     // Android only — iOS support for navigator.vibrate is unreliable, so this is
@@ -852,6 +881,7 @@ function handleMessage(message) {
     case 'JOINED':
       myPlayerId = message.playerId;
       myTurn = false; // a fresh join/rejoin has no standing TURN yet — wait for one
+      setStoneOut(false); // the TURN that follows a join says where things stand
       stopPreviewAim(); // and no standing stream either; the next SPECTATE/TURN starts one
       hasJoinedOnce = true; // a later ERROR/ROOM_CLOSED now means "get back in", not "unknown player"
       setConnectedStatus();
@@ -903,6 +933,7 @@ function handleMessage(message) {
       stopLobbyAim();
       setColourSheetOpen(false); // a turn has begun; the panel has no place over it (#51)
       myTurn = message.yourTurn;
+      setStoneOut(false); // any TURN means the last stone has settled (#55)
 
       if (message.yourTurn) {
         ui.throwResult.textContent = '';
@@ -941,6 +972,7 @@ function handleMessage(message) {
 
     case 'ROOM_CLOSED':
       myTurn = false; // before cancel(), whose IDLE transition would otherwise re-start the stream
+      setStoneOut(false);
       thrower.cancel();
       stopPreviewAim();
 

@@ -191,6 +191,12 @@
           0 0 0 3px var(--good);
       }
 
+      /* Your stone is still out (#55): visibly not tappable until the next turn. */
+      #gripBtn.out {
+        filter: grayscale(0.8) brightness(0.7);
+        font-size: 18px;
+      }
+
       /* D3: Settling/Aiming status badge. Muted at rest, the same accent-vs-good
        distinction the grip button's own .held state uses, so a locked aim reads
        consistently across both elements. */
