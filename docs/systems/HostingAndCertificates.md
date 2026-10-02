@@ -91,7 +91,8 @@ project, not a hypothetical.
 ### Machine setup runs itself
 
 `deploy/setup-offline.ps1` registers the one-time, per-machine, elevated prerequisites: a
-scheduled task that disables IP forwarding so guests are isolated, firewall rules for the relay
+scheduled task that disables IP forwarding so guests are isolated (only when sharing is off; see
+"Sharing internet (default)" below), firewall rules for the relay
 and the DNS responder, and the hosts entry. `HotspotService.EnsureOfflineSetup` runs it elevated,
 itself, the first time this machine ever starts a hotspot. **One UAC prompt** — Windows requires
 that and there is no way around it — and every session after that skips straight past.
@@ -112,6 +113,9 @@ way to inspect a machine before changing it.
 
 ### Guest isolation is verified, not assumed
 
+Isolation now applies only when "Share internet" is off. With it on (the default, 2026-10-02)
+the forwarding check is skipped; see "Sharing internet (default)" below.
+
 `hotspot-control.ps1` used to call `Start-ScheduledTask` and report success — proving only that a
 task *launched*. It now reads the forwarding flag back. `HotspotService` treats that warning as
 fatal, so an unisolated hotspot refuses to start rather than pretending.
@@ -121,6 +125,19 @@ first disables it (traced twice, `tools/hotspot/trace-forwarding.ps1`). So the c
 task whenever forwarding reads Enabled, and reports isolation only after 6 s of continuous
 Disabled, with a 20 s ceiling (#70). Whether ICS re-enables forwarding later in a session, for
 example when a phone joins, is not yet measured.
+
+### Sharing internet (default)
+
+The lobby setting "Share internet" (`MatchSettingsStore.shareInternet`, default on) makes
+`LocalServices` start the relay with `SHARE_INTERNET=1` and `HotspotService` run
+`hotspot/hotspot-control.ps1 -ShareInternet`, which skips the forwarding-disable task and reports
+`shared`. Turning it off takes effect on the next hotspot start. The relay picks the host's first
+usable IPv4 resolver (`dns.getServers()`) as upstream and forwards other names to it. The phones'
+connectivity-probe names are forwarded too, and answered locally only if upstream is silent for
+1.5 s; the game name is always answered locally. The hotspot-subnet allow guard is unchanged.
+Guests can reach the home router and LAN; the host accepted that
+([`Decisions.md`](../Decisions.md), 2026-10-02). If sharing was asked for but not achieved,
+`HotspotService` logs a non-fatal warning.
 
 ## The QR rule — binding
 

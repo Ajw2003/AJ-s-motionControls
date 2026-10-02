@@ -29,7 +29,7 @@ against the code actually on this branch as of the date above, not copied from i
 | **Message/connection hygiene** | relay/server.js | 4096-byte message cap, 60 msg/s per-socket rate limit, 8-player room cap, `JSON.parse` in try/catch. |
 | **Traffic encryption** | [relay/server.js:711-720](../relay/server.js:711) | Both legs (phone↔relay, relay↔Unity) run over real TLS (`https.createServer` backing the `WebSocketServer`, not just a `wss://` label) — required anyway for iOS motion-sensor secure-context rules, so it's structural, not optional. |
 | **Uninstall cleanup** | [deploy/installer.iss:166](../deploy/installer.iss:166) | `[UninstallRun]` calls `setup-offline.ps1 -Uninstall`, which removes the firewall rules, the scheduled task, and the hosts entry — nothing left behind on a clean removal. |
-| **Guest network isolation** | `deploy/setup-offline.ps1`, confirmed by [HotspotService.cs:232-239](../Assets/Scripts/Net/HotspotService.cs:232) | IP forwarding on the hotspot interface is disabled every session; `HotspotService` fails loudly if it can't confirm this rather than silently continuing. Guest traffic never exits via the host's IP. **Correction 2026-10-01:** until #70 the confirmation passed on a momentary reading that ICS reversed ~2 s later, so isolation was not actually holding; it now requires 6 s stable. |
+| **Guest network isolation** | `deploy/setup-offline.ps1`, confirmed by [HotspotService.cs:232-239](../Assets/Scripts/Net/HotspotService.cs:232) | IP forwarding on the hotspot interface is disabled every session; `HotspotService` fails loudly if it can't confirm this rather than silently continuing. Guest traffic never exits via the host's IP. **Applies only when "Share internet" is off. Since 2026-10-02 sharing is the default: forwarding is left on and a guest reaches the internet and the home LAN, accepted by the host (`docs/Decisions.md`).** **Correction 2026-10-01:** until #70 the confirmation passed on a momentary reading that ICS reversed ~2 s later, so isolation was not actually holding; it now requires 6 s stable. |
 
 The certificate's private key being intentionally public (see `docs/plans/magic-domain-replacement.md`)
 is not a defect either — it's the mechanism that makes a trusted secure context possible without a
@@ -93,6 +93,9 @@ currently no friction at all on repeated wrong guesses from one socket.
 guest keeps the same Wi-Fi SSID/passphrase forever (so returning to a party doesn't mean a fresh
 QR), and this is stated to be safe *only* because IP forwarding is disabled every session — a
 returning guest can reach the relay and other phones, never the host's internet or LAN.
+**Since 2026-10-02, with sharing on (the default), a returning guest gets internet and LAN access;
+the host accepted this** (party guests already use the home Wi-Fi). The isolation claim holds only
+for sharing-off sessions.
 
 **What to check before shipping:** that the forwarding-disable step in item "Guest network
 isolation" above genuinely fires on **every** code path that can start a hotspot session,
@@ -136,7 +139,7 @@ deliberately rather than by accident.
 | 2 | Finish and verify the installer end-to-end (§2) | Open — currently unbuildable |
 | 3 | Per-IP connection cap (§3) | Open — cheap hardening |
 | 4 | Failed-`JOIN_ROOM` throttle (§4) | Open — cheap hardening |
-| 5 | Re-verify forwarding-disable fires on every code path (§5) | Open — the assumption a deliberate design leans on |
+| 5 | Re-verify forwarding-disable fires on every code path (§5) | Open — applies to sharing-off sessions only; the assumption a deliberate design leans on |
 | 6 | Confirm `richText` off for the results screen (§6) | Open — cosmetic, quick to check |
 | 7 | Node runtime update path (§7) | Open — no urgency pre-launch, needed before this ships at scale |
 

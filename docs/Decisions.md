@@ -10,6 +10,42 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-02 — Share the host's internet with guests by default
+
+**Context.** Guests were isolated (forwarding off). Android only treats the hotspot as a normal
+network when it has real internet, so with isolation phones showed "no internet" and did not
+rejoin by themselves. Three fences meant to block the LAN while sharing failed on this machine (a
+firewall rule, a WFP filter at the forward layer, a WFP filter at the inbound-packet layer), so
+sharing is unfenced. Evidence:
+[`Findings-HotspotForwardingAndInternet-2026-10-01.md`](Findings-HotspotForwardingAndInternet-2026-10-01.md).
+
+**Decision.** Ayden, 2026-10-02: share the host's internet with hotspot guests by default. Guests
+reaching the home router/LAN is no new exposure, since party guests already use the home Wi-Fi;
+a sensitive venue can run the host offline. A lobby setting "Share internet" turns it off from
+the next hotspot start. This supersedes the guest-isolation-by-default stance. No earlier entry in
+this log states it, so there is no Status line to flip; it lived in
+[`systems/HostingAndCertificates.md`](systems/HostingAndCertificates.md) and
+[`SecurityReview.md`](SecurityReview.md), both updated.
+
+**Why.** Measured on a Samsung S26: with sharing, it rejoined by itself within 5-15 s when no
+other known Wi-Fi was in range, and stayed on home Wi-Fi when that was in range. Built:
+`relay/dns.js` (`fallbackNames`, `fallbackMs`) and `relay/server.js` (`SHARE_INTERNET=1`) forward
+other names to the host's first usable IPv4 resolver, and forward the phones' connectivity-probe
+names too, answering them locally only if upstream is silent for 1.5 s; the game name is always
+answered locally. `hotspot/hotspot-control.ps1 -ShareInternet` skips the forwarding-disable task
+and reports `shared` (measured: Windows keeps forwarding Enabled by itself).
+`MatchSettingsStore.shareInternet` (default true), the `MatchSettings` toggle, `LocalServices`
+and `HotspotService` carry it through.
+
+**Alternatives rejected.** Keep isolation as the default: phones do not rejoin by themselves.
+Fence the LAN while sharing: three attempts failed (above); no positive control was run, so this
+shows only that those filters did not work here.
+
+**Status.** Standing. Not tested yet: a full Play-mode session with sharing on and a phone;
+iPhones; other Android brands; a host whose upstream is Wi-Fi; rejoin after days.
+
+---
+
 ## 2026-09-08 — Stop the relay/direct flapping by deleting the WebRTC transport
 
 **Context.** The Unity console showed `[PeerLink] <id>: DIRECT` interleaved with join logs about

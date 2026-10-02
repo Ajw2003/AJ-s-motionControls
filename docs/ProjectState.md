@@ -124,6 +124,11 @@ before ICS can take it, and gates on both halves of name resolution — the gues
 back rather than by trusting that a scheduled task launched. One-time elevated machine setup runs
 itself behind a single UAC prompt.
 
+Since 2026-10-02 the host's internet is shared with guests by default (the lobby setting "Share
+internet" turns it off from the next hotspot start); isolation applies only when it is off.
+Measured on one Samsung S26 only. Not tested yet: a full Play-mode session with sharing on and a
+phone; iPhones; other Android brands; a host whose upstream is Wi-Fi; rejoin after days.
+
 ### 7 — Frictionless join ✅
 
 Closed 2026-09-07 after ten rounds of hardware testing. Two QRs (Wi-Fi payload, then game URL); a
@@ -295,7 +300,8 @@ Worth separating, because the difference is where surprises come from.
 | Physics energy invariant holds | `RockSkipping/Verify/Print Skip Curve` |
 | `PhoneAttitude` and `SkipPhysics` behaviour | NUnit EditMode tests in `Assets/Tests/EditMode/` |
 | Offline play works | Direct observation, plus `deploy/spike/hotspot-offline-spike.ps1` as an unattended regression check |
-| Guest isolation | Forwarding flag read back, not assumed |
+| Guest isolation (sharing off only) | Forwarding flag read back, not assumed |
+| Internet sharing (default) | Samsung S26 rejoined itself in 5-15 s; Play-mode session, iPhones, other Android brands, Wi-Fi upstream, rejoin after days **not tested** |
 | Five-player cross-platform match | One real session — **not** recorded per-device; see the `DeviceMatrix.md` caveat |
 | Six rocks play differently | **Not verified, and currently false** |
 | A stranger can install and play | **Never attempted** |

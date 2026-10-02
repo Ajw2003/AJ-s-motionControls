@@ -19,6 +19,10 @@ phone browser ──wss──┘         relay/server.js
                                answers DNS on :53 (hotspot mode)
 ```
 
+`relay/dns.js` answers the game name locally. With `SHARE_INTERNET=1` it also forwards other names
+(and the phones' connectivity probes, with a 1.5 s local fallback) to the host's resolver; see
+[`HostingAndCertificates.md`](HostingAndCertificates.md).
+
 One socket, one hop. The relay is a child process of the game itself, started by `LocalServices`
 on Play — **not** a dev convenience and not a service anyone deploys. The Fly.io deployment this
 replaced is torn down and its files deleted; there is no hosted fallback.
