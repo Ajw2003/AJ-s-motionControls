@@ -25,7 +25,11 @@ param([int] $Seconds = 20)
 Set-StrictMode -Version Latest
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $control = Join-Path $root 'hotspot\hotspot-control.ps1'
-$creds = Get-Content (Join-Path $root 'hotspot-credentials.json') -Raw | ConvertFrom-Json
+# Where the game saves it since #81 (Application.persistentDataPath, from ProjectSettings'
+# companyName and productName); beside the project before that.
+$credsPath = Join-Path $env:USERPROFILE 'AppData\LocalLow\DefaultCompany\RockSkipping\hotspot-credentials.json'
+if (-not (Test-Path $credsPath)) { $credsPath = Join-Path $root 'hotspot-credentials.json' }
+$creds = Get-Content $credsPath -Raw | ConvertFrom-Json
 
 $started = Get-Date
 $job = Start-Job -ScriptBlock {
