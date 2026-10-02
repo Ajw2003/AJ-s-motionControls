@@ -314,6 +314,20 @@ if ($Action -eq 'Start') {
             Write-Progress2 ("  [warn] this adapter would not accept Band={0}; leaving it to Windows ({1})" -f $bandChoice.Band, $_.Exception.Message)
         }
 
+        # WPA2, asked for by name (#80). Windows 11 24H2 added WPA3 and WPA3 transition mode
+        # for the hotspot, and transition mode is a known source of iPhones failing with
+        # "Unable to join". Microsoft documents WPA2 as supported by all current hardware.
+        # Older Windows has no AuthenticationKind and is WPA2 regardless.
+        $security = 'Wpa2 (only option before 24H2)'
+        try {
+            $authType = [Windows.Networking.NetworkOperators.TetheringWiFiAuthenticationKind,Windows.Networking,ContentType=WindowsRuntime]
+            $cfg.AuthenticationKind = [enum]::Parse($authType, 'Wpa2')
+            $security = 'Wpa2'
+        } catch {
+            Write-Progress2 ("  this Windows has no hotspot security setting, so it is WPA2 already ({0})" -f $_.Exception.Message)
+        }
+        Write-Progress2 "  security: $security"
+
         try {
             Await-Action $manager.ConfigureAccessPointAsync($cfg)
         } catch {
@@ -431,7 +445,8 @@ if ($Action -eq 'Start') {
             shared = $shared
             profile = $script:TetheringProfileName
             band = $bandChoice.Band; stationBand = $bandChoice.Station
-            bandMatched = $bandChoice.Matched }
+            bandMatched = $bandChoice.Matched
+            security = $security }
     } catch {
         Write-Result @{ ok = $false; error = 'exception'; message = $_.Exception.Message }
     }
