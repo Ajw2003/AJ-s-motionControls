@@ -54,6 +54,9 @@ Bootstrap creates every manager, `RelayClient` included, in its own `Awake`
 (say `showAimPreview` is off), the search runs every frame for the whole session.
 `RockLauncher` also reads `Camera.main` per frame until it finds one.
 
+
+**Status:** done in `3185d8a` (#62). Every per-frame relay probe and `Find*` is gone; bindings happen once in `Start` (ShoreRocks in `Awake`, because it can deactivate itself before `Start`). Found in review: every scene has its own camera, so `RockLauncher` re-resolves `Camera.main` on `SceneManager.sceneLoaded` rather than caching it once.
+
 ### P2 — LINQ with closures for every lobby stone, every frame
 
 `ShoreRocks.UpdateStoneLooks` (`Game/ShoreRocks.cs:347-368`) runs `FirstOrDefault` and `Any`
@@ -61,12 +64,18 @@ with capturing lambdas for each of the six stones, every frame. That allocates e
 lobby. It also rewrites each stone's material colour and scale every frame, even when nothing
 changed.
 
+
+**Status:** done in `354c8a5` (#63).
+
 ### P3 — Join-screen QR checks rebuild strings every frame
 
 `JoinScreen.EnsureQrMatchesJoinUrl` and `EnsureWifiQrMatchesHotspot` (`UI/JoinScreen.cs:94-121`)
 build the join URL and the Wi-Fi payload string every frame, only to compare them with the last
 one. A one-second coroutine check is enough: the QR only changes when the room code or hotspot
 does.
+
+
+**Status:** done in `0038832` (#64). One-second `WaitForSecondsRealtime` coroutine; a new QR can take up to 1 s to appear.
 
 ### P4 — Standings re-sorted every frame
 
@@ -78,11 +87,17 @@ does.
 The order only changes when a throw completes, a player joins or leaves, or the phase changes.
 All of those are events.
 
+
+**Status:** done in `98116d3` (#65). Found in review: `TurnManager.RebuildStandings` returns its internal list, so `ResultsScreen` now keeps its own copy.
+
 ### P5 — Ripple globals uploaded while the lake is idle
 
 `WaterRipples.LateUpdate` (`Game/WaterRipples.cs:134`) zero-fills and uploads the ripple array to
 the GPU every frame, even with no ripples alive. Once it has published an empty array, it can
 skip until a ripple is added.
+
+
+**Status:** done in `656a2fc` (#66).
 
 ### P6 — OnGUI rebuilds its label strings on every pass
 
@@ -95,6 +110,11 @@ OnGUI runs at least twice a frame (layout plus repaint), and these build strings
 Those strings only change when the underlying values do, so they can be cached and rebuilt on
 change.
 
+
+**Status:** done in `98116d3` (#67). The debug HUD readout refreshes at 4 Hz while visible, and immediately on a throw.
+
 ## Status
+
+**Verification for all six:** compiled by the real Unity compiler in batch mode, and EditMode tests pass 18/18. **None of this has been run in Play mode yet.**
 
 Tracked as #61 (parent) with #62–#67, one per finding P1–P6, in order.
