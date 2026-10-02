@@ -29,12 +29,18 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File deploy\spike\hotspot-wfp-fence-spike.ps1
 #>
 [CmdletBinding()]
-param([switch] $DryRun)
+param(
+    [switch] $DryRun,
+    # InboundPacket (default): match packets arriving on the hotspot, before routing or NAT.
+    # Forward: the IP-forward layer, which spike 2 showed does NOT catch ICS traffic.
+    [ValidateSet('InboundPacket', 'Forward')] [string] $Layer = 'InboundPacket'
+)
 
 Set-StrictMode -Version Latest
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $control = Join-Path $root 'hotspot\hotspot-control.ps1'
-$results = Join-Path $PSScriptRoot 'hotspot-wfp-fence-results.txt'
+# Forward keeps spike 2's original file name; each layer gets its own so runs never overwrite.
+$results = Join-Path $PSScriptRoot $(if ($Layer -eq 'Forward') { 'hotspot-wfp-fence-results.txt' } else { 'hotspot-wfp-inbound-results.txt' })
 
 Add-Type -TypeDefinition @'
 using System;
@@ -60,12 +66,16 @@ public static class WfpFence
     [DllImport("fwpuclnt.dll")] static extern uint FwpmFilterAdd0(IntPtr engine, ref Filter filter, IntPtr sd, out ulong id);
     [DllImport("fwpuclnt.dll")] static extern uint FwpmEngineClose0(IntPtr engine);
 
-    static readonly Guid LayerIpForwardV4 = new Guid("a82acc24-4ee1-4ee1-b465-fd1d25cb10a4");
-    static readonly Guid ConditionIpDestination = new Guid("2d79133b-b390-45c6-8699-acaceaafed33");
+    // From fwpmu.h, Windows SDK 10.0.26100.0.
+    public static readonly Guid LayerIpForwardV4 = new Guid("a82acc24-4ee1-4ee1-b465-fd1d25cb10a4");
+    public static readonly Guid LayerInboundIpPacketV4 = new Guid("c86fd1bf-21cd-497e-a0bb-17425c885c58");
+    public static readonly Guid ConditionIpDestination = new Guid("2d79133b-b390-45c6-8699-acaceaafed33");
+    public static readonly Guid ConditionIpLocalAddress = new Guid("d9ee00de-c1ef-4617-bfe3-ffd8f5a08957");
+    public static readonly Guid ConditionIpRemoteAddress = new Guid("b235ae9a-1d64-49b8-a44c-5ff3d9095045");
     const uint RpcAuthnWinNt = 10, SessionDynamic = 0x1, DataV4AddrMask = 0x100, MatchEqual = 0, ActionBlock = 0x1001;
 
     /// <summary>Opens a dynamic session and adds one block filter; returns the engine handle to close later.</summary>
-    public static IntPtr Install(uint[] addrs, uint[] masks)
+    public static IntPtr Install(Guid layer, Guid[] fields, uint[] addrs, uint[] masks)
     {
         var session = new Session { Display = new DisplayData { Name = "RockSkipping fence spike" }, Flags = SessionDynamic };
         IntPtr engine;
@@ -78,15 +88,15 @@ public static class WfpFence
         {
             IntPtr am = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(AddrMask)));
             Marshal.StructureToPtr(new AddrMask { Addr = addrs[i], Mask = masks[i] }, am, false);
-            var c = new Condition { FieldKey = ConditionIpDestination, MatchType = MatchEqual, ConditionValue = new Value { Type = DataV4AddrMask, Data = am } };
+            var c = new Condition { FieldKey = fields[i], MatchType = MatchEqual, ConditionValue = new Value { Type = DataV4AddrMask, Data = am } };
             Marshal.StructureToPtr(c, new IntPtr(conds.ToInt64() + (long)i * condSize), false);
         }
 
-        // Several conditions on the same field are OR'd by WFP: any listed range matches.
+        // WFP ORs conditions on the same field and ANDs different fields.
         var filter = new Filter
         {
             Key = Guid.NewGuid(), Display = new DisplayData { Name = "RockSkipping: block guests from private networks" },
-            LayerKey = LayerIpForwardV4, NumConditions = (uint)addrs.Length, Conditions = conds, Action = new Action { Type = ActionBlock }
+            LayerKey = layer, NumConditions = (uint)addrs.Length, Conditions = conds, Action = new Action { Type = ActionBlock }
         };
         ulong id;
         err = FwpmFilterAdd0(engine, ref filter, IntPtr.Zero, out id);
@@ -101,22 +111,50 @@ public static class WfpFence
 }
 '@
 
-# Host byte order. 192.168.0.0/16 includes the hotspot subnet, which is harmless: guest-to-host
-# is local delivery and guest-to-guest is bridged by the access point; neither is forwarded.
-$ranges = @(
+function V4([string] $hex) { [Convert]::ToUInt32($hex, 16) }
+
+# Forward layer: destination ranges only. 192.168.0.0/16 includes the hotspot subnet, which is
+# harmless there: guest-to-host is local delivery and guest-to-guest is bridged by the access
+# point, so neither is forwarded.
+$forwardRanges = @(
     @{ Name = '10.0.0.0/8';     Addr = [Convert]::ToUInt32('0A000000', 16); Mask = [Convert]::ToUInt32('FF000000', 16) }
     @{ Name = '172.16.0.0/12';  Addr = [Convert]::ToUInt32('AC100000', 16); Mask = [Convert]::ToUInt32('FFF00000', 16) }
     @{ Name = '192.168.0.0/16'; Addr = [Convert]::ToUInt32('C0A80000', 16); Mask = [Convert]::ToUInt32('FFFF0000', 16) }
     @{ Name = '169.254.0.0/16'; Addr = [Convert]::ToUInt32('A9FE0000', 16); Mask = [Convert]::ToUInt32('FFFF0000', 16) }
     @{ Name = '100.64.0.0/10';  Addr = [Convert]::ToUInt32('64400000', 16); Mask = [Convert]::ToUInt32('FFC00000', 16) }
 )
+
+# Inbound-packet layer: source is a guest AND destination is private. Here guest-to-host traffic
+# IS seen, so 192.168.137.0/24 is carved out of 192.168.0.0/16 as eight masks covering the rest.
+$inboundDestinations = @(
+    @('10.0.0.0/8', '0A000000', 'FF000000'), @('172.16.0.0/12', 'AC100000', 'FFF00000'),
+    @('192.168.0.0/17', 'C0A80000', 'FFFF8000'), @('192.168.128.0/21', 'C0A88000', 'FFFFF800'),
+    @('192.168.136.0/24', 'C0A88800', 'FFFFFF00'), @('192.168.138.0/23', 'C0A88A00', 'FFFFFE00'),
+    @('192.168.140.0/22', 'C0A88C00', 'FFFFFC00'), @('192.168.144.0/20', 'C0A89000', 'FFFFF000'),
+    @('192.168.160.0/19', 'C0A8A000', 'FFFFE000'), @('192.168.192.0/18', 'C0A8C000', 'FFFFC000'),
+    @('169.254.0.0/16', 'A9FE0000', 'FFFF0000'), @('100.64.0.0/10', '64400000', 'FFC00000')
+)
+
+if ($Layer -eq 'Forward') {
+    $layerKey = [WfpFence]::LayerIpForwardV4
+    $ranges = $forwardRanges
+    $fields = @($ranges | ForEach-Object { [WfpFence]::ConditionIpDestination })
+} else {
+    $layerKey = [WfpFence]::LayerInboundIpPacketV4
+    $ranges = @(@{ Name = 'from 192.168.137.0/24'; Addr = (V4 'C0A88900'); Mask = (V4 'FFFFFF00') }) +
+        @($inboundDestinations | ForEach-Object { @{ Name = $_[0]; Addr = (V4 $_[1]); Mask = (V4 $_[2]) } })
+    # Arriving packet: remote = the guest (source), local = where it is going (destination).
+    $fields = @([WfpFence]::ConditionIpRemoteAddress) +
+        @($inboundDestinations | ForEach-Object { [WfpFence]::ConditionIpLocalAddress })
+}
 $router = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).IPv4DefaultGateway.NextHop
 
 if ($DryRun) {
     'DRY RUN - helper compiled, nothing changed.'
     "  struct sizes   : $([WfpFence]::Sizes())   (SDK x64 layout: Filter 200, Condition 40, Session 72)"
     "  router to test : http://$router"
-    "  blocked ranges : $(($ranges | ForEach-Object Name) -join ', ')"
+    "  layer          : $Layer"
+    "  conditions     : $(($ranges | ForEach-Object Name) -join ', ')"
     "  results file   : $results"
     return
 }
@@ -125,7 +163,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     'Asking for administrator rights - approve the UAC prompt. The spike continues in that new window.'
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -NoExit -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -NoExit -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Layer $Layer"
     return
 }
 
@@ -139,7 +177,7 @@ function Test-HostReachesRouter {
     catch { if ($_.Exception.Response) { 'yes (HTTP error page)' } else { "no: $($_.Exception.Message)" } }
 }
 
-Set-Content $results "WFP fence spike, $(Get-Date -Format 'yyyy-MM-dd HH:mm'), router http://$router"
+Set-Content $results "WFP fence spike ($Layer layer), $(Get-Date -Format 'yyyy-MM-dd HH:mm'), router http://$router"
 $creds = Get-Content (Join-Path $root 'hotspot-credentials.json') -Raw | ConvertFrom-Json
 $engine = [IntPtr]::Zero
 
@@ -157,8 +195,8 @@ try {
     Ask 'Stage 1: did https://example.com load'
     Ask "Stage 1: did the router page load (anything, even an error page)"
 
-    $engine = [WfpFence]::Install([uint32[]]($ranges | ForEach-Object Addr), [uint32[]]($ranges | ForEach-Object Mask))
-    Add-Content $results "WFP filter added at FWPM_LAYER_IPFORWARD_V4: $(($ranges | ForEach-Object Name) -join ', ')"
+    $engine = [WfpFence]::Install($layerKey, [Guid[]]$fields, [uint32[]]($ranges | ForEach-Object Addr), [uint32[]]($ranges | ForEach-Object Mask))
+    Add-Content $results "WFP filter added, layer $Layer`: $(($ranges | ForEach-Object Name) -join ', ')"
     $hostCheck = Test-HostReachesRouter
     Add-Content $results "host itself reaches router with filter on: $hostCheck"
     "    (PC itself still reaches the router: $hostCheck)"
