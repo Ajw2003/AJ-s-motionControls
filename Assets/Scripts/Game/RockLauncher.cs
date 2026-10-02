@@ -130,7 +130,14 @@ namespace Game
                 return;
             }
 
-            if (_active != null && _active.IsFlying) return; // one rock at a time
+            // One rock at a time, until the last one has COMPLETED, not just landed.
+            // IsSinking holds through the settle; a stone launched then overwrote _active
+            // and the old one's completion advanced the turn under it (#56).
+            if (_active != null && (_active.IsFlying || _active.IsSinking))
+            {
+                Debug.Log($"[RockLauncher] Refused THROW from {message.playerId}: the previous stone is still out.");
+                return;
+            }
 
             // Both read from AimPreview rather than re-resolved here, so the ghost this
             // player just aimed with and the stone that actually flies can never land on
