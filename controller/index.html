@@ -38,7 +38,11 @@
         flex-direction: column;
         overflow: hidden;
         touch-action: manipulation;
+        /* Safari honours only the prefixed form, and needs the callout off too: without
+           them a press opened the selection loupe and Copy / Look Up bubble (#60). */
+        -webkit-user-select: none;
         user-select: none;
+        -webkit-touch-callout: none;
         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
           env(safe-area-inset-left);
       }
@@ -103,6 +107,9 @@
         font-size: 20px;
         text-align: center;
         text-transform: uppercase;
+        /* Opt back in: Safari can refuse typing in a field that inherits user-select: none. */
+        -webkit-user-select: text;
+        user-select: text;
       }
       input:focus {
         border-color: var(--accent);
