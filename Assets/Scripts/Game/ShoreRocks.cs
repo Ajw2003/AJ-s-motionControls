@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Linq;
 using EventSystems;
 using EventTypes.MatchEvents;
 using Managers;
@@ -363,15 +362,26 @@ namespace Game
                 // can be tinted toward that player's own colour. This is the first thing
                 // outside the pointer dots to read a player colour, and the hook the rest
                 // of the rock-colouring work is meant to build on.
-                var owner = _pointers.FirstOrDefault(p => p.Value.Confirmed && p.Value.ConfirmedIndex == index).Key;
+                // Plain loop, not LINQ: this runs per stone, every lobby frame (#63).
+                string owner = null;
+                var highlightedHere = false;
+                foreach (var pair in _pointers)
+                {
+                    var pointer = pair.Value;
+                    if (pointer.Confirmed && pointer.ConfirmedIndex == index) owner = pair.Key;
+                    else if (pointer.HighlightIndex == index) highlightedHere = true;
+                }
                 var confirmedHere = owner != null;
-                var highlightedHere = !confirmedHere && _pointers.Values.Any(p => p.HighlightIndex == index);
+                highlightedHere &= !confirmedHere;
 
-                stone.Material.color = confirmedHere ? ConfirmedColourFor(owner, stone.BaseColour)
+                var colour = confirmedHere ? ConfirmedColourFor(owner, stone.BaseColour)
                     : highlightedHere ? _tuning.HighlightColour
                     : stone.BaseColour;
+                var scale = stone.BaseScale * (confirmedHere || highlightedHere ? _tuning.HighlightScale : 1f);
 
-                stone.Transform.localScale = stone.BaseScale * (confirmedHere || highlightedHere ? _tuning.HighlightScale : 1f);
+                // Written only on change: both setters cross into native code.
+                if (stone.Material.color != colour) stone.Material.color = colour;
+                if (stone.Transform.localScale != scale) stone.Transform.localScale = scale;
             }
         }
 
