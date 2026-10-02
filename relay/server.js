@@ -506,10 +506,31 @@ const DNS_NAME = process.env.DNS_NAME || 'play.skiprocking.ca';
 const DNS_UPSTREAM = process.env.DNS_UPSTREAM || null;
 const useDns = Boolean(DNS_RESPOND_IP);
 
+// '1' when the host shares its internet with hotspot guests. Then the probe domains must
+// resolve for real (the phones' own internet checks), so they are only a local fallback.
+const SHARE_INTERNET = process.env.SHARE_INTERNET === '1';
+
+/** Upstream for sharing mode: DNS_UPSTREAM, else the host's first usable IPv4 resolver. */
+function pickSharingUpstream() {
+  if (DNS_UPSTREAM) return DNS_UPSTREAM;
+  const isHotspot = makeSubnetTest('192.168.137.0/24');
+  return (
+    require('dns')
+      .getServers()
+      .find(
+        (s) =>
+          /^\d{1,3}(\.\d{1,3}){3}$/.test(s) &&
+          !s.startsWith('127.') &&
+          s !== '0.0.0.0' &&
+          !isHotspot(s),
+      ) || null
+  );
+}
+
 // Android and iOS each probe a domain of their choosing right after joining a network, to
 // decide whether to show "No internet" and whether to keep cellular as the default route.
-// Guests are isolated from the host's own internet by design, so these probes always fail on
-// their own, and "it just stopped working" reports are very likely a phone that decided this
+// Unless SHARE_INTERNET is on, guests are isolated from the host's internet by design, so
+// these probes always fail on their own, and "it just stopped working" reports are very likely a phone that decided this
 // network was useless rather than an actual game bug. Answering them ourselves (this list, plus
 // /generate_204 and /hotspot-detect.html below) fixes the symptom without re-enabling
 // forwarding and undoing the isolation decision — see docs/plans/magic-domain-replacement.md
@@ -844,11 +865,22 @@ httpServer.listen(PORT, BIND_HOST, () => {
 
 async function startDns() {
   try {
+    const sharingUpstream = SHARE_INTERNET ? pickSharingUpstream() : null;
+    if (SHARE_INTERNET && !sharingUpstream) {
+      log('sharing requested but no upstream DNS found; guests get no internet lookups');
+    }
+    const sharing = Boolean(sharingUpstream);
+    log(
+      sharing
+        ? `dns mode: sharing, upstream ${sharingUpstream}`
+        : `dns mode: isolated, upstream ${DNS_UPSTREAM || 'none'}`,
+    );
     dnsResponder = createResponder({
       ip: DNS_RESPOND_IP,
-      names: [DNS_NAME, ...CONNECTIVITY_PROBE_DOMAINS],
+      names: sharing ? [DNS_NAME] : [DNS_NAME, ...CONNECTIVITY_PROBE_DOMAINS],
+      fallbackNames: sharing ? CONNECTIVITY_PROBE_DOMAINS : null,
       allow: DNS_ALLOW,
-      upstream: DNS_UPSTREAM,
+      upstream: sharing ? sharingUpstream : DNS_UPSTREAM,
       // Teed into probe-access.log as well as stdout: which names the phone asks for is
       // the half of the join picture the :80 log cannot show.
       log: logDnsLine,

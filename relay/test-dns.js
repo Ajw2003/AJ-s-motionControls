@@ -392,3 +392,125 @@ describe('Out-of-range sources are dropped, not refused', () => {
     await expectDropped(PROBE_NAMES[0], PORT + 2);
   });
 });
+
+// ------------------------------------------------------------ fallback names (sharing)
+
+/** Fake upstream on a high port. `behaviour(msg)` returns a Buffer to reply with, or null. */
+function startFakeUpstream(port, behaviour) {
+  return new Promise((resolve) => {
+    const sock = dgram.createSocket('udp4');
+    const seen = [];
+    sock.on('message', (msg, rinfo) => {
+      seen.push(msg);
+      const out = behaviour(msg);
+      if (out) sock.send(out, rinfo.port, rinfo.address);
+    });
+    sock.bind(port, '127.0.0.1', () => resolve({ sock, seen }));
+  });
+}
+
+/** An upstream answer that is visibly not ours: an A record for 9.9.9.9. */
+function realAnswer(msg) {
+  return dns.buildReply(dns.decodeQuery(msg), msg, { answerIp: '9.9.9.9' });
+}
+
+describe('Fallback names', () => {
+  const FB_PORT = PORT + 10;
+  const UP_PORT = PORT + 11;
+
+  async function withResponder(extra, fn) {
+    const responder = dns.createResponder({
+      ip: '192.168.137.1',
+      names: [GAME_NAME],
+      fallbackNames: [PROBE_NAMES[0]],
+      fallbackMs: 300,
+      port: FB_PORT,
+      bind: '127.0.0.1',
+      allow: '127.0.0.0/8',
+      rate: 100,
+      ...extra,
+    });
+    await responder.start();
+    try {
+      await fn();
+    } finally {
+      await responder.stop();
+    }
+  }
+
+  function askFallback(name) {
+    return new Promise((resolve) => {
+      const socket = dgram.createSocket('udp4');
+      const timer = setTimeout(() => {
+        socket.close();
+        resolve(null);
+      }, 1500);
+      socket.on('message', (m) => {
+        clearTimeout(timer);
+        socket.close();
+        resolve(parseReply(m));
+      });
+      socket.send(encodeQuery(name), FB_PORT, '127.0.0.1');
+    });
+  }
+
+  test('fallback name is forwarded and the upstream reply returned', async () => {
+    const up = await startFakeUpstream(UP_PORT, realAnswer);
+    try {
+      await withResponder({ upstream: '127.0.0.1', upstreamPort: UP_PORT }, async () => {
+        const r = await askFallback(PROBE_NAMES[0]);
+        check(
+          'upstream answer is returned',
+          r && r.answers[0] === '9.9.9.9',
+          r ? `got ${r.answers[0]}` : 'no reply',
+        );
+        check('upstream was asked', up.seen.length === 1);
+      });
+    } finally {
+      up.sock.close();
+    }
+  });
+
+  test('fallback name is answered locally when upstream is silent', async () => {
+    const up = await startFakeUpstream(UP_PORT, () => null);
+    try {
+      await withResponder({ upstream: '127.0.0.1', upstreamPort: UP_PORT }, async () => {
+        const r = await askFallback(PROBE_NAMES[0]);
+        check(
+          'local answer after fallbackMs',
+          r && r.answers[0] === '192.168.137.1',
+          r ? `got ${r.answers[0]}` : 'no reply',
+        );
+        check('upstream was asked first', up.seen.length === 1);
+      });
+    } finally {
+      up.sock.close();
+    }
+  });
+
+  test('exact names stay local and other names are forwarded', async () => {
+    const up = await startFakeUpstream(UP_PORT, realAnswer);
+    try {
+      await withResponder({ upstream: '127.0.0.1', upstreamPort: UP_PORT }, async () => {
+        const other = await askFallback('example.com');
+        check('non-matching name forwarded', other && other.answers[0] === '9.9.9.9');
+        const game = await askFallback(GAME_NAME);
+        check('exact name answered locally', game && game.answers[0] === '192.168.137.1');
+        check('exact name never reached upstream', up.seen.length === 1, `saw ${up.seen.length}`);
+      });
+    } finally {
+      up.sock.close();
+    }
+  });
+
+  test('with no upstream a fallback name is answered locally', async () => {
+    await withResponder({}, async () => {
+      const r = await askFallback(PROBE_NAMES[0]);
+      check(
+        'answered locally',
+        r && r.answers[0] === '192.168.137.1',
+        r ? `got ${r.answers[0]}` : 'no reply',
+      );
+    });
+  });
+});

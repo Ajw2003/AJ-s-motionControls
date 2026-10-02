@@ -205,6 +205,14 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
  * @param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
  *                                     hostname plus the connectivity probe domains —
  *                                     see docs/plans/magic-domain-replacement.md Phase 4)
+ * @param {string[]} [options.fallbackNames] names forwarded upstream first, answered locally
+ *                                     (like `names`) only if the upstream stays silent for
+ *                                     `fallbackMs` or errors. For sharing mode, where the probe
+ *                                     domains must resolve for real if the internet is up.
+ *                                     With no `upstream` they behave exactly like `names`.
+ * @param {number}  [options.fallbackMs] how long to wait for upstream before answering a
+ *                                     fallback name locally (default 1500)
+ * @param {number}  [options.upstreamPort] upstream's UDP port (default 53; tests override)
  * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
  * @param {number}  [options.rate]     max queries per second per source
  * @param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
@@ -222,6 +230,9 @@ function createResponder(options) {
     suffix = null,
     name = null,
     names = null,
+    fallbackNames = null,
+    fallbackMs = 1500,
+    upstreamPort = 53,
     port = 53,
     bind = '0.0.0.0',
     allow,
@@ -248,13 +259,30 @@ function createResponder(options) {
     [...(names || []), name].filter(Boolean).map((n) => n.toLowerCase()),
   );
 
+  // Only forwarded-first when there is an upstream; without one these are just more exact names.
+  const fallbackSet = new Set((fallbackNames || []).map((n) => n.toLowerCase()));
+
   let socket = null;
 
   const matches = (queried) => {
     const lower = queried.toLowerCase();
     if (exactNames.size > 0 && exactNames.has(lower)) return true;
+    if (!upstream && fallbackSet.has(lower)) return true;
     return suffix ? lower.endsWith(suffix.toLowerCase()) : false;
   };
+
+  function answerLocally(query, message, remote) {
+    stats.answered += 1;
+    if (query.type === TYPE_A) {
+      socket.send(buildReply(query, message, { answerIp: ip, ttl }), remote.port, remote.address);
+      log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> ${ip}`);
+    } else {
+      // Empty NOERROR, never NXDOMAIN. NXDOMAIN means "this name does not exist" for
+      // EVERY record type, so a dual-stack phone that believes it never goes on to try
+      // A — the difference between working and failing silently on some devices.
+      socket.send(buildReply(query, message, {}), remote.port, remote.address);
+    }
+  }
 
   function handle(message, remote) {
     // Both guards DROP rather than reply. Answering a source outside the hotspot — even
@@ -298,22 +326,18 @@ function createResponder(options) {
     }
 
     if (matches(query.name)) {
-      if (query.type === TYPE_A) {
-        stats.answered += 1;
-        socket.send(buildReply(query, message, { answerIp: ip, ttl }), remote.port, remote.address);
-        log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> ${ip}`);
-      } else {
-        // Empty NOERROR, never NXDOMAIN. NXDOMAIN means "this name does not exist" for
-        // EVERY record type, so a dual-stack phone that believes it never goes on to try
-        // A — the difference between working and failing silently on some devices.
-        stats.answered += 1;
-        socket.send(buildReply(query, message, {}), remote.port, remote.address);
-      }
+      answerLocally(query, message, remote);
       return;
     }
 
     if (upstream) {
-      forward(message, remote);
+      if (fallbackSet.has(query.name.toLowerCase())) {
+        forward(message, remote, () => {
+          if (socket) answerLocally(query, message, remote);
+        });
+      } else {
+        forward(message, remote);
+      }
       return;
     }
 
@@ -325,39 +349,45 @@ function createResponder(options) {
     log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> NXDOMAIN`);
   }
 
-  function forward(message, remote) {
+  /** `onGiveUp`, if given, runs once if upstream errors or is silent past `fallbackMs`. */
+  function forward(message, remote, onGiveUp = null) {
     const client = dgram.createSocket('udp4');
-    const timer = setTimeout(() => {
+    let gaveUp = false;
+
+    const closeClient = () => {
       try {
         client.close();
       } catch {
         // Socket may already be closing/closed by the time we call close();
         // nothing to recover from, safe to ignore.
       }
-    }, 3000);
+    };
+    const giveUp = () => {
+      if (gaveUp || !onGiveUp) return;
+      gaveUp = true;
+      onGiveUp();
+    };
+
+    const fallbackTimer = onGiveUp ? setTimeout(giveUp, fallbackMs) : null;
+    const timer = setTimeout(closeClient, 3000);
 
     client.on('error', () => {
       clearTimeout(timer);
-      try {
-        client.close();
-      } catch {
-        // Socket may already be closing/closed by the time we call close();
-        // nothing to recover from, safe to ignore.
-      }
+      clearTimeout(fallbackTimer);
+      closeClient();
+      giveUp();
     });
     client.on('message', (reply) => {
       clearTimeout(timer);
+      clearTimeout(fallbackTimer);
+      closeClient();
+      // A reply after we already answered locally would be a second answer; drop it.
+      if (gaveUp) return;
       stats.forwarded += 1;
       socket.send(reply, remote.port, remote.address);
-      try {
-        client.close();
-      } catch {
-        // Socket may already be closing/closed by the time we call close();
-        // nothing to recover from, safe to ignore.
-      }
     });
 
-    client.send(message, 53, upstream);
+    client.send(message, upstreamPort, upstream);
   }
 
   return {
