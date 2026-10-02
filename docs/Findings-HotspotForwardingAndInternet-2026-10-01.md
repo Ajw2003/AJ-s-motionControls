@@ -197,6 +197,35 @@ Windows Firewall rules never create filters at that layer. It could be installed
 persistent filter, by the elevated setup. That's new code: P/Invoke to `fwpuclnt.dll`, or a
 small helper. It also needs its own spike.
 
+### Spike 2 result: a WFP forward-layer filter does not fence it either (MEASURED, #71)
+
+`deploy/spike/hotspot-wfp-fence-spike.ps1` was run on 2026-10-01 with the S26 and mobile data
+off; the answers are in `deploy/spike/hotspot-wfp-fence-results.txt`. It added a dynamic WFP
+block filter at `FWPM_LAYER_IPFORWARD_V4` for destinations 10/8, 172.16/12, 192.168/16,
+169.254/16 and 100.64/10.
+
+| Stage | `https://example.com` | Router `http://10.0.0.1/?t=<random>` | Phone status |
+|---|---|---|---|
+| 1. Forwarding on, no filter | loads | loads | — |
+| 2. Forwarding on, WFP filter | loads | **still loads** | **lost "Connected"** |
+
+**The filter was added without error, but did not stop guest traffic reaching the LAN.** The
+likely reason (PLAUSIBLE): ICS translates and passes guest traffic on before it reaches the
+IP-forward layer.
+
+**The host was unaffected.** The PC itself still reached the router with the filter on.
+
+**Unexplained:** the phone dropped its validated status in stage 2 while websites still loaded.
+
+**Two mechanisms have failed now:**
+
+- a Windows Firewall rule;
+- a WFP filter at the IP-forward layer.
+
+**One layer is still untried:** WFP's inbound IP-packet layer, which sees packets as they arrive
+on the hotspot interface, before any routing or NAT. Matched on source `192.168.137.0/24` and
+private destinations outside it.
+
 ### Recommendation
 
 Keep **A** as the default, and add **C** as a host-side opt-in ("Share this PC's internet with
