@@ -226,7 +226,45 @@ IP-forward layer.
 on the hotspot interface, before any routing or NAT. Matched on source `192.168.137.0/24` and
 private destinations outside it.
 
-### Recommendation
+### Spike 3 result: the WFP inbound-packet layer does not fence it either (MEASURED, #71)
+
+`deploy/spike/hotspot-wfp-fence-spike.ps1` (default `-Layer InboundPacket`) was run on 2026-10-01.
+The answers are in `deploy/spike/hotspot-wfp-inbound-results.txt`.
+
+**The filter:** source `192.168.137.0/24` AND destination private (every private range except
+the hotspot subnet).
+
+**What happened:**
+
+- the filter was added without error;
+- the router **still loaded** in stage 2;
+- websites loaded;
+- the phone stayed Connected;
+- the host was unaffected.
+
+### Conclusion: internet sharing is not offered (stopping after three failed fences)
+
+Each of these let guests reach the home network on this machine:
+
+- a Windows Firewall rule;
+- a WFP filter at the IP-forward layer;
+- a WFP filter at the inbound IP-packet layer.
+
+Per the stop-after-three rule, no further fence is attempted, and **option C is ruled out**.
+Guests stay isolated (option A), with forwarding off and confirmed by #70.
+
+**Evidence gap, stated plainly.** No positive control was run: a filter aimed at a public address
+it should block. So these runs show only that *these filters did not fence ICS traffic*. They do
+not show Windows cannot. Whether the filters were inert for some other reason (sublayer, weight,
+or ICS handling traffic below WFP) is unknown. A positive control is the one check to run if
+this is ever reopened.
+
+**What that means for rejoining.** Android only treats the hotspot as a normal network when it has
+real internet (Part 2). With guests isolated, phones will show "no internet", and Android will not
+reliably rejoin by itself. Returning players keep scanning the Wi-Fi QR. A phone already on the
+home Wi-Fi would not switch in any case.
+
+### Recommendation (superseded by the conclusion above)
 
 Keep **A** as the default, and add **C** as a host-side opt-in ("Share this PC's internet with
 players"). It should be on only when the host has internet, shown on the TV, and off again when
