@@ -173,6 +173,30 @@ join": the phone should rejoin the saved hotspot by itself.
 
 Which case applies needs Ayden's observation: what the phone was on, and which phones.
 
+### Spike result: Windows Firewall cannot fence shared traffic (MEASURED, #71)
+
+`deploy/spike/hotspot-sharing-spike.ps1` was run on 2026-10-01 with a Samsung S26 on the hotspot
+and mobile data off. The answers are in `deploy/spike/hotspot-sharing-results.txt`.
+
+| Stage | `https://example.com` | Router `http://10.0.0.1` |
+|---|---|---|
+| 1. Forwarding on, no rule | loads | **loads** |
+| 2. Forwarding on, inbound Block rule on the hotspot interface for private ranges | loads | **still loads** |
+
+**Sharing works:** guests get real internet.
+
+**The Windows Firewall rule has no effect on forwarded (ICS) traffic.** Guests can reach the home
+network either way, so option C is **not safe** with Windows Firewall rules.
+
+**Caveat:** a cached router page would read as "loads". The tabs were closed first, but a
+non-cacheable LAN target would make stage 2 airtight.
+
+**The remaining way to fence it (not yet tried):** a WFP filter at the IP-forward layer
+(`FWPM_LAYER_IPFORWARD_V4`). It would block source `192.168.137.0/24` to private destinations.
+Windows Firewall rules never create filters at that layer. It could be installed once, as a
+persistent filter, by the elevated setup. That's new code: P/Invoke to `fwpuclnt.dll`, or a
+small helper. It also needs its own spike.
+
 ### Recommendation
 
 Keep **A** as the default, and add **C** as a host-side opt-in ("Share this PC's internet with

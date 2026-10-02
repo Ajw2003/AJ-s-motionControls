@@ -1,0 +1,8 @@
+Hotspot sharing spike, 2026-10-01 23:45, router http://10.0.0.1
+hotspot interface: Local Area Connection* 12, forwarding Enabled
+Stage 1: did https://example.com load -> y
+Stage 1: did the router page http://10.0.0.1 load -> y
+block rule added
+Stage 2: did https://example.com load -> y
+Stage 2: did the router page http://10.0.0.1 load -> y
+cleanup: rule removed, hotspot stopped
