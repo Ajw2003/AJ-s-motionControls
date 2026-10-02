@@ -116,6 +116,12 @@ way to inspect a machine before changing it.
 task *launched*. It now reads the forwarding flag back. `HotspotService` treats that warning as
 fatal, so an unisolated hotspot refuses to start rather than pretending.
 
+**A single Disabled reading is not proof.** ICS turns forwarding back on about 2 s after the task
+first disables it (traced twice, `tools/hotspot/trace-forwarding.ps1`). So the check re-runs the
+task whenever forwarding reads Enabled, and reports isolation only after 6 s of continuous
+Disabled, with a 20 s ceiling (#70). Whether ICS re-enables forwarding later in a session, for
+example when a phone joins, is not yet measured.
+
 ## The QR rule — binding
 
 > **Always render a QR code for network or URL joining. Never ask someone to type an address or
