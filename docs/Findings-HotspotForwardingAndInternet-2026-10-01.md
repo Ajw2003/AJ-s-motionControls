@@ -183,7 +183,7 @@ and mobile data off. The answers are in `deploy/spike/hotspot-sharing-results.tx
 | 1. Forwarding on, no rule | loads | **loads** |
 | 2. Forwarding on, inbound Block rule on the hotspot interface for private ranges | loads | **still loads** |
 
-**Sharing works:** guests get real internet.
+**Sharing works:** guests get real internet, and with it the S26 showed **Connected, with no "no internet" warning, from the start** (Ayden). Real internet is what makes Android accept the hotspot as a normal network; the fake probe answers never did.
 
 **The Windows Firewall rule has no effect on forwarded (ICS) traffic.** Guests can reach the home
 network either way, so option C is **not safe** with Windows Firewall rules.
