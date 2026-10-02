@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using EventSystems;
 using EventTypes.MatchEvents;
@@ -58,6 +59,22 @@ namespace Ui
         private TurnManager _turns;
         private readonly List<string> _sortedPlayers = new();
 
+        // Leaderboard right-hand text, index-aligned with _sortedPlayers. Built with the sort so
+        // OnGUI (several passes a frame) draws cached strings instead of formatting them.
+        private readonly List<string> _statsRows = new();
+
+        // Set by anything that can change order, membership or a row's numbers; cleared by the
+        // rebuild in Update. Starts true so the first Playing frame builds the board.
+        private bool _standingsDirty = true;
+
+        // The top-centre text, rebuilt when the live skips or the landed result change. Null
+        // means nothing to show.
+        private string _readoutText;
+
+        // Static and non-capturing: created once, so sorting allocates no delegate.
+        private static readonly Comparison<string> ByScoreDescending =
+            (a, b) => ScoreOf(b).CompareTo(ScoreOf(a));
+
         private GUIStyle _readout, _row, _rowRight;
         private Texture2D _panelTexture, _dotTexture;
 
@@ -69,6 +86,10 @@ namespace Ui
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, OnSkipOccurred);
             EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
             EventManager.Instance?.Subscribe<MatchPhaseChangedEvent>(this, OnPhaseChanged);
+            EventManager.Instance?.Subscribe<ScoreAwardedEvent>(this, OnStandingsChanged);
+            EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnStandingsChanged);
+            EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnStandingsChanged);
+            EventManager.Instance?.Subscribe<TurnStartedEvent>(this, OnStandingsChanged);
 
             if (TurnManager.HasInstance) _turns = TurnManager.Instance;
             else Debug.LogWarning("[MatchHud] No TurnManager at Start; the HUD will never show.");
@@ -88,11 +109,25 @@ namespace Ui
             _liveSkips = 0;
             _inFlight = true;
             _readoutResult = null;
+            _readoutText = "0sk";
         }
 
         private void OnSkipOccurred(SkipOccurredEvent e)
         {
-            if (_inFlight) _liveSkips++;
+            if (!_inFlight) return;
+
+            _liveSkips++;
+            _readoutText = $"{_liveSkips}sk";
+        }
+
+        /// <summary>
+        /// Only raises the flag; the sort happens in Update. Handler order between this and
+        /// TurnManager/ScoreManager is therefore irrelevant — by the time Update runs, the
+        /// roster and scores are settled.
+        /// </summary>
+        private void OnStandingsChanged<T>(T e) where T : IEvent
+        {
+            _standingsDirty = true;
         }
 
         private void OnThrowCompleted(ThrowCompletedEvent e)
@@ -114,10 +149,18 @@ namespace Ui
 
             _inFlight = false;
             _readoutResult = result;
+            _readoutText = FormatThrow(result);
+
+            // The player's last-throw text changed (the score arrives via ScoreAwardedEvent).
+            _standingsDirty = true;
         }
 
         private void OnPhaseChanged(MatchPhaseChangedEvent e)
         {
+            // Every phase change, including into a re-pick: scores may have been reset and the
+            // roster is only drawn while Playing, so refresh before it is next shown.
+            _standingsDirty = true;
+
             // Any start of play is a fresh match except resuming from a re-pick pause (Choosing),
             // which keeps the match — and its throws — going.
             if (e.To != MatchPhase.Playing || e.From == MatchPhase.Choosing) return;
@@ -127,16 +170,28 @@ namespace Ui
             _readoutPlayer = null;
             _readoutResult = null;
             _inFlight = false;
+            _readoutText = null;
         }
 
         private void Update()
         {
             if (_turns == null || _turns.Phase != MatchPhase.Playing) return;
 
-            // Once per frame, not per OnGUI pass — OnGUI runs several times a frame and this sorts.
+            // Only when an event said something changed — not every frame, and never in OnGUI.
+            if (!_standingsDirty) return;
+            _standingsDirty = false;
+
             _sortedPlayers.Clear();
             _sortedPlayers.AddRange(_turns.Players);
-            _sortedPlayers.Sort((a, b) => ScoreOf(b).CompareTo(ScoreOf(a)));
+            _sortedPlayers.Sort(ByScoreDescending);
+
+            _statsRows.Clear();
+            foreach (var playerId in _sortedPlayers)
+            {
+                _statsRows.Add(_lastThrows.TryGetValue(playerId, out var last)
+                    ? $"{FormatThrow(last)}{Separator}{ScoreOf(playerId)}pts"
+                    : $"{ScoreOf(playerId)}pts");
+            }
         }
 
         private static int ScoreOf(string playerId) =>
@@ -158,10 +213,8 @@ namespace Ui
         /// </remarks>
         private void DrawReadout()
         {
-            string text;
-            if (_inFlight) text = $"{_liveSkips}sk";
-            else if (_readoutResult.HasValue) text = FormatThrow(_readoutResult.Value);
-            else return;
+            var text = _readoutText;
+            if (text == null) return;
 
             var rect = new Rect(0, Screen.height * 0.02f, Screen.width, _readout.fontSize * 1.4f);
 
@@ -192,8 +245,9 @@ namespace Ui
             var dot = _row.fontSize * 0.6f;
             var y = panel.y + margin * 0.5f;
 
-            foreach (var playerId in _sortedPlayers)
+            for (var i = 0; i < _sortedPlayers.Count; i++)
             {
+                var playerId = _sortedPlayers[i];
                 var previous = GUI.color;
                 GUI.color = ColourOf(playerId);
                 GUI.DrawTexture(new Rect(panel.x + margin * 0.5f, y + (rowHeight - dot) * 0.5f, dot, dot), _dotTexture);
@@ -203,11 +257,7 @@ namespace Ui
                 var name = PlayerNames.HasInstance ? PlayerNames.Instance.DisplayNameFor(playerId) : playerId;
                 GUI.Label(new Rect(nameX, y, width * 0.4f, rowHeight), name, _row);
 
-                var stats = _lastThrows.TryGetValue(playerId, out var last)
-                    ? $"{FormatThrow(last)}{Separator}{ScoreOf(playerId)}pts"
-                    : $"{ScoreOf(playerId)}pts";
-
-                GUI.Label(new Rect(nameX, y, panel.xMax - nameX - margin * 0.5f, rowHeight), stats, _rowRight);
+                GUI.Label(new Rect(nameX, y, panel.xMax - nameX - margin * 0.5f, rowHeight), _statsRows[i], _rowRight);
 
                 y += rowHeight;
             }
