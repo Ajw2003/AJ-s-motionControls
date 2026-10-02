@@ -24,8 +24,14 @@
 .PARAMETER Passphrase
     Only used by -Action Start.
 
+.PARAMETER ShareInternet
+    -Action Start only. Leave ICS forwarding on so guests get this PC's internet (#72), and
+    report whether it is on (`shared`) instead of isolating guests. Not sharing is never fatal.
+
 .EXAMPLE
     hotspot-control.ps1 -Action Start -Ssid "Rock Skipping" -Passphrase "skip1234"
+.EXAMPLE
+    hotspot-control.ps1 -Action Start -Ssid "Rock Skipping" -Passphrase "skip1234" -ShareInternet
 .EXAMPLE
     hotspot-control.ps1 -Action Stop
 #>
@@ -33,7 +39,8 @@
 param(
     [Parameter(Mandatory)] [ValidateSet('Start', 'Stop')] [string] $Action,
     [string] $Ssid,
-    [string] $Passphrase
+    [string] $Passphrase,
+    [switch] $ShareInternet
 )
 
 Set-StrictMode -Version Latest
@@ -324,74 +331,96 @@ if ($Action -eq 'Start') {
 
         Write-ChannelReport -BandChoice $bandChoice
 
-        Write-Progress2 'Tethering is on. Disabling IP forwarding on the hotspot interface...'
-        # ICS re-enables forwarding on every tethering start, so this must run fresh each
-        # session - the scheduled task exists precisely to do that without a UAC prompt per
-        # party (docs/ZeroSetupPlan.md Phase 4.2 / 5). A missing/failed task means the hotspot
-        # is up but NOT isolated: HotspotService treats a non-null warning here as a failure,
-        # not a soft caveat, and stops tethering rather than leave that state running.
-        #
-        # VERIFY THE FACT, NOT THE LAUNCH. This used to report success when Start-ScheduledTask
-        # returned, which proves only that a task was started - not that forwarding changed, and
-        # not that it stayed changed. It reported isolation on a machine that measurably had
-        # none, for as long as the task existed, which is the worst way for this to fail. The
-        # state is read back below instead, and it needs no elevation to read.
-        #
-        # Polled rather than read once, because this is a race: the task runs asynchronously and
-        # ICS may re-assert forwarding after it. If the flag will not stay down within the
-        # window, that is the honest answer and the caller should act on it.
         $warning = $null
-        try {
-            Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction Stop
-        } catch {
-            $warning = "forwarding-task-failed: $($_.Exception.Message)"
-            Write-Progress2 "  [warn] $warning"
-        }
-
-        # STABLE, NOT MOMENTARY (#70). Traced with tools/hotspot/trace-forwarding.ps1: ICS turns
-        # forwarding back on ~2 s after the task disables it, so the first Disabled reading
-        # proved nothing and a "confirmed" start left guests unisolated. The task is re-run
-        # whenever forwarding reads Enabled, and isolation is only reported once it has stayed
-        # Disabled for $StableSeconds in a row. The ceiling sits inside HotspotService's 30 s
-        # startTimeout; running out of it is the same fail-closed warning as before.
-        if (-not $warning) {
-            $StableSeconds = 6
-            $deadline = (Get-Date).AddSeconds(20)
-            $stableSince = $null
-            $nextRetrigger = (Get-Date).AddSeconds(1.5)
-            $stillOn = @()
-
+        $shared = $false
+        if ($ShareInternet) {
+            # ICS turns forwarding on by itself; sharing only means not turning it off. Measured
+            # 2026-10-02: with the task skipped it read Enabled for the whole 12 s sampled. Read
+            # back anyway, polled because the hotspot address can lag the tethering start.
+            Write-Progress2 'Tethering is on. Sharing internet: leaving IP forwarding on...'
+            $deadline = (Get-Date).AddSeconds(6)
             do {
-                Start-Sleep -Milliseconds 250
-                $hotspotNics = @(
+                $nics = @(
                     Get-NetIPAddress -AddressFamily IPv4 -IPAddress 192.168.137.* -ErrorAction SilentlyContinue |
                         ForEach-Object {
                             Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
                         }
                 )
-                $stillOn = @($hotspotNics | Where-Object { $_.Forwarding -eq 'Enabled' })
-
-                # No address yet counts as unconfirmed, not as Disabled.
-                if ($hotspotNics.Count -eq 0 -or $stillOn.Count -gt 0) {
-                    $stableSince = $null
-                    if ($stillOn.Count -gt 0 -and (Get-Date) -ge $nextRetrigger) {
-                        Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction SilentlyContinue
-                        $nextRetrigger = (Get-Date).AddSeconds(1.5)
-                    }
-                } elseif ($null -eq $stableSince) {
-                    $stableSince = Get-Date
-                }
-
-                $stable = $null -ne $stableSince -and ((Get-Date) - $stableSince).TotalSeconds -ge $StableSeconds
-            } while (-not $stable -and (Get-Date) -lt $deadline)
-
-            if (-not $stable) {
-                $names = if ($stillOn.Count -gt 0) { ($stillOn | ForEach-Object { $_.InterfaceAlias }) -join ', ' } else { 'the hotspot interface' }
-                $warning = "forwarding-still-enabled: forwarding did not stay Disabled on $names " +
-                           "for ${StableSeconds}s within 20s. Guests are NOT isolated."
+                $shared = $nics.Count -gt 0 -and @($nics | Where-Object { $_.Forwarding -ne 'Enabled' }).Count -eq 0
+                if (-not $shared) { Start-Sleep -Milliseconds 250 }
+            } while (-not $shared -and (Get-Date) -lt $deadline)
+            Write-Progress2 $(if ($shared) { '  forwarding Enabled: guests share this PC''s internet.' }
+                             else { '  [warn] forwarding is not on: guests will have no internet.' })
+        }
+        else {
+            Write-Progress2 'Tethering is on. Disabling IP forwarding on the hotspot interface...'
+            # ICS re-enables forwarding on every tethering start, so this must run fresh each
+            # session - the scheduled task exists precisely to do that without a UAC prompt per
+            # party (docs/ZeroSetupPlan.md Phase 4.2 / 5). A missing/failed task means the hotspot
+            # is up but NOT isolated: HotspotService treats a non-null warning here as a failure,
+            # not a soft caveat, and stops tethering rather than leave that state running.
+            #
+            # VERIFY THE FACT, NOT THE LAUNCH. This used to report success when Start-ScheduledTask
+            # returned, which proves only that a task was started - not that forwarding changed, and
+            # not that it stayed changed. It reported isolation on a machine that measurably had
+            # none, for as long as the task existed, which is the worst way for this to fail. The
+            # state is read back below instead, and it needs no elevation to read.
+            #
+            # Polled rather than read once, because this is a race: the task runs asynchronously and
+            # ICS may re-assert forwarding after it. If the flag will not stay down within the
+            # window, that is the honest answer and the caller should act on it.
+            try {
+                Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction Stop
+            } catch {
+                $warning = "forwarding-task-failed: $($_.Exception.Message)"
                 Write-Progress2 "  [warn] $warning"
-            } else {
-                Write-Progress2 "  forwarding confirmed Disabled (held for ${StableSeconds}s)."
+            }
+
+            # STABLE, NOT MOMENTARY (#70). Traced with tools/hotspot/trace-forwarding.ps1: ICS turns
+            # forwarding back on ~2 s after the task disables it, so the first Disabled reading
+            # proved nothing and a "confirmed" start left guests unisolated. The task is re-run
+            # whenever forwarding reads Enabled, and isolation is only reported once it has stayed
+            # Disabled for $StableSeconds in a row. The ceiling sits inside HotspotService's 30 s
+            # startTimeout; running out of it is the same fail-closed warning as before.
+            if (-not $warning) {
+                $StableSeconds = 6
+                $deadline = (Get-Date).AddSeconds(20)
+                $stableSince = $null
+                $nextRetrigger = (Get-Date).AddSeconds(1.5)
+                $stillOn = @()
+
+                do {
+                    Start-Sleep -Milliseconds 250
+                    $hotspotNics = @(
+                        Get-NetIPAddress -AddressFamily IPv4 -IPAddress 192.168.137.* -ErrorAction SilentlyContinue |
+                            ForEach-Object {
+                                Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                            }
+                    )
+                    $stillOn = @($hotspotNics | Where-Object { $_.Forwarding -eq 'Enabled' })
+
+                    # No address yet counts as unconfirmed, not as Disabled.
+                    if ($hotspotNics.Count -eq 0 -or $stillOn.Count -gt 0) {
+                        $stableSince = $null
+                        if ($stillOn.Count -gt 0 -and (Get-Date) -ge $nextRetrigger) {
+                            Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction SilentlyContinue
+                            $nextRetrigger = (Get-Date).AddSeconds(1.5)
+                        }
+                    } elseif ($null -eq $stableSince) {
+                        $stableSince = Get-Date
+                    }
+
+                    $stable = $null -ne $stableSince -and ((Get-Date) - $stableSince).TotalSeconds -ge $StableSeconds
+                } while (-not $stable -and (Get-Date) -lt $deadline)
+
+                if (-not $stable) {
+                    $names = if ($stillOn.Count -gt 0) { ($stillOn | ForEach-Object { $_.InterfaceAlias }) -join ', ' } else { 'the hotspot interface' }
+                    $warning = "forwarding-still-enabled: forwarding did not stay Disabled on $names " +
+                               "for ${StableSeconds}s within 20s. Guests are NOT isolated."
+                    Write-Progress2 "  [warn] $warning"
+                } else {
+                    Write-Progress2 "  forwarding confirmed Disabled (held for ${StableSeconds}s)."
+                }
             }
         }
 
@@ -399,6 +428,7 @@ if ($Action -eq 'Start') {
         # internet connection or fall back?" in the one line HotspotService already logs,
         # which is the difference between an online and an offline session.
         Write-Result @{ ok = $true; ssid = $Ssid; passphrase = $Passphrase; warning = $warning
+            shared = $shared
             profile = $script:TetheringProfileName
             band = $bandChoice.Band; stationBand = $bandChoice.Station
             bandMatched = $bandChoice.Matched }
