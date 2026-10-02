@@ -6,10 +6,11 @@ namespace Managers
 {
     /// <summary>
     /// Host-editable match settings, browsable as a generic list so a new setting is one entry
-    /// rather than a screen edit. Owns no gameplay state itself — each <see cref="Setting"/>
-    /// reads/writes a property that already lives on <see cref="RockSelection"/> or
-    /// <see cref="TurnManager"/>, per the deviation note on <see cref="RockSelection"/> saying
-    /// this class should read/write those properties rather than duplicate them.
+    /// rather than a screen edit. Owns no gameplay state itself — each gameplay
+    /// <see cref="Setting"/> reads/writes a property that already lives on
+    /// <see cref="RockSelection"/> or <see cref="TurnManager"/>, per the deviation note on
+    /// <see cref="RockSelection"/> saying this class should read/write those properties rather
+    /// than duplicate them (only share internet, a hotspot option, is held here).
     /// </summary>
     /// <remarks>
     /// Created in Bootstrap after both RockSelection and TurnManager — Awake needs both
@@ -20,12 +21,15 @@ namespace Managers
     {
         public List<Setting> All { get; } = new();
 
+        private bool _shareInternet = true;
+
         protected override void Awake()
         {
             persistBetweenScenes = true;
             base.Awake();
 
             var loaded = MatchSettingsStore.Load();
+            _shareInternet = loaded.ShareInternet;
             if (RockSelection.HasInstance)
             {
                 RockSelection.Instance.RandomRocks = loaded.RandomRocks;
@@ -60,6 +64,16 @@ namespace Managers
                     Save();
                 },
                 min: 1, max: 10));
+
+            All.Add(new ToggleSetting(
+                "shareInternet", "Share internet",
+                "Players get this PC's internet, so phones rejoin the game's Wi-Fi by themselves. Takes effect the next time the game starts its hotspot.",
+                get: () => _shareInternet,
+                set: value =>
+                {
+                    _shareInternet = value;
+                    Save();
+                }));
         }
 
         /// <summary>
@@ -77,7 +91,7 @@ namespace Managers
             var randomRocks = RockSelection.HasInstance && RockSelection.Instance.RandomRocks;
             var roundsPerMatch = TurnManager.HasInstance ? TurnManager.Instance.RoundsPerMatch : 5;
 
-            MatchSettingsStore.Save(randomRocks, roundsPerMatch);
+            MatchSettingsStore.Save(randomRocks, roundsPerMatch, _shareInternet);
         }
     }
 }

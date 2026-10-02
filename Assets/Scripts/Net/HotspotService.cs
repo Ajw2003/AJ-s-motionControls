@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using Managers;
 using Singleton;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -101,6 +102,9 @@ namespace Net
             public string band;
             public string stationBand;
             public bool bandMatched;
+
+            // True when the script left internet sharing on for the hotspot (-ShareInternet).
+            public bool shared;
         }
 
         protected override void Awake()
@@ -137,6 +141,9 @@ namespace Net
 
         private IEnumerator BeginTethering()
         {
+            // Read once so the script and the result check below agree on what was asked for.
+            var shareInternet = MatchSettingsStore.Load().ShareInternet;
+
             SetState(HotspotState.Starting, "Confirming the local DNS responder…");
 
             // Polled, not asked once. server.js starts the :53 bind inside its listen()
@@ -193,6 +200,7 @@ namespace Net
             var stderr = new ConcurrentQueue<string>();
             var args = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{scriptPath}\" " +
                        $"-Action Start -Ssid \"{Ssid}\" -Passphrase \"{Passphrase}\"";
+            if (shareInternet) args += " -ShareInternet";
 
             var process = ProcessUtil.Spawn(powershell, args, Path.GetDirectoryName(scriptPath),
                 null, _group, stdout, stderr);
@@ -229,8 +237,8 @@ namespace Net
 
             if (!string.IsNullOrEmpty(result.Value.warning))
             {
-                // The hotspot came up but forwarding-disable could not be confirmed — that
-                // means it is NOT isolated. Treated as a failure rather than a soft caveat,
+                // Only arises when not sharing: the hotspot came up but forwarding-disable
+                // could not be confirmed — that means it is NOT isolated. Treated as a failure rather than a soft caveat,
                 // because running an open hotspot silently defeats the reason this exists.
                 // Best-effort tear-down rather than leave it running unconfirmed.
                 _ownedTethering = true;
@@ -239,6 +247,13 @@ namespace Net
                 Fail("The hotspot started but IP forwarding could not be confirmed disabled.",
                      result.Value.warning);
                 yield break;
+            }
+
+            // Not fatal: the game works, guests just have no internet behind it.
+            if (shareInternet && !result.Value.shared)
+            {
+                Debug.LogWarning("[HotspotService] Share internet was requested but the hotspot " +
+                                 "is not sharing it, so guests will have no internet.");
             }
 
             // Not a failure, so this is checked after the fatal warning above rather than

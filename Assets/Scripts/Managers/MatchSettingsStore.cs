@@ -30,17 +30,21 @@ namespace Managers
         {
             public bool randomRocks;
             public int roundsPerMatch = 5;
+            // Initializer matters: JsonUtility keeps it for files written before this field existed.
+            public bool shareInternet = true;
         }
 
         public readonly struct Loaded
         {
             public readonly bool RandomRocks;
             public readonly int RoundsPerMatch;
+            public readonly bool ShareInternet;
 
-            public Loaded(bool randomRocks, int roundsPerMatch)
+            public Loaded(bool randomRocks, int roundsPerMatch, bool shareInternet)
             {
                 RandomRocks = randomRocks;
                 RoundsPerMatch = roundsPerMatch;
+                ShareInternet = shareInternet;
             }
         }
 
@@ -62,7 +66,7 @@ namespace Managers
             }
         }
 
-        public static void Save(bool randomRocks, int roundsPerMatch)
+        public static void Save(bool randomRocks, int roundsPerMatch, bool shareInternet)
         {
             try
             {
@@ -70,6 +74,7 @@ namespace Managers
                 {
                     randomRocks = randomRocks,
                     roundsPerMatch = roundsPerMatch,
+                    shareInternet = shareInternet,
                 };
                 File.WriteAllText(ResolvePath(), JsonUtility.ToJson(data, prettyPrint: true));
             }
@@ -80,7 +85,7 @@ namespace Managers
         }
 
         private static Loaded FromData(SettingsData data) =>
-            new(data.randomRocks, Mathf.Clamp(data.roundsPerMatch, 1, 10));
+            new(data.randomRocks, Mathf.Clamp(data.roundsPerMatch, 1, 10), data.shareInternet);
 
         /// <summary>Same resolution as RelayClient.ReadOverride / RoomCodeStore.ResolvePath.</summary>
         private static string ResolvePath() =>

@@ -18,11 +18,10 @@ namespace Net
     /// the passphrase off a stuck TV.
     ///
     /// Security note: a guest who once played keeps access to this hotspot forever, since the
-    /// credentials no longer change. That is acceptable only because
-    /// <c>deploy/setup-offline.ps1</c> disables IP forwarding every session — what a returning
-    /// guest can reach is the game's relay and other phones on it, not the host's internet or
-    /// LAN. That isolation is the reason stable credentials are safe; re-enabling forwarding
-    /// would silently change that trade-off.
+    /// credentials no longer change. With Share internet on (the default since #72) a
+    /// returning guest gets this PC's internet and LAN, which the host accepted by leaving it
+    /// on; with it off, forwarding stays disabled and they reach only the game's relay and
+    /// the other phones on it.
     /// </remarks>
     public static class HotspotCredentialsStore
     {

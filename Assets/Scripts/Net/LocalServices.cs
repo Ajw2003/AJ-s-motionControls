@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using Managers;
 using Singleton;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -465,6 +466,11 @@ namespace Net
             // longer needed once the hotspot's address is a fixed constant.
             env.Add(new KeyValuePair<string, string>("DNS_NAME", MagicDomain.HostName));
             Debug.Log("[LocalServices] DNS responder will bind on 192.168.137.0/24.");
+
+            // Before the overrides, like the certificate, so relay-env.txt can still win.
+            var shareInternet = MatchSettingsStore.Load().ShareInternet;
+            if (shareInternet) env.Add(new KeyValuePair<string, string>("SHARE_INTERNET", "1"));
+            Debug.Log($"[LocalServices] DNS mode: {(shareInternet ? "sharing internet (real lookups allowed)" : "game-only")}.");
 
             var overrides = ReadRelayEnvironment();
             env.AddRange(overrides);
