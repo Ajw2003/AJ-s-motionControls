@@ -107,6 +107,9 @@ namespace Game
             EventManager.Instance?.UnsubscribeFromAllEvents(this);
         }
 
+        // True once an all-zero ripple array has been uploaded; see LateUpdate.
+        private bool _publishedEmpty;
+
         private void OnSkipOccurred(SkipOccurredEvent e) => AddRipple(e.Position, e.Speed);
 
         /// <summary>
@@ -137,6 +140,10 @@ namespace Game
             // material property — see the remarks on the Shader.SetGlobalVectorArray call
             // below — so this no longer needs the material at all. With nothing bound
             // there is no water to read the globals either, so publishing them is free.
+
+            // Idle lake: the empty array is already on the GPU, so there is nothing to
+            // re-upload until a ripple is added (#66).
+            if (_ripples.Count == 0 && _publishedEmpty) return;
 
             // Drop what has expired, then pack the survivors into the front of the array.
             // Compacting is what lets the fragment loop run zero iterations while idle.
@@ -170,6 +177,7 @@ namespace Game
             // is fixed by the first call, and a shorter one later is silently ignored.
             Shader.SetGlobalVectorArray(RipplesId, _packed);
             Shader.SetGlobalInt(RippleCountId, live);
+            _publishedEmpty = live == 0;
         }
 
         private void PushTuning()
