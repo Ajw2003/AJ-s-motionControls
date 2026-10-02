@@ -453,6 +453,9 @@ export class ThrowController {
     this.motion.recentre();
     this.motion.prepareForThrow();
     this._setState(ThrowState.ARMED);
+    // After _setState: its listeners may rewrite motion state. Holds Aiming through a
+    // backswing pause (#53).
+    this.motion.holdAimLock = true;
 
     this._timer = setInterval(() => {
       const payload = buildAimPayload(this.motion.latest, ++this.seq, this._spin, this._windSpeed);
@@ -495,6 +498,7 @@ export class ThrowController {
     this._spinT = null;
     this._windVelocity = { x: 0, y: 0, z: 0 };
     this._windSpeed = 0;
+    if (this.motion) this.motion.holdAimLock = false;
     this._setState(ThrowState.IDLE);
   }
 

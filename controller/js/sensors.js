@@ -528,6 +528,12 @@ export class MotionSource {
     // on a rock (issue #23) — there, the zero is the explicit recentre() alone. The state
     // machine and its badge edges still run either way; only the nlerp is gated.
     this.trackingEnabled = true;
+
+    // While a throw is armed, once the phone has gone Aiming it must stay Aiming until
+    // the throw ends: a pause at the top of the backswing is not "the phone is at rest",
+    // and re-settling there slid the reference to the backswing pose (issue #53).
+    // Settling -> Aiming is unaffected. ThrowController sets this in arm()/cancel().
+    this.holdAimLock = false;
     this._aimRun = 0;
     this._settleRun = 0;
     this.onCalibrationStateChange = onCalibrationStateChange ?? (() => {});
@@ -690,7 +696,9 @@ export class MotionSource {
       }
     } else {
       // Aiming: the reference is frozen — deliberately not touched here.
-      if (rateMag < tuning.settleRateThresholdDegS) {
+      if (this.holdAimLock) {
+        this._settleRun = 0; // armed throw: stillness here is a backswing pause (#53)
+      } else if (rateMag < tuning.settleRateThresholdDegS) {
         this._settleRun++;
         if (this._settleRun >= tuning.settleSamples) {
           this.calState = 'settling';

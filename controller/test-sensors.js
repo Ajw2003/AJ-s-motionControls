@@ -489,6 +489,40 @@ console.log('\nMotionSource calibration (Settling/Aiming)');
   }
 
   {
+    // Issue #53 (N1): a pause at the top of the backswing used to look like "the phone
+    // is at rest", dropping to Settling and sliding the reference to the backswing
+    // pose. With a throw armed, Aiming must hold until the throw ends.
+    let clock = 0;
+    const m = new MotionSource({ now: () => clock });
+    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    const thrower = new ThrowController(m, { aimHz: 1000 });
+    thrower.arm();
+
+    const frames = (n, gamma) => {
+      for (let i = 0; i < n; i++) {
+        clock += 16;
+        m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma }));
+      }
+    };
+    frames(15, 200); // backswing
+    frames(30, 0); // ~480 ms pause at the top
+    check('armed throw stays Aiming through the pause', m.calState === 'aiming', m.calState);
+    frames(15, -200); // back to the arm pose
+
+    const angle = rotationAngleDeg(m.latest.attitude);
+    check(
+      'a pause at the top of the backswing does not slide the reference',
+      angle < 2,
+      `${angle.toFixed(3)} deg`,
+    );
+    check('throw is still armed', thrower.state === ThrowState.ARMED, thrower.state);
+
+    thrower.cancel();
+    check('cancel releases the aim lock', m.holdAimLock === false, String(m.holdAimLock));
+  }
+
+  {
     // trackingEnabled = false is the lobby's shore-pointing mode (issue #23). Settling
     // tracking quietly pulls "zero" to wherever the phone rests, which is right before a
     // throw but in the lobby dragged the pointer back to centre while a player held it on
