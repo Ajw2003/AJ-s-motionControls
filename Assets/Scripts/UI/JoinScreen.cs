@@ -74,12 +74,18 @@ namespace Ui
             public string[] rows;
         }
 
+        private void Start()
+        {
+            // LocalServices is optional (a normal host has none), so its absence is not logged.
+            if (LocalServices.HasInstance) _services = LocalServices.Instance;
+
+            if (RelayClient.HasInstance) _client = RelayClient.Instance;
+            else Debug.LogWarning("[JoinScreen] No RelayClient at Start; no QR code or room code will be shown.");
+        }
+
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
-
-            if (_services == null && LocalServices.HasInstance) _services = LocalServices.Instance;
-            if (_client == null && RelayClient.HasInstance) _client = RelayClient.Instance;
 
             EnsureQrMatchesJoinUrl();
             EnsureWifiQrMatchesHotspot();

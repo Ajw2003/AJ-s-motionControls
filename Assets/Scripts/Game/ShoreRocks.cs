@@ -85,6 +85,11 @@ namespace Game
             EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnPlayerLeft);
             EventManager.Instance?.Subscribe<MatchPhaseChangedEvent>(this, OnMatchPhaseChanged);
             EventManager.Instance?.Subscribe<PlayerColourChangedEvent>(this, OnPlayerColourChanged);
+
+            // Awake, not Start: Bind() can SetActive(false) before the first Start would run,
+            // which would defer the subscription to the first re-show. Awake runs exactly once
+            // regardless, and AimPreview (our creator) is built after RelayClient.
+            BindRelay();
         }
 
         /// <summary>
@@ -172,7 +177,6 @@ namespace Game
             // calling Update on this GameObject at all — a poll here would work right up
             // until the first time it hid itself, and then never see the phase come back
             // to Lobby to reactivate.
-            EnsureBound();
             if (_origin == null) return;
 
             PruneStalePointers();
@@ -195,9 +199,13 @@ namespace Game
             UpdateStoneLooks();
         }
 
-        private void EnsureBound()
+        private void BindRelay()
         {
-            if (_client != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[ShoreRocks] No RelayClient at Awake; the shore will not react to phone aim or picks.");
+                return;
+            }
 
             _client = RelayClient.Instance;
             _client.AimReceived += OnAim;

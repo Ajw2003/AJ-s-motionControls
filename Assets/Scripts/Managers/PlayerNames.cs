@@ -40,13 +40,16 @@ namespace Managers
         }
 
         /// <summary>
-        /// Subscribes straight to RelayClient, the same wait-until-it-exists pattern
-        /// PlayerColours.Update uses, so creation order between the two managers cannot
-        /// drop the subscription.
+        /// Subscribes straight to RelayClient, bound once in Start, after Bootstrap's
+        /// Awake has created every manager.
         /// </summary>
-        private void Update()
+        private void Start()
         {
-            if (_relay != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[PlayerNames] No RelayClient at Start; phone messages will not be received.");
+                return;
+            }
 
             _relay = RelayClient.Instance;
             _relay.SetNameReceived += OnSetName;

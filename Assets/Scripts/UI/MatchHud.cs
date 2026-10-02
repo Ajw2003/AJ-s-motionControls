@@ -69,6 +69,9 @@ namespace Ui
             EventManager.Instance?.Subscribe<SkipOccurredEvent>(this, OnSkipOccurred);
             EventManager.Instance?.Subscribe<ThrowCompletedEvent>(this, OnThrowCompleted);
             EventManager.Instance?.Subscribe<MatchPhaseChangedEvent>(this, OnPhaseChanged);
+
+            if (TurnManager.HasInstance) _turns = TurnManager.Instance;
+            else Debug.LogWarning("[MatchHud] No TurnManager at Start; the HUD will never show.");
         }
 
         private void OnDestroy()
@@ -128,7 +131,6 @@ namespace Ui
 
         private void Update()
         {
-            if (_turns == null && TurnManager.HasInstance) _turns = TurnManager.Instance;
             if (_turns == null || _turns.Phase != MatchPhase.Playing) return;
 
             // Once per frame, not per OnGUI pass — OnGUI runs several times a frame and this sorts.

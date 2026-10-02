@@ -61,13 +61,16 @@ namespace Managers
         /// <summary>
         /// Subscribes straight to RelayClient rather than waiting for something else to
         /// resolve the message, because unlike PICK_ROCK there is nothing to resolve — the
-        /// phone sent the colour it wants. Bound from Update on the same
-        /// wait-until-it-exists pattern TurnManager.BindRelay uses, so creation order
-        /// between the two managers cannot drop the subscription.
+        /// phone sent the colour it wants. Bound once in Start, after Bootstrap's
+        /// Awake has created every manager.
         /// </summary>
-        private void Update()
+        private void Start()
         {
-            if (_relay != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[PlayerColours] No RelayClient at Start; phone messages will not be received.");
+                return;
+            }
 
             _relay = RelayClient.Instance;
             _relay.PickColourReceived += OnPickColour;

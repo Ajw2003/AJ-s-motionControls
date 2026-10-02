@@ -1,6 +1,7 @@
 using Managers;
 using Net;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Game
 {
@@ -72,8 +73,6 @@ namespace Game
 
         private void Update()
         {
-            EnsureBound();
-
             // Unconditional, where this used to be gated on _active != null. The rock is
             // destroyed at the end of its despawn delay, and that used to cut the camera's
             // return off wherever it had got to — leaving the shot subtly wrong until the
@@ -85,26 +84,47 @@ namespace Game
         private void OnDestroy()
         {
             if (_client != null) _client.ThrowReceived -= OnThrow;
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+        }
+
+        // Every scene brings its own camera and the load destroys the last one, so the
+        // cached camera is re-resolved per load rather than polled for every frame (#62).
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ResolveCamera();
+
+        private void ResolveCamera()
+        {
+            _camera = Camera.main;
+            if (_camera == null)
+            {
+                Debug.LogWarning("[RockLauncher] No Camera.main; the throw camera will not follow or return home.");
+                return;
+            }
+
+            // Captured after AimPreview has framed the shot, so "home" is the
+            // aiming view rather than the scene's default camera placement.
+            _cameraHome = _camera.transform.position;
+            _cameraHomeRotation = _camera.transform.rotation;
         }
         
 
-        private void EnsureBound()
+        private void Start()
         {
-            if (_preview == null) _preview = FindFirstObjectByType<AimPreview>();
-
-            if (_camera == null)
+            // Same GameObject as AimPreview (Bootstrap), and it frames the camera in its
+            // Awake, so by Start the shot is already framed. No ordering risk.
+            _preview = GetComponent<AimPreview>();
+            if (_preview == null)
             {
-                _camera = Camera.main;
-                if (_camera != null)
-                {
-                    // Captured after AimPreview has framed the shot, so "home" is the
-                    // aiming view rather than the scene's default camera placement.
-                    _cameraHome = _camera.transform.position;
-                    _cameraHomeRotation = _camera.transform.rotation;
-                }
+                Debug.LogWarning("[RockLauncher] No AimPreview on this object; throws will have nothing to launch from.");
             }
 
-            if (_client != null || !RelayClient.HasInstance) return;
+            ResolveCamera();
+            SceneManager.sceneLoaded += OnSceneLoaded;
+
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[RockLauncher] No RelayClient at Start; throws will never arrive.");
+                return;
+            }
 
             _client = RelayClient.Instance;
             _client.ThrowReceived += OnThrow;

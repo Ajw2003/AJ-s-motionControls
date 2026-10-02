@@ -67,7 +67,7 @@ namespace Managers
                  "rock mid-flight; it is a dev key, not something a player can reach.")]
         [SerializeField] private KeyCode forceChooseKey = KeyCode.C;
 
-        /// <summary>Bound lazily in BindRelay; null in a scene with no relay client.</summary>
+        /// <summary>Bound once in Start via BindRelay; null in a scene with no relay client.</summary>
         private RelayClient _relay;
 
         private readonly List<string> _players = new();
@@ -169,10 +169,13 @@ namespace Managers
 
         private void OnRockPicked(RockPickedEvent e) => BroadcastSpectate();
 
-        private void Update()
+        private void Start()
         {
             BindRelay();
+        }
 
+        private void Update()
+        {
             if (Input.GetKeyDown(startMatchKey)) Advance();
 
             if (Input.GetKeyDown(nextTurnKey) && Phase == MatchPhase.Playing) NextTurn();
@@ -223,13 +226,17 @@ namespace Managers
         }
 
         /// <summary>
-        /// Late-bound rather than subscribed in Awake. Bootstrap does create RelayClient
-        /// first, but HasInstance means a scene without one (a physics test bed, say) gets
+        /// Bound once in Start rather than subscribed in Awake, so every Bootstrap Awake has
+        /// run. HasInstance means a scene without one (a physics test bed, say) gets
         /// a TurnManager that simply has no phones rather than one that conjures a socket.
         /// </summary>
         private void BindRelay()
         {
-            if (_relay != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.Log("[TurnManager] No RelayClient at Start; running without phone ADVANCE.");
+                return;
+            }
 
             _relay = RelayClient.Instance;
             _relay.AdvanceReceived += OnAdvanceRequested;

@@ -37,17 +37,22 @@ namespace Net
         }
 
         /// <summary>
-        /// Binds whenever the client shows up, in either order. Checks HasInstance
-        /// rather than touching Instance, because Instance would *create* a
+        /// Binds once from Start, after Bootstrap's Awake has built everything. Checks
+        /// HasInstance rather than touching Instance, because Instance would *create* a
         /// RelayClient — and a diagnostic that conjures the thing it is diagnosing
         /// would hide the very failure worth seeing.
         /// </summary>
-        private void EnsureBound()
+        private void Start()
         {
             // Cached rather than looked up in OnGUI, which runs several times a frame.
-            if (_preview == null) _preview = FindFirstObjectByType<Game.AimPreview>();
+            // Optional: absent when Bootstrap's showAimPreview is off.
+            _preview = FindFirstObjectByType<Game.AimPreview>();
 
-            if (_client != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[RelayDebugHud] No RelayClient at Start; the HUD will show nothing live.");
+                return;
+            }
 
             _client = RelayClient.Instance;
             _client.AimReceived += OnAim;
@@ -57,7 +62,6 @@ namespace Net
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
-            EnsureBound();
 
             // Measured, not assumed: if this reads well under 20 the phone or the
             // network is dropping aim frames and the preview will look choppy.

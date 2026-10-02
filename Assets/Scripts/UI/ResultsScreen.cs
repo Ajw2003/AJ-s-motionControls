@@ -32,12 +32,19 @@ namespace Ui
         private GUIStyle _title, _subtitle, _row, _winnerRow, _rowRight, _winnerRowRight, _hint;
         private Texture2D _panelTexture, _dotTexture;
 
+        private void Start()
+        {
+            if (TurnManager.HasInstance) _turns = TurnManager.Instance;
+            else Debug.LogWarning("[ResultsScreen] No TurnManager at Start; the results will never show.");
+
+            // Optional: absent when Bootstrap's showMatchHud is off, so not logged.
+            _hud = FindFirstObjectByType<MatchHud>();
+        }
+
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
 
-            if (_turns == null && TurnManager.HasInstance) _turns = TurnManager.Instance;
-            if (_hud == null) _hud = FindFirstObjectByType<MatchHud>();
             if (_turns == null || _turns.Phase != MatchPhase.Results) return;
 
             // Once per frame, not once per OnGUI — OnGUI runs several times a frame and
