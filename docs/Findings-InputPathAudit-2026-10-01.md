@@ -70,6 +70,9 @@ throw. The ghost swings off by the same amount mid-gesture.
 Before `1163575` the reference was frozen at the tap. Issue #23 fixed the same mechanism for the
 lobby pointer (`trackingEnabled = false`), but nothing stops it once a throw is armed.
 
+
+**Status:** fixed in `62dfc30` (#53), test `a pause at the top of the backswing does not slide the reference` (39.5° before, 1.6° after). **Not yet checked on a phone.**
+
 ### N2 — A timeout fire aims with the follow-through — CONFIRMED (path) / PLAUSIBLE (frequency)
 
 **How the timeout fires.** `ThrowController._onSample` fires `maxSwingMs` (900 ms) after the peak
@@ -83,6 +86,9 @@ second late, aimed wherever the arm ended up.
 **Why it's plausible.** Residual gravity on the `exact` path (A5 in the 09-10 doc) is a known
 reason the calm run can fail to arrive.
 
+
+**Status:** fixed in `f72ac51` (#54), test `the timed-out throw takes the release attitude, not the last sample`. **Not yet checked on a phone.**
+
 ### N3 — The phone re-offers TAP TO AIM while your own stone is still out — CONFIRMED
 
 **The phone side.** After `_fire()`, the IDLE transition calls `startTurnAim()`
@@ -94,6 +100,9 @@ whole flight, sink and settle. That's B3 from 09-10.
 
 - silently dropped by the TV while the first stone flies (`RockLauncher.cs:133`), or
 - launched as a second stone while the first is sinking (N4).
+
+
+**Status:** fixed in `7c3ecea` (#55). Checked in a desktop browser against `relay/fake-host.js`, two throw cycles: one THROW per throw, extra taps sent nothing, the button unlocked on the next TURN. The AIM-stop part cannot be seen on a desktop (no sensors).
 
 ### N4 — The TV launches a second stone while the first is sinking — CONFIRMED
 
@@ -109,6 +118,9 @@ whole flight, sink and settle. That's B3 from 09-10.
   stone disappear.
 - **Silence.** The drop is never logged.
 
+
+**Status:** fixed in `fae1824` (#56). Compiled by Unity batch mode; EditMode 18/18 green. **Not exercised in Play mode.**
+
 ### N5 — AIM is not latest-wins — CONFIRMED (B1, 09-10)
 
 **The unused helper.** `RelayConnection.sendIfClear` (`controller/js/net.js:222-227`) is still
@@ -119,11 +131,17 @@ TCP. The TV sees no frames for over 0.5 s, so `staleAfterSeconds` hides the ghos
 (`AimPreview.cs:60`, `:348`). The backlog then arrives in one burst, and the THROW, queued behind
 it, lands late.
 
+
+**Status:** fixed in `72f53b2` (#57), test `skips while bytes are still queued`.
+
 ### N6 — The relay rate limit counts THROW like AIM — CONFIRMED (B2, 09-10)
 
 `isRateLimited` runs before the message type is read (`relay/server.js:682`). It uses a fixed 1 s
 bucket of 60 and drops silently. A stall's burst plus steady 20 Hz streaming can fill the bucket,
 and the THROW behind it is discarded.
+
+
+**Status:** fixed in `5c81e62` (#58), test `fix: an AIM burst cannot rate-limit the THROW behind it` (failed before, passes after; relay 49/49).
 
 ### N7 — "Rejected AIM" is mostly noise — CONFIRMED (B12, 09-10)
 
@@ -131,12 +149,18 @@ The phase guard (`AimPreview.cs:413-417`) logs every lobby, Choosing and Results
 rejection. ShoreRocks consumes those same frames legitimately. In solo play this is the only
 source of the line, so it says nothing about lost input.
 
+
+**Status:** fixed in `391c985` (#59). Compiled; EditMode 18/18 green.
+
 ### N8 — iOS Safari selection callout — CONFIRMED (by reading) / not reproduced on a device
 
 The page sets `user-select: none` unprefixed (`controller/index.html:41`). Safari only honours
 `-webkit-user-select`. There is also no `-webkit-touch-callout: none`. So on iPhone, a press
 (including the finger resting on the screen through a swing) opens the selection loupe and the
 Copy / Look Up callout.
+
+
+**Status:** fixed in `314c07f` (#60). Computed styles checked in Chromium. **Needs an iPhone to confirm the pop-up is gone.**
 
 ## Deferred: still open from the 09-10 plan
 

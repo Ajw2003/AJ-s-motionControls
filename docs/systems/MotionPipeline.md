@@ -53,6 +53,17 @@ guaranteed-fresh zero at the moment that matters most) and `prepareForThrow()` (
 gravity-filter/buffer reset the old `calibrate()` also did, now split out because arming no
 longer implies capturing a reference).
 
+**While a throw is armed, Aiming is one-way.** `arm()` sets `MotionSource.holdAimLock`, and
+`cancel()` clears it (`controller/js/throw.js`). While it is set, stillness never drops Aiming
+back to Settling (`controller/js/sensors.js` `_advanceCalibration`). A pause at the top of the
+backswing is longer than `settleSamples`, so without the lock the reference slid to the backswing
+pose and the release came out rotated by the whole backswing (#53). Settling → Aiming still works
+after the tap, so a grip adjustment before the wind-up is still absorbed.
+
+**Where the release attitude comes from.** On the calm-stop path it is the last sample. On the
+`maxSwingMs` timeout path it is the calmest sample after the peak (`calmestIndexAfterPeak`),
+because the last sample there is 900 ms into the follow-through (#54).
+
 Design record: `docs/plans/continuous-calibration.md`.
 
 ## Why quaternions, and why it is not a style preference

@@ -61,10 +61,29 @@ cross-stack change with a save-file migration, not a naming fix.
 |---|---|---|
 | `MAX_PLAYERS_PER_ROOM` | 8 | Couch game |
 | `MAX_MESSAGE_BYTES` | 4096 | |
-| `RATE_MAX_MESSAGES` | 60/s | `AIM` streams at 20Hz; leaves burst headroom |
+| `RATE_MAX_AIM` | 60/s per socket | `AIM` streams at 20Hz; it is lossy, so its own budget caps a stall's backlog (#58) |
+| `RATE_MAX_MESSAGES` | 300/s per socket | Flood cap for everything else. One shared 60/s bucket let an AIM backlog get the THROW behind it dropped |
 | `HOST_GRACE_MS` | 60s | A host socket drops for dull reasons — a Wi-Fi blip, a restart. Closing the room instantly ejects everyone and forces a retype of a code that no longer exists |
 | `CODE_ALPHABET` | 24 letters, no I or O | Read aloud off a TV, typed on a phone |
 | `REPLACED_CLOSE_CODE` | 4001 | Distinct from 1000 on purpose |
+
+**The phone sends AIM latest-wins and THROW always.** `sendAim` (`controller/js/app.js`) uses
+`RelayConnection.sendIfClear`, which skips a frame while bytes are still queued, so a stall
+cannot build a backlog ahead of the THROW (#57). THROW goes through plain `send`.
+
+**One stone at a time, end to end.**
+
+- **The phone.** After a THROW it shows STONE IN THE AIR, stops AIM, and ignores taps until the
+  next TURN, or for 30 s if no TURN comes (#55).
+- **The TV.** `RockLauncher.OnThrow` refuses, and logs, any THROW until the previous stone's
+  `IsSinking` clears (#56).
+- **Where the gap is.** TURN arrives on every player join, so a join mid-flight unlocks the
+  phone early, and the TV's guard catches that throw. The fallback timer exists because nothing
+  acknowledges a THROW yet (A4 in `docs/Findings-NetworkAndThrowStability.md`).
+
+**Testing without Unity.** `relay/fake-host.js` stands in for the TV. It gives every joining
+phone a TURN, logs each THROW, re-sends TURN after `SETTLE_MS`, and prints each phone's AIM rate
+once a second.
 
 That last one is not cosmetic. A displaced socket's client-side `onclose` cannot tell an ordinary
 `1000` apart from the host itself vanishing, and reconnecting in response is exactly the join
