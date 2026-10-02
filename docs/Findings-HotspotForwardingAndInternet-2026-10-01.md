@@ -119,11 +119,18 @@ Two decisions combine:
    nothing beyond the game (`SecurityReview.md` §5).
 2. **The relay answers the phones' "do I have internet?" probes as if it did** (`relay/server.js`
    connectivity-probe answers, `dns.js` probe domains, kept by `13c47bf`).
-   - **MEASURED on a Samsung:** Android marked the hotspot `+VALIDATED`
-     (`relay/samsung-logcat.txt:452-453`).
-   - This is what stops "No internet" warnings and lets the phone stay connected and re-join.
+   - **Correction (MEASURED, the same log re-read):** it never worked on Android.
+     - The `+VALIDATED` lines at `relay/samsung-logcat.txt:452-453` and `:904` are networks 124
+       and 125. Both are on `10.0.0.x`, the home Wi-Fi.
+     - The hotspot is network 126 (`192.168.137.x`, `:1030-1031`). It logged **"validation
+       failed"** three times (09-17, before the 09-18 portal removal).
+     - On 2026-10-01 a Samsung S26 showed "Connected, no internet" with the game running.
+   - **Why (PLAUSIBLE):** Android probes `https://www.google.com/generate_204` alongside the
+     plain-HTTP probe (`:1018`). An isolated hotspot can never answer the HTTPS one: it needs
+     Google's certificate. Whether the HTTP answer reaches the phone at all has not been checked;
+     the relay was not running at the time.
 
-**The contradiction.** The original isolation argument relied on Android *not* validating the
+**The contradiction (now moot for Android, which never validated).** The original isolation argument relied on Android *not* validating the
 network: "Android keeps mobile data as its default route for a Wi-Fi it judges unvalidated, so
 guests' real browsing and DNS go over cellular" (`docs/ZeroSetupPlan.md:323`). Decision 2 removed
 that.
@@ -138,7 +145,7 @@ network off, and with it the game.
 
 | | A. Today: isolated, probes answered | B. Isolated, probes not answered | C. Share the host's internet, block the host's LAN |
 |---|---|---|---|
-| Phone auto-connects and stays connected | **No, per Ayden's observation**, although Android validates it (Samsung logcat) | **Often not.** Android prompts "no internet", may avoid or drop the network, may not auto-rejoin | Yes, truthfully validated |
+| Phone auto-connects and stays connected | **No.** Android never validated it (logcat network 126; S26 shows "no internet") | **Often not.** Android prompts "no internet", may avoid or drop the network, may not auto-rejoin | Yes, truthfully validated |
 | Guest's other apps work while joined | **No** (PLAUSIBLE) | Yes, over mobile data | Yes |
 | Guest traffic leaves under the host's IP | No | No | **Yes.** The host is accountable for guest traffic |
 | Guests can reach the host's home LAN | No | No | Must be blocked. **Unproven:** Windows Firewall rules may not apply to ICS-forwarded traffic. Needs a spike |
