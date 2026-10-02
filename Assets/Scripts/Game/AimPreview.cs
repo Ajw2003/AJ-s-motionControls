@@ -724,8 +724,15 @@ namespace Game
             // follows it rather than drifting apart from it again.
             var horizon = new Color(0.42f, 0.58f, 0.74f);
 
-            camera.transform.position = new Vector3(0, 2f, -3);
-            camera.transform.rotation = Quaternion.Euler(PitchForHorizonFraction(camera), 0f, 0f);
+            // Owner-chosen framing (2026-10-01, #42): higher and steeper than the old 2 m /
+            // horizon-at-a-third pitch, so the six shore rocks read larger on the TV.
+            // RockLauncher captures this as its "home" and returns here after every throw.
+            // z = -4.5, not the owner's first -3: at -3 the stone (ThrowOrigin, z = 1) sat 48°
+            // below horizontal, past the frame's bottom edge at 45° (15° pitch + half the 60° FOV),
+            // and was cut off. At -4.5 it sits ~39° down, inside the frame (owner: "a little too
+            // close", 2026-10-01).
+            camera.transform.position = new Vector3(0, 4.5f, -4.5f);
+            camera.transform.rotation = Quaternion.Euler(15f, 0f, 0f);
             camera.backgroundColor = horizon;
 
             // SolidColor, and a SKYBOX IS NOT AN OPTION HERE. Tried and measured: a gradient
@@ -848,45 +855,6 @@ namespace Game
             var width = height * Mathf.Max(camera.aspect, 2.4f);
             quad.transform.localScale = new Vector3(width * 1.2f, height * 1.2f, 1f);
             return material;
-        }
-
-        /// <summary>
-        /// Fraction of the screen height, measured from the top, where the horizon should sit.
-        /// </summary>
-        private const float HorizonScreenFraction = 1f / 3f;
-
-        /// <summary>
-        /// The camera pitch, in degrees, that puts the horizon at
-        /// <see cref="HorizonScreenFraction"/> down the screen.
-        /// </summary>
-        /// <remarks>
-        /// Computed rather than dialled in by hand, because the answer depends on the camera's
-        /// field of view and a hardcoded angle silently stops being correct the moment somebody
-        /// changes it. The previous LookAt put the horizon about a quarter of the way down,
-        /// which read as slightly too much water and not enough sky.
-        ///
-        /// The maths: a ray at angle t above the camera's forward direction lands at
-        /// tan(t)/tan(halfFov) in normalised device coordinates, where 1 is the top of the
-        /// frame. The horizon is the ray with world direction y = 0, so pitching the camera down
-        /// by t puts the horizon t above centre. Solve for the wanted position and the pitch
-        /// falls out.
-        ///
-        /// Note it is tan-proportional, not linear — half the FOV is not half the screen — which
-        /// is exactly the sort of thing that makes hand-tuned angles drift.
-        /// </remarks>
-        private static float PitchForHorizonFraction(Camera camera)
-        {
-            // NDC offset above centre: 0.5 is the top of the frame, so a horizon a third of the
-            // way down sits (0.5 - 1/3) of the full height above centre, doubled to express it
-            // against the half-height the tangent relation uses.
-            var offsetFromCentre = (0.5f - HorizonScreenFraction) * 2f;
-
-            var halfFovRadians = camera.fieldOfView * 0.5f * Mathf.Deg2Rad;
-            var pitchRadians = Mathf.Atan(offsetFromCentre * Mathf.Tan(halfFovRadians));
-
-            // Positive Euler X pitches the camera DOWN in Unity, which is what pushes the
-            // horizon up the screen and leaves more sky above it.
-            return pitchRadians * Mathf.Rad2Deg;
         }
 
         /// <summary>

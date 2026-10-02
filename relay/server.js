@@ -242,10 +242,23 @@ function handleJoinRoom(ws, data) {
     return;
   }
 
-  const code = normalizeRoomCode(data.roomCode);
-  if (!code) {
-    sendError(ws, 'BAD_ROOM_CODE', 'Room codes are 4 letters.');
-    return;
+  // #44: phones no longer ask for a code. The relay hosts one room in practice, so a JOIN
+  // with no code, or a stale one (old session, old QR), falls back to the only open room.
+  // With several rooms open guessing would seat the player in the wrong game, so refuse.
+  let code = normalizeRoomCode(data.roomCode);
+  if (!code || !rooms.has(code)) {
+    if (rooms.size === 1) {
+      code = rooms.keys().next().value;
+    } else if (rooms.size > 1 && !code) {
+      sendError(ws, 'ROOM_AMBIGUOUS', 'More than one game is open, so we cannot tell which to join.');
+      return;
+    } else if (rooms.size > 1) {
+      sendError(ws, 'ROOM_AMBIGUOUS', 'That game is not open and more than one other is, so we cannot tell which to join.');
+      return;
+    } else if (!code) {
+      sendError(ws, 'ROOM_NOT_FOUND', 'No game is open right now.');
+      return;
+    }
   }
 
   const playerId = sanitizePlayerId(data.playerId);

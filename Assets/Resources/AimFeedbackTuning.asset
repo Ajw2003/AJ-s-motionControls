@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a4f1c9d20b7e4c8fae3d6b15c927f048, type: 3}
   m_Name: AimFeedbackTuning
   m_EditorClassIdentifier: Assembly-CSharp::Game.AimFeedbackTuning
-  ColourByPredictedSkips: 1
+  ColourByPredictedSkips: 0
   PoorSkips: 8
   GoodSkips: 18
-  PoorColour: {r: 0.95, g: 0.28, b: 0.24, a: 1}
+  PoorColour: {r: 1, g: 1, b: 1, a: 0.3882353}
   FairColour: {r: 0.98, g: 0.72, b: 0.2, a: 1}
   GoodColour: {r: 0.35, g: 0.88, b: 0.42, a: 1}
   TailAlpha: 0.15

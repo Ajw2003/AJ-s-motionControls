@@ -43,9 +43,10 @@
           env(safe-area-inset-left);
       }
 
+      /* Sizes raised for a phone held at arm's length (#50, phone audit finding 7). */
       #status {
         padding: 8px 12px;
-        font-size: 12px;
+        font-size: 14px;
         text-align: center;
         color: var(--muted);
         background: rgba(0, 0, 0, 0.25);
@@ -79,7 +80,7 @@
       }
       h2 {
         margin: 0;
-        font-size: 20px;
+        font-size: 26px;
         font-weight: 600;
         text-align: center;
       }
@@ -87,7 +88,7 @@
         margin: 0;
         color: var(--muted);
         text-align: center;
-        font-size: 15px;
+        font-size: 17px;
         line-height: 1.5;
       }
 
@@ -132,6 +133,24 @@
         padding: 10px 20px;
         box-shadow: none;
         text-decoration: underline;
+      }
+
+      /* #49: after a stone is confirmed the next step is starting the match, so START
+       MATCH takes the generic button look at full width and CONFIRM steps down to an
+       outline (still tappable: re-confirming picks a different stone). */
+      #chooseScreen.stone-confirmed #advanceBtn {
+        width: 100%;
+        padding: 16px 36px;
+        background: var(--accent);
+        color: #06263a;
+        font-size: 18px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      #chooseScreen.stone-confirmed #confirmBtn {
+        background: transparent;
+        color: var(--accent);
+        border: 2px solid var(--accent);
       }
 
       /* A stone, not a button. Irregular radii give it a worn, asymmetric outline, and
@@ -337,6 +356,37 @@
         display: none;
       }
 
+      /* The stone on the choose screen. It is a button for part 2 of #51, so it sheds the
+       default button chrome; colour comes from --accent, and the art's currentColor
+       silhouette picks it up. */
+      .stone-btn {
+        background: none;
+        border: 0;
+        padding: 0;
+        width: auto;
+        color: var(--accent);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+      }
+      .stone-btn[hidden] {
+        display: none;
+      }
+      .stone-art {
+        display: block;
+        width: 160px;
+      }
+      .stone-art svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .stone-name {
+        font-weight: 600;
+      }
+
       .scores {
         width: 100%;
         max-width: 320px;
@@ -347,24 +397,82 @@
       .score-row {
         display: flex;
         justify-content: space-between;
-        padding: 10px 14px;
+        padding: 12px 16px;
         background: var(--surface);
         border-radius: 10px;
-        font-size: 15px;
+        font-size: 20px;
       }
       .score-row.active {
         border-left: 4px solid var(--accent);
       }
+      /* This phone's own row (#46): tint plus outline, independent of .active. */
+      .score-row.me {
+        background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+        outline: 1.5px solid var(--accent);
+      }
+      .score-rank {
+        min-width: 1.2em;
+        color: var(--muted, #8a8f98);
+        font-size: 14px;
+      }
+      .you-tag {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: var(--accent);
+      }
 
-      /* Colour picker. Swatch targets are 44px, the smallest thing a thumb hits
-       reliably on a phone — the same reason the throw button is as large as it is. */
-      .colour-picker {
+      /* Colour panel (#51): a bottom sheet over a dim backdrop, opened by tapping your
+       stone. Swatch targets are 44px, the smallest thing a thumb hits reliably on a
+       phone — the same reason the throw button is as large as it is. position:fixed so
+       it sits over whatever the screen is doing rather than pushing the layout. */
+      .colour-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        align-items: flex-end;
+      }
+      .colour-sheet[hidden] {
+        display: none;
+      }
+      .colour-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      .colour-panel {
+        position: relative;
         width: 100%;
-        max-width: 320px;
+        box-sizing: border-box;
+        background: var(--surface);
+        border-radius: 16px 16px 0 0;
+        padding: 10px 16px 20px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 12px;
         align-items: center;
+        animation: colour-slide-up 0.2s ease-out;
+      }
+      /* Reduced motion gets the panel with no travel — the backdrop and panel just appear. */
+      @keyframes colour-slide-up {
+        from {
+          transform: translateY(100%);
+        }
+        to {
+          transform: translateY(0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .colour-panel {
+          animation: none;
+        }
+      }
+      .colour-grab {
+        width: 34px;
+        height: 4px;
+        border-radius: 4px;
+        background: var(--muted);
       }
       .colour-label {
         color: var(--muted);
@@ -373,9 +481,9 @@
         text-transform: uppercase;
       }
       .colour-swatches {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
+        display: grid;
+        grid-template-columns: repeat(3, 44px);
+        gap: 14px;
         justify-content: center;
       }
       .colour-swatch {
@@ -386,74 +494,69 @@
         border: 3px solid transparent;
         box-shadow: none;
         cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 700;
+        color: #0d1b2a;
+      }
+      /* Held by someone else: faded and lettered, but still tappable — the host nudges a
+       near-duplicate to a nearby hue, so refusing the tap here would be a second rule. */
+      .colour-swatch.taken {
+        opacity: 0.45;
       }
       /* The ring, not a tick: a checkmark over an arbitrary colour is unreadable on
        roughly half the palette. */
       .colour-swatch.selected {
         border-color: var(--text);
       }
-
-      /* The two ways in, side by side and the same weight, so neither reads as the
-       main one. Both are the same 44px circle as a swatch. */
-      .colour-modes {
-        display: flex;
-        gap: 24px;
-        justify-content: center;
-      }
-      /* font: inherit as well as the colour reset — the generic `button` rule above is
-       700-weight uppercase, and Default is a peer of the Custom <label>, not a CTA. */
-      .colour-mode {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        background: none;
-        box-shadow: none;
-        padding: 0;
-        border: none;
-        color: var(--muted);
-        font: inherit;
-        font-size: 13px;
-        font-weight: 400;
-        text-transform: none;
-        cursor: pointer;
-      }
-      .colour-mode-dot {
+      /* The ninth tile: same 44px circle, wrapping the native colour input. The OS colour
+       wheel is deliberate — it needs no library, and this page is served from a local
+       relay with nowhere to load one from. */
+      .colour-custom {
+        position: relative;
+        display: block;
         width: 44px;
         height: 44px;
         border-radius: 50%;
-        border: 3px solid transparent;
         overflow: hidden;
-        flex: 0 0 auto;
-      }
-      /* Same ring as a selected swatch, borrowed for "this sub-menu is open" — one
-       visual idiom for "you are here" rather than two. */
-      .colour-mode[aria-expanded='true'] .colour-mode-dot {
-        border-color: var(--text);
-      }
-      /* appearance:none and the oversize box because Chromium draws the native colour
-       input as an inset rounded rectangle inside its own padding — left alone it shows
-       as a square in a round hole no matter what the wrapper clips. */
-      .colour-mode-dot--custom input[type='color'] {
-        appearance: none;
-        -webkit-appearance: none;
-        display: block;
-        width: 150%;
-        height: 150%;
-        margin: -25%;
-        padding: 0;
-        border: none;
-        background: none;
+        border: 3px solid transparent;
+        box-sizing: border-box;
+        background: var(--bg);
         cursor: pointer;
       }
-      .colour-mode-dot--custom input[type='color']::-webkit-color-swatch-wrapper {
+      .colour-custom::after {
+        content: '+';
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: var(--text);
+        pointer-events: none;
+      }
+      /* appearance:none and the oversize box because Chromium draws the native colour
+       input as an inset rounded rectangle inside its own padding. Opacity 0 keeps it as
+       the tap target while the "+" shows through. */
+      .colour-custom input[type='color'] {
+        appearance: none;
+        -webkit-appearance: none;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
         padding: 0;
-      }
-      .colour-mode-dot--custom input[type='color']::-webkit-color-swatch {
         border: none;
+        opacity: 0;
+        cursor: pointer;
       }
-      .colour-mode-dot--custom input[type='color']::-moz-color-swatch {
-        border: none;
+      .colour-note {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 0;
       }
 
       /* Every player's colour beside their name in the scores, so the dots on the TV
@@ -580,47 +683,42 @@
       <h1>ROCK SKIPPING</h1>
       <div id="joinError" class="error"></div>
       <input id="nameInput" type="text" placeholder="YOUR NAME" maxlength="12" autocomplete="off" />
-      <input id="codeInput" type="text" placeholder="ROOM CODE" maxlength="4" autocomplete="off" />
       <button id="joinBtn">JOIN GAME</button>
-      <p>Enter the code shown on the TV.</p>
+      <p>You'll join the game on the TV.</p>
     </section>
 
     <!-- Choosing a stone -->
     <section id="chooseScreen" class="screen">
       <h2>Choose your stone</h2>
       <p>Point your phone at a stone on the TV, then tap CONFIRM.</p>
-      <p id="chooseRock" class="last-throw"></p>
+      <!-- Your actual stone, tinted with your colour (#51). A button because tapping it opens
+         the colour panel. Hidden until
+         SPECTATE says which rock this phone holds. -->
+      <button id="chooseRock" type="button" class="stone-btn" aria-label="Change colour" hidden>
+        <span id="chooseRockArt" class="stone-art"></span>
+        <span id="chooseRockName" class="stone-name"></span>
+      </button>
       <button id="confirmBtn">CONFIRM</button>
 
-      <!-- Your colour. The swatches are the host's palette, sent in SPECTATE rather than
-         duplicated here so there is one palette in the project, editable on the
-         PlayerColourPalette asset. They live behind the Default button rather than on
-         the screen: the full palette is eight 44px circles, which wraps to two rows on
-         a phone and pushes the advance buttons off the comfortable part of the thumb's
-         reach. The native picker is deliberate: it is the OS colour wheel on both
-         platforms, needs no library, and this page is served from a local relay with
-         nowhere to load one from. -->
-      <div id="colourPicker" class="colour-picker" hidden>
-        <span class="colour-label">Your colour</span>
-        <div class="colour-modes">
-          <button
-            id="colourDefaultBtn"
-            type="button"
-            class="colour-mode"
-            aria-expanded="false"
-            aria-controls="colourSwatches"
-          >
-            <span id="colourDefaultDot" class="colour-mode-dot"></span>
-            <span>Default</span>
-          </button>
-          <label class="colour-mode">
-            <span class="colour-mode-dot colour-mode-dot--custom">
+      <!-- Your colour (#51), opened by tapping the stone. The swatches are the host's
+         palette, sent in SPECTATE rather than duplicated here so there is one palette in
+         the project, editable on the PlayerColourPalette asset. A bottom panel rather
+         than inline: eight 44px circles would push the advance buttons off the
+         comfortable part of the thumb's reach. -->
+      <div id="colourPicker" class="colour-sheet" hidden>
+        <div id="colourBackdrop" class="colour-backdrop"></div>
+        <div class="colour-panel" role="dialog" aria-label="Your colour">
+          <div class="colour-grab"></div>
+          <span class="colour-label">Your colour</span>
+          <div id="colourSwatches" class="colour-swatches">
+            <!-- The ninth tile; renderSwatches inserts the palette circles before it. -->
+            <label id="colourCustom" class="colour-custom" aria-label="Pick any colour">
               <input id="colourInput" type="color" value="#ffffff" />
-            </span>
-            <span>Custom</span>
-          </label>
+            </label>
+          </div>
+          <p class="colour-note">Faded colours belong to other players.</p>
+          <button id="colourDoneBtn" type="button">DONE</button>
         </div>
-        <div id="colourSwatches" class="colour-swatches" hidden></div>
       </div>
       <!-- Advancing the match from a phone, so a couch session never has to go back to
          the host's keyboard. Hidden until a SPECTATE says this phase can be advanced;

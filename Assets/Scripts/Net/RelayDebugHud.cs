@@ -15,7 +15,9 @@ namespace Net
     /// </remarks>
     public class RelayDebugHud : MonoBehaviour
     {
-        [SerializeField] private bool isVisible = true;
+        // Hidden until F1: it sits top-left, under the lobby's Wi-Fi QR and the match
+        // leaderboard, and a party only ever needs those. Still built, so F1 works mid-game.
+        [SerializeField] private bool isVisible = false;
         [SerializeField] private int historySize = 6;
         [SerializeField] private KeyCode toggleKey = KeyCode.F1;
 

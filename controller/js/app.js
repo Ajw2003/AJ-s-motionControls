@@ -13,7 +13,9 @@ import {
   tiltAngleDeg,
 } from './sensors.js';
 import { ThrowController, ThrowState, ThrowTuning, buildAimPayload } from './throw.js';
+import { rankScores } from './ranking.js';
 import { RelayConnection, ConnectionStatus } from './net.js';
+import { ROCK_ART } from './rock-art.js';
 import { loadIdentity, ensureDeviceId, updateIdentity, clearIdentity } from './identity.js';
 
 const el = (id) => document.getElementById(id);
@@ -40,9 +42,10 @@ const ui = {
   nameBtn: el('nameBtn'),
   nameEditInput: el('nameEditInput'),
   chooseRock: el('chooseRock'),
+  chooseRockArt: el('chooseRockArt'),
+  chooseRockName: el('chooseRockName'),
   joinError: el('joinError'),
   nameInput: el('nameInput'),
-  codeInput: el('codeInput'),
   joinBtn: el('joinBtn'),
   gripBtn: el('gripBtn'),
   gripWrap: el('gripWrap'),
@@ -57,8 +60,9 @@ const ui = {
   scores: el('scores'),
   colourPicker: el('colourPicker'),
   colourSwatches: el('colourSwatches'),
-  colourDefaultBtn: el('colourDefaultBtn'),
-  colourDefaultDot: el('colourDefaultDot'),
+  colourBackdrop: el('colourBackdrop'),
+  colourDoneBtn: el('colourDoneBtn'),
+  colourCustom: el('colourCustom'),
   colourInput: el('colourInput'),
   throwResult: el('throwResult'),
   debug: el('debug'),
@@ -382,6 +386,10 @@ function startPreviewAim() {
 }
 
 function stopPreviewAim() {
+  // Before the early return: whatever stream was or was not running, leaving it means
+  // leaving the lobby's no-tracking mode (startLobbyAim), so the next arm or turn-start
+  // stream gets the normal Settling tracking back.
+  motion.trackingEnabled = true;
   if (previewAimTimer === null) return;
   clearInterval(previewAimTimer);
   previewAimTimer = null;
@@ -396,6 +404,12 @@ function stopPreviewAim() {
  */
 function startLobbyAim() {
   if (myTurn) return;
+
+  // Pointing at a rock and holding still is exactly what Settling reads as "the phone
+  // is at rest, move zero here" — so the pointer slid back to centre on its own (issue
+  // #23). The lobby's zero is the recentre() in startPreviewAim and the RE-CENTRE
+  // button, nothing else. stopPreviewAim turns tracking back on.
+  motion.trackingEnabled = false;
   startPreviewAim();
 }
 
@@ -449,6 +463,11 @@ function bindAdvance() {
   }
 }
 
+// #49: once this phone has confirmed a stone, START MATCH becomes the primary button and
+// CONFIRM steps down. Local flag because SPECTATE carries no confirmed state — "rocks"
+// is filled for every player with the catalog default until they pick.
+let stoneConfirmed = false;
+
 /**
  * Show whichever advance button belongs to this phase, and label it for what it
  * actually does.
@@ -460,6 +479,9 @@ function bindAdvance() {
  */
 function renderAdvance(phase, message) {
   const canChoose = phase === 'LOBBY';
+  // A new choose round starts unconfirmed: the flag lives only while we sit in LOBBY.
+  if (!canChoose) stoneConfirmed = false;
+  ui.chooseScreen.classList.toggle('stone-confirmed', stoneConfirmed);
   ui.advanceBtn.hidden = !canChoose;
   if (canChoose) ui.advanceBtn.textContent = message.choosing ? 'RESUME MATCH' : 'START MATCH';
 
@@ -494,6 +516,7 @@ function bindRename() {
     }
 
     myName = name;
+    if (myPlayerId) setConnectedStatus();
     updateIdentity({ name });
     renderNameBtn();
     connection?.send({ type: 'SET_NAME', name: myName });
@@ -510,7 +533,11 @@ function renderNameBtn() {
 }
 
 function bindChoose() {
-  ui.confirmBtn.addEventListener('click', () => sendInput({ type: 'PICK_ROCK' }));
+  ui.confirmBtn.addEventListener('click', () => {
+    sendInput({ type: 'PICK_ROCK' });
+    stoneConfirmed = true;
+    ui.chooseScreen.classList.add('stone-confirmed');
+  });
   ui.recentreBtn.addEventListener('click', () => motion.recentre());
   bindColour();
 }
@@ -539,19 +566,19 @@ function bindColour() {
   // is 60/s against an AIM stream that only runs at 20.
   ui.colourInput.addEventListener('input', () => pickColour(ui.colourInput.value));
 
-  ui.colourDefaultBtn.addEventListener('click', () => setSwatchesOpen(ui.colourSwatches.hidden));
+  // Tapping the stone opens the panel (#51). A pick leaves it open on purpose, so the
+  // player watches the stone change; only the backdrop or DONE closes it.
+  ui.chooseRock.addEventListener('click', () => setColourSheetOpen(true));
+  ui.colourBackdrop.addEventListener('click', () => setColourSheetOpen(false));
+  ui.colourDoneBtn.addEventListener('click', () => setColourSheetOpen(false));
 }
 
 /**
- * Opens or closes the palette sub-menu.
- *
- * One function so the row's visibility and the button's ring can never disagree —
- * aria-expanded is what the CSS keys the ring off, so a stray `hidden` assignment
- * elsewhere would leave a closed menu wearing an open button.
+ * Opens or closes the colour panel. One function so every close path (backdrop, DONE,
+ * leaving the choose screen, a TURN arriving) goes through the same `hidden` write.
  */
-function setSwatchesOpen(open) {
-  ui.colourSwatches.hidden = !open;
-  ui.colourDefaultBtn.setAttribute('aria-expanded', String(open));
+function setColourSheetOpen(open) {
+  ui.colourPicker.hidden = !open;
 }
 
 /** Paints this phone's own accent, so the player sees their colour on their device. */
@@ -566,23 +593,56 @@ function applyMyColour(colour) {
 }
 
 /**
- * Rebuilds the swatch row from the host's palette.
+ * Shows this player's actual stone on the choose screen (#51), tinted by --accent.
+ *
+ * The SVG strings in ROCK_ART are constants generated by tools/art/rocks/make_phone_art.py;
+ * no player-supplied text ever reaches innerHTML, which is why assigning it is safe here.
+ * The name goes in via textContent. Colour needs no work here: the art fills with
+ * currentColor and the button's CSS colour is var(--accent), which applyMyColour sets, so a
+ * colour change recolours the stone on its own. Idempotent, because SPECTATE repeats.
+ */
+function renderMyStone(mine) {
+  const art = (mine?.rockId && ROCK_ART[mine.rockId]) || (mine?.rockName && ROCK_ART[mine.rockName]);
+  if (!art) {
+    ui.chooseRock.hidden = true;
+    return;
+  }
+  if (ui.chooseRockArt.dataset.rock !== mine.rockName) {
+    ui.chooseRockArt.innerHTML = art;
+    ui.chooseRockArt.dataset.rock = mine.rockName;
+  }
+  ui.chooseRockName.textContent = mine.rockName ?? '';
+  ui.chooseRock.hidden = false;
+}
+
+/**
+ * Rebuilds the palette circles from the host's palette, marking the ones other players hold.
  *
  * The palette comes down the wire rather than being duplicated here: it is authored on
  * the PlayerColourPalette asset, and a second copy in this file would be the third place
  * player colours live. Idempotent — SPECTATE repeats constantly, so this returns early
- * unless the palette actually changed.
+ * unless the palette or who holds what actually changed (#51). Held-by-others comes from
+ * message.colours, excluding this phone, matched on lower-cased hex.
  */
 let renderedPalette = '';
 
-function renderSwatches(palette) {
+function renderSwatches(palette, colours, names) {
   if (!Array.isArray(palette) || palette.length === 0) return;
 
-  const key = palette.join(',');
+  // Lower-cased hex -> initial of the player holding it. textContent only, never markup:
+  // the name is player-supplied.
+  const taken = new Map();
+  for (const [id, colour] of Object.entries(colours ?? {})) {
+    if (id === myPlayerId || !colour) continue;
+    const initial = Array.from(String(names?.[id] ?? '').trim())[0] ?? '';
+    taken.set(String(colour).toLowerCase(), initial.toUpperCase());
+  }
+
+  const key = palette.join(',') + '|' + [...taken].join(',');
   if (key === renderedPalette) return;
   renderedPalette = key;
 
-  ui.colourSwatches.replaceChildren();
+  for (const old of ui.colourSwatches.querySelectorAll('.colour-swatch')) old.remove();
   for (const colour of palette) {
     const swatch = document.createElement('button');
     swatch.type = 'button';
@@ -590,27 +650,17 @@ function renderSwatches(palette) {
     swatch.dataset.colour = String(colour).toLowerCase();
     swatch.style.background = colour;
     swatch.setAttribute('aria-label', `Colour ${colour}`);
-    // Closing on the pick, not on pickColour itself: the OS wheel fires pickColour on
-    // every frame of a drag, and a menu that shut mid-drag would be its own bug.
-    swatch.addEventListener('click', () => {
-      pickColour(colour);
-      setSwatchesOpen(false);
-    });
-    ui.colourSwatches.appendChild(swatch);
+    if (taken.has(swatch.dataset.colour)) {
+      swatch.classList.add('taken');
+      swatch.textContent = taken.get(swatch.dataset.colour);
+    }
+    // No close here: the player picks to watch the stone change, and the OS wheel fires
+    // pickColour on every frame of a drag, so a panel that shut on a pick would be a bug.
+    swatch.addEventListener('click', () => pickColour(colour));
+    ui.colourSwatches.insertBefore(swatch, ui.colourCustom);
   }
 
-  // The Default button previews what is behind it — a slice per palette colour, so it
-  // reads as "the presets" rather than as a second copy of the Custom swatch.
-  ui.colourDefaultDot.style.background = paletteGradient(palette);
-
   applyMyColour(myColour ?? requestedColour);
-}
-
-/** Equal conic slices, one per palette colour, as a CSS background value. */
-function paletteGradient(palette) {
-  const slice = 360 / palette.length;
-  const stops = palette.map((colour, i) => `${colour} ${i * slice}deg ${(i + 1) * slice}deg`);
-  return `conic-gradient(${stops.join(', ')})`;
 }
 
 function bindGrip() {
@@ -804,7 +854,7 @@ function handleMessage(message) {
       myTurn = false; // a fresh join/rejoin has no standing TURN yet — wait for one
       stopPreviewAim(); // and no standing stream either; the next SPECTATE/TURN starts one
       hasJoinedOnce = true; // a later ERROR/ROOM_CLOSED now means "get back in", not "unknown player"
-      setStatus(`Connected as ${myPlayerId}`, 'ok');
+      setConnectedStatus();
       renderNameBtn();
       showScreen('wait');
       motion.start();
@@ -851,6 +901,7 @@ function handleMessage(message) {
       // for the next SPECTATE, so the phone is never streaming AIM into a turn it
       // no longer applies to.
       stopLobbyAim();
+      setColourSheetOpen(false); // a turn has begun; the panel has no place over it (#51)
       myTurn = message.yourTurn;
 
       if (message.yourTurn) {
@@ -885,7 +936,7 @@ function handleMessage(message) {
       break;
 
     case 'HOST_RESUMED':
-      setStatus(`Connected as ${myPlayerId}`, 'ok');
+      setConnectedStatus();
       break;
 
     case 'ROOM_CLOSED':
@@ -926,6 +977,14 @@ function leader(scores) {
  * Blank in the lobby and on the results screen: the first has no throw behind it, and
  * the second is already showing final standings, where one player's last throw is noise.
  */
+/**
+ * The status bar once connected. The display name, not myPlayerId: that is the relay's
+ * device id (e.g. 4XO7R9DH4R33), meaningless to the person holding the phone (#45).
+ */
+function setConnectedStatus() {
+  setStatus(myName ? `Connected as ${myName}` : 'Connected', 'ok');
+}
+
 function renderLastThrow(message, phase) {
   if (phase !== 'PLAYING') return '';
   if (!message.lastPlayer || typeof message.lastSkips !== 'number') return '';
@@ -935,9 +994,11 @@ function renderLastThrow(message, phase) {
   // docs/plans/seamless-rejoin.md Workstream C. Falls back to the raw id so a build without
   // PlayerNames running (or a name that hasn't arrived yet) still shows something.
   const who = message.lastPlayer === myPlayerId ? 'You' : (message.names?.[message.lastPlayer] ?? message.lastPlayer);
-  const parts = [`${who}: ${message.lastSkips} skip${message.lastSkips === 1 ? '' : 's'}`];
-  if (typeof message.lastDistance === 'number') parts.push(`${message.lastDistance.toFixed(1)} m`);
-  return parts.join(' · ');
+  // The TV's format, MatchHud.FormatThrow ("143m   9sk"), so one throw reads the same on
+  // the phone as on the TV (#47). Rounded to whole metres there too.
+  const skips = `${message.lastSkips}sk`;
+  if (typeof message.lastDistance !== 'number') return `${who}: ${skips}`;
+  return `${who}: ${Math.round(message.lastDistance)}m\u2003${skips}`;
 }
 
 function renderSpectate(message) {
@@ -962,7 +1023,7 @@ function renderSpectate(message) {
   // colour the host settled on is what this phone should be showing — not the one it
   // asked for, which PlayerColours may have nudged for legibility or to keep two
   // players apart.
-  renderSwatches(message.palette);
+  renderSwatches(message.palette, message.colours, message.names);
   const settled = message.colours?.[myPlayerId];
   if (settled && settled !== myColour) {
     myColour = settled;
@@ -975,12 +1036,10 @@ function renderSpectate(message) {
     // this branch on every one of those pings is harmless.
     showScreen('choose');
     startLobbyAim();
-    ui.colourPicker.hidden = false;
 
     // Only present once ShoreRocks has resolved a highlight for this phone and
     // TurnManager has broadcast it — blank until then, which the CSS collapses.
-    const mine = message.rocks?.[myPlayerId];
-    ui.chooseRock.textContent = mine?.rockName ? `On: ${mine.rockName}` : '';
+    renderMyStone(message.rocks?.[myPlayerId]);
     return;
   }
 
@@ -991,11 +1050,9 @@ function renderSpectate(message) {
   if (!myTurn) stopPreviewAim();
 
   // Off the choose screen the picker has nowhere to be — a mid-throw colour change is
-  // allowed by the host but there is no screen real estate for it here. Collapsed as
-  // well as hidden, so a mid-match re-pick opens on the compact two-button row rather
-  // than restoring a sub-menu left open several minutes ago.
-  ui.colourPicker.hidden = true;
-  setSwatchesOpen(false);
+  // allowed by the host but there is no screen real estate for it here. Closed so a
+  // mid-match re-pick does not reopen a panel left up from before.
+  setColourSheetOpen(false);
 
   if (phase === 'RESULTS') {
     // leader() still operates on the id-keyed scores dict — the comparison below stays
@@ -1026,9 +1083,13 @@ function renderSpectate(message) {
   ui.lastThrow.textContent = renderLastThrow(message, phase);
 
   ui.scores.replaceChildren();
-  for (const [player, score] of Object.entries(message.scores ?? {})) {
+  // Sorted and numbered (#46). `.me` marks this phone's own row, `.active` whose turn
+  // it is — separate things that can land on the same row.
+  for (const { player, score, rank } of rankScores(message.scores)) {
     const row = document.createElement('div');
-    row.className = 'score-row' + (player === message.activePlayer ? ' active' : '');
+    row.className = 'score-row'
+      + (player === message.activePlayer ? ' active' : '')
+      + (player === myPlayerId ? ' me' : '');
 
     // textContent, never innerHTML. A display name is attacker-controlled text that every
     // other phone renders, exactly as the typed name used to be before Workstream C moved
@@ -1038,6 +1099,11 @@ function renderSpectate(message) {
     // still rules that out.
     const name = document.createElement('span');
     name.className = 'name';
+
+    const rankEl = document.createElement('span');
+    rankEl.className = 'score-rank';
+    rankEl.textContent = rank;
+    name.appendChild(rankEl);
 
     // Their colour, matching their dot on the TV. A span with a background, never
     // interpolated markup — the colour string is host-generated, but the name beside
@@ -1057,6 +1123,13 @@ function renderSpectate(message) {
     const label = document.createElement('span');
     label.textContent = message.names?.[player] ?? player;
     name.appendChild(label);
+
+    if (player === myPlayerId) {
+      const you = document.createElement('span');
+      you.className = 'you-tag';
+      you.textContent = 'YOU';
+      name.appendChild(you);
+    }
 
     const points = document.createElement('span');
     points.textContent = score;
@@ -1095,12 +1168,18 @@ function joinOnceConnected(code, deviceId) {
   }, 100);
 }
 
+// #44: the room code the join screen used to show, now just a remembered value. Filled from
+// ?room= (a QR scan) or the stored identity, empty otherwise; the relay accepts empty or stale.
+let hiddenRoomCode = '';
+
 async function join() {
   const name = ui.nameInput.value.trim();
-  const code = ui.codeInput.value.trim().toUpperCase();
+  // #44: there is no code box any more. Send whatever came from ?room= or storage (the relay
+  // falls back to its only open room if it is stale), or an empty code if there is none.
+  const code = hiddenRoomCode;
 
-  if (!name || code.length !== 4) {
-    ui.joinError.textContent = 'Enter your name and the 4-letter code.';
+  if (!name) {
+    ui.joinError.textContent = 'Enter your name.';
     return;
   }
 
@@ -1215,10 +1294,11 @@ function init() {
   if (params.get('resetIdentity')) clearIdentity();
 
   const prefill = params.get('room');
-  const roomFromUrl = prefill ? prefill.toUpperCase() : '';
-  if (prefill) ui.codeInput.value = roomFromUrl;
+  if (prefill) hiddenRoomCode = prefill.trim().toUpperCase();
 
   ui.joinBtn.addEventListener('click', join);
+  // A sensor readout for testing, not for players: shown only with ?debug=1 (#48).
+  ui.debugToggle.hidden = params.get('debug') !== '1';
   ui.debugToggle.addEventListener('click', () => ui.debug.classList.toggle('visible'));
   bindChoose();
   bindAdvance();
@@ -1247,7 +1327,7 @@ function init() {
   // above, and stays the URL's business.
   const identity = loadIdentity();
   if (identity?.name) ui.nameInput.value = identity.name;
-  if (!ui.codeInput.value && identity?.room) ui.codeInput.value = identity.room;
+  if (!hiddenRoomCode && identity?.room) hiddenRoomCode = identity.room;
 
   setInterval(updateDebug, 100);
   document.addEventListener('visibilitychange', () => {

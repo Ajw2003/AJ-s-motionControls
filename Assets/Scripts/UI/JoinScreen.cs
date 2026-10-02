@@ -64,7 +64,7 @@ namespace Ui
         private LocalServices _services;
         private RelayClient _client;
 
-        private GUIStyle _title, _status, _code, _url, _body, _hint;
+        private GUIStyle _title, _status, _body, _hint;
         private Texture2D _panelTexture;
 
         [Serializable]
@@ -272,18 +272,6 @@ namespace Ui
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = true,
             };
-            _code = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(110 * scale),
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-            };
-            _url = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(24 * scale),
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true,
-            };
             _body = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Mathf.RoundToInt(22 * scale),
@@ -308,18 +296,82 @@ namespace Ui
             EnsureStyles();
 
             var turns = TurnManager.HasInstance ? TurnManager.Instance : null;
-            var joined = turns?.Players.Count ?? 0;
 
-            // Driven by phase, not by headcount: during the lobby the code and the start
-            // prompt are the whole point of the screen, however many people have joined.
+            // Driven by phase, not by headcount: during the lobby the two QR codes are the
+            // whole point of the screen, however many people have joined.
             var compact = compactDuringMatch && turns != null && turns.Phase != MatchPhase.Lobby &&
                           _client != null && _client.IsConnected;
 
             if (compact) DrawCompactCard();
-            else DrawFullScreen(joined);
+            else if (IsJoinable()) DrawLobbyCorners();
+            else DrawFullScreen();
         }
 
-        private void DrawFullScreen(int joined)
+        /// <summary>
+        /// True once there is a room to join and nothing has failed — the point at which the
+        /// lobby is only the two QR codes. Before that (connecting) and on a failure, the full
+        /// panel stays, because there is nothing to scan yet and the status is the screen.
+        /// </summary>
+        private bool IsJoinable()
+        {
+            if (_client == null || string.IsNullOrEmpty(_client.RoomCode)) return false;
+            if (HotspotService.HasInstance && HotspotService.Instance.State == HotspotState.Failed) return false;
+            return _services == null || _services.State != ServiceState.Failed;
+        }
+
+        /// <summary>
+        /// The lobby: the Wi-Fi code top-left, the game code top-right, and nothing else, so the
+        /// shore and its six stones are the screen. Both stay at full size and full opacity for
+        /// the whole lobby — a player arriving late needs the first code as much as the first
+        /// player did.
+        /// </summary>
+        /// <remarks>
+        /// The Wi-Fi code only exists in Hotspot mode: on a shared network there is no network
+        /// for this machine to hand out, so the top-left corner is simply empty there.
+        /// </remarks>
+        private void DrawLobbyCorners()
+        {
+            var side = Mathf.Min(Screen.height * 0.24f, Screen.width * 0.16f);
+            var margin = Mathf.Round(Screen.height * 0.025f);
+
+            var hotspotInUse = HotspotService.HasInstance && HotspotService.Instance.State != HotspotState.Failed;
+            if (hotspotInUse) DrawCornerQr(_wifiQr, new Vector2(margin, margin), side, "1  Wi-Fi");
+
+            DrawCornerQr(_gameQr, new Vector2(Screen.width - side - margin, margin), side,
+                         hotspotInUse ? "2  Play" : "Play");
+        }
+
+        /// <summary>One corner code on its own dark card, with a short label under it.</summary>
+        /// <remarks>
+        /// With no texture yet — the relay's /qr endpoint unreachable, say — the card shows the
+        /// address and room code as text instead, so a QR fetch failure still leaves a way in.
+        /// </remarks>
+        private void DrawCornerQr(QrSlot slot, Vector2 topLeft, float side, string label)
+        {
+            var labelHeight = _body.fontSize * 1.8f;
+            var pad = Mathf.Round(side * 0.05f);
+            var card = new Rect(topLeft.x, topLeft.y, side + pad * 2, side + pad * 2 + labelHeight);
+            var square = new Rect(card.x + pad, card.y + pad, side, side);
+
+            GUI.DrawTexture(card, _panelTexture);
+
+            if (slot.Texture != null)
+            {
+                GUI.DrawTexture(square, slot.Texture, ScaleMode.ScaleToFit);
+            }
+            else if (slot == _gameQr && _client != null)
+            {
+                GUI.Label(square, $"{_client.PublicOrigin}\n\n{_client.RoomCode}", _hint);
+            }
+            else
+            {
+                GUI.Label(square, "(building…)", _hint);
+            }
+
+            GUI.Label(new Rect(card.x, square.yMax, card.width, labelHeight), label, _body);
+        }
+
+        private void DrawFullScreen()
         {
             var panel = new Rect(Screen.width * 0.5f - Screen.width * 0.3f, Screen.height * 0.08f,
                                  Screen.width * 0.6f, Screen.height * 0.84f);
@@ -359,7 +411,6 @@ namespace Ui
             {
                 DrawFailure(_services.StatusMessage, _services.FailureHint);
             }
-            else if (!string.IsNullOrEmpty(_client.RoomCode)) DrawJoinDetails(joined);
             else DrawProgress();
 
             GUILayout.EndArea();
@@ -409,160 +460,6 @@ namespace Ui
             GUILayout.FlexibleSpace();
         }
 
-        private void DrawJoinDetails(int joined)
-        {
-            var code = _client?.RoomCode;
-
-            if (string.IsNullOrEmpty(code))
-            {
-                GUILayout.FlexibleSpace();
-                GUILayout.Label("Waiting for a room code from the relay…", _status);
-                GUILayout.FlexibleSpace();
-                return;
-            }
-
-            var hotspotReady = HotspotService.HasInstance && HotspotService.Instance.State == HotspotState.Ready;
-
-            // Phones that made it onto the Wi-Fi and then stopped — the drop-off the relay's
-            // join funnel exists to expose (relay/funnel.js, docs/plans/join-failure-reduction.md).
-            // Before this, that failure and "nobody has picked up their phone yet" looked
-            // identical from the couch: the player count just did not move.
-            var awaitingSecondScan = hotspotReady && _client != null ? _client.DevicesAwaitingPage : 0;
-
-            if (awaitingSecondScan > 0)
-            {
-                var previous = GUI.color;
-                GUI.color = new Color(1f, 0.85f, 0.4f);
-                // Deliberately count-free. The funnel is keyed by IP, which makes it a hint and
-                // never a roster: a phone that rejoins gets a fresh DHCP lease and counts twice,
-                // and two phones behind one address count once. Printing the number put that
-                // unreliability on a TV, where "2 phones are on the Wi-Fi" read as fact to
-                // everyone in the room and was simply false. The nudge is equally true at any
-                // count, so the count decides only WHETHER to show this, never what it says.
-                GUILayout.Label("A phone is on the Wi-Fi — now scan the second code", _status);
-                GUI.color = previous;
-            }
-            else
-            {
-                GUILayout.Label(hotspotReady
-                    // The SSID is now stable across restarts (HotspotCredentialsStore), so a phone
-                    // that has joined it before has it saved — "pick it from Wi-Fi settings" is a
-                    // real, faster option now, not just a fallback for a broken scanner.
-                    ? "Scan 1: join Wi-Fi     Scan 2: open the game — or already on this " +
-                      "network? Pick it from Wi-Fi settings, no scan needed"
-                    : "Scan to play — or open the address and type the code", _status);
-            }
-
-            GUILayout.Space(12);
-
-            if (hotspotReady)
-            {
-                // Two scans, not one — a WIFI: payload joins a network, a URL payload opens
-                // a page, and no single QR does both. Smaller than the single-QR size below
-                // so the pair fits the panel side by side.
-                var side = Mathf.Min(Screen.height * 0.24f, Screen.width * 0.16f);
-
-                // Once somebody is stuck between the two scans, the second code is the only
-                // one that helps them: grow it, and fade the one they have already used, so
-                // the right thing to point a camera at is obvious from across the room.
-                var wifiSide = awaitingSecondScan > 0 ? side * 0.7f : side;
-                var gameSide = awaitingSecondScan > 0 ? side * 1.3f : side;
-                var wifiAlpha = awaitingSecondScan > 0 ? 0.35f : 1f;
-
-                GUILayout.BeginHorizontal();
-                GUILayout.FlexibleSpace();
-                DrawQr(_wifiQr, wifiSide, wifiAlpha);
-                GUILayout.Space(20);
-                DrawQr(_gameQr, gameSide);
-                GUILayout.FlexibleSpace();
-                GUILayout.EndHorizontal();
-
-                // Printed under the Wi-Fi QR so a returning player can find this exact
-                // network by name in their phone's own Wi-Fi settings instead of scanning —
-                // that only became worth doing once the SSID stopped changing every session
-                // (see docs/plans/seamless-rejoin-round2.md Fix C). The passphrase stays off
-                // screen text; it's still in the QR for the manual/first-time case.
-                GUILayout.Space(4);
-                GUILayout.Label($"Wi-Fi network: {HotspotService.Instance.Ssid}", _hint);
-
-                // Sits with the Wi-Fi QR rather than in the failure panel, because the
-                // hotspot did start - this is about how it will feel, not whether it works,
-                // and the person who can act on it is the host standing at the TV.
-                var radioWarning = HotspotService.Instance.RadioSharingWarning;
-                if (!string.IsNullOrEmpty(radioWarning))
-                {
-                    GUILayout.Space(4);
-                    GUILayout.Label(radioWarning, _hint);
-                }
-            }
-            else if (_gameQr.Texture != null)
-            {
-                // Square, sized off the shorter axis so it never overflows the panel.
-                var side = Mathf.Min(Screen.height * 0.34f, Screen.width * 0.22f);
-                GUI.DrawTexture(CenteredSquare(side), _gameQr.Texture, ScaleMode.ScaleToFit);
-            }
-            else
-            {
-                GUILayout.Label("(building QR code…)", _hint);
-            }
-
-            GUILayout.Space(8);
-            GUILayout.Label(_client.PublicOrigin ?? string.Empty, _url);
-            GUILayout.Label(code, _code);
-
-            var turns = TurnManager.HasInstance ? TurnManager.Instance : null;
-
-            // Display names, not raw device ids — see PlayerNames and
-            // docs/plans/seamless-rejoin.md Workstream C.
-            var names = "";
-            if (turns != null)
-            {
-                var list = new System.Collections.Generic.List<string>();
-                foreach (var id in turns.Players)
-                {
-                    list.Add(PlayerNames.HasInstance ? PlayerNames.Instance.DisplayNameFor(id) : id);
-                }
-                names = string.Join(", ", list);
-            }
-
-            GUILayout.Label(joined == 0
-                ? "No players yet"
-                : $"{joined} player{(joined == 1 ? "" : "s")}: {names}",
-                _body);
-
-            GUILayout.Space(10);
-
-            // The match never starts on its own — somebody walking in mid-lobby should not
-            // begin it for everyone else, so it waits for a deliberate press.
-            // Suppressed while the settings modal has focus, so pressing Space there doesn't
-            // also start the match out from under the panel.
-            if (!MatchSettingsScreen.IsOpen && turns != null && turns.CanStartMatch)
-            {
-                var previous = GUI.color;
-                GUI.color = new Color(0.6f, 1f, 0.7f);
-                // Both routes named, because the phone one is the one that keeps a couch
-                // session going — nobody should have to walk back to the keyboard between
-                // matches. See TurnManager.Advance.
-                GUILayout.Label($"Press {turns.StartMatchKey} or tap START on a phone — " +
-                                $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")}", _status);
-                GUI.color = previous;
-            }
-            else if (turns != null && !MatchSettingsScreen.IsOpen)
-            {
-                GUILayout.Label("Waiting for at least one player…", _hint);
-            }
-
-            GUILayout.FlexibleSpace();
-            if (turns != null)
-            {
-                var random = RockSelection.HasInstance && RockSelection.Instance.RandomRocks;
-                GUILayout.Label($"Rocks: {(random ? "Random" : "Pointed")} · " +
-                                $"{turns.RoundsPerMatch} round{(turns.RoundsPerMatch == 1 ? "" : "s")} — " +
-                                "Press F4 for match settings", _hint);
-            }
-            GUILayout.Label($"{toggleKey} hides this screen", _hint);
-        }
-
         /// <summary>Corner card once play has started, so latecomers can still get in.</summary>
         private void DrawCompactCard()
         {
@@ -576,7 +473,9 @@ namespace Ui
             if (_gameQr.Texture != null)
                 GUI.DrawTexture(CenteredSquare(panel.width - 40f), _gameQr.Texture, ScaleMode.ScaleToFit);
 
-            GUILayout.Label(_client?.RoomCode ?? "----", _body);
+            // "Play", as in the lobby's corner: the QR is the way in, and a bare room code read
+            // as a stray word. The code only shows when there is no QR to scan.
+            GUILayout.Label(_gameQr.Texture != null ? "Play" : _client?.RoomCode ?? "----", _body);
             GUILayout.EndArea();
         }
 
@@ -589,31 +488,6 @@ namespace Ui
         {
             var row = GUILayoutUtility.GetRect(side, side, GUILayout.ExpandWidth(true));
             return new Rect(row.x + (row.width - side) * 0.5f, row.y, side, side);
-        }
-
-        /// <summary>
-        /// A fixed-size square inside a horizontal group — unlike CenteredSquare, which
-        /// claims the whole row's width to center a single item, this reserves exactly
-        /// `side` so two of these can sit side by side inside one GUILayout.BeginHorizontal.
-        /// </summary>
-        /// <param name="alpha">
-        /// Fades a code that is no longer the one to scan. Applied to the texture only — the
-        /// "(building…)" placeholder stays fully legible, because a faded one reads as a
-        /// rendering fault rather than as a deliberately de-emphasised code.
-        /// </param>
-        private void DrawQr(QrSlot slot, float side, float alpha = 1f)
-        {
-            var rect = GUILayoutUtility.GetRect(side, side, GUILayout.Width(side), GUILayout.Height(side));
-            if (slot.Texture == null)
-            {
-                GUI.Label(rect, "(building…)", _hint);
-                return;
-            }
-
-            var previous = GUI.color;
-            GUI.color = new Color(previous.r, previous.g, previous.b, previous.a * alpha);
-            GUI.DrawTexture(rect, slot.Texture, ScaleMode.ScaleToFit);
-            GUI.color = previous;
         }
     }
 }

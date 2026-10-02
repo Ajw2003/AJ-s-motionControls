@@ -35,7 +35,7 @@ namespace Game
         private TrailRenderer _trail;
 
         private Material _material;
-        private Color _playerColour = Color.white;
+        private Color _stoneColour = Color.white;
         private Texture2D _dashTexture;
 
         private float _minSpeed;
@@ -76,7 +76,12 @@ namespace Game
         /// looked up so the speed thresholds come from the same asset the throw was
         /// simulated with; two lookups could disagree after a retune.
         /// </remarks>
-        public static RockTrail Attach(GameObject rock, SkipConstants skipConstants, Color playerColour)
+        /// <param name="stoneColour">
+        /// The colour the stone itself is drawn in — PlayerColours.StoneColourFor, the same
+        /// blend the shore stone and the aim ghost use — so the ribbon matches the rock it
+        /// streams from rather than being a second, different shade of the player.
+        /// </param>
+        public static RockTrail Attach(GameObject rock, SkipConstants skipConstants, Color stoneColour)
         {
             if (rock == null) return null;
 
@@ -102,17 +107,45 @@ namespace Game
             go.transform.localRotation = FaceAlignedRotation;
 
             var self = go.AddComponent<RockTrail>();
-            self.Init(tuning, skipConstants, material, rock.GetComponent<RockController>(), playerColour);
+            self.Init(tuning, skipConstants, material, rock.GetComponent<RockController>(), stoneColour, StoneWidth(rock));
 
             return self;
         }
 
-        private void Init(TrailTuning tuning, SkipConstants skipConstants, Material material, RockController rock, Color playerColour)
+        /// <summary>
+        /// The stone's width in world metres, across its flat face.
+        /// </summary>
+        /// <remarks>
+        /// Measured, not assumed, so each rock gets a ribbon its own width — a Boulder's wider
+        /// than a Shard's — rather than one fixed number for every stone. This is the stone's
+        /// WORLD width; Init divides the rock's scale back out before handing it to the
+        /// TrailRenderer, which multiplies its width by the transform's scale (see Init).
+        ///
+        /// Mean of the two face-plane axes (local X and Z) rather than either one. The stone
+        /// spins about its face normal in flight, so which axis lies across the direction
+        /// of travel changes every few frames; the mean is the width it reads as on average.
+        /// mesh.bounds rather than vertices — the rock meshes are not CPU-readable.
+        ///
+        /// Falls back to 1 m when there is no mesh (the prefab's plain box fallback), which
+        /// keeps TrailTuning.WidthMultiplier meaning metres in that one case.
+        /// </remarks>
+        private static float StoneWidth(GameObject rock)
+        {
+            var filter = rock.GetComponent<MeshFilter>();
+            if (filter == null || filter.sharedMesh == null) return 1f;
+
+            var size = filter.sharedMesh.bounds.size;
+            var scale = rock.transform.lossyScale;
+
+            return (Mathf.Abs(size.x * scale.x) + Mathf.Abs(size.z * scale.z)) * 0.5f;
+        }
+
+        private void Init(TrailTuning tuning, SkipConstants skipConstants, Material material, RockController rock, Color stoneColour, float stoneWidth)
         {
             _tuning = tuning;
             _rock = rock;
             _material = material;
-            _playerColour = playerColour;
+            _stoneColour = stoneColour;
             _trail = GetComponent<TrailRenderer>();
 
             if (skipConstants != null)
@@ -125,9 +158,18 @@ namespace Game
 
             _trail.time = tuning.Time;
             _trail.minVertexDistance = tuning.MinVertexDistance;
-            _trail.widthMultiplier = tuning.WidthMultiplier * (wake ? tuning.WakeWidthScale : 1f);
+            // Divided by the trail's own world scale because, with LineAlignment.TransformZ, a
+            // TrailRenderer's width IS multiplied by its transform's scale — measured in the
+            // Editor on 2026-09-30: widthMultiplier 1 baked 1 m wide under a parent at scale 1
+            // and 2.47 m under one at 2.47. The ribbon hangs off the rock, which is scaled ×2.47,
+            // so without this the world-width measurement above was scaled a second time and
+            // every trail came out about 2.5× wider than its stone (issue #24). Uniform scale is
+            // assumed, as everywhere else that reads rock.LocalScale.
+            var trailScale = Mathf.Max(Mathf.Abs(transform.lossyScale.x), 0.0001f);
+            _trail.widthMultiplier = tuning.WidthMultiplier * stoneWidth / trailScale *
+                                     (wake ? tuning.WakeWidthScale : 1f);
             _trail.widthCurve = tuning.WidthCurve;
-            _trail.colorGradient = wake ? Faded(tuning.Colour, tuning.WakeAlphaScale) : tuning.Colour;
+            _trail.colorGradient = AlphaOnly(tuning.Colour, wake ? tuning.WakeAlphaScale : 1f);
 
             // Nothing here casts or receives — a translucent ribbon that shadows the lake
             // reads as a solid object, and the water is the only thing under it to catch it.
@@ -163,9 +205,9 @@ namespace Game
             _trail.sharedMaterial = _material;
 
             // Set once here rather than left to ApplySpeedTint, which only runs when
-            // ColourBySpeed is on — a trail with that style off must still be the player's
+            // ColourBySpeed is on — a trail with that style off must still be the stone's
             // colour, just without the speed-based dimming.
-            _material.color = _playerColour;
+            _material.color = _stoneColour;
         }
 
         /// <summary>
@@ -258,30 +300,38 @@ namespace Game
             var t = Mathf.InverseLerp(_minSpeed, _maxSpeed, _rock.Speed);
 
             // Multiplied, not replaced, so the speed fade survives: SlowTint is dim and
-            // FastTint is white, so the product is the player's own colour at full
-            // brightness on a fast run and dimmed on a dying one — ColourBySpeed still
-            // reads. Full player colour rather than PlayerColours.StoneColourFor's partial
-            // blend: a trail has no rock tint of its own worth preserving, and blending
-            // toward SlowTint's grey a second time would only wash it out.
-            _material.color = Color.Lerp(_tuning.SlowTint, _tuning.FastTint, t) * _playerColour;
+            // FastTint is white, so the product is the stone's own colour at full
+            // brightness on a fast run and dimmed on a dying one — ColourBySpeed still reads.
+            _material.color = Color.Lerp(_tuning.SlowTint, _tuning.FastTint, t) * _stoneColour;
         }
 
-        /// <summary>A copy of a gradient with every alpha key scaled. Used by the Wake style.</summary>
+        /// <summary>
+        /// A copy of a gradient keeping only its alpha keys, each scaled, with every colour
+        /// key forced to white.
+        /// </summary>
         /// <remarks>
+        /// White colour keys because the colour is the stone's, set on the material, and the
+        /// gradient multiplies into it. Left as authored, TrailTuning.Colour's keys (a dark
+        /// grey head fading to pale blue on the shipped asset) tinted every trail darker and
+        /// bluer than the rock it came from — two places deciding one colour. The gradient
+        /// now decides only the fade.
+        ///
         /// A copy, because the source gradient belongs to the shared TrailTuning ASSET.
-        /// Scaling it in place would edit the asset itself — which in the editor persists to
+        /// Editing it in place would edit the asset itself — which in the editor persists to
         /// disk, so every subsequent throw would come out fainter than the last until the
         /// wake vanished entirely and the asset on disk was quietly wrong.
         /// </remarks>
-        private static Gradient Faded(Gradient source, float alphaScale)
+        private static Gradient AlphaOnly(Gradient source, float alphaScale)
         {
             var alphas = source.alphaKeys;
             for (var i = 0; i < alphas.Length; i++) alphas[i].alpha *= alphaScale;
 
-            var faded = new Gradient();
-            faded.SetKeys(source.colorKeys, alphas);
+            var result = new Gradient();
+            result.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                alphas);
 
-            return faded;
+            return result;
         }
 
         /// <summary>

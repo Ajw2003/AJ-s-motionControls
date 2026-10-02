@@ -15,8 +15,8 @@ MonoBehaviour:
   Id: rock_01
   DisplayName: Skimmer
   Blurb: Thin and fast. Rewards a clean angle, forgives nothing.
-  Mesh: {fileID: -6597847060184789411, guid: 1799593868c9d8b4eb5f1fed0447979a, type: 3}
-  LocalScale: {x: 0.75, y: 0.39, z: 0.75}
+  Mesh: {fileID: -365326180644509072, guid: 06cc252767237e944a0a4af999a709bf, type: 3}
+  LocalScale: {x: 2.47, y: 2.47, z: 2.47}
   MeshRotation: {x: 0, y: 0, z: 0}
   Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
   Tuning: {fileID: 11400000, guid: 8959104894a79555bb0e997928127447, type: 2}

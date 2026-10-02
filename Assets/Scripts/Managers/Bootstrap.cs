@@ -32,6 +32,9 @@ namespace Managers
         [Tooltip("Final standings when a match ends.")]
         [SerializeField] private bool showResultsScreen = true;
 
+        [Tooltip("In-match readout: last throw top-centre, leaderboard top-left.")]
+        [SerializeField] private bool showMatchHud = true;
+
         [Tooltip("F4 host panel for Random rocks / Tuning set / Rounds per match.")]
         [SerializeField] private bool showMatchSettingsScreen = true;
 
@@ -130,6 +133,7 @@ namespace Managers
 
             if (showJoinScreen) CreateJoinScreen();
             if (showResultsScreen) CreateResultsScreen();
+            if (showMatchHud) CreateMatchHud();
             if (showMatchSettingsScreen) CreateMatchSettingsScreen();
             if (showDebugHud) CreateDebugHud();
             if (showAimPreview) CreateAimPreview();
@@ -185,6 +189,16 @@ namespace Managers
             var screen = new GameObject("ResultsScreen");
             screen.AddComponent<Ui.ResultsScreen>();
             DontDestroyOnLoad(screen);
+        }
+
+        /// <summary>Persistent: it spans the Game scene and keeps last throws across turns.</summary>
+        private static void CreateMatchHud()
+        {
+            if (FindFirstObjectByType<Ui.MatchHud>() != null) return;
+
+            var hud = new GameObject("MatchHud");
+            hud.AddComponent<Ui.MatchHud>();
+            DontDestroyOnLoad(hud);
         }
 
         private static void CreateMatchSettingsScreen()

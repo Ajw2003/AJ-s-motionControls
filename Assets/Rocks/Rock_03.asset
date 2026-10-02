@@ -15,8 +15,8 @@ MonoBehaviour:
   Id: rock_03
   DisplayName: Pebble
   Blurb: The one everyone learns on.
-  Mesh: {fileID: 1699098599863094455, guid: 1799593868c9d8b4eb5f1fed0447979a, type: 3}
-  LocalScale: {x: 0.4453834, y: 0.23159936, z: 0.4453834}
+  Mesh: {fileID: -4469015126479781120, guid: 06cc252767237e944a0a4af999a709bf, type: 3}
+  LocalScale: {x: 2.47, y: 2.47, z: 2.47}
   MeshRotation: {x: 0, y: 0, z: 0}
   Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
   Tuning: {fileID: 11400000, guid: 8013c9eb4193e60c2b4fc6cac4d51439, type: 2}

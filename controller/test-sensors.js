@@ -489,6 +489,41 @@ console.log('\nMotionSource calibration (Settling/Aiming)');
   }
 
   {
+    // trackingEnabled = false is the lobby's shore-pointing mode (issue #23). Settling
+    // tracking quietly pulls "zero" to wherever the phone rests, which is right before a
+    // throw but in the lobby dragged the pointer back to centre while a player held it on
+    // a rock. Turning the phone 30 deg and holding it still must keep the 30 deg there.
+    const turnedAndHeld = (trackingEnabled) => {
+      let clock = 0;
+      const m = new MotionSource({ now: () => clock });
+      m.trackingEnabled = trackingEnabled;
+      m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+      m._onMotion(motionEvent());
+      m.recentre();
+
+      m._onOrientation({ alpha: 30, beta: 90, gamma: 0 });
+      for (let i = 0; i < 90; i++) {
+        clock += 16; // ~1.4 s held still, about eight tracking time constants
+        m._onMotion(motionEvent(stillRate));
+      }
+      return rotationAngleDeg(m.latest.attitude);
+    };
+
+    const heldWithTracking = turnedAndHeld(true);
+    const heldWithoutTracking = turnedAndHeld(false);
+    check(
+      'with tracking on, a held pose drifts back to centre (throw behaviour)',
+      heldWithTracking < 1,
+      `${heldWithTracking.toFixed(3)} deg`,
+    );
+    check(
+      'with tracking off, a held pose keeps its aim (lobby pointing)',
+      Math.abs(heldWithoutTracking - 30) < 0.5,
+      `${heldWithoutTracking.toFixed(3)} deg`,
+    );
+  }
+
+  {
     // Gyro carry-forward while Aiming. deviceorientation and devicemotion are
     // separate streams, so on a device where orientation lags, the old code
     // re-stamped a stale triple onto every sample — a staircase in the aim stream,

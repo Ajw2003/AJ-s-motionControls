@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1128.1" height="267.6" viewBox="0 0 1128.1 267.6">
+  <rect x="0" y="0" width="1128.1" height="267.6" fill="#ffffff" />
+  <style>
+    .title { font: bold 16px sans-serif; fill: #222; }
+    .viewlabel { font: 11px sans-serif; fill: #555; }
+    .dimlabel { font: 10px sans-serif; fill: #777; }
+  </style>
+  <text x="28" y="20" class="title">Rock 05 - Shard</text>
+    <g>
+      <text x="205.1" y="44" text-anchor="middle" class="viewlabel">Top (x-z)</text>
+      <polygon points="342.10,203.62 223.82,218.93 231.66,223.62 329.61,200.78" fill="#b3b3b3" stroke="#626262" stroke-width="0.75" />
+      <polygon points="125.37,82.21 221.45,60.40 233.04,50.00 124.30,74.88" fill="#989898" stroke="#535353" stroke-width="0.75" />
+      <polygon points="46.59,124.31 125.37,82.21 124.30,74.88 28.00,122.33" fill="#a8a8a8" stroke="#5c5c5c" stroke-width="0.75" />
+      <polygon points="222.33,212.84 127.45,199.29 116.02,200.61 223.82,218.93" fill="#d2d2d2" stroke="#737373" stroke-width="0.75" />
+      <polygon points="127.45,199.29 48.23,150.71 34.41,159.40 116.02,200.61" fill="#d1d1d1" stroke="#727272" stroke-width="0.75" />
+      <polygon points="221.45,60.40 326.52,72.48 339.94,78.29 233.04,50.00" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="48.23,150.71 46.59,124.31 28.00,122.33 34.41,159.40" fill="#c8c8c8" stroke="#6e6e6e" stroke-width="0.75" />
+      <polygon points="322.33,191.69 222.33,212.84 223.82,218.93 342.10,203.62" fill="#cdcdcd" stroke="#707070" stroke-width="0.75" />
+      <polygon points="363.96,142.41 322.33,191.69 342.10,203.62 382.26,141.36" fill="#bebebe" stroke="#686868" stroke-width="0.75" />
+      <polygon points="326.52,72.48 363.96,142.41 382.26,141.36 339.94,78.29" fill="#a7a7a7" stroke="#5b5b5b" stroke-width="0.75" />
+      <polygon points="89.04,131.14 146.22,96.96 125.37,82.21 46.59,124.31" fill="#bcbcbc" stroke="#676767" stroke-width="0.75" />
+      <polygon points="215.91,199.78 147.78,176.05 127.45,199.29 222.33,212.84" fill="#cccccc" stroke="#707070" stroke-width="0.75" />
+      <polygon points="146.22,96.96 225.36,79.92 221.45,60.40 125.37,82.21" fill="#b8b8b8" stroke="#656565" stroke-width="0.75" />
+      <polygon points="147.78,176.05 79.73,146.94 48.23,150.71 127.45,199.29" fill="#cbcbcb" stroke="#6f6f6f" stroke-width="0.75" />
+      <polygon points="79.73,146.94 89.04,131.14 46.59,124.31 48.23,150.71" fill="#bbbbbb" stroke="#666666" stroke-width="0.75" />
+      <polygon points="297.15,180.86 215.91,199.78 222.33,212.84 322.33,191.69" fill="#cacaca" stroke="#6f6f6f" stroke-width="0.75" />
+      <polygon points="225.36,79.92 299.26,92.12 326.52,72.48 221.45,60.40" fill="#b8b8b8" stroke="#656565" stroke-width="0.75" />
+      <polygon points="146.22,96.96 89.04,131.14 201.90,137.80" fill="#c0c0c0" stroke="#696969" stroke-width="0.75" />
+      <polygon points="299.26,92.12 331.61,142.29 363.96,142.41 326.52,72.48" fill="#b5b5b5" stroke="#636363" stroke-width="0.75" />
+      <polygon points="331.61,142.29 297.15,180.86 322.33,191.69 363.96,142.41" fill="#c1c1c1" stroke="#6a6a6a" stroke-width="0.75" />
+      <polygon points="89.04,131.14 79.73,146.94 201.90,137.80" fill="#afafaf" stroke="#606060" stroke-width="0.75" />
+      <polygon points="147.78,176.05 215.91,199.78 201.90,137.80" fill="#c7c7c7" stroke="#6d6d6d" stroke-width="0.75" />
+      <polygon points="225.36,79.92 146.22,96.96 201.90,137.80" fill="#bcbcbc" stroke="#676767" stroke-width="0.75" />
+      <polygon points="79.73,146.94 147.78,176.05 201.90,137.80" fill="#c8c8c8" stroke="#6e6e6e" stroke-width="0.75" />
+      <polygon points="215.91,199.78 297.15,180.86 201.90,137.80" fill="#c4c4c4" stroke="#6b6b6b" stroke-width="0.75" />
+      <polygon points="299.26,92.12 225.36,79.92 201.90,137.80" fill="#bcbcbc" stroke="#676767" stroke-width="0.75" />
+      <polygon points="297.15,180.86 331.61,142.29 201.90,137.80" fill="#c4c4c4" stroke="#6b6b6b" stroke-width="0.75" />
+      <polygon points="331.61,142.29 299.26,92.12 201.90,137.80" fill="#bdbdbd" stroke="#676767" stroke-width="0.75" />
+      <rect x="28.0" y="50.0" width="354.3" height="173.6" fill="none" stroke="#cccccc" stroke-width="0.5" />
+      <text x="205.1" y="239.6" text-anchor="middle" class="dimlabel">84.3 x 41.3 cm</text>
+    </g>
+    <g>
+      <text x="595.4" y="44" text-anchor="middle" class="viewlabel">Side (x-y)</text>
+      <polygon points="438.48,58.63 436.84,58.78 418.26,65.45 424.67,63.55" fill="#c8c8c8" stroke="#6e6e6e" stroke-width="0.75" />
+      <polygon points="424.67,63.55 418.26,65.45 437.20,65.26 440.28,66.13" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="722.24,74.55 691.04,74.17 592.16,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="537.31,72.40 473.33,72.88 592.16,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="469.98,54.90 538.04,57.18 592.16,50.00" fill="#c8c8c8" stroke="#6e6e6e" stroke-width="0.75" />
+      <polygon points="687.41,54.09 721.87,51.12 592.16,50.00" fill="#c4c4c4" stroke="#6b6b6b" stroke-width="0.75" />
+      <polygon points="764.70,73.21 719.87,68.06 691.04,74.17 722.24,74.55" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="721.87,51.12 687.41,54.09 712.59,56.24 754.22,59.30" fill="#c1c1c1" stroke="#6a6a6a" stroke-width="0.75" />
+      <polygon points="513.84,68.79 440.28,66.13 473.33,72.88 537.31,72.40" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="538.04,57.18 469.98,54.90 438.48,58.63 517.71,62.09" fill="#cbcbcb" stroke="#6f6f6f" stroke-width="0.75" />
+      <polygon points="607.99,75.59 537.31,72.40 592.16,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="754.22,59.30 712.59,56.24 732.36,67.60 772.52,62.23" fill="#bebebe" stroke="#686868" stroke-width="0.75" />
+      <polygon points="691.04,74.17 607.99,75.59 592.16,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="538.04,57.18 606.17,55.47 592.16,50.00" fill="#c7c7c7" stroke="#6d6d6d" stroke-width="0.75" />
+      <polygon points="772.52,62.23 732.36,67.60 719.87,68.06 764.70,73.21" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="606.17,55.47 687.41,54.09 592.16,50.00" fill="#c4c4c4" stroke="#6b6b6b" stroke-width="0.75" />
+      <polygon points="506.28,64.85 424.67,63.55 440.28,66.13 513.84,68.79" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="517.71,62.09 438.48,58.63 424.67,63.55 506.28,64.85" fill="#d1d1d1" stroke="#727272" stroke-width="0.75" />
+      <polygon points="687.41,54.09 606.17,55.47 612.59,60.31 712.59,56.24" fill="#cacaca" stroke="#6f6f6f" stroke-width="0.75" />
+      <polygon points="621.92,68.15 513.84,68.79 537.31,72.40 607.99,75.59" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="606.17,55.47 538.04,57.18 517.71,62.09 612.59,60.31" fill="#cccccc" stroke="#707070" stroke-width="0.75" />
+      <polygon points="719.87,68.06 621.92,68.15 607.99,75.59 691.04,74.17" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="712.59,56.24 612.59,60.31 614.08,62.22 732.36,67.60" fill="#cdcdcd" stroke="#707070" stroke-width="0.75" />
+      <polygon points="612.59,60.31 517.71,62.09 506.28,64.85 614.08,62.22" fill="#d2d2d2" stroke="#737373" stroke-width="0.75" />
+      <polygon points="614.08,62.22 506.28,64.85 513.84,68.79 621.92,68.15" fill="#8e8e8e" stroke="#4e4e4e" stroke-width="0.75" />
+      <polygon points="732.36,67.60 614.08,62.22 621.92,68.15 719.87,68.06" fill="#b3b3b3" stroke="#626262" stroke-width="0.75" />
+      <rect x="418.3" y="50.0" width="354.3" height="29.4" fill="none" stroke="#cccccc" stroke-width="0.5" />
+      <text x="595.4" y="239.6" text-anchor="middle" class="dimlabel">84.3 x 7.0 cm</text>
+    </g>
+    <g>
+      <text x="895.3" y="44" text-anchor="middle" class="viewlabel">Front (z-y)</text>
+      <polygon points="832.36,55.47 851.28,54.09 894.34,50.00" fill="#c4c4c4" stroke="#6b6b6b" stroke-width="0.75" />
+      <polygon points="948.72,72.64 942.43,73.16 894.34,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="851.75,74.17 838.40,75.59 894.34,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="851.28,54.09 832.36,55.47 819.30,60.31 840.45,56.24" fill="#cacaca" stroke="#6f6f6f" stroke-width="0.75" />
+      <polygon points="952.22,55.63 940.02,53.41 959.66,57.08 971.74,57.81" fill="#b8b8b8" stroke="#656565" stroke-width="0.75" />
+      <polygon points="831.36,68.06 808.52,68.15 838.40,75.59 851.75,74.17" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="942.43,73.16 896.24,74.55 894.34,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="851.28,54.09 889.85,51.12 894.34,50.00" fill="#c4c4c4" stroke="#6b6b6b" stroke-width="0.75" />
+      <polygon points="889.85,51.12 940.02,53.41 894.34,50.00" fill="#bdbdbd" stroke="#676767" stroke-width="0.75" />
+      <polygon points="840.45,56.24 819.30,60.31 813.20,62.22 828.52,67.60" fill="#cdcdcd" stroke="#707070" stroke-width="0.75" />
+      <polygon points="896.24,74.55 851.75,74.17 894.34,79.39" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="982.14,67.17 953.85,64.59 958.68,72.90 975.19,70.96" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="971.74,57.81 959.66,57.08 953.85,64.59 982.14,67.17" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="828.52,67.60 813.20,62.22 808.52,68.15 831.36,68.06" fill="#b3b3b3" stroke="#626262" stroke-width="0.75" />
+      <polygon points="889.85,51.12 851.28,54.09 840.45,56.24 889.73,59.30" fill="#c1c1c1" stroke="#6a6a6a" stroke-width="0.75" />
+      <polygon points="940.02,53.41 889.85,51.12 889.73,59.30 959.66,57.08" fill="#b5b5b5" stroke="#636363" stroke-width="0.75" />
+      <polygon points="958.68,72.90 892.77,73.21 896.24,74.55 942.43,73.16" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="892.77,73.21 831.36,68.06 851.75,74.17 896.24,74.55" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="889.73,59.30 840.45,56.24 828.52,67.60 890.77,62.23" fill="#bebebe" stroke="#686868" stroke-width="0.75" />
+      <polygon points="959.66,57.08 889.73,59.30 890.77,62.23 953.85,64.59" fill="#a7a7a7" stroke="#5b5b5b" stroke-width="0.75" />
+      <polygon points="953.85,64.59 890.77,62.23 892.77,73.21 958.68,72.90" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <polygon points="890.77,62.23 828.52,67.60 831.36,68.06 892.77,73.21" fill="#7f7f7f" stroke="#454545" stroke-width="0.75" />
+      <rect x="808.5" y="50.0" width="173.6" height="29.4" fill="none" stroke="#cccccc" stroke-width="0.5" />
+      <text x="895.3" y="239.6" text-anchor="middle" class="dimlabel">41.3 x 7.0 cm</text>
+    </g>
+    <g transform="translate(1010.1,50.0)">
+      <rect x="0" y="0" width="90" height="90" fill="#f4f4f0" stroke="#cccccc" stroke-width="0.5" />
+      <polygon points="65.10,32.73 83.28,35.15 81.34,38.01 60.73,35.31" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="61.42,31.30 79.59,35.70 83.28,35.15 65.10,32.73" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="38.46,37.47 65.10,32.73 60.73,35.31 36.94,39.72" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="37.55,36.93 61.42,31.30 65.10,32.73 38.46,37.47" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="60.73,35.31 81.34,38.01 71.90,40.66 57.42,38.50" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="36.94,39.72 60.73,35.31 57.42,38.50 40.89,42.44" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="58.58,33.89 72.77,35.80 79.59,35.70 61.42,31.30" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="41.25,37.92 58.58,33.89 61.42,31.30 37.55,36.93" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="83.28,35.15 84.00,44.43 80.96,45.06 81.34,38.01" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="57.42,38.50 71.90,40.66 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="79.59,35.70 78.09,41.95 84.00,44.43 83.28,35.15" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="81.34,38.01 80.96,45.06 71.90,46.46 71.90,40.66" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="40.89,42.44 57.42,38.50 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="72.77,35.80 58.58,33.89 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="72.77,35.80 71.20,42.06 78.09,41.95 79.59,35.70" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="58.58,33.89 41.25,37.92 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="19.26,46.21 38.46,37.47 36.94,39.72 22.10,47.43" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="20.56,46.14 37.55,36.93 38.46,37.47 19.26,46.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="71.90,40.66 71.90,46.46 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="22.10,47.43 36.94,39.72 40.89,42.44 27.12,47.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="27.12,44.59 41.25,37.92 37.55,36.93 20.56,46.14" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="27.12,47.21 40.89,42.44 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="71.20,42.06 72.77,35.80 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="41.25,37.92 27.12,44.59 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="71.90,46.46 56.40,53.15 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="80.96,45.06 63.73,53.20 56.40,53.15 71.90,46.46" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="18.12,54.13 27.12,47.21 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="56.91,49.12 71.20,42.06 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="84.00,44.43 61.39,51.90 63.73,53.20 80.96,45.06" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="78.09,41.95 60.18,51.00 61.39,51.90 84.00,44.43" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="71.20,42.06 56.91,49.12 60.18,51.00 78.09,41.95" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="27.12,44.59 20.13,51.87 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="56.40,53.15 38.78,55.13 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="10.10,55.09 22.10,47.43 27.12,47.21 18.12,54.13" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="20.13,51.87 27.12,44.59 20.56,46.14 10.20,53.71" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="6.00,56.25 19.26,46.21 22.10,47.43 10.10,55.09" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="21.00,56.61 18.12,54.13 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="10.20,53.71 20.56,46.14 19.26,46.21 6.00,56.25" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="39.09,51.64 56.91,49.12 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="38.78,55.13 21.00,56.61 44.84,50.04" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="20.13,51.87 20.50,52.76 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="20.50,52.76 39.09,51.64 44.84,43.21" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="63.73,53.20 36.56,57.39 38.78,55.13 56.40,53.15" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="56.91,49.12 39.09,51.64 38.24,56.12 60.18,51.00" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="61.39,51.90 36.03,57.59 36.56,57.39 63.73,53.20" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="60.18,51.00 38.24,56.12 36.03,57.59 61.39,51.90" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="15.47,57.95 10.10,55.09 18.12,54.13 21.00,56.61" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="36.56,57.39 15.47,57.95 21.00,56.61 38.78,55.13" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="20.50,52.76 20.13,51.87 10.20,53.71 14.43,55.92" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="39.09,51.64 20.50,52.76 14.43,55.92 38.24,56.12" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="12.81,58.70 6.00,56.25 10.10,55.09 15.47,57.95" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="14.43,55.92 10.20,53.71 6.00,56.25 12.81,58.70" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="36.03,57.59 12.81,58.70 15.47,57.95 36.56,57.39" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <polygon points="38.24,56.12 14.43,55.92 12.81,58.70 36.03,57.59" fill="#000000" stroke="#000000" stroke-width="0.75" />
+      <text x="45.0" y="86" text-anchor="middle" class="dimlabel">3/4 view</text>
+    </g>
+</svg>

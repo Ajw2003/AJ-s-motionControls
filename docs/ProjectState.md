@@ -157,6 +157,50 @@ grey reads as a bug, and colour is how five people tell themselves apart on a TV
 Built: `AudioManager`, the six audio events, the core SFX set (skip pitch ladder, sink, fail,
 score, win), trails, water ripples, the URP migration, arc colour and ghost glow.
 
+**2026-09-30 — trail and lobby-aim fixes** (branch `claude/rock-rework`, compiled headlessly
+with 0 errors; not yet seen in Play). The trail is now the stone's own colour
+(`PlayerColours.StoneColourFor`, the blend the rock uses) and `TrailTuning.Colour` supplies only
+the alpha fade (#25). `TrailTuning.WidthMultiplier` is now a fraction of the stone's measured
+world width, not metres, so it follows each rock and the ×2.47 catalog scale (#24). A second fix on
+2026-09-30: the TrailRenderer also multiplies width by the rock's own ×2.47 transform scale, so
+the trail came out ~2.5× too wide; `RockTrail.Init` now divides it back out. Measured in the
+Editor afterwards: Boulder stone 2.03 m / trail 2.03 m, Shard 1.55 m / 1.55 m. In the
+lobby's shore-pointing picker the phone no longer re-zeroes itself while held still
+(`MotionSource.trackingEnabled`, #23). Audio replacement and music are tracked in #26.
+
+**2026-09-30 — party-usable TV screens, first cut** (IMGUI, owner's call; UI Toolkit port still
+D3). The lobby is only the two QR codes, Wi-Fi top-left and game top-right, so the shore rocks are
+the screen (`JoinScreen.DrawLobbyCorners`); the old centre panel's room code, address, player list
+and start prompt are gone from the lobby. `MatchHud` shows the current/last throw top-centre in
+the thrower's colour and a leaderboard top-left (`143m   9sk   418pts`, sorted by total).
+`RelayDebugHud` now starts hidden (F1). Seen working in the owner's play-test on Lake Louise,
+2026-09-30; screenshot `media/ui-party/lobby-lakelouise.png`. The final-scores screen is now
+centred and sized to its rows, in the leaderboard's style with each player's best throw (most
+skips, distance breaking ties) beside the total, and only "Tap PLAY AGAIN on your phone" as a
+hint; the corner QR card is labelled "Play". Compiled; not yet seen in Play.
+
+**2026-10-01 — phone controller fixes** (#44–#51, children of #39; lint and controller tests
+pass, relay tests 48/48; not yet seen on a phone). The join page has no room-code box: a JOIN
+with no code, or a stale one, joins the relay's only open room, and two open rooms give
+`ROOM_AMBIGUOUS` (`relay/server.js`, #44). The status bar shows the player's name, not the device
+id (#45). The phone scoreboard is sorted, ranked (1, 2, 2, 4) and marks your own row
+(`controller/js/ranking.js`, #46). The last throw uses the TV's `143m 9sk` format (#47). The
+debug button shows only with `?debug=1` (#48). After CONFIRM, START MATCH becomes the main button
+(a local flag: SPECTATE carries no confirmed state, #49). Text is larger (#50). The colour picker
+is now your stone: the choose screen shows your actual rock, drawn from its real mesh by
+`tools/art/rocks/make_phone_art.py` into `controller/js/rock-art.js` and tinted with your colour;
+tapping it opens a panel of the eight palette colours (others' colours faded with their initial)
+plus a + for the phone's colour wheel (#51). The aiming camera is at (0, 4.5, -4.5), pitched 15°
+(owner's height and angle, moved back 1.5 m so the stone is in frame; `AimPreview.cs`).
+The phone fixes were play-tested by the owner on 2026-10-01; #51 still needs an iPhone.
+
+**2026-09-30 — readable rock-choosing shore** (#41, #42). Shore labels scale with the screen
+(name 38 px, description 22 px at 1080p), sit above each rock's real top, wrap to the gap to the
+next rock instead of a fixed 160 px box that cut them off, and carry a dark edge. Confirmation
+ticks show the player's name in their colour, stacked under the rock, instead of the raw device
+id. Shore layout defaults moved to 9 m / +-44 deg (was 6 m / +-38 deg): no rocks overlap now;
+measured edge gaps 0.11-1.07 m in Lake Louise Play mode. Screenshot `media/ui-party/shore-after.png`.
+
 Not built, and this is now most of the remaining project: the entire art direction, the in-play
 HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame
 sound-collision scheduler.

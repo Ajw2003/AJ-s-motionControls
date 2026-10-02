@@ -15,8 +15,8 @@ MonoBehaviour:
   Id: rock_05
   DisplayName: Shard
   Blurb: Barely there. Skitters on long after it should have sunk.
-  Mesh: {fileID: 966539541656623403, guid: 1799593868c9d8b4eb5f1fed0447979a, type: 3}
-  LocalScale: {x: 0.5091902, y: 0.26477888, z: 0.5091902}
+  Mesh: {fileID: 8049120161792624443, guid: 06cc252767237e944a0a4af999a709bf, type: 3}
+  LocalScale: {x: 2.47, y: 2.47, z: 2.47}
   MeshRotation: {x: 0, y: 0, z: 0}
   Tint: {r: 0.45, g: 0.43, b: 0.43, a: 1}
   Tuning: {fileID: 11400000, guid: 4263c837317ea22889082d1fc6e78adb, type: 2}
