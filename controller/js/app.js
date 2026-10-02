@@ -380,7 +380,9 @@ let aimSeq = 0;
 
 function sendAim(payload) {
   if (!payload) return;
-  sendInput({ ...payload, seq: ++aimSeq });
+  // Latest-wins (#57): skipped while bytes are still queued, so a Wi-Fi stall cannot
+  // pile up stale frames for the TV to replay, with the THROW stuck behind them.
+  connection?.sendIfClear({ ...payload, seq: ++aimSeq });
 }
 
 /**

@@ -47,6 +47,8 @@ import {
   SimulatedThrow,
 } from './js/throw.js';
 
+import { RelayConnection } from './js/net.js';
+
 let failures = 0;
 
 function check(label, ok, detail) {
@@ -1574,6 +1576,23 @@ console.log('\nThrowController: live windup on the aim stream');
     );
     c.cancel();
   }
+}
+
+// ---------------------------------------- RelayConnection.sendIfClear (#57)
+//
+// AIM goes out latest-wins: a frame is skipped while earlier bytes are still queued, so
+// a Wi-Fi stall cannot build a backlog of stale aim frames ahead of the THROW.
+console.log('\nRelayConnection: latest-wins AIM');
+{
+  globalThis.WebSocket ??= { OPEN: 1 };
+  const sent = [];
+  const conn = new RelayConnection({ url: 'ws://unused' });
+  conn.socket = { readyState: WebSocket.OPEN, bufferedAmount: 0, send: (s) => sent.push(s) };
+
+  check('sends when nothing is queued', conn.sendIfClear({ type: 'AIM' }) && sent.length === 1);
+  conn.socket.bufferedAmount = 120;
+  check('skips while bytes are still queued', !conn.sendIfClear({ type: 'AIM' }) && sent.length === 1);
+  check('send() still queues regardless (THROW path)', conn.send({ type: 'THROW' }) && sent.length === 2);
 }
 
 console.log(
