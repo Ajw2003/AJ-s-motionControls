@@ -348,28 +348,50 @@ if ($Action -eq 'Start') {
             Write-Progress2 "  [warn] $warning"
         }
 
+        # STABLE, NOT MOMENTARY (#70). Traced with tools/hotspot/trace-forwarding.ps1: ICS turns
+        # forwarding back on ~2 s after the task disables it, so the first Disabled reading
+        # proved nothing and a "confirmed" start left guests unisolated. The task is re-run
+        # whenever forwarding reads Enabled, and isolation is only reported once it has stayed
+        # Disabled for $StableSeconds in a row. The ceiling sits inside HotspotService's 30 s
+        # startTimeout; running out of it is the same fail-closed warning as before.
         if (-not $warning) {
-            $deadline = (Get-Date).AddSeconds(10)
+            $StableSeconds = 6
+            $deadline = (Get-Date).AddSeconds(20)
+            $stableSince = $null
+            $nextRetrigger = (Get-Date).AddSeconds(1.5)
             $stillOn = @()
 
             do {
-                Start-Sleep -Milliseconds 500
-                $stillOn = @(
+                Start-Sleep -Milliseconds 250
+                $hotspotNics = @(
                     Get-NetIPAddress -AddressFamily IPv4 -IPAddress 192.168.137.* -ErrorAction SilentlyContinue |
                         ForEach-Object {
                             Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
-                        } |
-                        Where-Object { $_.Forwarding -eq 'Enabled' }
+                        }
                 )
-            } while ($stillOn.Count -gt 0 -and (Get-Date) -lt $deadline)
+                $stillOn = @($hotspotNics | Where-Object { $_.Forwarding -eq 'Enabled' })
 
-            if ($stillOn.Count -gt 0) {
-                $names = ($stillOn | ForEach-Object { $_.InterfaceAlias }) -join ', '
-                $warning = "forwarding-still-enabled: the disable task ran but forwarding is " +
-                           "still Enabled on $names after 10s. Guests are NOT isolated."
+                # No address yet counts as unconfirmed, not as Disabled.
+                if ($hotspotNics.Count -eq 0 -or $stillOn.Count -gt 0) {
+                    $stableSince = $null
+                    if ($stillOn.Count -gt 0 -and (Get-Date) -ge $nextRetrigger) {
+                        Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction SilentlyContinue
+                        $nextRetrigger = (Get-Date).AddSeconds(1.5)
+                    }
+                } elseif ($null -eq $stableSince) {
+                    $stableSince = Get-Date
+                }
+
+                $stable = $null -ne $stableSince -and ((Get-Date) - $stableSince).TotalSeconds -ge $StableSeconds
+            } while (-not $stable -and (Get-Date) -lt $deadline)
+
+            if (-not $stable) {
+                $names = if ($stillOn.Count -gt 0) { ($stillOn | ForEach-Object { $_.InterfaceAlias }) -join ', ' } else { 'the hotspot interface' }
+                $warning = "forwarding-still-enabled: forwarding did not stay Disabled on $names " +
+                           "for ${StableSeconds}s within 20s. Guests are NOT isolated."
                 Write-Progress2 "  [warn] $warning"
             } else {
-                Write-Progress2 '  forwarding confirmed Disabled.'
+                Write-Progress2 "  forwarding confirmed Disabled (held for ${StableSeconds}s)."
             }
         }
 

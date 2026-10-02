@@ -43,7 +43,20 @@ at the moment it runs (`deploy/setup-offline.ps1:153-155`).
 - **The failed state can no longer be inspected.** The hotspot is now off, because the game tore
   it down. No interface holds `192.168.137.*`.
 
-### Root cause (PLAUSIBLE; both readings lead to the same fix)
+### Root cause (MEASURED with `tools/hotspot/trace-forwarding.ps1`, two runs)
+
+Reading **(b)** is what happens. Both traces showed the same sequence:
+
+1. Forwarding reads Disabled briefly at start-up.
+2. ICS enables it about 0.3 s later.
+3. The task disables it (around 2.2–2.75 s).
+4. **ICS enables it again at 4.4–4.7 s and leaves it on** (still Enabled at 30 s).
+
+The old check passed on the reading in step 3. So **a start reporting "forwarding confirmed
+Disabled" left guests unisolated.** The red error only appears when the step-4 re-enable lands
+inside the poll.
+
+The two readings considered before the trace:
 
 The task ran exactly once while ICS was still configuring the interface. Either reading fits the
 evidence:
@@ -57,7 +70,26 @@ evidence:
 The check has existed since `bd22729` (09-06), so this is an intermittent race, not a new
 regression.
 
-### Fix (proposed; not yet built)
+### Fix (done, #70)
+
+**Status:** fixed in `hotspot/hotspot-control.ps1`. It re-runs the task whenever forwarding reads
+Enabled, and reports isolation only after 6 s of continuous Disabled (20 s ceiling, inside the
+30 s `startTimeout`).
+
+**Traced twice after the fix:**
+
+- the re-enable at about 4.2–4.5 s was caught and reversed within about 0.6 s;
+- forwarding then stayed Disabled for the rest of the 35 s trace.
+
+**Costs:**
+
+- a hotspot start takes about 6 s longer;
+- forwarding is briefly on for up to about 0.6 s, seconds after the network first appears.
+
+**Still unmeasured:** whether ICS re-enables forwarding later in a session, for example when a
+phone joins. That needs a trace with a phone connecting.
+
+The original proposal:
 
 Re-run the task inside the existing 10 s poll whenever forwarding still reads `Enabled`, about
 every 1.5 s.
@@ -101,7 +133,7 @@ network off, and with it the game.
 
 | | A. Today: isolated, probes answered | B. Isolated, probes not answered | C. Share the host's internet, block the host's LAN |
 |---|---|---|---|
-| Phone auto-connects and stays connected | Yes (validated) | **Often not.** Android prompts "no internet", may avoid or drop the network, may not auto-rejoin | Yes, truthfully validated |
+| Phone auto-connects and stays connected | **No, per Ayden's observation**, although Android validates it (Samsung logcat) | **Often not.** Android prompts "no internet", may avoid or drop the network, may not auto-rejoin | Yes, truthfully validated |
 | Guest's other apps work while joined | **No** (PLAUSIBLE) | Yes, over mobile data | Yes |
 | Guest traffic leaves under the host's IP | No | No | **Yes.** The host is accountable for guest traffic |
 | Guests can reach the host's home LAN | No | No | Must be blocked. **Unproven:** Windows Firewall rules may not apply to ICS-forwarded traffic. Needs a spike |
@@ -111,6 +143,23 @@ network off, and with it the game.
 **There is no option that gives all three:** auto-connect, working guest internet, and no
 attribution to the host. A phone only treats a network as good when it can actually reach the
 internet through it, and that traffic has to leave under someone's IP.
+
+### Correction (2026-10-01, from Ayden)
+
+Returning phones do **not** auto-rejoin today. Ayden's goal is "one QR code after the first
+join": the phone should rejoin the saved hotspot by itself.
+
+**Not the cause:** credentials. The SSID and passphrase are stable across sessions
+(`Assets/Scripts/Net/HotspotCredentialsStore.cs`).
+
+**PLAUSIBLE causes:**
+
+- **A phone already on a working Wi-Fi (the home network) does not leave it for another saved
+  network** on either OS. Internet sharing (C) would not change that.
+- A phone on mobile data may skip a network it remembers as having "no internet". This is where C
+  could help.
+
+Which case applies needs Ayden's observation: what the phone was on, and which phones.
 
 ### Recommendation
 
