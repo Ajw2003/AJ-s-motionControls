@@ -1134,6 +1134,54 @@ console.log('\nThrowController: arm, swing, stop');
     check('firing returns the controller to idle', c.state === ThrowState.IDLE);
   }
 
+  // #54 (N2): the calm-stop path reads the attitude from the stop sample itself.
+  {
+    const sent = [];
+    const stopAtt = aboutY(40);
+    const stopped = hardSwing.map((s, i) =>
+      i === hardSwing.length - 1 ? makeSample(s.t, s.power, { attitude: stopAtt }) : s,
+    );
+    const motion = makeMotion(null, stopped);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, stopped);
+    check(
+      'a calm stop throws with the stop sample attitude',
+      sent.length === 1 &&
+        sameRotation({ w: sent[0].qw, x: sent[0].qx, y: sent[0].qy, z: sent[0].qz }, stopAtt),
+    );
+  }
+
+  // #54 (N2): when the phone never settles, the maxSwingMs fallback fires ~900ms into
+  // the follow-through. The attitude must come from the calmest sample after the peak
+  // (the release), not from the last sample, where the arm has swung somewhere else.
+  {
+    const sent = [];
+    const releaseAtt = aboutY(20);
+    const followAtt = aboutY(160);
+    const timedOut = [
+      makeSample(0, 2),
+      makeSample(260, 2),
+      makeSample(280, 60),
+      makeSample(300, 80),
+      makeSample(320, 100), // peak
+      makeSample(340, 3, { attitude: releaseAtt }), // the release: one calm sample only
+    ];
+    // Follow-through stays above stopAccel and below swingAccel, so neither the
+    // calm-stop path nor a new onset run can fire; only the timeout can.
+    for (let t = 360; t <= 1240; t += 20) timedOut.push(makeSample(t, 8, { attitude: followAtt }));
+
+    const motion = makeMotion(null, timedOut);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, timedOut);
+
+    const got = sent[0] && { w: sent[0].qw, x: sent[0].qx, y: sent[0].qy, z: sent[0].qz };
+    check('a swing that never settles still throws on the timeout', sent.length === 1);
+    check(
+      'the timed-out throw takes the release attitude, not the last sample',
+      sent.length === 1 && sameRotation(got, releaseAtt) && !sameRotation(got, followAtt),
+    );
+  }
+
   // A swing passes through near-zero acceleration at its own turnaround. Firing
   // there would throw halfway through the arc.
   {

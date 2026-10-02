@@ -168,13 +168,14 @@ export const ThrowState = {
  *   function usable from a buffer alone.
  * @returns {object|null} descriptor, or null if the gesture was too weak to count
  */
-export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) {
+export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate, releaseIndex) {
   if (!samples || samples.length === 0) return null;
 
   // The last sample is the moment the phone stopped, which is the release. Nothing
   // is inferred, averaged or reached back for: what the sensors said at that instant
-  // is what the stone does.
-  const stop = samples[samples.length - 1];
+  // is what the stone does. `releaseIndex` overrides this only for the timeout path,
+  // where the last sample is the follow-through, not the release (#54).
+  const stop = samples[releaseIndex ?? samples.length - 1];
 
   const swingSpeed = peakSwingSpeed(samples, tuning);
 
@@ -204,6 +205,29 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate) 
 
     sampleCount: samples.length,
   };
+}
+
+/**
+ * Index of the calmest (lowest power) sample strictly after the peak-power sample, or
+ * the last index if the peak is the final sample. Used for the release attitude when a
+ * swing times out without ever settling (#54): the phone was let go of at its calmest
+ * point after the peak, not ~900ms later where the arm ended up.
+ *
+ * Pure. Returns -1 for an empty buffer.
+ */
+export function calmestIndexAfterPeak(samples) {
+  if (!samples || samples.length === 0) return -1;
+
+  let peakIdx = 0;
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].power > samples[peakIdx].power) peakIdx = i;
+  }
+
+  let best = -1;
+  for (let i = peakIdx + 1; i < samples.length; i++) {
+    if (best === -1 || samples[i].power < samples[best].power) best = i;
+  }
+  return best === -1 ? samples.length - 1 : best;
 }
 
 /**
@@ -603,10 +627,12 @@ export class ThrowController {
     // Never leave a player armed because their phone did not quite settle. Only
     // reachable once _swinging is true, i.e. after a sustained onset run (A5/A6) —
     // a single spike can no longer arm this fallback and then fire on a timer.
-    if (this._peak && sample.t - this._peak.t > this.tuning.maxSwingMs) this._fire();
+    if (this._peak && sample.t - this._peak.t > this.tuning.maxSwingMs) {
+      this._fire({ timedOut: true });
+    }
   }
 
-  _fire() {
+  _fire({ timedOut = false } = {}) {
     // Spin is read from the absolute peak during the swing, rather than the live decayed envelope.
     // A fast wrist flick peaks and decays hundreds of milliseconds before the phone finally comes
     // to a halt (which is what triggers this release). Using the live envelope meant the rock
@@ -618,7 +644,11 @@ export class ThrowController {
       if (Math.abs(s) > Math.abs(peakSpin)) peakSpin = s;
     }
 
-    const descriptor = computeThrowDescriptor(samples, this.tuning, peakSpin);
+    // #54: on a timeout the last sample is ~900ms of follow-through, so the stone
+    // launched aimed wherever the arm ended up. Read the attitude from the calmest
+    // sample after the peak instead. The calm-stop path keeps the last sample.
+    const releaseIndex = timedOut ? calmestIndexAfterPeak(samples) : undefined;
+    const descriptor = computeThrowDescriptor(samples, this.tuning, peakSpin, releaseIndex);
 
     // A5/A6: a discarded gesture — no descriptor at all, or a computed swingSpeed
     // below minThrowSwingSpeed — must not cancel() the arm. cancel() drops the
