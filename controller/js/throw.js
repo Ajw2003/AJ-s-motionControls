@@ -394,7 +394,7 @@ export function buildAimPayload(sample, seq, spinRate, swingSpeed = 0) {
  *
  * Calibration itself is no longer something the tap does. MotionSource tracks a
  * steadiness-gated reference continuously (Settling ⇄ Aiming — see
- * docs/systems/MotionPipeline.md), so most of the time the reference is already
+ * docs/4-systems/MotionPipeline.md), so most of the time the reference is already
  * wherever the phone actually rests by the time this arms. arm() still calls
  * `motion.recentre()` for a guaranteed-fresh zero at the exact moment that matters
  * most, alongside `motion.prepareForThrow()` for the gravity/buffer reset that used

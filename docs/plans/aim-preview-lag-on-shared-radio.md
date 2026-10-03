@@ -3,7 +3,7 @@
 **Status:** **done and verified** 2026-09-09 on the `ArcadePhysics` branch. Diagnosed by
 measurement, fixed in `hotspot/hotspot-control.ps1`, and confirmed by re-measurement plus a
 subjective "feels great now" from the host. Shipped in `796854a`. **Tier 5** (today's plan). The system it amends is
-[`../systems/HostingAndCertificates.md`](../systems/HostingAndCertificates.md).
+[`../systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md).
 
 ## Context
 
@@ -78,7 +78,7 @@ Ruled out during exploration, so nobody re-checks them:
 ## Phase 0 — Keep this document ✅
 
 Done: this file. Linked from the "Traps" section of
-[`../systems/HostingAndCertificates.md`](../systems/HostingAndCertificates.md), which is where
+[`../systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md), which is where
 the next person will look for it.
 
 ---

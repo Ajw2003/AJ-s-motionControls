@@ -517,7 +517,7 @@ export class MotionSource {
     this.referenceQuaternion = null;
     this.orientationQuaternion = { w: 1, x: 0, y: 0, z: 0 };
 
-    // Settling/Aiming reference state machine — see docs/systems/MotionPipeline.md
+    // Settling/Aiming reference state machine — see docs/4-systems/MotionPipeline.md
     // and _onMotion. Fires onCalibrationStateChange exactly once per flip, mirroring
     // ThrowController.onStateChange's edge-triggered shape rather than polling.
     this.calState = 'settling';
@@ -576,7 +576,7 @@ export class MotionSource {
    * `calibrate()` did to the reference — used by the two non-throw call sites
    * (the lobby preview aim, and the RE-CENTRE button) that still want an explicit
    * "zero right now" rather than the continuous Settling/Aiming tracking arm() relies
-   * on. See docs/systems/MotionPipeline.md.
+   * on. See docs/4-systems/MotionPipeline.md.
    */
   recentre() {
     this.referenceQuaternion = this._fusedQuaternion;
@@ -655,7 +655,7 @@ export class MotionSource {
   }
 
   /**
-   * The Settling/Aiming reference state machine. See docs/systems/MotionPipeline.md.
+   * The Settling/Aiming reference state machine. See docs/4-systems/MotionPipeline.md.
    *
    * Lazy-inits the reference on the very first sample. While Settling, the reference
    * nlerps toward the current fused attitude by a tau-derived alpha, so it quietly

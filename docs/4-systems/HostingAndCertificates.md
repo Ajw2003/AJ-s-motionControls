@@ -136,7 +136,7 @@ usable IPv4 resolver (`dns.getServers()`) as upstream and forwards other names t
 connectivity-probe names are forwarded too, and answered locally only if upstream is silent for
 1.5 s; the game name is always answered locally. The hotspot-subnet allow guard is unchanged.
 Guests can reach the home router and LAN; the host accepted that
-([`Decisions.md`](../Decisions.md), 2026-10-02). If sharing was asked for but not achieved,
+([`Decisions.md`](../6-decisions/Decisions.md), 2026-10-02). If sharing was asked for but not achieved,
 `HotspotService` logs a non-fatal warning.
 
 ## The QR rule — binding
@@ -214,7 +214,7 @@ Also: `deploy/Verify-PublishedCert.ps1` (independent check of the published cert
 
 ## Further reading
 
-[`../Decision-OfflineHosting.md`](../Decision-OfflineHosting.md) (why Hotspot beat Wi-Fi Direct),
+[`../Decision-OfflineHosting.md`](../6-decisions/Decision-OfflineHosting.md) (why Hotspot beat Wi-Fi Direct),
 [`../OfflineSetup.md`](../OfflineSetup.md) (what a machine needs),
 [`../plans/magic-domain-replacement.md`](../plans/magic-domain-replacement.md) (the certificate
 design), [`../../deploy/README.md`](../../deploy/README.md) (the runbook).

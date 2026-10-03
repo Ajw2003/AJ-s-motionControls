@@ -2,7 +2,7 @@
 
 Gets the controller page served from **this PC** over HTTPS, so a phone gets a secure
 context and its motion sensors unlock. Design and reasoning:
-[docs/systems/HostingAndCertificates.md](../docs/systems/HostingAndCertificates.md). Certificate design:
+[docs/4-systems/HostingAndCertificates.md](../docs/4-systems/HostingAndCertificates.md). Certificate design:
 [docs/plans/magic-domain-replacement.md](../docs/plans/magic-domain-replacement.md).
 
 > **This replaces the Fly.io deployment.** The hosted relay is gone: `fly.toml`, `Dockerfile`,

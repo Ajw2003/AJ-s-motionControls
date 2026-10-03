@@ -224,7 +224,7 @@ function Write-Result {
 }
 
 # Tethering needs *a* connection profile to hang off. It does not need that profile to carry
-# internet, or even to be connected - measured 2026-08-21, see docs/Decision-OfflineHosting.md.
+# internet, or even to be connected - measured 2026-08-21, see docs/6-decisions/Decision-OfflineHosting.md.
 #
 # This used to ask only GetInternetConnectionProfile(), which returns null whenever there is no
 # internet, and reported that as no-connection-profile. That single call is the entire reason

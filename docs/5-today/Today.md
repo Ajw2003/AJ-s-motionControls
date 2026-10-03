@@ -2,7 +2,7 @@
 
 **Tier 5.** Where the last session stopped, and what the next one picks up. Written for a fresh
 session after `/clear`. The 2026-09-08 design-session record that used to be here is in git
-history (`git log -- docs/Today.md`).
+history (`git log -- docs/5-today/Today.md`).
 
 Branch: `claude/rock-rework`, pushed. Tracking issue for finishing this work: #43
 (child of #39).
@@ -47,7 +47,7 @@ phone session before it has a fix.
 
 ## After the UI: audio (#26)
 
-The plan is in [`plans/ai-audio.md`](plans/ai-audio.md), with steps #32–#38. It is waiting for the
+The plan is in [`plans/ai-audio.md`](../plans/ai-audio.md), with steps #32–#38. It is waiting for the
 owner's go-ahead.
 
 ## How to see things without a phone

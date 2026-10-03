@@ -215,7 +215,7 @@ conversion point. `RockSkipping.Physics.asmdef` is unchanged; the new files go i
 | `Scripts/Game/PlaceholderArt.cs`, `ShoreRocks.cs` | Procedural disc mesh for the reference stone, and its distinct presentation in the shore lineup |
 | `Scripts/Game/RockCatalog.cs` | `Validate Catalog` must accept a rock whose mesh is procedural rather than from the FBX |
 | `Scripts/Verification/SkipCurve.cs` | Rewrite the verdict bands (`:380-445`) against real release speeds. `ReferenceSwingSpeed` drops from 30 m/s to a real release speed, and `OptimalAttackDeg` stops being imported from `SkipPhysics` |
-| `docs/systems/SkipPhysics.md`, `RockCatalogAndTuning.md`, `Assets/CLAUDE.md` | The architecture sections describing the energy-budget model and the three-multiplier rock split are then describing nothing that exists |
+| `docs/4-systems/SkipPhysics.md`, `RockCatalogAndTuning.md`, `Assets/CLAUDE.md` | The architecture sections describing the energy-budget model and the three-multiplier rock split are then describing nothing that exists |
 
 Nothing in `SfxDirector`, `WaterRipples`, `RockTrail` or `ScoreManager` changes — they read
 `ReferenceSpeed` and the `SkipOccurredEvent`/`RockSunkEvent` payloads, all preserved.

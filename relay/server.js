@@ -534,7 +534,7 @@ function pickSharingUpstream() {
 // likely a phone that decided this network was useless rather than an actual game bug. Answering them ourselves (this list, plus
 // /generate_204 and /hotspot-detect.html below) fixes the symptom without re-enabling
 // forwarding and undoing the isolation decision — see docs/plans/magic-domain-replacement.md
-// Phase 4 and docs/Decision-OfflineHosting.md.
+// Phase 4 and docs/6-decisions/Decision-OfflineHosting.md.
 //
 // Every name here is one we intend to SERVE: the phone's plain-HTTP probe reaches :80 and gets
 // a 204 or "Success". Adding a name in order to have it refused is a different idea and does

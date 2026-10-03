@@ -22,7 +22,7 @@
     and is only checked here, not changed.
 
     See docs/OfflineSetup.md for the reasoning behind each item, and
-    docs/Decision-OfflineHosting.md for how offline hosting was proven.
+    docs/6-decisions/Decision-OfflineHosting.md for how offline hosting was proven.
 
     IDEMPOTENT BY DESIGN, because this gets re-run on machines in every half-configured state.
     Register-ScheduledTask -Force is naturally idempotent; New-NetFirewallRule and Add-Content

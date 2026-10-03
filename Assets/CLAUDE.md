@@ -2,23 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Start at [`../docs/README.md`](../docs/README.md)** — the documentation entry point. It is
-> tier 1 of a five-tier structure (landing → roadmap → project state → per-system docs → today's
-> plan) and says which document answers which question.
+> **Start at [`../docs/1-landing/README.md`](../docs/1-landing/README.md)** — the documentation entry point. It is
+> tier 1 of a six-tier structure (landing → roadmap → project state → per-system docs → today's
+> plan → decisions) and says which document answers which question.
 >
 > One rule from there is binding across the whole project, not just `Assets/`: **always render a
 > QR for network/URL joining; never ask someone to type or hunt for an address.** It is recorded
-> in [`../docs/systems/HostingAndCertificates.md`](../docs/systems/HostingAndCertificates.md).
+> in [`../docs/4-systems/HostingAndCertificates.md`](../docs/4-systems/HostingAndCertificates.md).
 
 ## What this is
 
 A couch party game: Unity runs on a PC driving the TV, and players' phones are motion
 controllers reached through a web page — no app download, Jackbox-style, modelled on Wii Play:
 Motion's "Skip Skimmer". The full design/architecture doc is
-[`../docs/systems/`](../docs/systems/) — one document per runtime-critical system. Read the
+[`../docs/4-systems/`](../docs/4-systems/) — one document per runtime-critical system. Read the
 relevant one before touching networking, physics, the motion pipeline, or the event system; each
 states the invariants that must not break and the traps that have already cost someone a day.
-[`../docs/ProjectState.md`](../docs/ProjectState.md) says what is actually built right now.
+[`../docs/3-state/ProjectState.md`](../docs/3-state/ProjectState.md) says what is actually built right now.
 
 Three independently-run pieces, only one of which lives under `Assets/`:
 
@@ -28,7 +28,7 @@ Three independently-run pieces, only one of which lives under `Assets/`:
 | `../relay/` | Node WebSocket relay + HTTP server that also serves the controller page |
 | `../controller/` | Phone controller web app (vanilla JS): sensors, throw gesture, join/choose screens |
 | `../deploy/` | `setup-offline.ps1` — one-time elevated machine setup for Hotspot mode, run automatically by `HotspotService` on first use (one UAC prompt, no manual step); `LocalServices` hosts the relay+controller over HTTPS itself, on Play |
-| `../docs/` | Documentation, five tiers, entry point `../docs/README.md`. Inert docs live in `../docs/archive/` and describe nothing current |
+| `../docs/` | Documentation, six tiers, entry point `../docs/1-landing/README.md`. Inert docs live in `../docs/archive/` and describe nothing current |
 
 **The PC is authoritative for everything.** Phones never simulate; they send normalized
 sensor deltas (`AIM`, `THROW`, `PICK_ROCK`, `PICK_COLOUR`, `ADVANCE`) and receive broadcast
@@ -103,7 +103,7 @@ new events.
 
 Ported from another project (FactoryTM) and patched for multi-scene use — see
 [`../README.md`](../README.md) "Notes for whoever picks this up" and
-[`../docs/systems/EventSystem.md`](../docs/systems/EventSystem.md) for the fixes that had to land (persist-on-scene-load, Unity-null-aware
+[`../docs/4-systems/EventSystem.md`](../docs/4-systems/EventSystem.md) for the fixes that had to land (persist-on-scene-load, Unity-null-aware
 destroyed-subscriber detection, calling `base.OnDestroy()`). New event types live under
 `Scripts/EventTypes/<Category>Events/`, namespaced `EventTypes.<Category>Events`, immutable
 get-only properties set in the constructor — follow an existing file in that folder as the
@@ -129,7 +129,7 @@ fields out of `RawMessageReceived`.
 Phones normalize sensors *before* sending — Unity never sees a platform (iOS/Android)
 difference. The governing rule and the iOS/Android landmines (no `acceleration` on iOS,
 opposite-direction compass headings, `requestPermission()` gating) are in
-[`../docs/systems/MotionPipeline.md`](../docs/systems/MotionPipeline.md); the current heading/attitude conversion used on both the throw path and rock
+[`../docs/4-systems/MotionPipeline.md`](../docs/4-systems/MotionPipeline.md); the current heading/attitude conversion used on both the throw path and rock
 selection is `PhoneAttitude.HeadingDirection`/`HeadingDeg` (`Scripts/Game/Physics/PhoneAttitude.cs`) —
 **one conversion, reused everywhere a heading is needed**, no ad-hoc Euler math at call sites.
 
@@ -171,14 +171,14 @@ deleted; in git history),
 along with `MatchSettings.TuningSet` and the per-rock `MinSpeed`/`MaxSpeed`/`MinRetention`/
 `MaxRetention`/`Restitution` fields; a stale `tuningSet` key in an old `match-settings.json`
 parses harmlessly and is dropped on the next save.
-[`../docs/systems/RockCatalogAndTuning.md`](../docs/systems/RockCatalogAndTuning.md) and
-[`../docs/systems/SkipPhysics.md`](../docs/systems/SkipPhysics.md) cover the split and the
+[`../docs/4-systems/RockCatalogAndTuning.md`](../docs/4-systems/RockCatalogAndTuning.md) and
+[`../docs/4-systems/SkipPhysics.md`](../docs/4-systems/SkipPhysics.md) cover the split and the
 constants; the old `Reference-SkipTuning.md` / `Reference-Constants.md` field-by-field indexes
 were deleted in `0b7c500` and were never rewritten — the `[Tooltip]` text on `SkipConstants` is
 now the most complete per-field reference there is.
 
 Full data-flow, wire format, and the shore-pointing selection UI are in
-[`../docs/systems/RockCatalogAndTuning.md`](../docs/systems/RockCatalogAndTuning.md).
+[`../docs/4-systems/RockCatalogAndTuning.md`](../docs/4-systems/RockCatalogAndTuning.md).
 
 **All six rocks ship identical multipliers, and as of 2026-09-08 that is the design, not a gap.**
 [`../docs/plans/presentation-and-ui.md`](../docs/plans/presentation-and-ui.md) D5 settles that
@@ -238,7 +238,7 @@ Recorded so a future pass doesn't "fix" these back — each is a deliberate call
   uses Unity's overloaded `==` internally, so the fake-null window is narrow: only the
   `_isQuitting` teardown path can hand back a destroyed instance.
 - **The `*Manager` class names stay** (`AudioManager`, `EventManager`, `ScoreManager`,
-  `TurnManager`) — referenced by name across this file, `docs/systems/`, and the `Bootstrap`
+  `TurnManager`) — referenced by name across this file, `docs/4-systems/`, and the `Bootstrap`
   ordering comments; renaming is docs-wide churn for a naming-taste win.
 - **`ok` / `resumed` / `reconnected` / `randomRocks` keep their non-question names** — they are
   wire-format field names (matched by string between `Assets/Scripts/Net/Messages.cs` and

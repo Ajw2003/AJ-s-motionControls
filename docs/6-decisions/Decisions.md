@@ -17,15 +17,15 @@ network when it has real internet, so with isolation phones showed "no internet"
 rejoin by themselves. Three fences meant to block the LAN while sharing failed on this machine (a
 firewall rule, a WFP filter at the forward layer, a WFP filter at the inbound-packet layer), so
 sharing is unfenced. Evidence:
-[`Findings-HotspotForwardingAndInternet-2026-10-01.md`](Findings-HotspotForwardingAndInternet-2026-10-01.md).
+[`Findings-HotspotForwardingAndInternet-2026-10-01.md`](../Findings-HotspotForwardingAndInternet-2026-10-01.md).
 
 **Decision.** Ayden, 2026-10-02: share the host's internet with hotspot guests by default. Guests
 reaching the home router/LAN is no new exposure, since party guests already use the home Wi-Fi;
 a sensitive venue can run the host offline. A lobby setting "Share internet" turns it off from
 the next hotspot start. This supersedes the guest-isolation-by-default stance. No earlier entry in
 this log states it, so there is no Status line to flip; it lived in
-[`systems/HostingAndCertificates.md`](systems/HostingAndCertificates.md) and
-[`SecurityReview.md`](SecurityReview.md), both updated.
+[`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) and
+[`SecurityReview.md`](../SecurityReview.md), both updated.
 
 **Why.** Measured on a Samsung S26: with sharing, it rejoined by itself within 5-15 s when no
 other known Wi-Fi was in range, and stayed on home Wi-Fi when that was in range. Built:
@@ -51,7 +51,7 @@ iPhones; other Android brands; a host whose upstream is Wi-Fi; rejoin after days
 **Context.** The Unity console showed `[PeerLink] <id>: DIRECT` interleaved with join logs about
 twice a second, mid-match. Root cause: a phone re-joining the room continuously, with the WebRTC
 peer link faithfully renegotiating from scratch each time — the transport was the symptom, not
-the cause. See [`archive/plans/remove-direct-transport.md`](archive/plans/remove-direct-transport.md).
+the cause. See [`archive/plans/remove-direct-transport.md`](../archive/plans/remove-direct-transport.md).
 
 **Decision.** Fix the join ping-pong, then delete the WebRTC DataChannel transport (`PeerLink.cs`,
 `com.unity.webrtc`) entirely rather than keep maintaining a peer-to-peer path nothing required.
@@ -70,7 +70,7 @@ the symptom.
 **Context.** `local-ip.sh`, the third-party service the certificate hostname was borrowed from,
 went permanently dead at the DNS layer — no drop-in replacement exists (`local-ip.co`,
 `traefik.me`, `sslip.io`, `nip.io` all checked and rejected; see
-[`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md)). A fresh install could no
+[`plans/magic-domain-replacement.md`](../plans/magic-domain-replacement.md)). A fresh install could no
 longer get a certificate at all.
 
 **Decision.** Deprecate LAN mode (it required the phone to be on the host's network, which
@@ -88,7 +88,7 @@ see the 2026-08-21 entry below on why Hotspot was already preferred).
 **Status.** Standing. Executed and implemented in `relay/dns.js`, `CertificateProvider.cs`, and
 `.github/workflows/renew-cert.yml`. Superseded the certificate design described (now stale) in
 [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) and
-[`OfflineSetup.md`](OfflineSetup.md) — both carry an update notice pointing here.
+[`OfflineSetup.md`](../OfflineSetup.md) — both carry an update notice pointing here.
 
 ---
 

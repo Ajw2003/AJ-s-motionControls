@@ -3,14 +3,15 @@
 A couch party game: the game runs on a PC driving a TV, and players use their phones as
 motion controllers through a web page — no app download, Jackbox-style.
 
-**Start with [docs/README.md](docs/README.md)** — the documentation entry point. This file only
+**Start with [docs/1-landing/README.md](docs/1-landing/README.md)** — the documentation entry point. This file only
 covers how to run what currently exists.
 
-The docs are organised in five tiers: [docs/README.md](docs/README.md) (what this is and where
-everything is) → [docs/Roadmap.md](docs/Roadmap.md) (what 0-100% means) →
-[docs/ProjectState.md](docs/ProjectState.md) (where it stands now) →
-[docs/systems/](docs/systems/) (how each runtime-critical system works) →
-[docs/Today.md](docs/Today.md) (what is being worked on today).
+The docs are organised in six tiers: [docs/1-landing/README.md](docs/1-landing/README.md) (what this is and where
+everything is) → [docs/2-roadmap/Roadmap.md](docs/2-roadmap/Roadmap.md) (what 0-100% means) →
+[docs/3-state/ProjectState.md](docs/3-state/ProjectState.md) (where it stands now) →
+[docs/4-systems/](docs/4-systems/) (how each runtime-critical system works) →
+[docs/5-today/Today.md](docs/5-today/Today.md) (what is being worked on today) →
+[docs/6-decisions/Decisions.md](docs/6-decisions/Decisions.md) (why decisions were made).
 
 > **Note on the doc graph.** An earlier `docs/PLAN.md` held the full architecture and milestone
 > breakdown, and was deleted along with `HostingPlan.md`, `Reference-Constants.md`,
@@ -29,8 +30,8 @@ everything is) → [docs/Roadmap.md](docs/Roadmap.md) (what 0-100% means) →
 | `controller/` | Phone controller web app — sensors, throw gestures, join screen |
 | `deploy/` | Hosting runbook and `setup-offline.ps1`, the one-time elevated machine setup for Hotspot mode |
 | `docs/` | Project documentation and plans |
-| `docs/README.md` | Documentation index — start here |
-| `docs/Decision-OfflineHosting.md` | How the host runs a network with no internet, and the evidence for it |
+| `docs/1-landing/README.md` | Documentation index — start here |
+| `docs/6-decisions/Decision-OfflineHosting.md` | How the host runs a network with no internet, and the evidence for it |
 | `docs/DeviceMatrix.md` | Which phones this is verified on, and what "verified" means |
 | `docs/grant/` | Grant proposal kit — the case for extracting the controller stack as a plugin |
 

@@ -27,7 +27,7 @@ finding before starting its group.
    `git status` that each new file has its `.meta`. If one is missing, ask Ayden to focus the
    Editor. The metas go in the group's commit.
 6. **Before any Play-mode or hardware check after a relay change,** Ayden must kill the stale
-   relay — `LocalServices` reuses any relay already listening (`docs/systems/Networking.md`,
+   relay — `LocalServices` reuses any relay already listening (`docs/4-systems/Networking.md`,
    Traps). Hand that as a step card; don't kill processes yourself.
 7. **Hardware checks stay Ayden's.** Phones, Play mode and anything on the TV cannot be automated
    here. Hand each group's hardware check over as step cards after `VERIFY PASSED`.
@@ -463,7 +463,7 @@ and recovers when back in range.
 
 ## Group 8 — C2 message allowlist, B8 re-registration guard
 
-**Files:** `relay/server.js`, `relay/test-relay.js`, `docs/systems/Networking.md`
+**Files:** `relay/server.js`, `relay/test-relay.js`, `docs/4-systems/Networking.md`
 
 > **This reverses a documented decision.** The relay header says routing is "deliberately
 > generic". Update that header and the Networking.md "To add a message" checklist: **adding a
@@ -501,7 +501,7 @@ play two rounds. Anything missing from the allowlist shows up here as a dead but
 **Files:**
 - `relay/server.js`, `relay/test-relay.js`
 - `controller/js/identity.js`, `controller/js/net.js`, `controller/js/app.js`
-- `docs/systems/Networking.md`
+- `docs/4-systems/Networking.md`
 
 ### Rules (relay)
 
@@ -668,21 +668,21 @@ every throw's distance changes with it.
 
 ## Group 13 — Docs sweep
 
-- **`docs/systems/Networking.md`:**
+- **`docs/4-systems/Networking.md`:**
   - the wire table: `THROW_RESULT`, `throwId`, `seatToken`, `PING` liveness, `disconnected` in
     SPECTATE
   - the allowlist and the new five-point "add a message" list
   - rate budgets
   - the verification counts
-- **`docs/systems/MotionPipeline.md`:** the three guard tunables and their `?query` overrides.
-- **`docs/systems/ScoringAndTurns.md`:**
+- **`docs/4-systems/MotionPipeline.md`:** the three guard tunables and their `?query` overrides.
+- **`docs/4-systems/ScoringAndTurns.md`:**
   - seats persist through a drop
   - the 20 s pause and skip
   - one stone at a time
   - **B6 won't-fix: no idle timeout, by decision on 2026-09-10**
-- **`docs/systems/SkipPhysics.md` and `Assets/CLAUDE.md`:** SpeedScale is 1.0, and why. Also
+- **`docs/4-systems/SkipPhysics.md` and `Assets/CLAUDE.md`:** SpeedScale is 1.0, and why. Also
   `RockSkipping.Match` as a second pure assembly with EditMode tests.
 - **`docs/Findings-NetworkAndThrowStability.md`:** a status line on every ID.
-- **`docs/ProjectState.md`:** only if a milestone's status changed.
+- **`docs/3-state/ProjectState.md`:** only if a milestone's status changed.
 
 **Done:** every `file:line` cited in the changed docs resolves against the working tree.

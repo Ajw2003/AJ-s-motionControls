@@ -1,6 +1,6 @@
 # Decision: how the host runs a network with no internet
 
-> **Update — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+> **Update — see [docs/plans/magic-domain-replacement.md](../plans/magic-domain-replacement.md).**
 > local-ip.sh (referenced throughout this doc as the source of the `192-168-137-1.local-ip.sh`
 > certificate name) is permanently dead. Hotspot mode itself, the tethering mechanism, and
 > everything else measured below is unaffected — only the certificate's hostname changed, to
@@ -18,7 +18,7 @@ Windows limitation.**
 `hotspot-control.ps1` asks `GetInternetConnectionProfile()`, which returns null when there is no
 internet — by definition. It never asks `GetConnectionProfiles()`, which returns every profile
 including ones carrying no connectivity. **Tethering starts fine from those.** The "host must stay
-attached to some network" ceiling in [ZeroSetupPlan.md](ZeroSetupPlan.md) Open Question 2 is not
+attached to some network" ceiling in [ZeroSetupPlan.md](../ZeroSetupPlan.md) Open Question 2 is not
 real; it is this function giving up early.
 
 ## Evidence
@@ -53,7 +53,7 @@ adapter that is **Disconnected**. All produce a live `NetworkOperatorTetheringMa
    [ok]   UDP :53 held on 0.0.0.0 by svchost (pid 2196)
 ```
 
-Reproduce with [`../deploy/spike/hotspot-offline-spike.ps1`](../deploy/spike/hotspot-offline-spike.ps1)
+Reproduce with [`../deploy/spike/hotspot-offline-spike.ps1`](../../deploy/spike/hotspot-offline-spike.ps1)
 `-PreferNoConnectivity`, which deliberately selects a zero-connectivity profile so the point is
 provable without unplugging anything.
 
@@ -71,7 +71,7 @@ It loses on what it does *not* build:
 | Address `192.168.137.1` | Yes | Yes |
 | DHCP for clients | Yes (ICS) | Yes (ICS) |
 | **DNS proxy on `:53`** | **No — port stays free** | **Yes — `svchost` holds `0.0.0.0:53`** |
-| Phone can resolve a name | **No.** Zero queries ever reached the host | Yes — proven end to end, [spike README](../deploy/spike/README.md) #8 |
+| Phone can resolve a name | **No.** Zero queries ever reached the host | Yes — proven end to end, [spike README](../../deploy/spike/README.md) #8 |
 | Phone validates the network | No — loops `Checking quality…` → `no internet` | Not yet tested offline |
 
 The DNS row decides it. The controller must be served over **HTTPS** (iOS motion sensors need a
@@ -107,7 +107,7 @@ function Get-TetheringManager {
     if ($profile) { return $mgrType::CreateFromConnectionProfile($profile) }
 
     # Offline: any profile will do. Tethering needs *a* profile to hang off, not a working
-    # internet connection - measured 2026-08-21, see docs/Decision-OfflineHosting.md.
+    # internet connection - measured 2026-08-21, see docs/6-decisions/Decision-OfflineHosting.md.
     foreach ($p in $ni::GetConnectionProfiles()) {
         try { return $mgrType::CreateFromConnectionProfile($p) } catch { }
     }

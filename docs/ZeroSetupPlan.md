@@ -9,8 +9,8 @@ is now built and its certificate source has been replaced wholesale — see the 
 Phase 5's installer script exists and now bakes in a seed certificate. Phases 1, 3 and 4 remain
 design only, so the game still cannot be handed to anyone else — see *The four blockers*.
 
-Companion documents: [systems/HostingAndCertificates.md](systems/HostingAndCertificates.md) for what this design asks of a
-player, and [systems/HostingAndCertificates.md](systems/HostingAndCertificates.md) for how the architecture works today.
+Companion documents: [4-systems/HostingAndCertificates.md](4-systems/HostingAndCertificates.md) for what this design asks of a
+player, and [4-systems/HostingAndCertificates.md](4-systems/HostingAndCertificates.md) for how the architecture works today.
 
 ---
 
@@ -459,7 +459,7 @@ a party, with no terminal open.
 > **This section previously recorded question 2 as "Answered — no" and reasoned that
 > `NetworkOperatorTetheringManager` offers "no parameter or workaround within that API". That was
 > wrong, and it was wrong about our own code rather than about Windows.** The full evidence and
-> the decision are in [Decision-OfflineHosting.md](Decision-OfflineHosting.md); the corrected
+> the decision are in [Decision-OfflineHosting.md](6-decisions/Decision-OfflineHosting.md); the corrected
 > answers are below. The original text is left only in git history, because leaving a confidently
 > stated false conclusion in a planning document is how it gets cited again.
 

@@ -79,7 +79,7 @@ then its body table contradicts it:
 |---|---|---|
 | `docs/OfflineSetup.md:29` | `Certificate — Cached *.local-ip.sh, valid to 2026-11-17` | Single-name `play.skiprocking.ca`, auto-renewed |
 | `docs/OfflineSetup.md:172` | "cached certificate is good to 2026-11-17 and renews only when the host is online" | Renewal is a GitHub Actions cron, not host-online-dependent |
-| `docs/Decision-OfflineHosting.md:251` | `Cached, *.local-ip.sh, valid to 2026-11-17 (88 days)` | Same |
+| `docs/6-decisions/Decision-OfflineHosting.md:251` | `Cached, *.local-ip.sh, valid to 2026-11-17 (88 days)` | Same |
 | `docs/ZeroSetupPlan.md:186` | "a fresh download now returns a certificate valid to 2026-11-17" | Same |
 
 A reader who trusts the table over the box builds against a dead CA. The update boxes should be
@@ -191,7 +191,7 @@ Worth saying plainly, because the restructure should not destroy it:
 
 | Action | Files |
 |---|---|
-| **Fix in place** (link and fact repairs) | `Assets/CLAUDE.md`, `docs/OfflineSetup.md`, `docs/Decision-OfflineHosting.md`, `docs/ZeroSetupPlan.md`, `deploy/README.md`, `deploy/RECONNECT-TEST.md`, `deploy/LOCAL-HTTPS-SPIKE.md`, `deploy/spike/README.md`, `docs/plans/magic-domain-replacement.md`, `docs/plans/join-failure-reduction.md`, `docs/MagicDnsFallback.md` |
+| **Fix in place** (link and fact repairs) | `Assets/CLAUDE.md`, `docs/OfflineSetup.md`, `docs/6-decisions/Decision-OfflineHosting.md`, `docs/ZeroSetupPlan.md`, `deploy/README.md`, `deploy/RECONNECT-TEST.md`, `deploy/LOCAL-HTTPS-SPIKE.md`, `deploy/spike/README.md`, `docs/plans/magic-domain-replacement.md`, `docs/plans/join-failure-reduction.md`, `docs/MagicDnsFallback.md` |
 | **Restore from git** (`0b7c500^`) | `Rule-RenderQR.md` (binding), `Reference-Constants.md`, `Reference-SkipTuning.md`, `Findings-TuningAudit.md` (open dependency for Track A) |
 | **Move to `docs/archive/`**, unchanged | `MagicDnsFallback.md`, `plans/remove-direct-transport.md`, `plans/seamless-rejoin*.md`, `plans/network-mode-selection.md`, `Findings-*.md`, `plans/join-failure-reduction.md`, `HANDOFF-join-failure-reduction.md` |
 | **Supersede** (content absorbed into the new tier 1–3 docs) | `docs/MASTER-PLAN.md` |

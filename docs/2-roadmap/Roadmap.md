@@ -1,7 +1,7 @@
 # Roadmap — what 0% to 100% means
 
 **Tier 2.** This document defines *done*. It does not say where the project is — that is
-[`ProjectState.md`](ProjectState.md), and the two are deliberately separate so that progress can
+[`ProjectState.md`](../3-state/ProjectState.md), and the two are deliberately separate so that progress can
 move without the definition of the target moving with it.
 
 Ten milestones, one per 10%. Each is written so that **someone else could check it**: the
@@ -79,7 +79,7 @@ and Android, in the pose the game is actually played in — phone upright, scree
 player, aimed at a television.
 
 **Why it is its own milestone:** that pose sits exactly on a gimbal singularity, and the first
-two implementations broke there. See [`systems/MotionPipeline.md`](systems/MotionPipeline.md).
+two implementations broke there. See [`4-systems/MotionPipeline.md`](../4-systems/MotionPipeline.md).
 
 ---
 
@@ -180,7 +180,7 @@ into their throw.
 
 **This acceptance criterion changed on 2026-09-08**, and the change is the point. It previously
 read "each plays measurably differently under `Print Skip Curve`". That is now unmeetable by
-design: [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) D5 settles that the rocks
+design: [`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md) D5 settles that the rocks
 stay **mechanically identical** and differentiate visually only — distinct meshes and
 silhouettes, named on the scoreboard, with the player's colour always winning the tint, because
 identity in a five-phone party game outranks a cosmetic choice.
@@ -200,7 +200,7 @@ It stops looking like a prototype.
 
 **Contains:** audio — the skip pitch ladder, sink, fail, score and win sounds, and the scheduler
 that stops same-frame sounds colliding; trails and water response; camera framing; music. Plus,
-as of 2026-09-08, the whole of [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md):
+as of 2026-09-08, the whole of [`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md):
 the stylised-flat art direction and environment presets, the shore, the retirement of IMGUI in
 favour of UI Toolkit, and **the in-play HUD** — which does not currently exist in any form.
 
@@ -231,7 +231,7 @@ signed; a seed certificate shipped so a first launch works before it can reach a
 **Acceptance:** a person who has never seen the repository is handed one file. They install it,
 run it, and host a party. You are not in the room and they do not phone you.
 
-**The four blockers are known and unchanged** — see [`ZeroSetupPlan.md`](ZeroSetupPlan.md). The
+**The four blockers are known and unchanged** — see [`ZeroSetupPlan.md`](../ZeroSetupPlan.md). The
 third one, that `relay/` and `controller/` are not in the build, fails before any of the others
 are reached.
 
@@ -242,7 +242,7 @@ are reached.
 - A milestone is done when its **acceptance criterion** has actually been checked, not when the
   code exists. "Written but never run" is not done, and saying so is the whole value of writing
   the criteria down.
-- When a milestone's status changes, update [`ProjectState.md`](ProjectState.md) — not this file.
+- When a milestone's status changes, update [`ProjectState.md`](../3-state/ProjectState.md) — not this file.
   This file changes only when the *definition* changes.
 - If work is happening that fits no milestone here, that is worth noticing. Either it belongs to
   a milestone and this file is missing it, or it is not on the way to 100% and should be

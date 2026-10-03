@@ -244,7 +244,7 @@ the hotspot subnet).
 
 ### Conclusion: internet sharing is not offered (stopping after three failed fences)
 
-Superseded 2026-10-02: sharing is now the default. See the "Share the host's internet with guests by default" entry in [`Decisions.md`](Decisions.md) and the "Reopened" section below.
+Superseded 2026-10-02: sharing is now the default. See the "Share the host's internet with guests by default" entry in [`Decisions.md`](6-decisions/Decisions.md) and the "Reopened" section below.
 
 Each of these let guests reach the home network on this machine:
 
