@@ -10,6 +10,16 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-03 — Long reasoning lives in the systems docs, not in code comments
+
+**Context.** 234 comment blocks of 500+ characters were spread over 94 source files, and the docs lived in an older five-tier layout.
+
+**Decision.** Docs moved into the six numbered tiers. Every long block moved verbatim into the `docs/4-systems/` doc that owns it, with a `doc-ref <id> <path>` pointer left in the code. Three systems docs are new: Audio, Presentation, Verification, plus PhoneController. Plan: `docs/plans/comment-harvest-worklist.txt`; tracking issue #82.
+
+**Why.** The code stays lean and the reasoning stays checkable: `docref check` reports every pointer resolving, and the code was verified unchanged apart from comments. Moved text was kept verbatim, so most of it sits in each doc's "Notes moved from source comments" section and has not yet been merged into How it works / Invariants / Traps.
+
+**Status.** Standing.
+
 ## 2026-10-02 — Share the host's internet with guests by default
 
 **Context.** Guests were isolated (forwarding off). Android only treats the hotspot as a normal
