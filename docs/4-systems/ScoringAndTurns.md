@@ -13,7 +13,9 @@ It is the only thing that tells a phone to show its throw screen.
 The split is deliberate: scoring can be retuned without touching turn logic, and turn logic cannot
 accidentally invent points.
 
-## Scoring is push-based
+## How it works
+
+### Scoring is push-based
 
 Gameplay code publishes well-named events describing what happened. It never computes points.
 
@@ -35,7 +37,7 @@ woken by it finds the total already banked and matching what every other reader 
 sits below the empty-id guard, so a throw with no player attached scores nothing and announces
 nothing, rather than announcing points that went nowhere.
 
-## Match phases
+### Match phases
 
 | Phase | Meaning |
 |---|---|
@@ -59,7 +61,7 @@ directly, so the two stay in agreement by construction.
 would enter Playing with the previous match's rock picks still in place. `Playing` is deliberately
 absent from the switch.
 
-## Bootstrap creation order is load-bearing
+### Bootstrap creation order is load-bearing
 
 Not a preference. `Bootstrap.cs` creates every persistent manager, and its comments say why each
 line cannot move. The two orderings that matter most:
@@ -79,7 +81,7 @@ The rest of the chain, in order and each for a stated reason: `LocalServices` �
 `MatchSettings` → subscribers that must hear a throw ending *after* points are banked and the
 phase has settled.
 
-## Persistent versus scene-local
+### Persistent versus scene-local
 
 Created once in `Bootstrap` and never scene-local: `EventManager`, `RelayClient`, `LocalServices`,
 `HotspotService`, `ScoreManager`, `TurnManager`, `RockSelection`, `PlayerColours`, `PlayerNames`,
@@ -88,33 +90,9 @@ Created once in `Bootstrap` and never scene-local: `EventManager`, `RelayClient`
 Dropping `RelayClient` on a scene transition disconnects every phone and looks like a networking
 bug rather than a lifecycle one. This has bitten the project before.
 
-## Invariants
+### `Assets/Scripts/Managers/MatchSettings.cs`
 
-- **Only `ScoreManager` knows point values.** If gameplay code computes a score, that is the bug.
-- **`Phase` is assigned in exactly one place.**
-- **The skip bucket is global and is cleared on every throw completion,** not carried.
-- **Every scene-local subscriber unsubscribes in `OnDestroy`.**
-- **`RoundsPerMatch` is clamped on set,** because `MatchSettings` drives it from a host panel.
-
-## Traps
-
-**A confirmed rock pick needs a broadcast to become visible.** Without one, it sits invisible
-until some unrelated event happens to trigger the next `SPECTATE` — a lobby where everyone has
-already joined could confirm rocks all match and nobody's phone would ever show it.
-`TurnManager` publishes deliberately to avoid this.
-
-**A reconnecting player who already has a pick keeps it.** `RockSelection` fires again on
-reconnect; leaving the existing pick is intentional.
-
-**`DEVICE_FUNNEL` counts devices, `TurnManager.Players` counts people.** The funnel is keyed by IP
-and can only ever be a count. `TurnManager.Players` is authoritative for the roster; never derive
-one from the other.
-
-## Notes moved from source comments
-
-The author's reasoning, moved verbatim out of the code (issue #84/#85). Each note cites the code it describes; the code carries a `doc-ref` pointer to its note.
-
-### `Assets/Scripts/Managers/MatchSettings.cs` — Host-editable match settings, browsable as a generic list so a new setting is one entry rather than a scree...
+#### Host-editable match settings, browsable as a generic list so a new setting is one entry rather than a scree...
 <!-- ref:52b4 -->
 
 Was `Assets/Scripts/Managers/MatchSettings.cs:7-19`.
@@ -126,12 +104,13 @@ rather than a screen edit. Owns no gameplay state itself — each gameplay
 <see cref="RockSelection"/> saying this class should read/write those properties rather
 than duplicate them (only share internet, a hotspot option, is held here).
 
-
 Created in Bootstrap after both RockSelection and TurnManager — Awake needs both
 instances to already exist so the values loaded from <see cref="MatchSettingsStore"/>
 have somewhere to land.
 
-### `Assets/Scripts/Managers/MatchSettingsStore.cs` — Reads and writes the host's match settings as a plain JSON file beside the executable (repo root in the Edi...
+### `Assets/Scripts/Managers/MatchSettingsStore.cs`
+
+#### Reads and writes the host's match settings as a plain JSON file beside the executable (repo root in the Edi...
 <!-- ref:b541 -->
 
 Was `Assets/Scripts/Managers/MatchSettingsStore.cs:7-23`.
@@ -139,7 +118,6 @@ Was `Assets/Scripts/Managers/MatchSettingsStore.cs:7-23`.
 Reads and writes the host's match settings as a plain JSON file beside the executable
 (repo root in the Editor, since <see cref="Application.dataPath"/> resolves to
 <c>Assets/</c> either way).
-
 
 Deliberately not PlayerPrefs: on Windows PlayerPrefs writes into the registry, which is
 invisible, isn't cleared by deleting the game folder, and isn't something a host can
@@ -152,7 +130,111 @@ declares that field, and JsonUtility silently ignores unknown JSON keys on parse
 existing <c>match-settings.json</c> with a stale <c>tuningSet</c> entry loads fine
 rather than erroring — the key is just never read again, and the next Save drops it.
 
-### `Assets/Scripts/Managers/PlayerColours.cs` — Owns what colour every player is.
+### `Assets/Scripts/Managers/PlayerColours.cs`
+
+#### A stone in this player's colour: their colour blended over the rock's own tint by <see cref="PlayerColourPa...
+<!-- ref:ba92 -->
+
+Was `Assets/Scripts/Managers/PlayerColours.cs:121-135`.
+
+A stone in this player's colour: their colour blended over the rock's own tint by
+<see cref="PlayerColourPalette.ConfirmedBlend"/>. Partway rather than flat, so the
+stone still looks like stone while answering "whose is that" across a room.
+
+The one place that calculation lives. The shore stone a player claims, the stone
+they throw and the ghost they aim with all call this, so the three cannot drift
+apart — the rock you picked has to look like the rock you threw, and a second copy
+of the blend is how that would quietly stop being true.
+
+Returns <paramref name="baseColour"/> untouched when there is no palette, so a
+build without the asset degrades to the rock's authored tint rather than to
+nothing.
+
+#### Records a colour a phone asked for, after making it usable.
+<!-- ref:77fa -->
+
+Was `Assets/Scripts/Managers/PlayerColours.cs:142-160`.
+
+Records a colour a phone asked for, after making it usable.
+
+Accepted in any phase, unlike <see cref="RockSelection.Pick"/>. A rock pick
+arriving mid-throw is stale and has to be refused; a colour change never is —
+it is cosmetic, it cannot affect a throw in flight, and a player who wants a
+different colour while watching somebody else throw should simply get one.
+
+Two adjustments, in order, both authored on the palette asset:
+<list type="number">
+<item>raise value/saturation to the floors, so the dot reads against dark water;</item>
+<item>rotate hue away from any connected player within MinSeparation, so no two
+dots on the TV are confusable.</item>
+</list>
+Nudged rather than refused, because a refusal the phone cannot see just looks
+broken — the settled colour goes back out in the next SPECTATE, so the picker
+shows what the player actually got.
+
+### `Assets/Scripts/Managers/TurnManager.cs`
+
+#### Owns the player roster, whose turn it is, and where the match is in its lifecycle.
+<!-- ref:428c -->
+
+Was `Assets/Scripts/Managers/TurnManager.cs:33-44`.
+
+Owns the player roster, whose turn it is, and where the match is in its lifecycle.
+The only thing that tells a phone to show its throw screen.
+
+Publishes match events; deliberately computes no score — that lives solely in
+ScoreManager, so scoring can be retuned without touching turn logic.
+
+The match runs a fixed number of rounds, each giving every player one throw, and
+then ends. Before this existed turns rotated forever and the round counter was
+incremented but never read, so a session had no way to finish.
+
+#### Move the match on from wherever it is: start from the lobby, resume from a re-pick, hand a finished match b...
+<!-- ref:0201 -->
+
+Was `Assets/Scripts/Managers/TurnManager.cs:185-199`.
+
+Move the match on from wherever it is: start from the lobby, resume from a
+re-pick, hand a finished match back to the lobby. The host's Space key and a
+phone's ADVANCE both land here and nowhere else.
+
+Split by phase rather than one CanStartMatch check driving StartMatch
+unconditionally: that used to let a press from Results skip straight into
+Playing with the previous match's rock picks still in place, because
+CanStartMatch is also true on Results and Choosing (both are "not Playing").
+
+Playing is deliberately absent from the switch. A phone that has not yet been
+told the match started could otherwise send a stale ADVANCE into a live turn,
+and there is nothing sensible for it to mean there.
+
+#### Pauses the match for a re-pick without touching scores or the round count — that is the entire difference b...
+<!-- ref:e811 -->
+
+Was `Assets/Scripts/Managers/TurnManager.cs:355-366`.
+
+Pauses the match for a re-pick without touching scores or the round count —
+that is the entire difference between this and ReturnToLobby, and why Choosing
+is a separate phase rather than a reuse of Lobby.
+
+<param name="advanceOnResume">
+True from the round-boundary caller in NextTurn, where _current is still the
+player whose throw just ended the round and resuming must move past them. False
+from the manual forceChooseKey, which can fire mid-round with a player still
+waiting to throw — advancing there would skip them entirely rather than pause
+and return them to their own turn.
+</param>
+
+## Invariants
+
+- **Only `ScoreManager` knows point values.** If gameplay code computes a score, that is the bug.
+- **`Phase` is assigned in exactly one place.**
+- **The skip bucket is global and is cleared on every throw completion,** not carried.
+- **Every scene-local subscriber unsubscribes in `OnDestroy`.**
+- **`RoundsPerMatch` is clamped on set,** because `MatchSettings` drives it from a host panel.
+
+### `Assets/Scripts/Managers/PlayerColours.cs`
+
+#### Owns what colour every player is.
 <!-- ref:0d02 -->
 
 Was `Assets/Scripts/Managers/PlayerColours.cs:11-40`.
@@ -160,7 +242,6 @@ Was `Assets/Scripts/Managers/PlayerColours.cs:11-40`.
 Owns what colour every player is. The only source of truth for "which dot is
 theirs" — everything downstream (the shore pointer today, a stone or a scoreboard
 row later) reads through here rather than deriving a colour of its own.
-
 
 Modelled on <see cref="RockSelection"/>, which is the same shape of problem: a
 per-player choice a phone makes, held in a dictionary keyed by player id, seeded
@@ -186,49 +267,9 @@ replaces.
 the lake, and distance from the other players — both authored on
 <see cref="PlayerColourPalette"/>.
 
-### `Assets/Scripts/Managers/PlayerColours.cs` — A stone in this player's colour: their colour blended over the rock's own tint by <see cref="PlayerColourPa...
-<!-- ref:ba92 -->
+### `Assets/Scripts/Managers/PlayerNames.cs`
 
-Was `Assets/Scripts/Managers/PlayerColours.cs:121-135`.
-
-A stone in this player's colour: their colour blended over the rock's own tint by
-<see cref="PlayerColourPalette.ConfirmedBlend"/>. Partway rather than flat, so the
-stone still looks like stone while answering "whose is that" across a room.
-
-
-The one place that calculation lives. The shore stone a player claims, the stone
-they throw and the ghost they aim with all call this, so the three cannot drift
-apart — the rock you picked has to look like the rock you threw, and a second copy
-of the blend is how that would quietly stop being true.
-
-Returns <paramref name="baseColour"/> untouched when there is no palette, so a
-build without the asset degrades to the rock's authored tint rather than to
-nothing.
-
-### `Assets/Scripts/Managers/PlayerColours.cs` — Records a colour a phone asked for, after making it usable.
-<!-- ref:77fa -->
-
-Was `Assets/Scripts/Managers/PlayerColours.cs:142-160`.
-
-Records a colour a phone asked for, after making it usable.
-
-
-Accepted in any phase, unlike <see cref="RockSelection.Pick"/>. A rock pick
-arriving mid-throw is stale and has to be refused; a colour change never is —
-it is cosmetic, it cannot affect a throw in flight, and a player who wants a
-different colour while watching somebody else throw should simply get one.
-
-Two adjustments, in order, both authored on the palette asset:
-<list type="number">
-<item>raise value/saturation to the floors, so the dot reads against dark water;</item>
-<item>rotate hue away from any connected player within MinSeparation, so no two
-dots on the TV are confusable.</item>
-</list>
-Nudged rather than refused, because a refusal the phone cannot see just looks
-broken — the settled colour goes back out in the next SPECTATE, so the picker
-shows what the player actually got.
-
-### `Assets/Scripts/Managers/PlayerNames.cs` — Owns what display name every player shows as.
+#### Owns what display name every player shows as.
 <!-- ref:2c28 -->
 
 Was `Assets/Scripts/Managers/PlayerNames.cs:10-27`.
@@ -236,7 +277,6 @@ Was `Assets/Scripts/Managers/PlayerNames.cs:10-27`.
 Owns what display name every player shows as. The only source of truth for "whose
 name is that" — everything downstream (the roster line, the scoreboard, the
 active-player label) reads through here rather than printing a player id directly.
-
 
 Mirrors <see cref="PlayerColours"/>, which is the same shape of problem: a
 per-player value held in a dictionary keyed by player id, seeded with a fallback
@@ -250,30 +290,15 @@ this class is where it lands. Renaming mid-match therefore changes only what
 <see cref="DisplayNameFor"/> returns; it can never look like a new player joining,
 because the key it's stored under (the device id) never changes.
 
-### `Assets/Scripts/Managers/TurnManager.cs` — Owns the player roster, whose turn it is, and where the match is in its lifecycle.
-<!-- ref:428c -->
+### `Assets/Scripts/Managers/TurnManager.cs`
 
-Was `Assets/Scripts/Managers/TurnManager.cs:33-44`.
-
-Owns the player roster, whose turn it is, and where the match is in its lifecycle.
-The only thing that tells a phone to show its throw screen.
-
-
-Publishes match events; deliberately computes no score — that lives solely in
-ScoreManager, so scoring can be retuned without touching turn logic.
-
-The match runs a fixed number of rounds, each giving every player one throw, and
-then ends. Before this existed turns rotated forever and the round counter was
-incremented but never read, so a session had no way to finish.
-
-### `Assets/Scripts/Managers/TurnManager.cs` — The one place Phase is ever assigned.
+#### The one place Phase is ever assigned.
 <!-- ref:7ae7 -->
 
 Was `Assets/Scripts/Managers/TurnManager.cs:90-108`.
 
 The one place Phase is ever assigned. Announces real changes and swallows
 redundant ones.
-
 
 A setter rather than three assignments with a Publish next to each, because the
 duplicate that eventually gets missed is the bug: a phase change that moves the
@@ -289,38 +314,16 @@ the last player disconnects.
 Published after the assignment, so a subscriber reading Phase sees the new value
 rather than the one it is being told is over.
 
-### `Assets/Scripts/Managers/TurnManager.cs` — Move the match on from wherever it is: start from the lobby, resume from a re-pick, hand a finished match b...
-<!-- ref:0201 -->
+## Traps
 
-Was `Assets/Scripts/Managers/TurnManager.cs:185-199`.
+**A confirmed rock pick needs a broadcast to become visible.** Without one, it sits invisible
+until some unrelated event happens to trigger the next `SPECTATE` — a lobby where everyone has
+already joined could confirm rocks all match and nobody's phone would ever show it.
+`TurnManager` publishes deliberately to avoid this.
 
-Move the match on from wherever it is: start from the lobby, resume from a
-re-pick, hand a finished match back to the lobby. The host's Space key and a
-phone's ADVANCE both land here and nowhere else.
+**A reconnecting player who already has a pick keeps it.** `RockSelection` fires again on
+reconnect; leaving the existing pick is intentional.
 
-
-Split by phase rather than one CanStartMatch check driving StartMatch
-unconditionally: that used to let a press from Results skip straight into
-Playing with the previous match's rock picks still in place, because
-CanStartMatch is also true on Results and Choosing (both are "not Playing").
-
-Playing is deliberately absent from the switch. A phone that has not yet been
-told the match started could otherwise send a stale ADVANCE into a live turn,
-and there is nothing sensible for it to mean there.
-
-### `Assets/Scripts/Managers/TurnManager.cs` — Pauses the match for a re-pick without touching scores or the round count — that is the entire difference b...
-<!-- ref:e811 -->
-
-Was `Assets/Scripts/Managers/TurnManager.cs:355-366`.
-
-Pauses the match for a re-pick without touching scores or the round count —
-that is the entire difference between this and ReturnToLobby, and why Choosing
-is a separate phase rather than a reuse of Lobby.
-
-<param name="advanceOnResume">
-True from the round-boundary caller in NextTurn, where _current is still the
-player whose throw just ended the round and resuming must move past them. False
-from the manual forceChooseKey, which can fire mid-round with a player still
-waiting to throw — advancing there would skip them entirely rather than pause
-and return them to their own turn.
-</param>
+**`DEVICE_FUNNEL` counts devices, `TurnManager.Players` counts people.** The funnel is keyed by IP
+and can only ever be a count. `TurnManager.Players` is authoritative for the roster; never derive
+one from the other.

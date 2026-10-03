@@ -10,20 +10,9 @@ The phone-side web page: the join, choose and tutorial screens, the lobby and tu
 
 `app.js` talks to the relay over the one WebSocket and renders whatever the host broadcasts in `SPECTATE`; the phone never simulates. Everything below the headings is the author's reasoning moved verbatim from the source comments in `app.js`.
 
-## Invariants
+### `controller/js/app.js`
 
-- There is exactly one AIM sequence number for the whole phone, stamped in `sendAim`; see the note on the AIM sequence number below.
-- The cosmetic AIM stream never arms `ThrowController`; see the note on the cosmetic stream below.
-
-## Traps
-
-- A room code that was never valid must show the form, while a seat lost mid-match must retry; the "ever held a seat" flag is what tells them apart (note below).
-
-## Notes moved from source comments
-
-The author's reasoning, moved verbatim out of the code (issue #84/#85). Each note cites the code it describes; the code carries a `doc-ref` pointer to its note.
-
-### `controller/js/app.js` — Prefilling the join form from a stored identity
+#### Prefilling the join form from a stored identity
 <!-- ref:7df3 -->
 
 Was `controller/js/app.js:1351-1361`.
@@ -40,7 +29,7 @@ with no ?room= at all has the same name they always had, and re-typing it is exa
 the friction this work exists to remove. The room code is prefilled from the URL
 above, and stays the URL's business.
 
-### `controller/js/app.js` — The A5/A6 guard readout reads the guard's clock
+#### The A5/A6 guard readout reads the guard's clock
 <!-- ref:641e -->
 
 Was `controller/js/app.js:1280-1287`.
@@ -54,7 +43,7 @@ _graceStartT — not performance.now() since arm(). Those two clocks need not
 share an origin, and a readout that disagrees with the rule it describes is
 worse than none while tuning armGraceMs on a phone.
 
-### `controller/js/app.js` — The shared phone-in-hand tutorial piece
+#### The shared phone-in-hand tutorial piece
 <!-- ref:bf71 -->
 
 Was `controller/js/app.js:723-732`.
@@ -68,7 +57,7 @@ the phone, so the phone needs to actually look like a phone in a hand, at a glan
 `dim` renders a faint echo (an earlier position in a motion, not the current one) and
 `tapRipple` draws the ripple that marks the exact instant a tap is captured.
 
-### `controller/js/app.js` — Rebuilding the palette circles
+#### Rebuilding the palette circles
 <!-- ref:4fda -->
 
 Was `controller/js/app.js:648-656`.
@@ -81,7 +70,7 @@ player colours live. Idempotent — SPECTATE repeats constantly, so this returns
 unless the palette or who holds what actually changed (#51). Held-by-others comes from
 message.colours, excluding this phone, matched on lower-cased hex.
 
-### `controller/js/app.js` — Showing the player's stone on the choose screen
+#### Showing the player's stone on the choose screen
 <!-- ref:8306 -->
 
 Was `controller/js/app.js:625-633`.
@@ -94,7 +83,7 @@ The name goes in via textContent. Colour needs no work here: the art fills with
 currentColor and the button's CSS colour is var(--accent), which applyMyColour sets, so a
 colour change recolours the stone on its own. Idempotent, because SPECTATE repeats.
 
-### `controller/js/app.js` — Advancing the match from a phone
+#### Advancing the match from a phone
 <!-- ref:0e08 -->
 
 Was `controller/js/app.js:471-482`.
@@ -110,7 +99,7 @@ match. TurnManager runs one switch for both, so they cannot disagree about where
 Buttons are hidden until a SPECTATE says the current phase can be advanced, so
 neither one is ever offered mid-turn.
 
-### `controller/js/app.js` — Keeping the ghost stone alive before the player arms
+#### Keeping the ghost stone alive before the player arms
 <!-- ref:2a2d -->
 
 Was `controller/js/app.js:450-463`.
@@ -128,7 +117,14 @@ Not an auto-arm, and that distinction is the point: arming would hand the releas
 detector a live phone before the player has looked up, and a swing at turn start
 would throw.
 
-### `controller/js/app.js` — The cosmetic AIM stream never arms ThrowController
+## Invariants
+
+- There is exactly one AIM sequence number for the whole phone, stamped in `sendAim`; see the note on the AIM sequence number below.
+- The cosmetic AIM stream never arms `ThrowController`; see the note on the cosmetic stream below.
+
+### `controller/js/app.js`
+
+#### The cosmetic AIM stream never arms ThrowController
 <!-- ref:30f7 -->
 
 Was `controller/js/app.js:388-402`.
@@ -147,7 +143,7 @@ Two callers, one timer: the lobby's shore-pointing picker, and a player whose tu
 has started but who has not tapped to arm yet. Sharing the timer is what stops the
 two ever running at once and double-feeding the TV.
 
-### `controller/js/app.js` — One AIM sequence number for the whole phone
+#### One AIM sequence number for the whole phone
 <!-- ref:c25b -->
 
 Was `controller/js/app.js:365-378`.
@@ -165,7 +161,13 @@ and the ghost stayed missing for the first several seconds of a turn.
 Stamped here rather than inside each producer so a fourth one cannot reintroduce
 the problem: `sendAim` is the only route onto the wire.
 
-### `controller/js/app.js` — Why the "ever held a seat" flag exists
+## Traps
+
+- A room code that was never valid must show the form, while a seat lost mid-match must retry; the "ever held a seat" flag is what tells them apart (note below).
+
+### `controller/js/app.js`
+
+#### Why the "ever held a seat" flag exists
 <!-- ref:88e9 -->
 
 Was `controller/js/app.js:176-182`.

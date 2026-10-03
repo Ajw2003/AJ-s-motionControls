@@ -8,7 +8,9 @@
 
 Which stones exist, what each one is, and which one every player is throwing.
 
-## The data model
+## How it works
+
+### The data model
 
 ```
 Resources/RockCatalog.asset          ordered array of six RockDefinition references
@@ -32,7 +34,7 @@ stays in the project until the new rocks have been seen in game (the owner's cal
 curated list of things loaded by name at runtime; new per-rock data goes under `Assets/Rocks/` and
 is pulled in as a normal reference from something that *is* in `Resources/`.
 
-### A rock is a mesh AND a tuning
+#### A rock is a mesh AND a tuning
 
 The pairing is the whole feature. A flat stone should skip like a flat stone. Neither half alone
 is a rock, and `RockDefinition.IsUsable` requires both.
@@ -41,13 +43,13 @@ is a rock, and `RockDefinition.IsUsable` requires both.
 along with `MatchSettings.TuningSet`. That split is gone. A stale `tuningSet` key in an old
 `match-settings.json` parses harmlessly and is dropped on the next save.
 
-### The catalog's order is load-bearing, twice
+#### The catalog's order is load-bearing, twice
 
 It is the left-to-right layout of the stones on the shore, and it is the index a phone's pick
 resolves against. `RockCatalog.At(index)` **wraps rather than throwing**, so a stale index cannot
 crash a turn.
 
-### `Assets/Scripts/Game/RockDefinition.cs` — A rock is a mesh plus a tuning
+#### `Assets/Scripts/Game/RockDefinition.cs` — A rock is a mesh plus a tuning
 <!-- ref:5e9c -->
 
 Was `Assets/Scripts/Game/RockDefinition.cs:5-24`.
@@ -70,7 +72,7 @@ Built and maintained by Editor/RockCatalogBuilder. Hand edits to
 DisplayName, Blurb and Tint survive a
 rebuild; the mesh reference and scale are recomputed from the FBX.
 
-### `Assets/Scripts/Game/ShoreRocks.cs` — Active only in a choosing phase and yaw-only on purpose
+#### `Assets/Scripts/Game/ShoreRocks.cs` — Active only in a choosing phase and yaw-only on purpose
 <!-- ref:9fa8 -->
 
 Was `Assets/Scripts/Game/ShoreRocks.cs:10-33`.
@@ -97,7 +99,7 @@ stone this player is currently pointing at", which only this class can answer. I
 is the one thing in the rock-choosing feature that resolves that event into an
 actual RockSelection.Pick call.
 
-## The split — three numbers and nothing else
+### The split — three numbers and nothing else
 
 A rock owns exactly:
 
@@ -122,7 +124,7 @@ The constraint is structural, not validator-enforced: a rock has no field to dis
 `RockCatalog.Validate()` used to enforce that every rock's tuning agreed on shared fields like
 `MaxSpeed` and `Gravity`; those fields no longer exist, so it cannot drift.
 
-## Current state — the rocks differ visually, not mechanically, and that is now the design
+### Current state — the rocks differ visually, not mechanically, and that is now the design
 
 All six tunings ship identical values:
 
@@ -153,7 +155,7 @@ Two consequences for anyone working in this file's area:
   less. One axis fits in a sentence on the phone's choose screen; three axes are noise and a
   balance problem nobody has playtest budget for.
 
-## Selection
+### Selection
 
 `RockSelection` is the only source of truth for what any player is throwing.
 
@@ -175,7 +177,7 @@ Players choose by **pointing the phone at the shore** (`ShoreRocks.cs`), which u
 `PhoneAttitude.HeadingDirection` like everything else that needs a heading. `PICK_ROCK` confirms
 the highlighted stone.
 
-## Editor tooling
+### Editor tooling
 
 | Menu item | Does |
 |---|---|
@@ -185,7 +187,7 @@ the highlighted stone.
 Hand edits to generated files survive a rebuild by design; that is what makes the builder safe to
 re-run.
 
-### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — Idempotent: re-running refreshes each rock's mesh and scale but never DisplayName
+#### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — Idempotent: re-running refreshes each rock's mesh and scale but never DisplayName
 <!-- ref:9807 -->
 
 Was `Assets/Scripts/Editor/RockCatalogBuilder.cs:10-34`.
@@ -213,7 +215,7 @@ tool something you avoid running.
 Tuning is not touched here — see docs/plans/Plan-ThrowDrivenSkipModel.md step 8:
 with the generator gone, each rock's SkipTuning asset is authored by hand.
 
-### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — One uniform 2.47 scale brings the 0.741 m authored Pebble to the 1.83 m stone players know
+#### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — One uniform 2.47 scale brings the 0.741 m authored Pebble to the 1.83 m stone players know
 <!-- ref:417e -->
 
 Was `Assets/Scripts/Editor/RockCatalogBuilder.cs:55-65`.
@@ -227,7 +229,7 @@ framing are tuned for that. 2.47 brings Pebble to 1.83 m. It is uniform, so the 
 rocks keep their relative sizes and every thickness-to-length ratio. The sheets in
 tools/art/rocks/ stay at authoring size; this is the only place the game size lives.
 
-### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — Names and flavour are seeded on first creation only, so hand edits always win over a rebuild
+#### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — Names and flavour are seeded on first creation only, so hand edits always win over a rebuild
 <!-- ref:ffbf -->
 
 Was `Assets/Scripts/Editor/RockCatalogBuilder.cs:68-80`.
@@ -243,7 +245,7 @@ NurbsCurve.001..007 leftover Blender curve names — no longer applies. These st
 seeded-not-enforced anyway, for the same reason every other tuning asset in this
 project is: a display name is a hand edit RockCatalogBuilder must never overwrite.
 
-### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — Footprint of the original stone is kept only so Build's report can show a size regression
+#### `Assets/Scripts/Editor/RockCatalogBuilder.cs` — Footprint of the original stone is kept only so Build's report can show a size regression
 <!-- ref:bf19 -->
 
 Was `Assets/Scripts/Editor/RockCatalogBuilder.cs:202-218`.
@@ -262,6 +264,134 @@ regression visible in the Console. Flatten is unused now (Build discards it) but
 stays part of the tuple rather than being stripped out of this method, since
 nothing else here reads the prefab's scale and re-deriving footprint alone would
 duplicate the same read.
+
+### `Assets/Scripts/Managers/RockSelection.cs`
+
+#### The seed the current match's rocks were drawn from, or null when players picked their own.
+<!-- ref:0a57 -->
+
+Was `Assets/Scripts/Managers/RockSelection.cs:49-59`.
+
+The seed the current match's rocks were drawn from, or null when players picked
+their own.
+
+Exposed rather than only logged so Verification/RockTelemetry can stamp it on every
+throw: a random match that produced surprising numbers is only worth anything as
+evidence if the exact draw can be reproduced, and a seed sitting in the Console
+scrollback is not that. Null in pointed-pick matches, where there is no seed and
+writing one would imply a draw that never happened.
+
+#### Assigns every player in the match a fresh rock from a logged seed, so a surprising match can be reproduced.
+<!-- ref:ae91 -->
+
+Was `Assets/Scripts/Managers/RockSelection.cs:152-168`.
+
+Assigns every player in the match a fresh rock from a logged seed, so a
+surprising match can be reproduced. The seed is both logged and kept on
+<see cref="LastRandomSeed"/>, where Verification/RockTelemetry stamps it onto
+every throw it records.
+
+Iterates <see cref="TurnManager.Players"/> — the roster — rather than
+<c>_picks.Keys</c>. Entering a choosing phase clears <c>_picks</c> (see
+<see cref="OnMatchPhaseChanged"/>), and in Random mode nothing ever refills it
+before this runs: phone picks are refused outright while <see cref="RandomRocks"/>
+is on, and <see cref="OnPlayerJoined"/> only seeds an entry the first time a
+player joins, not on every Lobby/Choosing re-entry. Iterating <c>_picks.Keys</c>
+meant every match after the first assigned nobody, silently falling back to the
+catalog's first rock for everyone — the roster survives exactly the resets that
+empty <c>_picks</c>, so it is what this needs to iterate.
+
+### `Assets/Scripts/Game/RockCatalog.cs`
+
+#### Validate checks slots, mesh, id and tuning
+<!-- ref:5bc6 -->
+
+Was `Assets/Scripts/Game/RockCatalog.cs:57-68`.
+
+Checks the catalog is playable: every slot filled, every rock has a mesh, an id
+and a tuning, and no id repeats.
+
+<returns>Empty when the catalog is sound; one line per problem otherwise.</returns>
+Used to also enforce that every rock's tuning agreed on shared fields like
+MaxSpeed and Gravity — see docs/plans/Plan-ThrowDrivenSkipModel.md. Those fields
+are not per-rock anymore; they live once, globally, on SkipConstants, so
+disagreement between rocks is no longer representable and there is nothing left
+to check there.
+
+### `Assets/Scripts/Game/RockLauncher.cs`
+
+#### The live stone uses the rock's mesh and falls back to the prefab box if the catalog failed to load
+<!-- ref:eb45 -->
+
+Was `Assets/Scripts/Game/RockLauncher.cs:256-268`.
+
+The live stone: rock's mesh, scale and tint when there is
+one, else the prefab's own plain box — the original single-rock look, kept as
+the fallback for a catalog that failed to load rather than taking the throw
+path down over it. See RockCatalog.CreateDefault's doc for why an empty
+catalog degrading to this is the deliberate behaviour project-wide.
+
+A box was the original shape for a reason worth keeping in mind for the
+fallback: a scaled sphere is a surface of revolution and renders identically at
+every yaw, so a box was chosen so the stone shows its own rotation from every
+angle. RockCatalogBuilder's meshes carry that concern themselves now.
+
+### `Assets/Scripts/Game/ShoreRocks.cs`
+
+#### Pointer and stone colours come from PlayerColours keyed by identity alone
+<!-- ref:b845 -->
+
+Was `Assets/Scripts/Game/ShoreRocks.cs:390-406`.
+
+A player's dot, in the colour that player owns.
+
+This used to take an ordinal — `_pointers.Count` at the call site — and mix
+it into a hash of the player id to index a palette held here. Every phase change
+clears `_pointers` (see OnMatchPhaseChanged), so that ordinal was really
+"how many other people had aimed before you, this round": a player's colour moved
+between rounds, and hash-plus-ordinal collided freely inside eight slots. Colour
+is now owned by Managers.PlayerColours, keyed by identity alone, and the palette
+itself lives on the PlayerColourPalette asset where it can be edited.
+A claimed stone, in its owner's colour. The blend itself lives on
+PlayerColours.StoneColourFor, shared with the thrown stone and the aim ghost so
+the stone a player picks looks like the stone they throw.
+
+#### The label is anchored to renderer bounds and wraps to the neighbour gap
+<!-- ref:732a -->
+
+Was `Assets/Scripts/Game/ShoreRocks.cs:448-459`.
+
+The rock's name over its description, as one block whose bottom sits just above
+the rock's actual top, and whose description wraps to the gap between this rock and
+its nearest neighbour on screen.
+
+Anchored to renderer bounds rather than a fixed height above the centre: the old
++0.8 m / +0.5 m offsets were set for 0.75-scale stones, and at x2.47 they put the
+text inside the rock. Wrapping to the neighbour gap is what lets the description be
+full size without running into the next one, and without the old fixed 160 px box
+that cut most descriptions off mid-sentence (issue #41).
+
+### `tools/art/rocks/build_rocks.py`
+
+#### Asserting face normals before triangulating
+<!-- ref:5e21 -->
+
+Was `tools/art/rocks/build_rocks.py:109-123`.
+
+bmesh.ops.recalc_face_normals, then assert every face points away from mesh centre.
+
+A second, independent check on top of the winding-reversal in build_object — recalc can
+itself get a mesh's global orientation backwards on a topology it cannot disambiguate, so
+this asserts the actual outcome rather than trusting the fix that produced it.
+
+Run BEFORE triangulate, on the same quad/triangle-fan faces rock_shape.py's own --check
+verifies (its centroid-vs-normal test, which already passes 0 bad on every rock). Checking
+afterward instead would test individual post-triangulation half-quads, where a jittered,
+non-planar quad's own two triangles can legitimately fail a whole-mesh centroid heuristic
+even though the quad they came from is correctly wound — rock_shape.py's docstring notes
+exactly this ("jittered quads are not perfectly planar"). Triangulating a correctly-wound
+face preserves its winding, so checking before is equivalent for catching a real mistake
+(an axis-mapping or reversal bug) without tripping on that geometric non-planarity.
 
 ## Invariants
 
@@ -287,6 +417,35 @@ replays as, so treat it as fixed once matches have been played.
 Only the catalog lives in Resources. The definitions and their tunings sit in
 Assets/Rocks and come along as asset dependencies — Resources stays a short list of
 things genuinely loaded by name, which is what it is for.
+
+### `Assets/Scripts/Managers/RockSelection.cs`
+
+#### Owns which rock every player is playing with.
+<!-- ref:a6f0 -->
+
+Was `Assets/Scripts/Managers/RockSelection.cs:10-33`.
+
+Owns which rock every player is playing with. The only source of truth for "what
+stone is this player's" — everything downstream (the ghost mesh, the live throw,
+the telemetry row) reads through here rather than re-deriving a pick.
+
+<b>Random rocks lives here, not on a MatchSettings singleton.</b> The rock-choosing
+plan (docs/plans/rock-choosing-system.md, Part 5) designs a generic settings-list
+panel that would own it — but that panel doesn't exist yet, and this class cannot
+function without somewhere to read it from. It sits here as a plain field until
+Part 5 lands; that panel should read/write this property rather than duplicate the
+state in a second place.
+
+<b>PICK_ROCK carries no rock id</b> (see Messages.cs) — a tap means "confirm
+whatever is highlighted", and only the shore layout (<see cref="Game.ShoreRocks"/>)
+knows what that is. So this class exposes <see cref="Pick"/> for whatever owns
+that highlight to call, rather than subscribing to RelayClient.PickRockReceived
+itself.
+
+<b>Picks reset on entering either Lobby or Choosing</b> — see
+<see cref="TurnManager.IsChoosingPhase"/>. A fresh Lobby is the start of a new
+match; Choosing is a mid-match pause TurnManager can trigger periodically (or on
+demand) so players can swap stones without the round count or scores moving.
 
 ## Traps
 
@@ -320,114 +479,9 @@ caller treats an empty catalog as "fall back to Resources/SkipTuning". Reaching 
 means rock choosing is silently off, which is worth noticing rather than quietly
 living with.
 
-## Verification
+### `Assets/Scripts/Game/RockSelectTuning.cs`
 
-`RockSkipping/Rocks/Validate Catalog`, then `RockSkipping/Verify/Print Skip Curve` — which sweeps
-**per rock**, and therefore currently shows all six behaving identically. **That is now the
-expected result, not a failure** (see "Current state" above): the sweep's job here is the energy
-invariant every run must satisfy, not proving the rocks apart. It becomes a differentiation check
-again only if mechanical character is ever authored.
-
-## Notes moved from source comments
-
-The author's reasoning, moved verbatim out of the code (issue #84/#85). Each note cites the code it describes; the code carries a `doc-ref` pointer to its note.
-
-### `Assets/Scripts/Managers/RockSelection.cs` — Owns which rock every player is playing with.
-<!-- ref:a6f0 -->
-
-Was `Assets/Scripts/Managers/RockSelection.cs:10-33`.
-
-Owns which rock every player is playing with. The only source of truth for "what
-stone is this player's" — everything downstream (the ghost mesh, the live throw,
-the telemetry row) reads through here rather than re-deriving a pick.
-
-
-<b>Random rocks lives here, not on a MatchSettings singleton.</b> The rock-choosing
-plan (docs/plans/rock-choosing-system.md, Part 5) designs a generic settings-list
-panel that would own it — but that panel doesn't exist yet, and this class cannot
-function without somewhere to read it from. It sits here as a plain field until
-Part 5 lands; that panel should read/write this property rather than duplicate the
-state in a second place.
-
-<b>PICK_ROCK carries no rock id</b> (see Messages.cs) — a tap means "confirm
-whatever is highlighted", and only the shore layout (<see cref="Game.ShoreRocks"/>)
-knows what that is. So this class exposes <see cref="Pick"/> for whatever owns
-that highlight to call, rather than subscribing to RelayClient.PickRockReceived
-itself.
-
-<b>Picks reset on entering either Lobby or Choosing</b> — see
-<see cref="TurnManager.IsChoosingPhase"/>. A fresh Lobby is the start of a new
-match; Choosing is a mid-match pause TurnManager can trigger periodically (or on
-demand) so players can swap stones without the round count or scores moving.
-
-### `Assets/Scripts/Managers/RockSelection.cs` — The seed the current match's rocks were drawn from, or null when players picked their own.
-<!-- ref:0a57 -->
-
-Was `Assets/Scripts/Managers/RockSelection.cs:49-59`.
-
-The seed the current match's rocks were drawn from, or null when players picked
-their own.
-
-
-Exposed rather than only logged so Verification/RockTelemetry can stamp it on every
-throw: a random match that produced surprising numbers is only worth anything as
-evidence if the exact draw can be reproduced, and a seed sitting in the Console
-scrollback is not that. Null in pointed-pick matches, where there is no seed and
-writing one would imply a draw that never happened.
-
-### `Assets/Scripts/Managers/RockSelection.cs` — Assigns every player in the match a fresh rock from a logged seed, so a surprising match can be reproduced.
-<!-- ref:ae91 -->
-
-Was `Assets/Scripts/Managers/RockSelection.cs:152-168`.
-
-Assigns every player in the match a fresh rock from a logged seed, so a
-surprising match can be reproduced. The seed is both logged and kept on
-<see cref="LastRandomSeed"/>, where Verification/RockTelemetry stamps it onto
-every throw it records.
-
-
-Iterates <see cref="TurnManager.Players"/> — the roster — rather than
-<c>_picks.Keys</c>. Entering a choosing phase clears <c>_picks</c> (see
-<see cref="OnMatchPhaseChanged"/>), and in Random mode nothing ever refills it
-before this runs: phone picks are refused outright while <see cref="RandomRocks"/>
-is on, and <see cref="OnPlayerJoined"/> only seeds an entry the first time a
-player joins, not on every Lobby/Choosing re-entry. Iterating <c>_picks.Keys</c>
-meant every match after the first assigned nobody, silently falling back to the
-catalog's first rock for everyone — the roster survives exactly the resets that
-empty <c>_picks</c>, so it is what this needs to iterate.
-
-### `Assets/Scripts/Game/RockCatalog.cs` — Validate checks slots, mesh, id and tuning
-<!-- ref:5bc6 -->
-
-Was `Assets/Scripts/Game/RockCatalog.cs:57-68`.
-
-Checks the catalog is playable: every slot filled, every rock has a mesh, an id
-and a tuning, and no id repeats.
-
-<returns>Empty when the catalog is sound; one line per problem otherwise.</returns>
-Used to also enforce that every rock's tuning agreed on shared fields like
-MaxSpeed and Gravity — see docs/plans/Plan-ThrowDrivenSkipModel.md. Those fields
-are not per-rock anymore; they live once, globally, on SkipConstants, so
-disagreement between rocks is no longer representable and there is nothing left
-to check there.
-
-### `Assets/Scripts/Game/RockLauncher.cs` — The live stone uses the rock's mesh and falls back to the prefab box if the catalog failed to load
-<!-- ref:eb45 -->
-
-Was `Assets/Scripts/Game/RockLauncher.cs:256-268`.
-
-The live stone: rock's mesh, scale and tint when there is
-one, else the prefab's own plain box — the original single-rock look, kept as
-the fallback for a catalog that failed to load rather than taking the throw
-path down over it. See RockCatalog.CreateDefault's doc for why an empty
-catalog degrading to this is the deliberate behaviour project-wide.
-
-A box was the original shape for a reason worth keeping in mind for the
-fallback: a scaled sphere is a surface of revolution and renders identically at
-every yaw, so a box was chosen so the stone shows its own rotation from every
-angle. RockCatalogBuilder's meshes carry that concern themselves now.
-
-### `Assets/Scripts/Game/RockSelectTuning.cs` — ShoreRocks is built with AddComponent so it cannot hold inspector values
+#### ShoreRocks is built with AddComponent so it cannot hold inspector values
 <!-- ref:0cb9 -->
 
 Was `Assets/Scripts/Game/RockSelectTuning.cs:5-19`.
@@ -445,55 +499,10 @@ the same load-or-warn pattern every other tuning asset in this project uses. Cre
 the asset from the menu (RockSkipping/Rock Select Tuning) only once these numbers
 are worth hand-tuning against a real phone.
 
-### `Assets/Scripts/Game/ShoreRocks.cs` — Pointer and stone colours come from PlayerColours keyed by identity alone
-<!-- ref:b845 -->
+## Verification
 
-Was `Assets/Scripts/Game/ShoreRocks.cs:390-406`.
-
-A player's dot, in the colour that player owns.
-
-This used to take an ordinal — `_pointers.Count` at the call site — and mix
-it into a hash of the player id to index a palette held here. Every phase change
-clears `_pointers` (see OnMatchPhaseChanged), so that ordinal was really
-"how many other people had aimed before you, this round": a player's colour moved
-between rounds, and hash-plus-ordinal collided freely inside eight slots. Colour
-is now owned by Managers.PlayerColours, keyed by identity alone, and the palette
-itself lives on the PlayerColourPalette asset where it can be edited.
-A claimed stone, in its owner's colour. The blend itself lives on
-PlayerColours.StoneColourFor, shared with the thrown stone and the aim ghost so
-the stone a player picks looks like the stone they throw.
-
-### `Assets/Scripts/Game/ShoreRocks.cs` — The label is anchored to renderer bounds and wraps to the neighbour gap
-<!-- ref:732a -->
-
-Was `Assets/Scripts/Game/ShoreRocks.cs:448-459`.
-
-The rock's name over its description, as one block whose bottom sits just above
-the rock's actual top, and whose description wraps to the gap between this rock and
-its nearest neighbour on screen.
-
-Anchored to renderer bounds rather than a fixed height above the centre: the old
-+0.8 m / +0.5 m offsets were set for 0.75-scale stones, and at x2.47 they put the
-text inside the rock. Wrapping to the neighbour gap is what lets the description be
-full size without running into the next one, and without the old fixed 160 px box
-that cut most descriptions off mid-sentence (issue #41).
-
-### `tools/art/rocks/build_rocks.py` — Asserting face normals before triangulating
-<!-- ref:5e21 -->
-
-Was `tools/art/rocks/build_rocks.py:109-123`.
-
-bmesh.ops.recalc_face_normals, then assert every face points away from mesh centre.
-
-A second, independent check on top of the winding-reversal in build_object — recalc can
-itself get a mesh's global orientation backwards on a topology it cannot disambiguate, so
-this asserts the actual outcome rather than trusting the fix that produced it.
-
-Run BEFORE triangulate, on the same quad/triangle-fan faces rock_shape.py's own --check
-verifies (its centroid-vs-normal test, which already passes 0 bad on every rock). Checking
-afterward instead would test individual post-triangulation half-quads, where a jittered,
-non-planar quad's own two triangles can legitimately fail a whole-mesh centroid heuristic
-even though the quad they came from is correctly wound — rock_shape.py's docstring notes
-exactly this ("jittered quads are not perfectly planar"). Triangulating a correctly-wound
-face preserves its winding, so checking before is equivalent for catching a real mistake
-(an axis-mapping or reversal bug) without tripping on that geometric non-planarity.
+`RockSkipping/Rocks/Validate Catalog`, then `RockSkipping/Verify/Print Skip Curve` — which sweeps
+**per rock**, and therefore currently shows all six behaving identically. **That is now the
+expected result, not a failure** (see "Current state" above): the sweep's job here is the energy
+invariant every run must satisfy, not proving the rocks apart. It becomes a differentiation check
+again only if mechanical character is ever authored.

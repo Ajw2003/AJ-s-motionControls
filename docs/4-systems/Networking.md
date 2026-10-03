@@ -8,7 +8,9 @@
 Getting input from phones to the PC and state from the PC to phones. Nothing else — it does not
 interpret a throw, score it, or decide whose turn it is.
 
-## Shape
+## How it works
+
+### Shape
 
 ```
 phone browser ──wss──┐
@@ -39,7 +41,7 @@ was removed: once the relay and the phone are already one hop apart on the same 
 channel bought nothing and cost a renegotiation storm. `Assets/Scripts/Net/PeerLink.cs` no longer
 exists.
 
-## The wire format
+### The wire format
 
 `Messages.cs` holds the serializable DTOs mirroring the JSON, and `relay/server.js` holds the
 matching literals. The two must agree by string.
@@ -58,14 +60,14 @@ and the `Dispatch` case. Do not sniff new fields out of `RawMessageReceived` —
 for signalling this class deliberately does not model, and using it as a shortcut is how the wire
 format stops being described in one place.
 
-### Field names that look wrong and are not
+#### Field names that look wrong and are not
 
 `ok`, `resumed`, `reconnected` and `randomRocks` do not read as questions, against the usual
 naming rule. They are wire-format names matched by string across `Messages.cs` and
 `relay/server.js`, plus one persisted `match-settings.json` key. Renaming them is a coordinated
 cross-stack change with a save-file migration, not a naming fix.
 
-## Relay behaviour worth knowing
+### Relay behaviour worth knowing
 
 | Constant | Value | Why |
 |---|---|---|
@@ -100,83 +102,21 @@ That last one is not cosmetic. A displaced socket's client-side `onclose` cannot
 ping-pong that once made a phone re-join roughly once a second, all match long. `relay/server.js`
 exports the literal so `controller/js/net.js` compares against the same one.
 
-### The device funnel
+#### The device funnel
 
 `DEVICE_FUNNEL` reports `associated ≥ pageOpen ≥ playing` — how far the phones on the hotspot have
 got. It is a count of **devices, never a roster of people**: the relay can only key it by IP.
 `TurnManager.Players` is authoritative for who is playing. The funnel exists so the TV can nudge
 someone who is stuck at the stage they are stuck at.
 
-## Invariants
+### `Assets/Scripts/Net/Messages.cs`
 
-- **`RelayClient` is created in `Bootstrap` and never scene-local.** A scene-local socket is torn
-  down on every transition and every phone bounces back to the join screen. This reads as a
-  networking bug and is a lifecycle one. It has bitten this project before.
-- **`AIM` is cosmetic and may be dropped.** Never feed it to the simulation. `THROW` is the
-  authoritative event for a turn.
-- **All sends funnel through one queue.** `ClientWebSocket` is thread-affine for sends. This is a
-  documented deviation from the original plan, which specified NativeWebSocket; `ClientWebSocket`
-  was chosen to add zero dependencies, and the queue is the cost of that.
-- **`AimPreview` drops any frame whose sequence number is not strictly newer.** Correct for
-  ordering, and the reason a rejoining player's preview once stayed hidden for the rest of a
-  session — the phone restarts its sequence at zero. Fixed in `f3e37cc`; the shape of the bug is
-  worth remembering.
-
-## Traps
-
-**`LocalServices` reuses any relay already listening.** Stopping and restarting Play does *not*
-pick up a relay code change if the previous relay outlived its session. Two test cycles have been
-spent measuring stale code. Kill the `node server.js` process first; `relay/diagnose-hotspot.js`
-step 4 is the cheapest proof of which code is actually running.
-
-**A room outlives its host by 60 seconds,** so `RelayClient`'s retry delay is capped low
-(`MaxRetryDelay = 4s`) to reclaim it inside the window rather than after it.
-
-**A single connect attempt is bounded at 8s.** Without it the client wedges permanently: a TCP
-connect against an address that silently drops packets never returns on its own.
-
-## Verification
-
-```bash
-cd relay && npm test
-```
-
-55 tests across `test-relay.js`, `test-dns.js`, `test-funnel.js`, `test-probe.js`. With Play
-running, expect 54 pass / 1 skip — the game's relay owns `:80`, so `test-probe.js` skips that
-case by design.
-
-`node relay/diagnose-hotspot.js` walks a phone's whole chain against a live game. It requires Play
-mode with the hotspot up, and fails fast and says so otherwise. `npm run loadtest` for throughput.
-
-## Notes moved from source comments
-
-The author's reasoning, moved verbatim out of the code (issue #84/#85). Each note cites the code it describes; the code carries a `doc-ref` pointer to its note.
-
-### `Assets/Scripts/Net/Messages.cs` — How far the phones on the hotspot have got through joining — see relay/funnel.js and docs/plans/join-failur...
-<!-- ref:6112 -->
-
-Was `Assets/Scripts/Net/Messages.cs:68-81`.
-
-How far the phones on the hotspot have got through joining — see relay/funnel.js and
-docs/plans/join-failure-reduction.md. Sent unprompted whenever the numbers change, and
-once on ROOM_CREATED so a host that just restarted is not blind until they next do.
-
-
-A count of devices, never a roster of people: the relay can only key this by IP, so
-two phones behind one address count once and a phone that changes address counts
-twice. Fine for deciding what the TV says; never use it as a player count — that is
-TurnManager.Players, which is authoritative.
-
-The counts are cumulative, so <c>associated &gt;= pageOpen &gt;= playing</c> always
-holds and the interesting numbers are the differences between them.
-
-### `Assets/Scripts/Net/Messages.cs` — The phone's rotation relative to where it was when the player tapped to aim.
+#### The phone's rotation relative to where it was when the player tapped to aim.
 <!-- ref:504c -->
 
 Was `Assets/Scripts/Net/Messages.cs:112-124`.
 
 The phone's rotation relative to where it was when the player tapped to aim.
-
 
 Four floats rather than three angles, and that is the point. The phone used to
 decompose its attitude into aim / attack / roll and Unity re-composed it with
@@ -187,7 +127,7 @@ tap", drawn as a flat stone facing away from the camera.
 Still in the phone's own right-handed frame here. Game.PhoneAttitude.ToUnity is
 the only thing permitted to convert it — see that file.
 
-### `Assets/Scripts/Net/Messages.cs` — How fast the phone is being swung right now, raw m/s — the same quantity ThrowMessage.swingSpeed carries, j...
+#### How fast the phone is being swung right now, raw m/s — the same quantity ThrowMessage.swingSpeed carries, j...
 <!-- ref:ccd6 -->
 
 Was `Assets/Scripts/Net/Messages.cs:135-149`.
@@ -195,7 +135,6 @@ Was `Assets/Scripts/Net/Messages.cs:135-149`.
 How fast the phone is being swung right now, raw m/s — the same quantity
 ThrowMessage.swingSpeed carries, just sampled mid-swing instead of at release.
 See ThrowController.windup.
-
 
 Not normalised. An earlier version sent a 0..1 `power` here, derived the same
 way ThrowMessage.power was — but that meant two lossy conversions of the same
@@ -206,13 +145,12 @@ it once, in Unity (SkipConstants.SpeedScale), removes the second chance to drift
 Only ever an estimate, because the swing has not finished yet. AimPreview
 floors it at a nominal so a player holding still to aim still sees an arc.
 
-### `Assets/Scripts/Net/Messages.cs` — A phone choosing the colour it is drawn in.
+#### A phone choosing the colour it is drawn in.
 <!-- ref:5aea -->
 
 Was `Assets/Scripts/Net/Messages.cs:165-181`.
 
 A phone choosing the colour it is drawn in.
-
 
 Unlike PickRockMessage this DOES carry its payload, because the TV cannot know what
 a player wants: a rock pick means "confirm the highlight the TV is already showing",
@@ -227,7 +165,7 @@ PickRockMessage's unknown rock id is.
 A request, not an instruction — Managers.PlayerColours decides what the player
 actually gets, and the settled colour comes back in the next SPECTATE.
 
-### `Assets/Scripts/Net/Messages.cs` — A phone announcing (or changing) the display name for its seat.
+#### A phone announcing (or changing) the display name for its seat.
 <!-- ref:1757 -->
 
 Was `Assets/Scripts/Net/Messages.cs:189-201`.
@@ -237,21 +175,19 @@ docs/plans/seamless-rejoin.md Workstream C: playerId is now the device's stable
 identity, not the typed name, so the name has to travel as its own message rather
 than being read out of playerId — Managers.PlayerNames is the one place it lands.
 
-
 Sent every time this device's controller reaches JOINED, first join or rejoin
 alike, and again whenever the player edits their name mid-match — a rename, not a
 new player, since playerId does not change. relayToHost stamps playerId
 server-side exactly as it does for PickColourMessage, so a phone cannot claim to
 be renaming someone else.
 
-### `Assets/Scripts/Net/Messages.cs` — A phone asking the match to move on — start from the lobby, resume from a re-pick, or begin the next match...
+#### A phone asking the match to move on — start from the lobby, resume from a re-pick, or begin the next match...
 <!-- ref:99ee -->
 
 Was `Assets/Scripts/Net/Messages.cs:209-221`.
 
 A phone asking the match to move on — start from the lobby, resume from a re-pick,
 or begin the next match from the results screen.
-
 
 Carries no target phase on purpose, exactly like PickRockMessage carries no rock id:
 the TV owns the phase, so this only means "whatever the button on my screen said".
@@ -261,14 +197,13 @@ keyboard and the phones cannot advance the match to different places.
 Any connected phone may send it. A couch game has no host player, and adding one
 would need a rule for what happens when that particular phone drops.
 
-### `Assets/Scripts/Net/Messages.cs` — Broadcast match state to every phone.
+#### Broadcast match state to every phone.
 <!-- ref:7c11 -->
 
 Was `Assets/Scripts/Net/Messages.cs:261-303`.
 
 Broadcast match state to every phone. Hand-written because the score map
 is a dictionary, which JsonUtility cannot serialise.
-
 
 Sent on state changes only — a player joining or leaving, a turn starting, a
 throw completing, the match ending. Never on a timer. This used to also go out
@@ -309,47 +244,9 @@ who happen to type the same display name never collide as one dictionary key. Nu
 is fine; the "names" object is simply empty, the same tolerance
 <paramref name="playerRocks"/> and <paramref name="playerColours"/> have.</param>
 
-### `Assets/Scripts/Net/RelayClient.cs` — Host-side connection to the relay.
-<!-- ref:5e27 -->
+### `Assets/Scripts/Net/RelayDebugHud.cs`
 
-Was `Assets/Scripts/Net/RelayClient.cs:15-35`.
-
-Host-side connection to the relay. Creates the room, receives phone input,
-and broadcasts match state back out.
-
-
-MUST live in the Bootstrap scene as a persistent manager. If it is created
-per-scene instead, the socket is torn down on every transition and every
-phone bounces back to the join screen — a lifecycle bug that presents as a
-networking one.
-
-DEVIATION FROM PLAN: uses System.Net.WebSockets.ClientWebSocket rather than
-the NativeWebSocket package the plan named. ClientWebSocket ships with .NET,
-so there is no external dependency to vendor, and it works fine for a native
-desktop host. The tradeoff is that it does NOT work in WebGL builds — which
-is acceptable because the plan already rejected WebGL as a target. Swap to
-NativeWebSocket if a browser build ever becomes a requirement.
-
-ClientWebSocket is thread-affine for sends, so all sends funnel through a
-semaphore, and all received messages are marshalled onto the main thread via
-a queue drained in Update — Unity APIs cannot be touched from the socket task.
-
-### `Assets/Scripts/Net/RelayClient.cs` — How long a single connect attempt may take before it is abandoned.
-<!-- ref:a5fc -->
-
-Was `Assets/Scripts/Net/RelayClient.cs:164-174`.
-
-How long a single connect attempt may take before it is abandoned.
-
-
-Without this the client can wedge permanently. A TCP connect against a
-half-torn-down network — Wi-Fi toggled off and back on, a laptop waking, a
-relay being restarted — can sit unresolved far longer than any useful
-retry interval, and while it does, `_connecting` stays true and Update
-refuses to start another attempt. The symptom is a host that never comes
-back even though the network is fine again.
-
-### `Assets/Scripts/Net/RelayDebugHud.cs` — Spread as a percentage of the mean — the repeatability number.
+#### Spread as a percentage of the mean — the repeatability number.
 <!-- ref:f61d -->
 
 Was `Assets/Scripts/Net/RelayDebugHud.cs:192-200`.
@@ -363,23 +260,9 @@ numbers that one pass already has in hand. The selectors are cached statics for
 the same reason — a method group or lambda written at the call site would
 allocate a fresh delegate every frame.
 
-### `relay/diagnose-hotspot.js` — Why a host-side PASS is hedged
-<!-- ref:acb3 -->
+### `relay/diagnose-hotspot.js`
 
-Was `relay/diagnose-hotspot.js:194-203`.
-
-Deliberately hedged. This request originates on the host and is destined for the host's
-own address, so Windows does not evaluate it against the inbound firewall rules the way
-it evaluates a packet arriving over the wireless interface from a phone. A PASS here
-proves the socket is listening and answering; it does NOT prove a guest can reach it.
-
-Nor does opening the URL on the phone's browser, which is what this used to advise. On
-Android a Wi-Fi network flagged "no internet" is not the default network, so the
-browser can route to cellular and time out while the platform's own probe — bound to
-the Wi-Fi — reaches :80 fine. Only the host's connection table settles it, which is
-what watch-guests.js prints.
-
-### `relay/diagnose-hotspot.js` — What diagnose-hotspot answers
+#### What diagnose-hotspot answers
 <!-- ref:c5cf -->
 
 Was `relay/diagnose-hotspot.js:3-14`.
@@ -395,7 +278,9 @@ Read-only. It sends requests and prints what came back; it changes nothing.
 
 Usage:  node diagnose-hotspot.js
 
-### `relay/funnel.js` — Funnel options
+### `relay/funnel.js`
+
+#### Funnel options
 <!-- ref:6311 -->
 
 Was `relay/funnel.js:67-77`.
@@ -410,7 +295,7 @@ Was `relay/funnel.js:67-77`.
                                       is the only thing worth waking the host for.
 @param {function} [options.now]       injectable clock, for tests.
 
-### `relay/funnel.js` — Why stale timeouts differ per stage
+#### Why stale timeouts differ per stage
 <!-- ref:8b00 -->
 
 Was `relay/funnel.js:31-45`.
@@ -429,7 +314,7 @@ That asymmetry is what makes the stale-count symptom self-correct in about two m
 instead of ten. It does not make the count trustworthy — IP keying rules that out, which is
 why the TV no longer prints it — it just stops the count outliving the phone that caused it.
 
-### `relay/funnel.js` — The per-device join funnel
+#### The per-device join funnel
 <!-- ref:9607 -->
 
 Was `relay/funnel.js:3-21`.
@@ -452,7 +337,9 @@ cookie, no user agent worth trusting, and no session. That makes a
 count of devices, never a roster of people: two phones behind one address would count
 once, and a phone that changes address counts twice. Callers must treat it as a hint.
 
-### `relay/loadtest.js` — What the load test models
+### `relay/loadtest.js`
+
+#### What the load test models
 <!-- ref:ff84 -->
 
 Was `relay/loadtest.js:3-26`.
@@ -480,7 +367,9 @@ it at production is a denial-of-service against your own players.
 
 Measured numbers and what they imply: HostingPlan.md §14.
 
-### `relay/server.js` — The :80 listener degrades quietly and logs loudly
+### `relay/server.js`
+
+#### The :80 listener degrades quietly and logs loudly
 <!-- ref:f70b -->
 
 Was `relay/server.js:995-1005`.
@@ -495,7 +384,7 @@ QUIETLY — EADDRINUSE and friends are caught and logged, never thrown past this
 and LOGS LOUDLY, because the resulting symptom is easy to misdiagnose as a network
 problem rather than a cosmetic one.
 
-### `relay/server.js` — What :80 answers, and the probe-access log
+#### What :80 answers, and the probe-access log
 <!-- ref:f8e4 -->
 
 Was `relay/server.js:928-952`.
@@ -522,7 +411,7 @@ survives the session that produced it.
 Best-effort by design: a logging failure must never take down a listener a guest is
 mid-request on, so every error here is swallowed.
 
-### `relay/server.js` — Answering the OS connectivity probes ourselves
+#### Answering the OS connectivity probes ourselves
 <!-- ref:144d -->
 
 Was `relay/server.js:530-543`.
@@ -542,7 +431,7 @@ not belong here — `www.google.com`, Android's HTTPS probe host, was added on e
 reasoning and removed again when hardware testing falsified it. Android resolved it, got our
 address, and still issued no HTTP probe.
 
-### `relay/server.js` — Generic routing, allowlisted static files, per-request error handling
+#### Generic routing, allowlisted static files, per-request error handling
 <!-- ref:2e34 -->
 
 Was `relay/server.js:3-25`.
@@ -569,7 +458,9 @@ request path used to throw synchronously with nothing catching it and took the
 whole process — every room on it — down with it (C1, same doc). A handler scoped
 to one request can never do that; a global one would only paper over the crash.
 
-### `relay/watch-guests.js` — What watch-guests shows
+### `relay/watch-guests.js`
+
+#### What watch-guests shows
 <!-- ref:a16c -->
 
 Was `relay/watch-guests.js:3-20`.
@@ -590,3 +481,123 @@ shows up here and the browser never does, from the same phone, at the same momen
 Read-only: it shells out to `netstat` and prints. It changes nothing and touches no socket.
 
 Usage:  node watch-guests.js          (Ctrl+C to stop)
+
+## Invariants
+
+- **`RelayClient` is created in `Bootstrap` and never scene-local.** A scene-local socket is torn
+  down on every transition and every phone bounces back to the join screen. This reads as a
+  networking bug and is a lifecycle one. It has bitten this project before.
+- **`AIM` is cosmetic and may be dropped.** Never feed it to the simulation. `THROW` is the
+  authoritative event for a turn.
+- **All sends funnel through one queue.** `ClientWebSocket` is thread-affine for sends. This is a
+  documented deviation from the original plan, which specified NativeWebSocket; `ClientWebSocket`
+  was chosen to add zero dependencies, and the queue is the cost of that.
+- **`AimPreview` drops any frame whose sequence number is not strictly newer.** Correct for
+  ordering, and the reason a rejoining player's preview once stayed hidden for the rest of a
+  session — the phone restarts its sequence at zero. Fixed in `f3e37cc`; the shape of the bug is
+  worth remembering.
+
+### `Assets/Scripts/Net/RelayClient.cs`
+
+#### Host-side connection to the relay.
+<!-- ref:5e27 -->
+
+Was `Assets/Scripts/Net/RelayClient.cs:15-35`.
+
+Host-side connection to the relay. Creates the room, receives phone input,
+and broadcasts match state back out.
+
+MUST live in the Bootstrap scene as a persistent manager. If it is created
+per-scene instead, the socket is torn down on every transition and every
+phone bounces back to the join screen — a lifecycle bug that presents as a
+networking one.
+
+DEVIATION FROM PLAN: uses System.Net.WebSockets.ClientWebSocket rather than
+the NativeWebSocket package the plan named. ClientWebSocket ships with .NET,
+so there is no external dependency to vendor, and it works fine for a native
+desktop host. The tradeoff is that it does NOT work in WebGL builds — which
+is acceptable because the plan already rejected WebGL as a target. Swap to
+NativeWebSocket if a browser build ever becomes a requirement.
+
+ClientWebSocket is thread-affine for sends, so all sends funnel through a
+semaphore, and all received messages are marshalled onto the main thread via
+a queue drained in Update — Unity APIs cannot be touched from the socket task.
+
+## Traps
+
+**`LocalServices` reuses any relay already listening.** Stopping and restarting Play does *not*
+pick up a relay code change if the previous relay outlived its session. Two test cycles have been
+spent measuring stale code. Kill the `node server.js` process first; `relay/diagnose-hotspot.js`
+step 4 is the cheapest proof of which code is actually running.
+
+**A room outlives its host by 60 seconds,** so `RelayClient`'s retry delay is capped low
+(`MaxRetryDelay = 4s`) to reclaim it inside the window rather than after it.
+
+**A single connect attempt is bounded at 8s.** Without it the client wedges permanently: a TCP
+connect against an address that silently drops packets never returns on its own.
+
+### `Assets/Scripts/Net/Messages.cs`
+
+#### How far the phones on the hotspot have got through joining — see relay/funnel.js and docs/plans/join-failur...
+<!-- ref:6112 -->
+
+Was `Assets/Scripts/Net/Messages.cs:68-81`.
+
+How far the phones on the hotspot have got through joining — see relay/funnel.js and
+docs/plans/join-failure-reduction.md. Sent unprompted whenever the numbers change, and
+once on ROOM_CREATED so a host that just restarted is not blind until they next do.
+
+A count of devices, never a roster of people: the relay can only key this by IP, so
+two phones behind one address count once and a phone that changes address counts
+twice. Fine for deciding what the TV says; never use it as a player count — that is
+TurnManager.Players, which is authoritative.
+
+The counts are cumulative, so <c>associated &gt;= pageOpen &gt;= playing</c> always
+holds and the interesting numbers are the differences between them.
+
+### `Assets/Scripts/Net/RelayClient.cs`
+
+#### How long a single connect attempt may take before it is abandoned.
+<!-- ref:a5fc -->
+
+Was `Assets/Scripts/Net/RelayClient.cs:164-174`.
+
+How long a single connect attempt may take before it is abandoned.
+
+Without this the client can wedge permanently. A TCP connect against a
+half-torn-down network — Wi-Fi toggled off and back on, a laptop waking, a
+relay being restarted — can sit unresolved far longer than any useful
+retry interval, and while it does, `_connecting` stays true and Update
+refuses to start another attempt. The symptom is a host that never comes
+back even though the network is fine again.
+
+### `relay/diagnose-hotspot.js`
+
+#### Why a host-side PASS is hedged
+<!-- ref:acb3 -->
+
+Was `relay/diagnose-hotspot.js:194-203`.
+
+Deliberately hedged. This request originates on the host and is destined for the host's
+own address, so Windows does not evaluate it against the inbound firewall rules the way
+it evaluates a packet arriving over the wireless interface from a phone. A PASS here
+proves the socket is listening and answering; it does NOT prove a guest can reach it.
+
+Nor does opening the URL on the phone's browser, which is what this used to advise. On
+Android a Wi-Fi network flagged "no internet" is not the default network, so the
+browser can route to cellular and time out while the platform's own probe — bound to
+the Wi-Fi — reaches :80 fine. Only the host's connection table settles it, which is
+what watch-guests.js prints.
+
+## Verification
+
+```bash
+cd relay && npm test
+```
+
+55 tests across `test-relay.js`, `test-dns.js`, `test-funnel.js`, `test-probe.js`. With Play
+running, expect 54 pass / 1 skip — the game's relay owns `:80`, so `test-probe.js` skips that
+case by design.
+
+`node relay/diagnose-hotspot.js` walks a phone's whole chain against a live game. It requires Play
+mode with the hotspot up, and fails fast and says so otherwise. `npm run loadtest` for throughput.
