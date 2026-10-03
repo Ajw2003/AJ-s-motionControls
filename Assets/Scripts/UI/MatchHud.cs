@@ -8,25 +8,8 @@ using UnityEngine;
 
 namespace Ui
 {
-    /// <summary>
-    /// The in-match TV readout: the current or last throw, top-centre, and a slim leaderboard
-    /// of every player's last throw and total, top-left.
-    /// </summary>
-    /// <remarks>
-    /// IMGUI, like every other TV screen, by the owner's call on 2026-09-30: usable now, ported
-    /// with the rest when docs/plans/presentation-and-ui.md D3 (UI Toolkit) happens. This is a
-    /// first cut of D4's elements 1 and 3 — the counter and the scoreboard strip — without the
-    /// punch-scaling and fly-in, which need a framework that animates.
-    ///
-    /// Numbers only, no words: "124m   12sk   1350pts". The format lives in <see cref="Separator"/>
-    /// and the two Format methods, so changing how it reads is one place.
-    ///
-    /// Visible only while Playing. The lobby and the mid-match re-pick are the shore's screen,
-    /// and Results has its own.
-    ///
-    /// Reads, never computes: skips and distance come off the throw's own events and points
-    /// off ScoreManager, which the project's scoring rule says is the only owner of points.
-    /// </remarks>
+    // IMGUI by the owner's call on 2026-09-30; numbers only, visible only while Playing, reading events
+    // and ScoreManager and never computing points. doc-ref 46c4 docs/4-systems/Presentation.md
     public class MatchHud : MonoBehaviour
     {
         internal const string Separator = "   ";

@@ -6,33 +6,8 @@ using UnityEngine;
 
 namespace Verification
 {
-    /// <summary>
-    /// Prints what the current tuning actually does, by running the real solver.
-    /// </summary>
-    /// <remarks>
-    /// Rewritten for the throw-driven skip model
-    /// (docs/plans/Plan-ThrowDrivenSkipModel.md) — there is one tuning per rock now, not
-    /// two sets to compare, so this sweeps raw swing speed and all three phone axes
-    /// (pitch, roll, yaw via roll-induced sideslip) through <see cref="SkipPhysics"/>
-    /// directly against the catalog's own assets. There is nothing to keep in sync, and
-    /// no way for the measured curve to disagree with the game.
-    ///
-    /// <b>The acceptance criterion for this whole change:</b> throw speed must move skip
-    /// count more than any per-rock multiplier does. Concretely, doubling swing speed
-    /// should beat driving a multiplier to its bound — see the "speed vs multiplier"
-    /// check in <see cref="Verdict"/>, which is the number this report exists to answer.
-    ///
-    /// Bounces are counted from <see cref="SkipPhysics.Step"/>'s own <c>Bounced</c> flag
-    /// rather than reconstructed by comparing consecutive path heights against WaterY.
-    /// The old position-comparison approach had a contact-detector off-by-one
-    /// (docs/Reference-SkipTuning.md) that a face angle of exactly 0 could trigger — and
-    /// a face angle of 0 is now the ordinary case, since pitch comes straight off the
-    /// phone's tilt rather than being biased toward an authored optimum. Reading the
-    /// solver's own signal removes the epsilon comparison entirely.
-    ///
-    /// With no catalog (or an empty one) this falls back to a single-rock report against
-    /// Resources/SkipTuning, which is what the game itself falls back to as well.
-    /// </remarks>
+    // Sweeps swing speed and all three phone axes through the real solver; the acceptance check is that
+    // speed beats any rock multiplier. doc-ref 15bf docs/4-systems/Verification.md
     public static class SkipCurve
     {
         /// <summary>
@@ -300,17 +275,8 @@ namespace Verification
             public bool HasTerminated;
         }
 
-        /// <summary>
-        /// Run one throw through the real solver and measure the shape of the result.
-        /// </summary>
-        /// <remarks>
-        /// Builds the attitude directly in Unity space — SkipPhysics.CreateLaunch takes
-        /// attitude already converted, and PhoneAttitude.ToUnity's device-frame round
-        /// trip has nothing to add here. Pitch comes from the forward vector's own
-        /// elevation; roll is then applied as a rotation about that same forward axis, so
-        /// it changes bank without touching pitch — the same "one rotated vector" property
-        /// SkipPhysics.Step relies on.
-        /// </remarks>
+        // The attitude is built directly in Unity space, with roll applied about the forward axis so it
+        // never changes pitch. doc-ref c7c2 docs/4-systems/Verification.md
         private static Shape Measure(float swingSpeed, float pitchDeg, float rollDeg, SkipConstants constants,
             SkipTuning tuning, float spinRate = ReferenceSpinRate)
         {

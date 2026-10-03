@@ -70,6 +70,8 @@ have already cost someone a day.
 | Hosting and certificates | [`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) | The hotspot, the secure context, the certificate, offline play |
 | Rock catalog and tuning | [`4-systems/RockCatalogAndTuning.md`](../4-systems/RockCatalogAndTuning.md) | The six rocks, the rock-vs-global split, selection |
 | Audio | [`4-systems/Audio.md`](../4-systems/Audio.md) | SoundId, AudioBank, procedural clips, AudioManager |
+| Presentation | [`4-systems/Presentation.md`](../4-systems/Presentation.md) | The aim ghost and arc, scenery, materials and render queues, trail, ripples, TV screens |
+| Verification | [`4-systems/Verification.md`](../4-systems/Verification.md) | The in-editor checks, scene capture, throw telemetry, EditMode tests |
 
 ---
 

@@ -3,17 +3,8 @@ using UnityEngine;
 
 namespace Ui
 {
-    /// <summary>
-    /// Host settings panel: Random rocks, Tuning set, Rounds per match — see
-    /// docs/plans/rock-choosing-system.md Part 5. Renders <see cref="MatchSettings.All"/> in a
-    /// loop, so a fourth setting is one entry there, not a screen edit.
-    /// </summary>
-    /// <remarks>
-    /// Scaffolding in the same spirit as JoinScreen/ResultsScreen — OnGUI, no Canvas, no
-    /// prefab. Reachable whenever <see cref="MatchSettings.CanEdit"/> is true (Lobby, Choosing,
-    /// Results — anything but Playing), so it opens both from the main lobby before a match and
-    /// from the existing mid-match re-pick pause without any new phase logic.
-    /// </remarks>
+    // Renders MatchSettings.All in a loop and is reachable whenever CanEdit is true, so a new setting
+    // is one entry. doc-ref b8ad docs/4-systems/Presentation.md
     public class MatchSettingsScreen : MonoBehaviour
     {
         [SerializeField] private KeyCode toggleKey = KeyCode.F4;

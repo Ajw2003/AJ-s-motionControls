@@ -8,42 +8,15 @@ using UnityEngine;
 
 namespace EditorTools
 {
-    /// <summary>
-    /// Points Resources/AudioBank.asset at whatever clips are sitting in Assets/Audio,
-    /// matched by filename prefix.
-    /// </summary>
-    /// <remarks>
-    /// Exists because the alternative is dragging twenty-two clips into an inspector by
-    /// hand and doing it again every time the generator runs — which is the kind of manual
-    /// step that silently stops being done, leaving the bank pointing at a stale set while
-    /// the files on disk have moved on.
-    ///
-    /// The convention is the whole contract: a clip named skip_01.wav joins the Skip entry's
-    /// Variants, skip_02.wav follows it, and the numbering decides the round-robin order.
-    /// Anything with an unrecognised prefix is reported rather than ignored, so a typo in a
-    /// filename is visible instead of just producing a sound that never plays.
-    ///
-    /// Existing tuning is preserved. Rebuild only refreshes Variants, so the pitch ladder
-    /// and volumes survive a regeneration — that is the point, since those are what M3 is
-    /// for tuning. Reset Tuning is the deliberate way back to the defaults below.
-    /// </remarks>
+    // Points AudioBank at clips in Assets/Audio by filename prefix; unrecognised prefixes are reported,
+    // and Rebuild keeps the existing tuning. doc-ref ac1f docs/4-systems/Audio.md
     public static class AudioBankBuilder
     {
         private const string ClipFolder = "Assets/Audio";
         private const string BankPath = "Assets/Resources/AudioBank.asset";
 
-        /// <summary>
-        /// Filename prefix, the sound it feeds, and how that sound behaves by default.
-        /// </summary>
-        /// <remarks>
-        /// The defaults are the interesting part, and the two that matter most are on Skip:
-        /// one semitone per step and a cap of fourteen. The cap is not a nicety — semitones
-        /// compound, so an uncapped ladder puts skip thirty more than two octaves above skip
-        /// zero, which is a dog whistle rather than a climax.
-        ///
-        /// Spatial is off for anything that has no place in the world. A fanfare emitted
-        /// from wherever the last stone sank would drift around the lake between matches.
-        /// </remarks>
+        // Per-prefix defaults: Skip's pitch ladder is capped at fourteen steps because semitones
+        // compound, and world-less sounds are non-spatial. doc-ref 81e4 docs/4-systems/Audio.md
         private readonly struct Preset
         {
             public readonly string Prefix;

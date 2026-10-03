@@ -2,28 +2,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// One rock's character: exactly three bounded multipliers plus its display name.
-    /// </summary>
-    /// <remarks>
-    /// Used to be 25 fields, most of them fighting each other, and the throw's own power
-    /// barely moved the result next to a one-point tuning edit — see
-    /// docs/plans/Plan-ThrowDrivenSkipModel.md for the numbers. The model now derives energy
-    /// loss from bounce geometry (incidence, face-vs-velocity) rather than an authored
-    /// retention constant, so there is nothing left here to author except how strongly THIS
-    /// rock expresses that geometry: how much it spins, how high it hops, how far it carries.
-    ///
-    /// Everything else — gravity, water height, the forgiveness bands, the speed scale, and
-    /// above all <see cref="SkipConstants.EnergyLoss"/>, the single dial for how many skips a
-    /// good throw gets — is global, on <see cref="SkipConstants"/>, because it answers "how
-    /// does this game feel" rather than "what is this rock," and a rock should not be able to
-    /// quietly become easier instead of stronger.
-    ///
-    /// All three multipliers currently ship at 1.0 on every rock, on purpose: the physics is
-    /// being evaluated bare first, so that every difference between two throws is the throw.
-    /// Rock character gets authored once that reads well — see
-    /// docs/plans/Plan-SkipEnergyInvariant.md.
-    /// </remarks>
+    // SkipTuning is three bounded multipliers; everything global lives on SkipConstants, and all rocks
+    // ship at 1.0 on purpose. doc-ref 36fa docs/4-systems/SkipPhysics.md
     [CreateAssetMenu(menuName = "RockSkipping/Skip Tuning", fileName = "SkipTuning")]
     public class SkipTuning : ScriptableObject
     {

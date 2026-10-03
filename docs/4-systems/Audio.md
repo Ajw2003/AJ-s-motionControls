@@ -212,3 +212,40 @@ the same reason.
 
 Position is the other. One 2D source plays a skip at 5 m and a skip at 120 m
 identically, and a run that should travel away from you reads flat.
+
+### `Assets/Scripts/Editor/AudioBankBuilder.cs` — Points AudioBank at clips in Assets/Audio by filename prefix
+<!-- ref:ac1f -->
+
+Was `Assets/Scripts/Editor/AudioBankBuilder.cs:11-29`.
+
+Points Resources/AudioBank.asset at whatever clips are sitting in Assets/Audio,
+matched by filename prefix.
+
+Exists because the alternative is dragging twenty-two clips into an inspector by
+hand and doing it again every time the generator runs — which is the kind of manual
+step that silently stops being done, leaving the bank pointing at a stale set while
+the files on disk have moved on.
+
+The convention is the whole contract: a clip named skip_01.wav joins the Skip entry's
+Variants, skip_02.wav follows it, and the numbering decides the round-robin order.
+Anything with an unrecognised prefix is reported rather than ignored, so a typo in a
+filename is visible instead of just producing a sound that never plays.
+
+Existing tuning is preserved. Rebuild only refreshes Variants, so the pitch ladder
+and volumes survive a regeneration — that is the point, since those are what M3 is
+for tuning. Reset Tuning is the deliberate way back to the defaults below.
+
+### `Assets/Scripts/Editor/AudioBankBuilder.cs` — Per-prefix defaults: Skip's pitch ladder is capped at fourteen steps because semitones compound
+<!-- ref:81e4 -->
+
+Was `Assets/Scripts/Editor/AudioBankBuilder.cs:35-46`.
+
+Filename prefix, the sound it feeds, and how that sound behaves by default.
+
+The defaults are the interesting part, and the two that matter most are on Skip:
+one semitone per step and a cap of fourteen. The cap is not a nicety — semitones
+compound, so an uncapped ladder puts skip thirty more than two octaves above skip
+zero, which is a dog whistle rather than a climax.
+
+Spatial is off for anything that has no place in the world. A fanfare emitted
+from wherever the last stone sank would drift around the lake between matches.

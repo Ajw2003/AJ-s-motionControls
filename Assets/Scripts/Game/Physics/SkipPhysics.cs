@@ -51,18 +51,8 @@ namespace Game
         /// </summary>
         public float Spin;
 
-        /// <summary>
-        /// Accumulated attitude drift, degrees. A real stone skips because spin holds its
-        /// face steady through the slap; without spin it tumbles, the attack angle
-        /// randomises and the run dies in a bounce or two. This is that: every bounce adds
-        /// drift in proportion to how UNstabilised the stone is, and the total is charged
-        /// against the pitch and roll errors, so quality decays over a run at a rate spin
-        /// controls.
-        ///
-        /// It is also what stops attitude being frozen at launch. Before this existed,
-        /// quality was computed once from the release pose and never changed, so nothing
-        /// about a run ever degraded.
-        /// </summary>
+        // Accumulated attitude drift: unstabilised bounces add to it and it is charged against pitch
+        // and roll, so quality decays over a run. doc-ref 57e0 docs/4-systems/SkipPhysics.md
         public float WanderDeg;
 
         public int SkipCount;
@@ -78,38 +68,8 @@ namespace Game
         public float ImpactSpeed;
     }
 
-    /// <summary>
-    /// Custom bounce solver. Deliberately not Unity rigidbodies: skipping needs exact
-    /// per-bounce control over attitude and energy loss, and the aim preview needs to
-    /// run the same maths headlessly to draw its arc.
-    /// </summary>
-    /// <remarks>
-    /// PURE. Step takes state in and returns state out; it mutates nothing, touches no
-    /// scene, and publishes no events.
-    ///
-    /// That last part is load-bearing. The aim preview runs Step hundreds of times per
-    /// frame for a throw that has not happened. If Step published SkipOccurredEvent,
-    /// the preview would score imaginary throws and the scoreboard would climb while a
-    /// player merely aimed. RockController inspects the returned SkipStep and publishes
-    /// — and only when driving a real throw. Audio, VFX and camera shake follow the
-    /// same rule: observable effects belong to the caller, never in here.
-    ///
-    /// The model: the throw drives, the rock modulates. Speed comes straight from the
-    /// phone's swing (SkipConstants.SpeedScale converts hand m/s to stone m/s); energy
-    /// loss per bounce falls out of how steeply the stone hits and how far its face is
-    /// from level, not from an authored retention constant; and each rock only scales
-    /// that geometry with three bounded multipliers. See
-    /// docs/plans/Plan-ThrowDrivenSkipModel.md for the full reasoning.
-    ///
-    /// A bounce is ONE ENERGY BUDGET: it takes a loss, then splits what survives between
-    /// forward and upward motion. It never synthesises lift out of horizontal speed. That
-    /// distinction is load-bearing — the earlier version did synthesise it, and stones
-    /// gained energy every bounce and skipped for minutes on end. Because the loss is
-    /// floored at SkipConstants.MinLoss and the split preserves magnitude exactly,
-    /// outgoing speed is always strictly less than incoming speed, no matter what any
-    /// tuning field is set to. Keep it that way: any future change here should be checked
-    /// against that one invariant first. See docs/plans/Plan-SkipEnergyInvariant.md.
-    /// </remarks>
+    // Step must stay pure because the preview runs it constantly, and each bounce is one energy budget
+    // so outgoing speed is always below incoming. doc-ref 90fc docs/4-systems/SkipPhysics.md
     public static class SkipPhysics
     {
         /// <summary>
@@ -266,15 +226,8 @@ namespace Game
                 return result;
             }
 
-            // Three axes, three bands, three qualities, multiplied together. Each is a
-            // gradient, not a cliff — see BandQuality — and past the pitch band the falloff
-            // is asymmetric: too shallow fades gradually (a survivable skim), too steep
-            // collapses fast (an abrupt plow-in). That asymmetry is the whole reason pitch
-            // has two falloff constants instead of one.
-            //
-            // WanderDeg is charged against pitch and roll here: it is the tumble a stone
-            // picks up when spin is not holding it steady, so a poorly spun run degrades
-            // bounce by bounce instead of repeating one frozen launch pose forever.
+            // Quality is the product of three gradient bands; the pitch falloff is asymmetric, and
+            // WanderDeg is charged against pitch and roll. doc-ref a1dd docs/4-systems/SkipPhysics.md
             var pitchError = next.FaceAngleDeg - OptimalAttackDeg;
             var pitchBand = EffectiveBand(constants.ForgivenessPitchDeg, next.Spin, constants.SpinToleranceScale);
             var pitchFalloff = pitchError >= 0f ? constants.PitchSteepFalloffDeg : constants.PitchShallowFalloffDeg;
@@ -294,16 +247,8 @@ namespace Game
 
             var quality = pitchQuality * rollQuality * yawQuality;
 
-            // ── ONE ENERGY BUDGET ────────────────────────────────────────────────────────
-            // Take the loss first, then split what SURVIVES between forward and upward.
-            // Lift is a share of the post-loss budget, never a quantity synthesised from
-            // horizontal speed — that was the bug this model replaces, where a stone
-            // arriving with vy ~ 0 left with vy = 0.09 * vh and runs never ended.
-            //
-            // The invariant, and it is structural rather than tuned: lossFraction is
-            // floored at MinLoss > 0, and the split preserves magnitude exactly
-            // (vy^2 + vh^2 = speedAfter^2), so outgoing speed is ALWAYS strictly less than
-            // incoming speed — whatever quality, roll, or the rock's multipliers do.
+            // Take the loss first, then split what survives; lift is never synthesised from horizontal speed, and MinLoss
+            // above zero keeps speed strictly falling. doc-ref d8ee docs/4-systems/SkipPhysics.md
             var incidenceFactor = Mathf.Clamp01(incidenceDeg / constants.MaxIncidenceDeg);
             var lossShape = Mathf.Lerp(1f, WorstQualityLossScale, 1f - quality)
                             * Mathf.Lerp(ShallowIncidenceLossScale, SteepIncidenceLossScale, incidenceFactor)

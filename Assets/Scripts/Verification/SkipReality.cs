@@ -6,28 +6,8 @@ using UnityEngine;
 
 namespace Verification
 {
-    /// <summary>
-    /// The R1-R10 reality check: drives <see cref="DiscContact"/>/<see cref="RigidDisc"/>
-    /// directly against <see cref="ReferenceStone"/> and compares the result to the
-    /// published numbers in docs/Findings-RealSkipPhysics.md §3. Mirrors
-    /// <see cref="SkipCurve"/>'s Run()/Build()/ResultPath structure, writing
-    /// skip-reality.txt at the repo root.
-    /// </summary>
-    /// <remarks>
-    /// This harness is deliberately independent of <c>SkipConstants</c>/<c>SkipTuning</c>/
-    /// <c>SkipPhysics</c> — docs/plans/real-skip-physics.md is explicit that Phase 1's
-    /// harness "drives DiscContact/RigidDisc directly, not through SkipPhysics", precisely
-    /// so this file can exist without the gameplay solver changing underneath it. Every
-    /// constant a real throw would read off SkipConstants/SkipTuning is instead read off
-    /// <see cref="ReferenceStone"/> or defined locally below, with a citation.
-    ///
-    /// <b>Tolerances are loose on purpose.</b> docs/Findings-RealSkipPhysics.md §5 item 3:
-    /// "[B] assumes tilt θ is constant through a collision and derives stability
-    /// separately. We integrate attitude live instead, so R1-R7 test a STRONGER model than
-    /// the one that produced these closed forms — expect agreement in order of magnitude
-    /// and in trend, not to three digits." Every check below states its tolerance and why,
-    /// rather than asserting the closed-form number to full precision.
-    /// </remarks>
+    // Drives DiscContact and RigidDisc against ReferenceStone independent of SkipConstants; tolerances
+    // are loose on purpose. doc-ref 72e0 docs/4-systems/Verification.md
     public static class SkipReality
     {
         public static string ResultPath =>
@@ -324,21 +304,8 @@ namespace Verification
                 report.Append(angleTable);
                 report.AppendLine();
 
-                // Loose band: the closed forms this model is a STRONGER version of only
-                // claim "~20 deg" and [N] Fig. 4 shows a further ~15% wander with incidence
-                // — a 10-30 deg band is generous but should still catch a force law that
-                // is qualitatively wrong (e.g. reverted to the constant-coefficient V² form,
-                // which has no interior optimum at all).
-                //
-                // EXPECT THIS NEAR THE TOP OF THE BAND, and do not "fix" it by widening.
-                // tools/physics/verify-disc-contact.py runs the same force law in a simpler
-                // 2-D, fixed-attitude, spinless form and measures the optimum at 30 deg
-                // (incidence 10 and 15 deg) and 25 deg (incidence 20 deg) — so a reading of
-                // 28-31 here is this model agreeing with that one, not a failure. It sits
-                // above the published 20 deg because [N] fits an extra inflection parameter
-                // (θ̂ = 2.6) that we do not; see docs/Findings-RealSkipPhysics.md §1.4.
-                // A reading below ~15 deg or a monotonic sweep with no interior minimum is
-                // the real failure this check exists to catch.
+                // The tilt optimum should sit near the top of the 10 to 30 degree band; do not widen
+                // the band to make it pass. doc-ref 88b3 docs/4-systems/Verification.md
                 Check("magic angle lands in a shallow band around 20 deg",
                     bestAngle >= 10f && bestAngle <= 30f,
                     $"measured minimum at {bestAngle:F1} deg (critical speed {bestSpeed:F2} m/s), want 10-30 deg");

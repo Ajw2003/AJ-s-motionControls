@@ -7,30 +7,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// The six stones on the shore in the lobby, and the per-player pointer that picks
-    /// one by heading alone. See docs/plans/rock-choosing-system.md Part 3.
-    /// </summary>
-    /// <remarks>
-    /// Active while <see cref="TurnManager.IsChoosingPhase"/> is true — Lobby (a fresh
-    /// match) or Choosing (a mid-match re-pick TurnManager can trigger periodically or on
-    /// demand). This is the other half of the fix the plan's constraints call for:
-    /// AimPreview only reacts to AIM while Playing, this only reacts during a choosing
-    /// phase, so the two never fight over the same frame. Built by AimPreview alongside
-    /// the placeholder water, sharing its throw origin and camera framing — see
-    /// <see cref="Bind"/>.
-    ///
-    /// Yaw only, on purpose. A player thinking about their choice naturally lets the phone
-    /// drop, and a 2-D pick would lose their selection when they did. Absolute compass
-    /// heading is deliberately not used anywhere in this project (it disagrees across
-    /// platforms), so the fan is centred on wherever a player happened to be pointing when
-    /// they tapped to calibrate — not on the TV. See the plan's "honest limitation" note.
-    ///
-    /// A PICK_ROCK carries no rock id (see PickRockMessage) — it means "confirm whichever
-    /// stone this player is currently pointing at", which only this class can answer. It
-    /// is the one thing in the rock-choosing feature that resolves that event into an
-    /// actual RockSelection.Pick call.
-    /// </remarks>
+    // Active only in a choosing phase and yaw-only on purpose; PICK_ROCK carries no id, so this class
+    // resolves which stone a player points at. doc-ref 9fa8 docs/4-systems/RockCatalogAndTuning.md
     public class ShoreRocks : MonoBehaviour
     {
         private RockCatalog _catalog;
@@ -387,23 +365,8 @@ namespace Game
 
         // ------------------------------------------------------------------ pointer markers
 
-        /// <summary>
-        /// A player's dot, in the colour that player owns.
-        /// </summary>
-        /// <remarks>
-        /// This used to take an ordinal — <c>_pointers.Count</c> at the call site — and mix
-        /// it into a hash of the player id to index a palette held here. Every phase change
-        /// clears <c>_pointers</c> (see OnMatchPhaseChanged), so that ordinal was really
-        /// "how many other people had aimed before you, this round": a player's colour moved
-        /// between rounds, and hash-plus-ordinal collided freely inside eight slots. Colour
-        /// is now owned by Managers.PlayerColours, keyed by identity alone, and the palette
-        /// itself lives on the PlayerColourPalette asset where it can be edited.
-        /// </remarks>
-        /// <summary>
-        /// A claimed stone, in its owner's colour. The blend itself lives on
-        /// PlayerColours.StoneColourFor, shared with the thrown stone and the aim ghost so
-        /// the stone a player picks looks like the stone they throw.
-        /// </summary>
+        // Pointer and stone colours come from PlayerColours keyed by identity alone, replacing the ordinal-hash palette
+        // that moved colours between rounds. doc-ref b845 docs/4-systems/RockCatalogAndTuning.md
         private Color ConfirmedColourFor(string playerId, Color baseColour) =>
             PlayerColours.HasInstance
                 ? PlayerColours.Instance.StoneColourFor(playerId, baseColour)
@@ -445,18 +408,8 @@ namespace Game
             DrawConfirmations();
         }
 
-        /// <summary>
-        /// The rock's name over its description, as one block whose bottom sits just above
-        /// the rock's actual top, and whose description wraps to the gap between this rock and
-        /// its nearest neighbour on screen.
-        /// </summary>
-        /// <remarks>
-        /// Anchored to renderer bounds rather than a fixed height above the centre: the old
-        /// +0.8 m / +0.5 m offsets were set for 0.75-scale stones, and at x2.47 they put the
-        /// text inside the rock. Wrapping to the neighbour gap is what lets the description be
-        /// full size without running into the next one, and without the old fixed 160 px box
-        /// that cut most descriptions off mid-sentence (issue #41).
-        /// </remarks>
+        // The label is anchored to renderer bounds and wraps to the neighbour gap, since fixed offsets
+        // sat inside the x2.47 stones (issue #41). doc-ref 732a docs/4-systems/RockCatalogAndTuning.md
         private void DrawStoneLabel(int index)
         {
             var stone = _stones[index];

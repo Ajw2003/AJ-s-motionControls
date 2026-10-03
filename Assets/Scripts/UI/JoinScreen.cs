@@ -11,20 +11,8 @@ using UnityEngine.Networking;
 // `UI.Something` reference elsewhere an ambiguous one.
 namespace Ui
 {
-    /// <summary>
-    /// The screen guests actually look at: how to join, and the code to type. Shows the
-    /// launch progress first, so a slow tunnel reads as "working" rather than "broken".
-    /// </summary>
-    /// <remarks>
-    /// Scaffolding in the same spirit as RelayDebugHud — OnGUI, no Canvas, no prefab, so
-    /// it works in whatever scene is loaded. Replace with authored UI when the real Lobby
-    /// scene exists; the QR fetch and the join-URL construction are the parts worth
-    /// keeping.
-    ///
-    /// The QR matrix comes from the relay rather than being generated here. The relay is
-    /// already a required running process and already has a QR library, so this stays a
-    /// texture blit instead of a Reed-Solomon implementation.
-    /// </remarks>
+    // OnGUI scaffolding; the QR matrix comes from the relay, so this stays a texture blit.
+    // doc-ref 17f0 docs/4-systems/Presentation.md
     public class JoinScreen : MonoBehaviour
     {
         [SerializeField] private bool isVisible = true;

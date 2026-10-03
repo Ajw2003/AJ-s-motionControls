@@ -7,20 +7,8 @@ using UnityEngine;
 
 namespace Ui
 {
-    /// <summary>
-    /// Final standings at the end of a match, with a prompt to play again.
-    /// </summary>
-    /// <remarks>
-    /// Scaffolding in the same spirit as JoinScreen — OnGUI, no Canvas, no prefab — so it
-    /// works in whatever scene is loaded. PLAN.md calls for a dedicated Results scene;
-    /// that transition is deliberately not wired yet, for the same reason Bootstrap does
-    /// not auto-load the Lobby: the scene is empty, so loading it would look like the game
-    /// had closed rather than like a results screen.
-    ///
-    /// Reads standings straight off TurnManager, so there is one source of truth on
-    /// screen. There used to be a MatchEndedEvent carrying a duplicate snapshot; nothing
-    /// ever subscribed to it, so it was deleted rather than left as a second answer.
-    /// </remarks>
+    // Reads standings straight off TurnManager; the Results scene transition is deliberately not wired
+    // yet. doc-ref ef90 docs/4-systems/Presentation.md
     public class ResultsScreen : MonoBehaviour
     {
         [SerializeField] private KeyCode toggleKey = KeyCode.F3;

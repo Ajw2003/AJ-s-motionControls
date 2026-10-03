@@ -2,25 +2,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Every number that shapes the ribbon behind a stone. One asset, edited in the
-    /// inspector, no recompile.
-    /// </summary>
-    /// <remarks>
-    /// A ScriptableObject at Resources/TrailTuning for the same reason SkipTuning is one,
-    /// and it is not a style preference. The rock is built at runtime by
-    /// RockLauncher.CreateRockObject, so anything holding trail numbers as [SerializeField]
-    /// on a component would sit at its C# field initializer forever — the exact trap
-    /// AimPreview.Awake documents having already been caught by once, where "the whole game
-    /// ran on C# field initializers and the numbers were only reachable by recompiling."
-    ///
-    /// Speed-derived values are stored as FRACTIONS of SkipConstants.ReferenceSpeed rather
-    /// than absolutes. WaterRipples carries the note explaining why: its impact thresholds
-    /// were hardcoded at 4 and 25 against a fixed MaxSpeed of 26, so raising the launch
-    /// speed clamped every impact to full strength and the ripple stopped responding to
-    /// anything at all. A trail tinted by absolute speed fails the same way and just as
-    /// quietly.
-    /// </remarks>
+    // Trail numbers live in a Resources asset, and speed thresholds are fractions of ReferenceSpeed so
+    // retuning launch speed cannot flatten them. doc-ref 07ed docs/4-systems/Presentation.md
     [CreateAssetMenu(menuName = "RockSkipping/Trail Tuning", fileName = "TrailTuning")]
     public class TrailTuning : ScriptableObject
     {

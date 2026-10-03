@@ -106,21 +106,8 @@ namespace Verification
             Finish();
         }
 
-        /// <summary>
-        /// The phone-space to Unity-space basis change, checked on all three axes.
-        /// </summary>
-        /// <remarks>
-        /// Not an event-system test, and it lives here anyway because this is the only
-        /// headless C# harness in the project and the alternative is finding out on a
-        /// phone. A sign error in PhoneAttitude.ToUnity does not throw — it silently
-        /// mirrors one axis, so the stone tilts the wrong way and everything else looks
-        /// fine. That is the bug the whole rotation rework exists to remove, so it is
-        /// worth a test that runs without hardware.
-        ///
-        /// The device frame is right-handed: x right across the screen, y toward the top
-        /// edge, z out through the glass. The reference pose is the phone flat, screen up,
-        /// top edge pointing at the TV.
-        /// </remarks>
+        // Checks PhoneAttitude.ToUnity on all three axes headlessly, because a sign error silently
+        // mirrors one axis. doc-ref 5eae docs/4-systems/Verification.md
         private void CheckPhoneAttitude()
         {
             // A rotation of `deg` about one of the device's own axes, built the way the

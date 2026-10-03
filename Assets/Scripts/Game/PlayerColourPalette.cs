@@ -2,29 +2,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// The colours players can be, and the rules the host applies to a colour a phone
-    /// picks for itself.
-    /// </summary>
-    /// <remarks>
-    /// A ScriptableObject rather than a component, deliberately, and for the reason
-    /// SkipConstants is one: Bootstrap builds every manager with AddComponent, so a
-    /// [SerializeField] on one has never been through an inspector and sits at its C#
-    /// field initializer forever. An asset under Resources/ is the only shape of tuning
-    /// data in this project that a human can actually edit — see the same note on
-    /// AimFeedbackTuning and RockSelectTuning, which are components precisely because
-    /// they gave up on that.
-    ///
-    /// The swatches used to be a private static Color[] inside ShoreRocks, indexed by
-    /// <c>hash(playerId) + how many pointers existed when this one was created</c>. That
-    /// count resets on every phase change, so a player's colour changed between rounds and
-    /// two players collided freely — both complaints in notes.txt. Colour is now owned by
-    /// Managers.PlayerColours and keyed by player identity alone.
-    ///
-    /// Everything here is public on purpose: the pointer dot is the first thing to read
-    /// these, not the last. A player-coloured stone, scoreboard row or trail should pull
-    /// from this asset rather than introducing a second palette.
-    /// </remarks>
+    // The palette is a Resources asset, not a component, so a human can edit it; colour is keyed by
+    // player identity alone through PlayerColours. doc-ref 6272 docs/4-systems/Presentation.md
     [CreateAssetMenu(menuName = "RockSkipping/Player Colour Palette", fileName = "PlayerColourPalette")]
     public class PlayerColourPalette : ScriptableObject
     {

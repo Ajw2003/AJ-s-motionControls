@@ -4,24 +4,8 @@ using UnityEngine;
 
 namespace Verification
 {
-    /// <summary>
-    /// Plays the game headlessly and writes a PNG of what the TV would show.
-    /// </summary>
-    /// <remarks>
-    /// Exists so a change to the LOOK of the game can be checked without a human pressing
-    /// Play and describing the result. Four rounds of art changes were shipped blind and
-    /// every one was wrong in a new way; a screenshot the author can actually look at is
-    /// the difference between tuning and guessing.
-    ///
-    /// Same shape as <see cref="EventSystemVerification"/>: driven headlessly by an editor
-    /// entry point (<c>SceneCaptureRunner.Capture</c>), writes a file at the project root,
-    /// and the caller polls for that file rather than waiting on the process — exiting the
-    /// editor from the domain reload after play mode is unreliable in batchmode.
-    ///
-    /// <b>Must run WITHOUT <c>-nographics</c>.</b> That flag is right for the event
-    /// verification, which touches no renderer, and fatal here: with no graphics device
-    /// there is nothing to read pixels back from and the capture is a blank image.
-    /// </remarks>
+    // Capture must run without -nographics or the image is blank; the caller polls for the output file,
+    // as with EventSystemVerification. doc-ref ca6e docs/4-systems/Verification.md
     public class SceneCapture : MonoBehaviour
     {
         /// <summary>Where the PNG lands. Project root, beside verification-result.txt.</summary>

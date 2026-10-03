@@ -23,6 +23,8 @@ assume you already have.
 | Hosting and certificates | [`HostingAndCertificates.md`](HostingAndCertificates.md) | `Assets/Scripts/Net/`, `deploy/`, `hotspot/` |
 | Rock catalog and tuning | [`RockCatalogAndTuning.md`](RockCatalogAndTuning.md) | `Assets/Scripts/Game/Rock*.cs`, `Assets/Rocks/` |
 | Audio | [`Audio.md`](Audio.md) | `Assets/Scripts/Audio/`, `Managers/AudioManager.cs` |
+| Presentation | [`Presentation.md`](Presentation.md) | `Assets/Scripts/Game/` (aim preview, scenery, materials, trail, ripples), `Assets/Scripts/UI/` |
+| Verification | [`Verification.md`](Verification.md) | `Assets/Scripts/Verification/`, `Assets/Tests/EditMode/`, `Assets/Editor/SceneCaptureRunner.cs` |
 
 ## Why these seven and not more
 

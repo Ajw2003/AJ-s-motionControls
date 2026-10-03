@@ -2,31 +2,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// The ribbon behind a stone in flight. Reads TrailTuning, drives a TrailRenderer, and
-    /// stops emitting the moment the run ends.
-    /// </summary>
-    /// <remarks>
-    /// Presentation only, and it adds nothing to gameplay. It publishes no events, is read
-    /// by nothing, and holds no state the simulation can see — so the rule SkipPhysics
-    /// states twice, that observable effects belong to the caller and never to the solver,
-    /// is not at risk here. WaterRipples calls that safety "inherited, not re-implemented,"
-    /// and this inherits it the same way: the trail exists only where a real stone does, and
-    /// RockLauncher.CreateRockObject is the single place a real stone is made. The aim
-    /// preview runs the same solver hundreds of times a frame for a throw that never
-    /// happened and never touches this file.
-    ///
-    /// It also does not subscribe to anything. Stopping on sink hangs off
-    /// RockController.IsFlying, which is already false by the time the sink coroutine
-    /// starts, rather than off a RockSunkEvent — that event is M2 work and does not exist
-    /// yet, and inventing it here would have coupled the trail to a milestone it does not
-    /// need. Reading a sibling's public flag is the smaller dependency, and when
-    /// RockSunkEvent does arrive this can move onto it without changing what it does.
-    ///
-    /// Lives on a CHILD of the rock, not on the rock itself. Unity permits one Renderer per
-    /// GameObject and the rock already has a MeshRenderer, so AddComponent&lt;TrailRenderer&gt;
-    /// on the stone is refused outright.
-    /// </remarks>
+    // The trail is presentation-only: it publishes and subscribes to nothing, stops off IsFlying, and
+    // lives on a child because a rock holds one Renderer. doc-ref 9800 docs/4-systems/Presentation.md
     [RequireComponent(typeof(TrailRenderer))]
     public class RockTrail : MonoBehaviour
     {
@@ -41,46 +18,12 @@ namespace Game
         private float _minSpeed;
         private float _maxSpeed;
 
-        /// <summary>
-        /// Local rotation that lays the ribbon flat in the stone's own face plane.
-        /// </summary>
-        /// <remarks>
-        /// LineAlignment.TransformZ builds every trail quad facing the transform's local +Z,
-        /// so making the ribbon flat WITH the stone is a question of pointing this child's
-        /// +Z along the stone's face normal — and the face normal is local +Y, not +Z.
-        /// RockController spins the stone with Quaternion.Euler(0, angle, 0) applied on the
-        /// right, which is a turn about its own local Y, and calls that "about its own face
-        /// normal." So the flat face is the local XZ plane and its normal is local up.
-        ///
-        /// Euler(-90, 0, 0) is the rotation that carries +Z onto +Y, and no other component
-        /// is needed: the remaining freedom is a turn about the ribbon's own normal, which
-        /// does not change the plane it lies in.
-        ///
-        /// It also cannot be shaken by the spin, which is the part worth having. The stone
-        /// turns about local Y at up to MaxVisualSpinDegPerSec; this child's +Z IS local Y,
-        /// and a rotation about an axis leaves that axis fixed — so the ribbon's plane is
-        /// invariant under the spin and the trail cannot strobe or flicker as the stone
-        /// whirls. Aligning to any other local axis would have it flipping edge-on twice per
-        /// revolution.
-        /// </remarks>
+        // Euler(-90,0,0) lays the ribbon flat on the stone's face plane, and since its +Z is the
+        // stone's local Y the spin cannot make it flicker. doc-ref 05ec docs/4-systems/Presentation.md
         private static readonly Quaternion FaceAlignedRotation = Quaternion.Euler(-90f, 0f, 0f);
 
-        /// <summary>
-        /// Hangs a configured trail off a rock, or returns null if the style is None or the
-        /// material could not be built.
-        /// </summary>
-        /// <remarks>
-        /// A factory rather than inspector wiring, because the rock is instantiated at
-        /// runtime from Resources and nothing here ever passes through the inspector — the
-        /// trap TrailTuning's remarks describe. The skip constants are passed in rather than
-        /// looked up so the speed thresholds come from the same asset the throw was
-        /// simulated with; two lookups could disagree after a retune.
-        /// </remarks>
-        /// <param name="stoneColour">
-        /// The colour the stone itself is drawn in — PlayerColours.StoneColourFor, the same
-        /// blend the shore stone and the aim ghost use — so the ribbon matches the rock it
-        /// streams from rather than being a second, different shade of the player.
-        /// </param>
+        // A factory rather than inspector wiring because rocks are built at runtime; skip constants are
+        // passed in so thresholds match the throw. doc-ref 186b docs/4-systems/Presentation.md
         public static RockTrail Attach(GameObject rock, SkipConstants skipConstants, Color stoneColour)
         {
             if (rock == null) return null;
@@ -112,23 +55,8 @@ namespace Game
             return self;
         }
 
-        /// <summary>
-        /// The stone's width in world metres, across its flat face.
-        /// </summary>
-        /// <remarks>
-        /// Measured, not assumed, so each rock gets a ribbon its own width — a Boulder's wider
-        /// than a Shard's — rather than one fixed number for every stone. This is the stone's
-        /// WORLD width; Init divides the rock's scale back out before handing it to the
-        /// TrailRenderer, which multiplies its width by the transform's scale (see Init).
-        ///
-        /// Mean of the two face-plane axes (local X and Z) rather than either one. The stone
-        /// spins about its face normal in flight, so which axis lies across the direction
-        /// of travel changes every few frames; the mean is the width it reads as on average.
-        /// mesh.bounds rather than vertices — the rock meshes are not CPU-readable.
-        ///
-        /// Falls back to 1 m when there is no mesh (the prefab's plain box fallback), which
-        /// keeps TrailTuning.WidthMultiplier meaning metres in that one case.
-        /// </remarks>
+        // Width is measured from mesh.bounds as the mean of the two face axes, falling back to 1 m when
+        // there is no mesh. doc-ref ae7e docs/4-systems/Presentation.md
         private static float StoneWidth(GameObject rock)
         {
             var filter = rock.GetComponent<MeshFilter>();
@@ -158,13 +86,8 @@ namespace Game
 
             _trail.time = tuning.Time;
             _trail.minVertexDistance = tuning.MinVertexDistance;
-            // Divided by the trail's own world scale because, with LineAlignment.TransformZ, a
-            // TrailRenderer's width IS multiplied by its transform's scale — measured in the
-            // Editor on 2026-09-30: widthMultiplier 1 baked 1 m wide under a parent at scale 1
-            // and 2.47 m under one at 2.47. The ribbon hangs off the rock, which is scaled ×2.47,
-            // so without this the world-width measurement above was scaled a second time and
-            // every trail came out about 2.5× wider than its stone (issue #24). Uniform scale is
-            // assumed, as everywhere else that reads rock.LocalScale.
+            // Divide the width by the transform's world scale: TransformZ multiplies width by it, which
+            // made trails about 2.5x too wide (issue #24). doc-ref 06b0 docs/4-systems/Presentation.md
             var trailScale = Mathf.Max(Mathf.Abs(transform.lossyScale.x), 0.0001f);
             _trail.widthMultiplier = tuning.WidthMultiplier * stoneWidth / trailScale *
                                      (wake ? tuning.WakeWidthScale : 1f);
@@ -176,23 +99,8 @@ namespace Game
             _trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _trail.receiveShadows = false;
 
-            // Flat in the stone's own face plane, not billboarded at the camera. The stone
-            // tracks the phone one-to-one and its face angle is the variable the whole game
-            // is about, so a ribbon lying in that plane shows the angle of every bounce —
-            // whereas LineAlignment.View turns to meet the camera and reads the same width
-            // whatever the stone is doing, which is the one thing it should not do here.
-            //
-            // FaceAlignedRotation on this child is the other half of this line and they only
-            // work as a pair: TransformZ faces local +Z, and the rotation is what puts local
-            // +Z on the stone's face normal. Changing either alone silently tilts the ribbon
-            // off the face.
-            //
-            // Cost, and it is real: a plane seen edge-on is a line. The camera sits near the
-            // waterline (RockLauncher.FollowActiveRock locks its Y to the home height) and a
-            // well-thrown stone lies nearly flat, so the face plane is close to horizontal
-            // and the view of it is close to grazing — the trail will read thin on exactly
-            // the good throws. Widen it if so: WidthMultiplier, or the Wake style, which is
-            // WakeWidthScale times wider for this reason.
+            // The ribbon is aligned to the face plane by TransformZ plus FaceAlignedRotation as a pair; edge-on views
+            // read thin, so widen it if needed. doc-ref e996 docs/4-systems/Presentation.md
             _trail.alignment = LineAlignment.TransformZ;
 
             if (tuning.Style == TrailTuning.TrailStyle.Dashed) ApplyDash(tuning);
@@ -210,21 +118,8 @@ namespace Game
             _material.color = _stoneColour;
         }
 
-        /// <summary>
-        /// Builds the dash pattern as a generated texture and tiles it along the trail.
-        /// </summary>
-        /// <remarks>
-        /// Generated rather than authored, so the dashed style needs no texture asset. That
-        /// is not laziness about art: PlaceholderArt.CreateWater's remarks record that a
-        /// shader or texture reached by name rather than from Resources "would look right in
-        /// the editor and come out magenta in a player build." A texture built in code
-        /// cannot go missing.
-        ///
-        /// Point filtering on purpose. Bilinear on a 64-pixel strip smears each dash edge
-        /// into a gradient, which at speed reads as a blurry ribbon rather than as dashes —
-        /// and hard edges are what is wanted anyway, since soft-edged particles are off the
-        /// table while the water's depth writing flips mid-throw (Plan-SfxVfx.md 1.2).
-        /// </remarks>
+        // The dash texture is generated in code so it cannot go missing, with point filtering to keep
+        // hard edges. doc-ref 2481 docs/4-systems/Presentation.md
         private void ApplyDash(TrailTuning tuning)
         {
             const int width = 64;
@@ -260,15 +155,8 @@ namespace Game
         {
             if (_trail == null || _tuning == null) return;
 
-            // Stop laying down new ribbon the moment the run ends. Two reasons, and the
-            // second is the load-bearing one: the stone is about to be dragged 1.5 m
-            // underwater by RockController.SinkRoutine, and that routine turns water depth
-            // writing ON for its duration — so a trail still emitting into the sink is cut
-            // by the surface rather than fading out behind it.
-            //
-            // The ribbon already laid down is untouched and fades over TrailTuning.Time.
-            // RockController destroys the rock after despawnDelay (2.5s), comfortably
-            // longer than any sane trail time, so the fade always completes.
+            // Stop emitting when the run ends, because the sink turns water depth writing on and would
+            // cut a live trail. doc-ref 6246 docs/4-systems/Presentation.md
             if (_tuning.StopEmittingOnSink && _rock != null && !_rock.IsFlying)
             {
                 _trail.emitting = false;
@@ -278,21 +166,8 @@ namespace Game
             if (_tuning.ColourBySpeed) ApplySpeedTint();
         }
 
-        /// <summary>
-        /// Dims the whole ribbon as the stone runs out of speed.
-        /// </summary>
-        /// <remarks>
-        /// Whole-trail rather than per-vertex, and the difference is visible if you look for
-        /// it: the tint is the stone's speed NOW, applied uniformly, so an old segment laid
-        /// down while the stone was fast dims along with everything else instead of keeping
-        /// the colour it was born with. Per-vertex colour would need the gradient rebuilt
-        /// every frame from a speed history, which is a real cost for a ribbon that lives
-        /// half a second. Revisit only if a dying run does not read.
-        ///
-        /// Multiplies into the gradient rather than replacing it — the material tint and the
-        /// vertex colour are separate inputs to the shader, so the authored head-to-tail
-        /// fade survives.
-        /// </remarks>
+        // The whole ribbon is dimmed by the stone's current speed, multiplied into the gradient rather
+        // than replacing it. doc-ref 16ef docs/4-systems/Presentation.md
         private void ApplySpeedTint()
         {
             if (_material == null || _rock == null) return;
@@ -305,22 +180,8 @@ namespace Game
             _material.color = Color.Lerp(_tuning.SlowTint, _tuning.FastTint, t) * _stoneColour;
         }
 
-        /// <summary>
-        /// A copy of a gradient keeping only its alpha keys, each scaled, with every colour
-        /// key forced to white.
-        /// </summary>
-        /// <remarks>
-        /// White colour keys because the colour is the stone's, set on the material, and the
-        /// gradient multiplies into it. Left as authored, TrailTuning.Colour's keys (a dark
-        /// grey head fading to pale blue on the shipped asset) tinted every trail darker and
-        /// bluer than the rock it came from — two places deciding one colour. The gradient
-        /// now decides only the fade.
-        ///
-        /// A copy, because the source gradient belongs to the shared TrailTuning ASSET.
-        /// Editing it in place would edit the asset itself — which in the editor persists to
-        /// disk, so every subsequent throw would come out fainter than the last until the
-        /// wake vanished entirely and the asset on disk was quietly wrong.
-        /// </remarks>
+        // Copy the gradient with white colour keys so only alpha fades; editing the shared tuning asset
+        // in place would persist to disk. doc-ref e884 docs/4-systems/Presentation.md
         private static Gradient AlphaOnly(Gradient source, float alphaScale)
         {
             var alphas = source.alphaKeys;

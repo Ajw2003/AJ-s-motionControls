@@ -129,6 +129,30 @@ solver, which is what lets the whole thing run headlessly outside Unity — and 
 - **Straight up or straight down has no heading.** Fall back to forward, never to a direction
   derived from floating-point noise.
 
+### `Assets/Scripts/Game/Physics/PhoneAttitude.cs` — Phone attitude is one quaternion and one basis change
+<!-- ref:f406 -->
+
+Was `Assets/Scripts/Game/Physics/PhoneAttitude.cs:5-25`.
+
+The one place phone space becomes Unity space.
+
+The phone is the rock. It sends the rotation from where the player was holding it
+when they tapped to where they are holding it now, as a quaternion, and this turns
+that into a Unity rotation that gets applied to the stone verbatim. Tilt the phone
+ten degrees and the stone tilts ten degrees.
+
+It used to be three angles. The phone decomposed its attitude into aim / attack /
+roll, and Unity re-composed them with two sign flips
+(`-message.aimDeg, -message.attackAngleDeg`) that were arrived at by trying
+both. That is why the stone never quite matched the phone: three chances to lose a
+degree of freedom, two hand-tuned negations, and a decomposition whose own neutral
+pose sat on a degenerate axis. One quaternion and one basis change has none of
+those failure modes — and if the basis change is wrong, every axis is wrong
+together and obviously, instead of one axis being subtly wrong.
+
+**If a rotation comes out mirrored, fix it here.** Never with a negation at a
+call site — that is how the old version got into this state.
+
 ## Platform landmines
 
 **iOS has no `acceleration`** — only `accelerationIncludingGravity`. The controller seeds its
@@ -160,3 +184,43 @@ see the root [`README.md`](../../README.md).
 Real-device coverage is recorded in [`../DeviceMatrix.md`](../DeviceMatrix.md) — **which is
 currently all placeholders.** iOS and Android both work; the specific models are not written down
 anywhere.
+
+## Notes moved from source comments
+
+The author's reasoning, moved verbatim out of the code (issue #84/#85). Each note cites the code it describes; the code carries a `doc-ref` pointer to its note.
+
+### `Assets/Scripts/Game/Physics/PhoneAttitude.cs` — The axis map (x,y,z) to (x,z,y) flips handedness
+<!-- ref:12a1 -->
+
+Was `Assets/Scripts/Game/Physics/PhoneAttitude.cs:28-44`.
+
+A DeviceOrientation-frame rotation as a Unity rotation.
+
+The device frame is right-handed: x runs right across the screen, y toward the
+top edge, z out through the glass. Unity is left-handed with y up and z forward.
+
+The neutral pose is the phone flat, screen up, top edge pointing at the TV, and
+it must produce a flat stone facing away from the camera. That pins the axis
+map: device x (right) is Unity x, device y (toward the top edge, so forward) is
+Unity z, and device z (out of the glass, so up) is Unity y — i.e.
+(x, y, z) -> (x, z, y).
+
+Swapping two axes flips handedness, which flips the sense of every rotation, so
+the vector part is negated as well as remapped. The scalar part is untouched:
+the angle is the same, only its direction reverses.
+
+### `Assets/Scripts/Game/Physics/PhoneAttitude.cs` — Heading comes straight from the rotated forward vector
+<!-- ref:268d -->
+
+Was `Assets/Scripts/Game/Physics/PhoneAttitude.cs:49-61`.
+
+Which way a rotated stone points, flattened onto the water.
+
+This is what the launch actually needs, so it is what the launch takes. It used
+to go through HeadingDeg and rebuild a direction from the angle
+with Quaternion.AngleAxis — an atan2 and a trig pair to recover a vector that
+was already in hand. Dropping the round trip also drops the only native call in
+the solver, which is what lets the whole thing run headlessly outside Unity.
+
+Straight up or straight down has no heading; fall back to forward rather than
+to a direction derived from floating-point noise.
