@@ -93,3 +93,19 @@ On the iPhone:
 If step 5 still shows the login sheet, open `relay/probe-access.log` in the project folder. The
 lines from the iPhone's address (`192.168.137.x`) show which Apple address it asked for and what we
 answered. That is the next diagnosis.
+
+## Result: iPhone 17 joined and played (2026-10-02, reported by Ayden)
+
+Tested on this branch, in Play mode, by Ayden:
+
+- **iPhone 17 joined the game's network, connected to the game and played a match.**
+- The phone had **mobile data on and was connected to another Wi-Fi network** before scanning.
+  Scanning the Wi-Fi QR moved it to the game's network, as the research above predicted.
+- **The host PC had no network of its own** (no upstream), so nothing was shared. That is the case
+  where the phone gets *our* answers rather than Apple's: our copy of Apple's check page (#78) and
+  NXDOMAIN for Private Relay (#79). The phone stayed on a network with no internet, which is the
+  harder case.
+
+Not reported, so still open: the per-step checks above for #80 (`"security":"Wpa2"` in the
+Console) and #81 (same SSID after quitting and pressing Play again), and the Wi-Fi off/on rejoin
+(step 8). A shared-internet run on an iPhone hasn't been done either.
