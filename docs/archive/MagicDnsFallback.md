@@ -1,13 +1,13 @@
 # A self-operated fallback for `local-ip.sh`
 
-> **Superseded — see [docs/plans/magic-domain-replacement.md](plans/magic-domain-replacement.md).**
+> **Superseded — see [docs/plans/magic-domain-replacement.md](../plans/magic-domain-replacement.md).**
 > `local-ip.sh` is gone for good and LAN mode (the only mode that needed public wildcard DNS at
 > all) is deprecated in favour of Hotspot-only. The VPS-operated nameserver design below is moot —
 > Hotspot mode answers DNS locally, offline, on the host itself.
 
 **Status: design sketch, not built.** Answers the question "can we recreate `local-ip.sh`'s
 logic ourselves, on our own Porkbun domain, as a backup if it disappears?" — yes, and it slots
-directly into the risk [ZeroSetupPlan.md](ZeroSetupPlan.md) already logged rather than opening a
+directly into the risk [ZeroSetupPlan.md](../ZeroSetupPlan.md) already logged rather than opening a
 new one.
 
 ---
@@ -22,13 +22,13 @@ Two independent things, bundled under one name:
 2. **A published wildcard certificate.** A real Let's Encrypt cert for `*.local-ip.sh`, with the
    **private key given away openly**, so any machine can terminate TLS for that domain without
    ever talking to a CA itself. `CertificateProvider.cs` just downloads `server.pem`/`server.key`
-   ready-made ([ZeroSetupPlan.md:182](ZeroSetupPlan.md:182)).
+   ready-made ([ZeroSetupPlan.md:182](../ZeroSetupPlan.md:182)).
 
 Both are recreatable on a domain you control. Neither requires a player's PC to do anything new.
 
 ## Why this is not the design that was rejected before
 
-[HostingPlan.md §2](HostingPlan.md:37) rejected two adjacent ideas, and it's worth being precise
+HostingPlan.md §2 (deleted in 0b7c500; recover with `git show 0b7c500^:docs/HostingPlan.md`) rejected two adjacent ideas, and it's worth being precise
 about why neither applies here:
 
 - **"Self-hosted, own domain" (Design 2, §1):** rejected because the DNS API credential would
@@ -37,7 +37,7 @@ about why neither applies here:
   operate.** Players never see it, exactly as they never see it today (`local-ip.sh`'s operator
   holds an equivalent credential and no one considers that a problem for the person hosting a
   game on their LAN).
-- **"Self-hosted authoritative DNS" ([§2 alternatives table](HostingPlan.md:109)):** rejected
+- **"Self-hosted authoritative DNS" (§2 alternatives table (deleted in 0b7c500; recover with `git show 0b7c500^:docs/HostingPlan.md`)):** rejected
   because it needs port 53 forwarded *and the PC permanently online* — if the host's machine is
   off, the domain stops resolving. **That objection is about each player's gaming PC being the
   nameserver.** Here the nameserver is a small always-on VPS you run, structurally identical to
@@ -63,7 +63,7 @@ Your VPS (~$5/mo, always on)
 ```
 
 `CertificateProvider.cs` already has the shape for this: [ZeroSetupPlan.md's Risk
-1](ZeroSetupPlan.md:422) proposes "make the provider an interface with `traefik.me` /
+1](../ZeroSetupPlan.md:422) proposes "make the provider an interface with `traefik.me` /
 `local-ip.co` as alternates rather than a hardcoded URL." This VPS becomes one more entry in that
 list — tried as a fallback if `local-ip.sh` is unreachable, or promoted to primary later if you'd
 rather depend on infrastructure you control.
@@ -74,7 +74,7 @@ rather depend on infrastructure you control.
 (`allow` CIDR, [dns.js:225](../../relay/dns.js:225)) precisely *because* it answers with a single fixed
 IP and only ever runs while a LAN with no other resolver exists. That guard is what makes it safe
 — see the "open recursive resolver" incident already documented in
-[SecurityReview.md:250](SecurityReview.md:250).
+[SecurityReview.md:250](../SecurityReview.md:250).
 
 A public-facing version can't use a subnet allow-list — it must be reachable from anywhere. It
 has to be safe by construction instead:
@@ -110,10 +110,10 @@ doesn't get to ask.
   community plugin. Either works from a cron job on the VPS.
 - Publish the result the same way `local-ip.sh` does — a plain HTTPS GET for `server.pem` /
   `server.key` — so `CertificateProvider.cs`'s existing SAN-check-and-cache logic
-  ([ZeroSetupPlan.md:178](ZeroSetupPlan.md:178)) needs no new code, only a second URL to try.
+  ([ZeroSetupPlan.md:178](../ZeroSetupPlan.md:178)) needs no new code, only a second URL to try.
 - The same tradeoff `local-ip.sh` accepts applies here too: publishing the private key openly
   means anyone can terminate TLS for `*.ip.yourdomain.com`. That's fine under the same reasoning
-  already recorded in [ZeroSetupPlan.md Risk 2](ZeroSetupPlan.md:426) — it's scoped to a name
+  already recorded in [ZeroSetupPlan.md Risk 2](../ZeroSetupPlan.md:426) — it's scoped to a name
   that only ever encodes a private LAN address, not a security boundary — but it's a decision to
   make consciously, not inherit by accident.
 
@@ -124,19 +124,19 @@ doesn't get to ask.
   up the static cert-serving endpoint.
 - Near-zero ongoing maintenance — the renewal cadence mirrors what's already designed for
   `local-ip.sh` (checked every launch, renewed with 14 days to spare, [ZeroSetupPlan.md
-  §2.3](ZeroSetupPlan.md:182)).
+  §2.3](../ZeroSetupPlan.md:182)).
 - One new secret to hold: the Porkbun API token, live only on the VPS, never shipped in a build.
 
 ## Open question before building
 
 Confirm the domain: `skiprocking.ca` is registered and currently parked
-([HostingPlan.md:27](HostingPlan.md:27)) — presumably the one meant here, but worth confirming
+(HostingPlan.md:27 (deleted in 0b7c500; recover with `git show 0b7c500^:docs/HostingPlan.md`)) — presumably the one meant here, but worth confirming
 it's the Porkbun account in question and that repurposing it (from "dead vanity name" to "load-
 bearing infrastructure") is intended before a subdomain gets delegated away from it.
 
 ## Where this fits in the existing plan
 
-Slot into [ZeroSetupPlan.md Risk 1](ZeroSetupPlan.md:422)'s mitigation, upgrading "an interface
+Slot into [ZeroSetupPlan.md Risk 1](../ZeroSetupPlan.md:422)'s mitigation, upgrading "an interface
 with alternates" from a design note to an actual second provider. Does not block or get blocked
 by Phases 1–5 — it's an independent addition to `CertificateProvider.cs`'s provider list, and the
 DNS half only matters once Phase 4.3 (hotspot-mode local DNS) or a public reachability need

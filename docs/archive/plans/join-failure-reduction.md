@@ -21,7 +21,7 @@ join and currently throws all of it away.
 The premise "LAN mode worked" is true but stale. It worked because `local-ip.sh` published a
 wildcard certificate and wildcard DNS that mapped `192-168-1-57.local-ip.sh` back to a
 DHCP-assigned address. That service is dead at the DNS layer, and
-[magic-domain-replacement.md](magic-domain-replacement.md) verified there is no surviving
+[magic-domain-replacement.md](../../plans/magic-domain-replacement.md) verified there is no surviving
 equivalent — `traefik.me` 404s on every cert path, `sslip.io`/`nip.io` explicitly never publish
 one.
 
@@ -31,7 +31,7 @@ trusted certificate for a varying address needs a **wildcard cert plus a DNS res
 answers with a different IP per query** — precisely the public server the project deliberately
 deleted to get to $0/month. A static wildcard `A` record cannot do it: it answers one address.
 Updating a real record at launch via the Porkbun API means shipping DNS credentials in the
-client, already rejected in [HostingPlan.md §1](../HostingPlan.md).
+client, already rejected in HostingPlan.md §1 (deleted in 0b7c500; recover with `git show 0b7c500^:docs/HostingPlan.md`).
 
 **So: the house LAN can never carry gameplay again without re-introducing a server.**
 

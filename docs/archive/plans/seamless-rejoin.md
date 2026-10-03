@@ -96,14 +96,14 @@ again. They are not the same bug and need to be handled separately.
    site's remembered setting under Settings → Safari → Motion & Orientation Access.
 
 2. **Any relay `ERROR` outside the 45s rejoin window bounces to the join form.**
-   [app.js:419](controller/js/app.js:419) runs `showScreen('join')` and re-enables the button for
+   [app.js:419](../../../controller/js/app.js:419) runs `showScreen('join')` and re-enables the button for
    *any* error that `RelayConnection` did not swallow — and `REJOIN_WINDOW_MS` is 45 seconds, so a
    Wi-Fi blip longer than that lands here mid-match. This is the most likely source of the
    original report. *Fix:* with a stored identity, this path must retry the rejoin rather than
    render a form — the join screen becomes the fallback for a genuinely unknown player, not the
    response to a slow reconnect.
 
-3. **`ROOM_CLOSED` does the same** at [app.js:475](controller/js/app.js:475). Correct when the
+3. **`ROOM_CLOSED` does the same** at [app.js:475](../../../controller/js/app.js:475). Correct when the
    match really has ended; wrong when the host is merely restarting. With Workstream B the code
    survives a host restart, so this should hold the seat and retry instead of ejecting.
 
@@ -120,11 +120,11 @@ colour and turn position. Today it silently makes you a new player.
 ## Workstream A — hotspot credentials that stay the same on this PC
 
 `HotspotService.GenerateSsid`/`GeneratePassphrase` mint fresh values every launch
-([HotspotService.cs:182](Assets/Scripts/Net/HotspotService.cs:182)), so no phone can ever
+([HotspotService.cs:182](../../../Assets/Scripts/Net/HotspotService.cs:182)), so no phone can ever
 remember the network.
 
 - **New `Assets/Scripts/Net/HotspotCredentialsStore.cs`**, modelled directly on
-  [MatchSettingsStore.cs](Assets/Scripts/Managers/MatchSettingsStore.cs) — same `JsonUtility` +
+  [MatchSettingsStore.cs](../../../Assets/Scripts/Managers/MatchSettingsStore.cs) — same `JsonUtility` +
   file-beside-the-executable convention as `network-mode.txt` and `match-settings.json`, so a host
   can read the passphrase by opening a file. One method, `LoadOrCreate()`.
 - **`HotspotService.cs`** — replace the two generator calls with `LoadOrCreate()`. Keep
@@ -143,7 +143,7 @@ Without this, Workstream C buys nothing across sessions: a remembered page URL c
 session's code and the phone lands on the join form anyway.
 
 `RelayClient` already knows how to ask for a code back — it sends `preferredCode` at
-[RelayClient.cs:350](Assets/Scripts/Net/RelayClient.cs:350) — but only when `RoomCode` is already
+[RelayClient.cs:350](../../../Assets/Scripts/Net/RelayClient.cs:350) — but only when `RoomCode` is already
 set in-process, which on a cold start it is not. The relay honours the request whenever the code
 is free (`handleCreateRoom`), so nothing server-side changes.
 
@@ -151,7 +151,7 @@ is free (`handleCreateRoom`), so nothing server-side changes.
   `network-mode.txt` exactly in shape and reasoning. Gitignored alongside it.
 - **`RelayClient.cs`** — seed `RoomCode` from the store before the first `CREATE_ROOM`, and save
   whatever the relay actually assigns in the `ROOM_CREATED` handler
-  ([RelayClient.cs:449](Assets/Scripts/Net/RelayClient.cs:449)). The existing "reclaimed /
+  ([RelayClient.cs:449](../../../Assets/Scripts/Net/RelayClient.cs:449)). The existing "reclaimed /
   resumed / fresh" logging already distinguishes the three cases, so a code that could not be
   reclaimed is visible rather than silent.
 
@@ -181,7 +181,7 @@ name.
     "Tap to play" button rather than auto-connecting; Android can connect immediately.
   - Changing your name during play sends `SET_NAME` again — a rename, not a rejoin.
 - **New `Assets/Scripts/Managers/PlayerNames.cs`** — mirror
-  [PlayerColours.cs](Assets/Scripts/Managers/PlayerColours.cs) exactly: dictionary keyed by player
+  [PlayerColours.cs](../../../Assets/Scripts/Managers/PlayerColours.cs) exactly: dictionary keyed by player
   id, seeded with a fallback label on `PlayerJoinedEvent`, held across a disconnect, cleared when
   the roster empties. `DisplayNameFor(id)` is the single lookup everything else uses.
 - **`Messages.cs` + `RelayClient.cs`** — add the `SET_NAME` type, DTO, `RelayClient` event and

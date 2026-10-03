@@ -1,6 +1,6 @@
 # Network mode selection (LAN vs Hotspot) — ZeroSetupPlan Phase 4
 
-> **Update — see [docs/plans/magic-domain-replacement.md](magic-domain-replacement.md) Phase 3.**
+> **Update — see [docs/plans/magic-domain-replacement.md](../../plans/magic-domain-replacement.md) Phase 3.**
 > LAN mode is now deprecated, not offered. `StartScreen` no longer shows the picker described
 > below — it always launches Hotspot — and `NetworkModeStore.Load`'s fallback flipped from
 > `Lan` to `Hotspot`. LAN stays selectable only by hand-editing `network-mode.txt` to `Lan`,

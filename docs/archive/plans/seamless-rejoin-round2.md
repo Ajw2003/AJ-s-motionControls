@@ -74,7 +74,7 @@ The plan promised it; nothing implements it.
   update `myName`, persist through `updateIdentity`, and send `{ type: 'SET_NAME', name }` on the
   live connection. No rejoin, no reconnect — the seat is keyed by device id now, which is the
   whole point of round 1.
-- Reuse the existing `SET_NAME` send at [app.js:437](controller/js/app.js:437); it already fires
+- Reuse the existing `SET_NAME` send at [app.js:437](../../../controller/js/app.js:437); it already fires
   on every `JOINED`, so the reconnect path keeps working unchanged.
 
 ## Fix C — the TV should name the network, since it is now stable and recognisable
