@@ -302,7 +302,7 @@ Worth separating, because the difference is where surprises come from.
 | Offline play works | Direct observation, plus `deploy/spike/hotspot-offline-spike.ps1` as an unattended regression check |
 | Guest isolation (sharing off only) | Forwarding flag read back, not assumed |
 | Internet sharing (default) | Samsung S26 rejoined itself in 5-15 s; Play-mode session, iPhones, other Android brands, Wi-Fi upstream, rejoin after days **not tested** |
-| iPhone join fixes (#77: #78–#81) | Relay half `npm test` 55/55 and a live run, 2026-10-02; 2026-10-02 Play-mode run (owner-reported): iPhone 17 joined from another Wi-Fi with mobile data on, host had no upstream, played a match. WPA2 log line, same SSID across launches and Wi-Fi off/on rejoin **not reported**. See `Findings-iPhoneWifiJoin-2026-10-02.md` |
+| iPhone join fixes (#77: #78–#81) | Relay half `npm test` 55/55 and a live run, 2026-10-02; 2026-10-02 Play-mode run (owner-reported): iPhone 17 joined from another Wi-Fi with mobile data on, host had no upstream, played a match; Console showed `security: Wpa2`. Same SSID across launches and Wi-Fi off/on rejoin **not reported**. See `Findings-iPhoneWifiJoin-2026-10-02.md` |
 | Five-player cross-platform match | One real session — **not** recorded per-device; see the `DeviceMatrix.md` caveat |
 | Six rocks play differently | **Not verified, and currently false** |
 | A stranger can install and play | **Never attempted** |

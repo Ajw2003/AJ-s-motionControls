@@ -106,6 +106,8 @@ Tested on this branch, in Play mode, by Ayden:
   NXDOMAIN for Private Relay (#79). The phone stayed on a network with no internet, which is the
   harder case.
 
-Not reported, so still open: the per-step checks above for #80 (`"security":"Wpa2"` in the
-Console) and #81 (same SSID after quitting and pressing Play again), and the Wi-Fi off/on rejoin
+#80 confirmed in the same session: the Unity Console showed `[HotspotService] security: Wpa2`
+(Ayden's screenshot, 18:13:33).
+
+Not reported, so still open: the per-step check above for #81 (same SSID after quitting and pressing Play again), and the Wi-Fi off/on rejoin
 (step 8). A shared-internet run on an iPhone hasn't been done either.
