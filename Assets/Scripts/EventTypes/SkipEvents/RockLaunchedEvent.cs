@@ -16,15 +16,7 @@ namespace EventTypes.SkipEvents
         /// <summary>Where it was released.</summary>
         public Vector3 Origin { get; }
 
-        /// <summary>
-        /// Raw swing speed, m/s — recovered from the launch velocity's magnitude divided
-        /// by SkipConstants.SpeedScale, which is exact: CreateLaunch builds the velocity
-        /// from a unit horizontal heading times (swingSpeed * SpeedScale), so inverting
-        /// that recovers the original number with no error. Worth preferring over an
-        /// extra parameter because it would otherwise have to be carried through Launch
-        /// purely to be re-published — a second copy of a value that is already
-        /// recoverable, and a second copy can disagree.
-        /// </summary>
+        // Raw swing speed, m/s — recovered from the launch velocity's magnitude divided by SkipConstants.SpeedScale,... doc-ref ca68 docs/4-systems/EventSystem.md
         public float SwingSpeed { get; }
 
         /// <summary>

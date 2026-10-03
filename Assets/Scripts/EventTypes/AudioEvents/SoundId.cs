@@ -1,18 +1,6 @@
 namespace EventTypes.AudioEvents
 {
-    /// <summary>Every sound the game can ask for, by identity rather than by asset.</summary>
-    /// <remarks>
-    /// An enum rather than an AudioClip reference, and that is the whole design. FactoryTM's
-    /// AudioClipEvent carries a clip, which means the caller has to hold one — a
-    /// [SerializeField] AudioClip on RockController or ScoreManager. Every manager in this
-    /// project is built with new GameObject() + AddComponent by Bootstrap, so a serialized
-    /// field on one has never been through an inspector and sits at its C# field initializer
-    /// forever: null. AimPreview.Awake documents the project already losing time to exactly
-    /// that, with the tuning asset.
-    ///
-    /// Naming a sound instead means gameplay code holds no assets at all, and swapping what
-    /// a skip sounds like is an edit to the bank asset rather than to a gameplay class.
-    /// </remarks>
+    // Every sound the game can ask for, by identity rather than by asset. doc-ref a857 docs/4-systems/Audio.md
     public enum SoundId
     {
         /// <summary>A stone touching the water and coming back off it.</summary>

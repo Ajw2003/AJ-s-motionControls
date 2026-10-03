@@ -9,39 +9,7 @@ using UnityEngine.Networking;
 
 namespace Net
 {
-    /// <summary>
-    /// Obtains the TLS material the relay needs, with no human involved.
-    /// </summary>
-    /// <remarks>
-    /// Phone motion sensors require a secure context, a secure context requires a publicly
-    /// trusted certificate, and a certificate requires a name — for a machine on a private
-    /// address that used to be a circle with no obvious exit. local-ip.sh used to break it by
-    /// publishing a real wildcard for *.local-ip.sh together with DNS that mapped IP-encoded
-    /// labels back to the address they encoded. It is permanently dead (verified at the DNS
-    /// layer — see docs/plans/magic-domain-replacement.md), and there is no drop-in
-    /// replacement, so this now downloads a single-name certificate for a domain we own
-    /// instead (MagicDomain.HostName, renewed by .github/workflows/renew-cert.yml). LAN mode,
-    /// the only mode that ever needed an address-varying wildcard, has been removed — Hotspot
-    /// is the only mode now, and its address is always the fixed 192.168.137.1
-    /// (LocalServices.HotspotHostAddress) — one name is enough.
-    ///
-    /// Its private key is published deliberately. That is what makes this possible and also
-    /// what caps what it may ever be used for: the certificate proves nothing about who is
-    /// serving, it only unlocks the sensor APIs. Nothing sensitive may travel over it.
-    /// SecurityReview.md section 1 is the long version.
-    ///
-    /// This replaces deploy/local-https.ps1, which did the same work but required somebody to
-    /// remember to run it. The failure that motivated the change: the script's own chain check
-    /// calls a file deleted in 1cd7647, so re-running it after the cached certificate expires
-    /// fails in a way that looks nothing like "your certificate expired".
-    ///
-    /// Renewal is structural rather than scheduled. Every launch checks, and a 90-day
-    /// certificate cannot lapse between two launches of a game nobody has opened in three
-    /// months, because opening it is the check. On a launch where the cache is stale AND the
-    /// configured source(s) are unreachable, TrySeedCache() falls back to a certificate shipped
-    /// in StreamingAssets rather than failing outright — see its remarks for what that does and
-    /// does not cover.
-    /// </remarks>
+    // Obtains the TLS material the relay needs, with no human involved. doc-ref 3e74 docs/4-systems/HostingAndCertificates.md
     public static class CertificateProvider
     {
         private const string CacheDirName = "local-https";
@@ -206,15 +174,7 @@ namespace Net
 
         // ------------------------------------------------------------------ address
 
-        /// <summary>
-        /// Confirms the address handed in is a well-formed IPv4 address. This used to be the
-        /// override branch of a larger method (ResolveLanAddress) that could also detect an
-        /// address by sweeping network interfaces — the auto-detection body is gone now that
-        /// Hotspot is the only mode and its address (LocalServices.HotspotHostAddress) is
-        /// always forced rather than discovered. What remains is the one check that was ever
-        /// reachable from that path: a malformed configured address fails at the phone in a
-        /// way indistinguishable from a broken certificate, so it is caught here instead.
-        /// </summary>
+        // Confirms the address handed in is a well-formed IPv4 address. doc-ref 12b7 docs/4-systems/HostingAndCertificates.md
         public static bool ValidateHostAddress(string address, out string error, out string detail)
         {
             error = null;
@@ -303,19 +263,7 @@ namespace Net
             }
         }
 
-        /// <summary>
-        /// Confirms the SAN really covers the configured hostname, which catches a truncated
-        /// or swapped download that would otherwise only surface as a name mismatch on
-        /// somebody's phone.
-        /// </summary>
-        /// <remarks>
-        /// Named CoversWildcard for history — with local-ip.sh's wildcard gone, the
-        /// certificate <see cref="MagicDomain"/> configures is single-name
-        /// (docs/plans/magic-domain-replacement.md Phase 1 explains why a wildcard is no
-        /// longer needed at all), so this now checks for an exact match rather than a
-        /// leading <c>*.</c> label. Not renamed, to keep this diff to the behaviour change
-        /// rather than a name that would otherwise need updating at every call site too.
-        /// </remarks>
+        // Confirms the SAN really covers the configured hostname, which catches a truncated or swapped download that... doc-ref 2f35 docs/4-systems/HostingAndCertificates.md
         private static bool CoversWildcard(X509Certificate2 cert)
         {
             foreach (var extension in cert.Extensions)
@@ -331,20 +279,7 @@ namespace Net
 
         // ---------------------------------------------------------------- download
 
-        /// <summary>
-        /// Fetches both files, writing each only once it has arrived complete.
-        /// </summary>
-        /// <remarks>
-        /// Downloading straight over the cache would turn a dropped connection into a
-        /// corrupted cache — and the fallback path exists precisely for hosts whose
-        /// connection is unreliable, so that is not a rare combination.
-        ///
-        /// MagicDomain.CertUrls/KeyUrls are lists, tried in order as a pair — index 0's cert
-        /// with index 0's key, and so on — rather than a single hardcoded URL. One entry
-        /// today, same as local-ip.sh ever had; a mirror later (a second CDN, a direct R2
-        /// object URL as a fallback for a custom-domain outage) costs no code, only another
-        /// line in magic-domain.txt or the compiled default list.
-        /// </remarks>
+        // Fetches both files, writing each only once it has arrived complete. doc-ref 0584 docs/4-systems/HostingAndCertificates.md
         private static IEnumerator Download(string certPath, string keyPath, Action<string> onError)
         {
             Directory.CreateDirectory(CacheDir);
@@ -391,24 +326,7 @@ namespace Net
             onError(null);
         }
 
-        /// <summary>
-        /// Copies the certificate bundled in StreamingAssets into the cache, so a brand-new
-        /// install still reaches Ready on a day none of MagicDomain.CertUrls is reachable —
-        /// today's local-ip.sh outage, next time as a CDN hiccup instead of a shipped-domain
-        /// outage. There is no real certificate to seed with yet (the renewal pipeline has
-        /// never run), so on a build with nothing placed at
-        /// StreamingAssets/server.pem/server.key this is a harmless no-op and Ensure() falls
-        /// through to the same fatal Result it always returned — this never fabricates a
-        /// certificate, only relocates one that was deliberately placed ahead of time.
-        /// </summary>
-        /// <remarks>
-        /// Plain File I/O rather than UnityWebRequest against
-        /// <c>Application.streamingAssetsPath</c>: this project ships Windows Standalone only
-        /// (every other elevation/registry/ICS assumption in this codebase already commits to
-        /// that), where StreamingAssets is an ordinary uncompressed folder next to the
-        /// executable — the platforms where that assumption breaks (Android's compressed
-        /// APK, WebGL) are not targets here.
-        /// </remarks>
+        // Copies the certificate bundled in StreamingAssets into the cache, so a brand-new install still reaches Read... doc-ref 8019 docs/4-systems/HostingAndCertificates.md
         private static bool TrySeedCache(string certPath, string keyPath)
         {
             var seedCert = Path.Combine(Application.streamingAssetsPath, CertFileName);

@@ -168,3 +168,71 @@ roughly 70 fields for a naming-taste win.
 expected result, not a failure** (see "Current state" above): the sweep's job here is the energy
 invariant every run must satisfy, not proving the rocks apart. It becomes a differentiation check
 again only if mechanical character is ever authored.
+
+## Notes moved from source comments
+
+The author's reasoning, moved verbatim out of the code (issue #84/#85). Each note cites the code it describes; the code carries a `doc-ref` pointer to its note.
+
+### `Assets/Scripts/Managers/RockSelection.cs` — Owns which rock every player is playing with.
+<!-- ref:a6f0 -->
+
+Was `Assets/Scripts/Managers/RockSelection.cs:10-33`.
+
+Owns which rock every player is playing with. The only source of truth for "what
+stone is this player's" — everything downstream (the ghost mesh, the live throw,
+the telemetry row) reads through here rather than re-deriving a pick.
+
+
+<b>Random rocks lives here, not on a MatchSettings singleton.</b> The rock-choosing
+plan (docs/plans/rock-choosing-system.md, Part 5) designs a generic settings-list
+panel that would own it — but that panel doesn't exist yet, and this class cannot
+function without somewhere to read it from. It sits here as a plain field until
+Part 5 lands; that panel should read/write this property rather than duplicate the
+state in a second place.
+
+<b>PICK_ROCK carries no rock id</b> (see Messages.cs) — a tap means "confirm
+whatever is highlighted", and only the shore layout (<see cref="Game.ShoreRocks"/>)
+knows what that is. So this class exposes <see cref="Pick"/> for whatever owns
+that highlight to call, rather than subscribing to RelayClient.PickRockReceived
+itself.
+
+<b>Picks reset on entering either Lobby or Choosing</b> — see
+<see cref="TurnManager.IsChoosingPhase"/>. A fresh Lobby is the start of a new
+match; Choosing is a mid-match pause TurnManager can trigger periodically (or on
+demand) so players can swap stones without the round count or scores moving.
+
+### `Assets/Scripts/Managers/RockSelection.cs` — The seed the current match's rocks were drawn from, or null when players picked their own.
+<!-- ref:0a57 -->
+
+Was `Assets/Scripts/Managers/RockSelection.cs:49-59`.
+
+The seed the current match's rocks were drawn from, or null when players picked
+their own.
+
+
+Exposed rather than only logged so Verification/RockTelemetry can stamp it on every
+throw: a random match that produced surprising numbers is only worth anything as
+evidence if the exact draw can be reproduced, and a seed sitting in the Console
+scrollback is not that. Null in pointed-pick matches, where there is no seed and
+writing one would imply a draw that never happened.
+
+### `Assets/Scripts/Managers/RockSelection.cs` — Assigns every player in the match a fresh rock from a logged seed, so a surprising match can be reproduced.
+<!-- ref:ae91 -->
+
+Was `Assets/Scripts/Managers/RockSelection.cs:152-168`.
+
+Assigns every player in the match a fresh rock from a logged seed, so a
+surprising match can be reproduced. The seed is both logged and kept on
+<see cref="LastRandomSeed"/>, where Verification/RockTelemetry stamps it onto
+every throw it records.
+
+
+Iterates <see cref="TurnManager.Players"/> — the roster — rather than
+<c>_picks.Keys</c>. Entering a choosing phase clears <c>_picks</c> (see
+<see cref="OnMatchPhaseChanged"/>), and in Random mode nothing ever refills it
+before this runs: phone picks are refused outright while <see cref="RandomRocks"/>
+is on, and <see cref="OnPlayerJoined"/> only seeds an entry the first time a
+player joins, not on every Lobby/Choosing re-entry. Iterating <c>_picks.Keys</c>
+meant every match after the first assigned nobody, silently falling back to the
+catalog's first rock for everyone — the roster survives exactly the resets that
+empty <c>_picks</c>, so it is what this needs to iterate.

@@ -7,21 +7,7 @@ using UnityEngine;
 
 namespace Audio
 {
-    /// <summary>
-    /// Turns gameplay events into sounds. The only thing that decides WHICH sound a moment
-    /// deserves; AudioManager decides what that sound is made of.
-    /// </summary>
-    /// <remarks>
-    /// A standalone subscriber that adds no lines to gameplay code, exactly as WaterRipples
-    /// is. That is what inherits the protection SkipPhysics states twice: the aim preview
-    /// runs the solver hundreds of times a frame for a throw that never happened, and only
-    /// RockController publishes the events this listens to, so aiming cannot machine-gun
-    /// skip sounds. The safety is inherited, not re-implemented.
-    ///
-    /// Created after ScoreManager and TurnManager — see Bootstrap. EventManager delivers in
-    /// subscription order, so by the time this hears anything the score is banked and the
-    /// phase has settled, and it can read final state to decide what to play.
-    /// </remarks>
+    // Turns gameplay events into sounds. doc-ref 3e0f docs/4-systems/Audio.md
     public class SfxDirector : MonoBehaviour
     {
         [Header("Skip response")]
@@ -84,19 +70,7 @@ namespace Audio
             Play(SoundId.ThrowRelease, e.Origin, intensity: Mathf.Lerp(0.5f, 1f, Mathf.Clamp01(e.Power)));
         }
 
-        /// <summary>
-        /// The skip sound, its pitch ladder, its score tick, and the milestone accent.
-        /// </summary>
-        /// <remarks>
-        /// SkipIndex goes to Step and the ladder itself lives on the bank entry, so how many
-        /// semitones a skip is worth is tuned in the inspector rather than here.
-        ///
-        /// The score tick rides on this event rather than on a scoring one, and that is not
-        /// a shortcut. ScoreManager banks points per skip and commits the total on throw
-        /// completion, so there is no per-skip scoring event to hang it off — and a tick
-        /// that arrived separately would drift against the skip it belongs to. It shares the
-        /// skip's step so the two climb together and read as one sound.
-        /// </remarks>
+        // The skip sound, its pitch ladder, its score tick, and the milestone accent. doc-ref 2a6d docs/4-systems/Audio.md
         private void OnSkip(SkipOccurredEvent e)
         {
             var intensity = Mathf.InverseLerp(_minImpactSpeed, _maxImpactSpeed, e.Speed);
@@ -141,25 +115,7 @@ namespace Audio
             Play(e.SkipCount == 0 ? SoundId.ThrowFailed : SoundId.Sink, e.Position, intensity);
         }
 
-        /// <summary>
-        /// The score tally, held back so it is not buried by the splash.
-        /// </summary>
-        /// <remarks>
-        /// This is the pile-up Plan-SfxVfx.md section 7.1 describes, and it is real: when a
-        /// rock sinks, RockController publishes RockSunkEvent and then Finish publishes
-        /// ThrowCompletedEvent, which banks the score and rotates the turn — all
-        /// synchronously in one frame. Played on receipt, the splash, the tally and the turn
-        /// sting land together as mush, and the tally, which is the rewarding one, loses.
-        ///
-        /// So the ordering is authored rather than inherited from event delivery: splash at
-        /// t+0, tally at t+scoreDelay, sting at t+turnDelay. The delay rides on the event and
-        /// AudioManager schedules it, so when the fuller queue arrives in M6 nothing here has
-        /// to change.
-        ///
-        /// A failed throw is silent here on purpose. Zero skips still awards distance points,
-        /// but a ka-ching after the dead plunk of a stone that never skipped rewards the one
-        /// outcome the game is trying to make disappointing.
-        /// </remarks>
+        // The score tally, held back so it is not buried by the splash. doc-ref a35a docs/4-systems/Audio.md
         private void OnScored(ScoreAwardedEvent e)
         {
             if (_lastSinkSkipCount == 0) return;

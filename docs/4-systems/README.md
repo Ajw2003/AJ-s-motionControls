@@ -22,6 +22,7 @@ assume you already have.
 | Scoring and turns | [`ScoringAndTurns.md`](ScoringAndTurns.md) | `Assets/Scripts/Managers/` |
 | Hosting and certificates | [`HostingAndCertificates.md`](HostingAndCertificates.md) | `Assets/Scripts/Net/`, `deploy/`, `hotspot/` |
 | Rock catalog and tuning | [`RockCatalogAndTuning.md`](RockCatalogAndTuning.md) | `Assets/Scripts/Game/Rock*.cs`, `Assets/Rocks/` |
+| Audio | [`Audio.md`](Audio.md) | `Assets/Scripts/Audio/`, `Managers/AudioManager.cs` |
 
 ## Why these seven and not more
 

@@ -8,34 +8,10 @@ using Debug = UnityEngine.Debug;
 
 namespace Net
 {
-    /// <summary>
-    /// Child-process plumbing shared by the long-running relay (drained continuously via
-    /// Update, expected to outlive the session) and the short-lived hotspot-control script
-    /// (runs once, prints one line, exits) alike.
-    /// </summary>
-    /// <remarks>
-    /// Extracted from LocalServices, which used to own this outright. Both shapes need the
-    /// same three things — a job-object-adopted child so a crash cannot orphan it, both
-    /// std streams drained so a chatty child never blocks on a full pipe buffer, and the
-    /// PATH-plus-known-install-locations executable search — so one copy is safer than two
-    /// that can drift out of sync.
-    /// </remarks>
+    // Child-process plumbing shared by the long-running relay (drained continuously via Update, expected to outli... doc-ref 9fef docs/4-systems/HostingAndCertificates.md
     public static class ProcessUtil
     {
-        /// <summary>
-        /// Starts a process with the given environment overrides layered on top of this
-        /// process's own environment, and adopted into <paramref name="group"/> so an unclean
-        /// shutdown cannot orphan it.
-        /// </summary>
-        /// <param name="stdout">Every stdout line, in order.</param>
-        /// <param name="stderr">
-        /// Every stderr line, in order. Defaults to <paramref name="stdout"/> — the relay's
-        /// existing behavior, where a consumer just echoes whatever arrives and interleaving
-        /// doesn't matter. Pass a separate queue when a caller needs to read stdout alone
-        /// after exit (e.g. to parse one line of structured output) — both streams are always
-        /// drained regardless, since an unread pipe blocks the child, but they don't have to
-        /// land in the same place.
-        /// </param>
+        // Starts a process with the given environment overrides layered on top of this process's own environment, and... doc-ref 844e docs/4-systems/HostingAndCertificates.md
         public static Process Spawn(string fileName, string arguments, string workingDirectory,
             IEnumerable<KeyValuePair<string, string>> environment,
             ChildProcessGroup group, ConcurrentQueue<string> stdout, ConcurrentQueue<string> stderr = null)

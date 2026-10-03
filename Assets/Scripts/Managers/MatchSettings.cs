@@ -4,19 +4,7 @@ using Singleton;
 
 namespace Managers
 {
-    /// <summary>
-    /// Host-editable match settings, browsable as a generic list so a new setting is one entry
-    /// rather than a screen edit. Owns no gameplay state itself — each gameplay
-    /// <see cref="Setting"/> reads/writes a property that already lives on
-    /// <see cref="RockSelection"/> or <see cref="TurnManager"/>, per the deviation note on
-    /// <see cref="RockSelection"/> saying this class should read/write those properties rather
-    /// than duplicate them (only share internet, a hotspot option, is held here).
-    /// </summary>
-    /// <remarks>
-    /// Created in Bootstrap after both RockSelection and TurnManager — Awake needs both
-    /// instances to already exist so the values loaded from <see cref="MatchSettingsStore"/>
-    /// have somewhere to land.
-    /// </remarks>
+    // Host-editable match settings, browsable as a generic list so a new setting is one entry rather than a scree... doc-ref 52b4 docs/4-systems/ScoringAndTurns.md
     public class MatchSettings : SingletonBase<MatchSettings>
     {
         public List<Setting> All { get; } = new();

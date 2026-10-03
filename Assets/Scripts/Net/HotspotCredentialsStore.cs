@@ -5,29 +5,7 @@ using UnityEngine;
 
 namespace Net
 {
-    /// <summary>
-    /// Reads and writes the host's Wi-Fi hotspot credentials as a plain JSON file in this
-    /// Windows user's app-data folder, so a returning phone can remember this network instead of
-    /// being handed a fresh SSID and passphrase — and therefore a fresh QR to scan — every launch.
-    /// </summary>
-    /// <remarks>
-    /// The file lives in <c>Application.persistentDataPath</c>
-    /// (<c>%USERPROFILE%\AppData\LocalLow\&lt;company&gt;\&lt;product&gt;</c>), not beside the
-    /// executable like <see cref="Managers.MatchSettingsStore"/> (#81). The installer puts the
-    /// game in Program Files, which the game cannot write to, so a save beside the exe failed and
-    /// every launch minted a new network that no phone had saved. A new build folder did the same.
-    /// App data survives both, and the Editor and every build on one PC share it. A plain file,
-    /// not PlayerPrefs, so a host can still open it by hand to read the passphrase off a stuck TV.
-    ///
-    /// A file left beside the executable by an older version is copied over once, never moved,
-    /// so phones that saved that network keep it and the tools that read it there still work.
-    ///
-    /// Security note: a guest who once played keeps access to this hotspot forever, since the
-    /// credentials no longer change. With Share internet on (the default since #72) a
-    /// returning guest gets this PC's internet and LAN, which the host accepted by leaving it
-    /// on; with it off, forwarding stays disabled and they reach only the game's relay and
-    /// the other phones on it.
-    /// </remarks>
+    // Reads and writes the host's Wi-Fi hotspot credentials as a plain JSON file in this Windows user's app-data... doc-ref 69e1 docs/4-systems/HostingAndCertificates.md
     public static class HotspotCredentialsStore
     {
         private const string FileName = "hotspot-credentials.json";

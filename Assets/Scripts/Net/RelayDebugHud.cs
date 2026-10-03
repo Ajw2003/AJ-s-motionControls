@@ -189,15 +189,7 @@ namespace Net
         /// <summary>Reads the face angle off a throw. Cached so OnGUI allocates no delegate.</summary>
         private static readonly Func<ThrowMessage, float> FaceAngleSelector = FaceAngleOf;
 
-        /// <summary>Spread as a percentage of the mean — the repeatability number.</summary>
-        /// <remarks>
-        /// Takes the list and a selector rather than an IEnumerable&lt;float&gt; because this
-        /// runs inside OnGUI, twice a frame, for as long as the HUD is up. The LINQ form
-        /// allocated an iterator, a closure and a backing List per call to produce three
-        /// numbers that one pass already has in hand. The selectors are cached statics for
-        /// the same reason — a method group or lambda written at the call site would
-        /// allocate a fresh delegate every frame.
-        /// </remarks>
+        // Spread as a percentage of the mean — the repeatability number. doc-ref f61d docs/4-systems/Networking.md
         private static string Spread(List<ThrowMessage> throws, Func<ThrowMessage, float> selector)
         {
             if (throws.Count < 2) return "n/a";

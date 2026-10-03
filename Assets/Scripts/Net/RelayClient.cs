@@ -12,27 +12,7 @@ using UnityEngine;
 
 namespace Net
 {
-    /// <summary>
-    /// Host-side connection to the relay. Creates the room, receives phone input,
-    /// and broadcasts match state back out.
-    /// </summary>
-    /// <remarks>
-    /// MUST live in the Bootstrap scene as a persistent manager. If it is created
-    /// per-scene instead, the socket is torn down on every transition and every
-    /// phone bounces back to the join screen — a lifecycle bug that presents as a
-    /// networking one.
-    ///
-    /// DEVIATION FROM PLAN: uses System.Net.WebSockets.ClientWebSocket rather than
-    /// the NativeWebSocket package the plan named. ClientWebSocket ships with .NET,
-    /// so there is no external dependency to vendor, and it works fine for a native
-    /// desktop host. The tradeoff is that it does NOT work in WebGL builds — which
-    /// is acceptable because the plan already rejected WebGL as a target. Swap to
-    /// NativeWebSocket if a browser build ever becomes a requirement.
-    ///
-    /// ClientWebSocket is thread-affine for sends, so all sends funnel through a
-    /// semaphore, and all received messages are marshalled onto the main thread via
-    /// a queue drained in Update — Unity APIs cannot be touched from the socket task.
-    /// </remarks>
+    // Host-side connection to the relay. doc-ref 5e27 docs/4-systems/Networking.md
     public class RelayClient : SingletonBase<RelayClient>
     {
         /// <summary>
@@ -161,17 +141,7 @@ namespace Net
         /// </summary>
         private const float MaxRetryDelay = 4f;
 
-        /// <summary>
-        /// How long a single connect attempt may take before it is abandoned.
-        /// </summary>
-        /// <remarks>
-        /// Without this the client can wedge permanently. A TCP connect against a
-        /// half-torn-down network — Wi-Fi toggled off and back on, a laptop waking, a
-        /// relay being restarted — can sit unresolved far longer than any useful
-        /// retry interval, and while it does, `_connecting` stays true and Update
-        /// refuses to start another attempt. The symptom is a host that never comes
-        /// back even though the network is fine again.
-        /// </remarks>
+        // How long a single connect attempt may take before it is abandoned. doc-ref a5fc docs/4-systems/Networking.md
         private const float ConnectTimeout = 8f;
 
         /// <summary>Belt and braces: if a connect somehow outlives its own timeout, reset anyway.</summary>

@@ -7,24 +7,7 @@ using UnityEngine;
 
 namespace Managers
 {
-    /// <summary>
-    /// Owns what display name every player shows as. The only source of truth for "whose
-    /// name is that" — everything downstream (the roster line, the scoreboard, the
-    /// active-player label) reads through here rather than printing a player id directly.
-    /// </summary>
-    /// <remarks>
-    /// Mirrors <see cref="PlayerColours"/>, which is the same shape of problem: a
-    /// per-player value held in a dictionary keyed by player id, seeded with a fallback
-    /// the moment they join, updated by a message from their phone, and held across a
-    /// disconnect until the roster empties.
-    ///
-    /// Exists because of docs/plans/seamless-rejoin.md Workstream C: <c>playerId</c> is now
-    /// the phone's stable device identity (see identity.js), not the typed name, so the
-    /// name a player chose has nowhere else to live — it arrives separately as SET_NAME and
-    /// this class is where it lands. Renaming mid-match therefore changes only what
-    /// <see cref="DisplayNameFor"/> returns; it can never look like a new player joining,
-    /// because the key it's stored under (the device id) never changes.
-    /// </remarks>
+    // Owns what display name every player shows as. doc-ref 2c28 docs/4-systems/ScoringAndTurns.md
     public class PlayerNames : SingletonBase<PlayerNames>
     {
         private RelayClient _relay;

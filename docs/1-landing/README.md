@@ -69,6 +69,7 @@ have already cost someone a day.
 | Scoring and turns | [`4-systems/ScoringAndTurns.md`](../4-systems/ScoringAndTurns.md) | Match phases, the roster, whose turn it is, where points come from |
 | Hosting and certificates | [`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) | The hotspot, the secure context, the certificate, offline play |
 | Rock catalog and tuning | [`4-systems/RockCatalogAndTuning.md`](../4-systems/RockCatalogAndTuning.md) | The six rocks, the rock-vs-global split, selection |
+| Audio | [`4-systems/Audio.md`](../4-systems/Audio.md) | SoundId, AudioBank, procedural clips, AudioManager |
 
 ---
 

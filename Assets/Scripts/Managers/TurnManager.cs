@@ -30,18 +30,7 @@ namespace Managers
         Results,
     }
 
-    /// <summary>
-    /// Owns the player roster, whose turn it is, and where the match is in its lifecycle.
-    /// The only thing that tells a phone to show its throw screen.
-    /// </summary>
-    /// <remarks>
-    /// Publishes match events; deliberately computes no score — that lives solely in
-    /// ScoreManager, so scoring can be retuned without touching turn logic.
-    ///
-    /// The match runs a fixed number of rounds, each giving every player one throw, and
-    /// then ends. Before this existed turns rotated forever and the round counter was
-    /// incremented but never read, so a session had no way to finish.
-    /// </remarks>
+    // Owns the player roster, whose turn it is, and where the match is in its lifecycle. doc-ref 428c docs/4-systems/ScoringAndTurns.md
     public class TurnManager : SingletonBase<TurnManager>
     {
         [Header("Match")]
@@ -87,25 +76,7 @@ namespace Managers
 
         public MatchPhase Phase { get; private set; } = MatchPhase.Lobby;
 
-        /// <summary>
-        /// The one place Phase is ever assigned. Announces real changes and swallows
-        /// redundant ones.
-        /// </summary>
-        /// <remarks>
-        /// A setter rather than three assignments with a Publish next to each, because the
-        /// duplicate that eventually gets missed is the bug: a phase change that moves the
-        /// field without announcing it leaves music and screens on the previous phase with
-        /// nothing in the log to say why.
-        ///
-        /// The equality check is not tidiness either. ReturnToLobby is reachable from the
-        /// lobby — OnPlayerLeft calls it whenever the roster empties, and the guard there is
-        /// on Phase != Lobby, but StartMatch with no players and other paths can still land
-        /// here with nothing to change. Announcing that would restart lobby music every time
-        /// the last player disconnects.
-        ///
-        /// Published after the assignment, so a subscriber reading Phase sees the new value
-        /// rather than the one it is being told is over.
-        /// </remarks>
+        // The one place Phase is ever assigned. doc-ref 7ae7 docs/4-systems/ScoringAndTurns.md
         private void SetPhase(MatchPhase phase)
         {
             if (Phase == phase) return;
@@ -182,21 +153,7 @@ namespace Managers
             if (Input.GetKeyDown(forceChooseKey) && Phase == MatchPhase.Playing) EnterChoosing();
         }
 
-        /// <summary>
-        /// Move the match on from wherever it is: start from the lobby, resume from a
-        /// re-pick, hand a finished match back to the lobby. The host's Space key and a
-        /// phone's ADVANCE both land here and nowhere else.
-        /// </summary>
-        /// <remarks>
-        /// Split by phase rather than one CanStartMatch check driving StartMatch
-        /// unconditionally: that used to let a press from Results skip straight into
-        /// Playing with the previous match's rock picks still in place, because
-        /// CanStartMatch is also true on Results and Choosing (both are "not Playing").
-        ///
-        /// Playing is deliberately absent from the switch. A phone that has not yet been
-        /// told the match started could otherwise send a stale ADVANCE into a live turn,
-        /// and there is nothing sensible for it to mean there.
-        /// </remarks>
+        // Move the match on from wherever it is: start from the lobby, resume from a re-pick, hand a finished match b... doc-ref 0201 docs/4-systems/ScoringAndTurns.md
         public void Advance()
         {
             switch (Phase)
@@ -352,18 +309,7 @@ namespace Managers
             StartTurn(_current + 1);
         }
 
-        /// <summary>
-        /// Pauses the match for a re-pick without touching scores or the round count —
-        /// that is the entire difference between this and ReturnToLobby, and why Choosing
-        /// is a separate phase rather than a reuse of Lobby.
-        /// </summary>
-        /// <param name="advanceOnResume">
-        /// True from the round-boundary caller in NextTurn, where _current is still the
-        /// player whose throw just ended the round and resuming must move past them. False
-        /// from the manual forceChooseKey, which can fire mid-round with a player still
-        /// waiting to throw — advancing there would skip them entirely rather than pause
-        /// and return them to their own turn.
-        /// </param>
+        // Pauses the match for a re-pick without touching scores or the round count — that is the entire difference b... doc-ref e811 docs/4-systems/ScoringAndTurns.md
         public void EnterChoosing(bool advanceOnResume = false)
         {
             if (Phase != MatchPhase.Playing) return;

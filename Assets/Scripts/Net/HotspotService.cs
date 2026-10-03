@@ -22,23 +22,7 @@ namespace Net
         Failed,
     }
 
-    /// <summary>
-    /// Drives Windows Mobile Hotspot for Hotspot mode via hotspot/hotspot-control.ps1 — a
-    /// short-lived child process, since Unity/Mono cannot call the WinRT tethering APIs
-    /// directly. See docs/plans/network-mode-selection.md.
-    /// </summary>
-    /// <remarks>
-    /// Waits for LocalServices to reach Ready, and specifically for its DNS responder to have
-    /// actually finished binding :53 (LocalServices.ProbeDnsBound — Ready alone only proves the
-    /// HTTP listener is up), before starting tethering. The responder must hold :53 before ICS
-    /// starts, or phones on the hotspot cannot resolve the game's address at all.
-    ///
-    /// Name resolution has two halves and this class gates on both, because they fail
-    /// independently and look nothing alike. The responder above is how a PHONE resolves
-    /// MagicDomain.HostName; VerifyHostNameResolves is how the HOST does, via the hosts entry
-    /// deploy/setup-offline.ps1 writes. Phones working while the host does not is the normal
-    /// shape of this being broken.
-    /// </remarks>
+    // Drives Windows Mobile Hotspot for Hotspot mode via hotspot/hotspot-control.ps1 — a short-lived child proces... doc-ref 3614 docs/4-systems/HostingAndCertificates.md
     public class HotspotService : SingletonBase<HotspotService>
     {
         [Tooltip("Seconds to wait for hotspot-control.ps1 -Action Start before giving up.")]
@@ -257,15 +241,7 @@ namespace Net
                                  "is not sharing it, so guests will have no internet.");
             }
 
-            // Not a failure, so this is checked after the fatal warning above rather than
-            // beside it. bandMatched is false when the host's station link is on a band the
-            // access point cannot follow it onto (6 GHz), or when the adapter refused the
-            // band outright. Either way one radio is serving two channels, it time-slices,
-            // and the phones feel it long before anyone thinks to blame Wi-Fi.
-            //
-            // Note this reports what was ASKED for. The driver places the access point, and
-            // Windows exposes no way to read back the channel it chose - so the wording says
-            // "may", and tools/measure-hotspot-jitter.ps1 is how you find out for certain.
+            // Not a failure, so this is checked after the fatal warning above rather than beside it. doc-ref 0fd3 docs/4-systems/HostingAndCertificates.md
             RadioSharingWarning = result.Value.bandMatched
                 ? null
                 : $"Your Wi-Fi ({result.Value.stationBand}) is sharing one radio with the " +
@@ -278,21 +254,7 @@ namespace Net
             SetState(HotspotState.Ready, $"Hotspot \"{Ssid}\" ready.");
         }
 
-        /// <summary>
-        /// Registers the one-time, elevated, per-machine prerequisites Hotspot mode needs —
-        /// the same three things deploy/setup-offline.ps1 has always set up by hand (the
-        /// forwarding-disable scheduled task, firewall rules, and the host's own hosts entry)
-        /// — automatically, the first time this machine ever reaches this point, instead of
-        /// requiring someone to find and run that script themselves first.
-        /// </summary>
-        /// <remarks>
-        /// Windows itself still requires one UAC prompt — there is no way around that for an
-        /// operation this privileged, and there should not be — but it now happens in place,
-        /// triggered by pressing Start, rather than being a separate manual step nobody is
-        /// told about until hotspot-control.ps1 fails four steps later with a cryptic
-        /// scheduled-task error. Every later Play session on this machine skips straight past
-        /// this: the cheap unelevated -DryRun below reports nothing left to change.
-        /// </remarks>
+        // Registers the one-time, elevated, per-machine prerequisites Hotspot mode needs — the same three things depl... doc-ref 1910 docs/4-systems/HostingAndCertificates.md
         private IEnumerator EnsureOfflineSetup(string powershell, Action<bool> onResult)
         {
             var scriptPath = Path.GetFullPath(
@@ -304,17 +266,7 @@ namespace Net
                 yield break;
             }
 
-            // Ask the script itself whether this machine is set up, rather than re-implementing
-            // the question here. -DryRun writes nothing and needs no elevation, and answers via
-            // its exit code: 0 already correct, 3 setup needed, anything else a real problem.
-            //
-            // This used to ask a cheaper proxy instead — "does the RockSkippingDisableForwarding
-            // scheduled task exist?" — and that proxy is what broke Hotspot mode on every machine
-            // set up before the magic-domain replacement. The task was registered in the
-            // local-ip.sh era and is still there, so setup was skipped, so the hosts entry for
-            // MagicDomain.HostName was never added, so the host resolved its own relay via public
-            // DNS to a parked address and retried against it forever. A proxy that stops implying
-            // what it used to imply fails silently, which is the worst way for this to fail.
+            // Ask the script itself whether this machine is set up, rather than re-implementing the question here. doc-ref 7791 docs/4-systems/HostingAndCertificates.md
             var probeOutput = new ConcurrentQueue<string>();
             var probeArgs = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " +
                             $"\"{scriptPath}\" -DryRun";
@@ -435,25 +387,7 @@ namespace Net
             onResult(true);
         }
 
-        /// <summary>
-        /// Confirms this machine resolves <see cref="MagicDomain.HostName"/> to the hotspot
-        /// address, which is what the hosts entry setup-offline.ps1 writes is for.
-        /// </summary>
-        /// <remarks>
-        /// The single most misleading failure in this design, and the reason it is checked
-        /// explicitly rather than left to fail downstream. The host never consults the DNS
-        /// responder on its own :53 — it takes no DHCP from itself — so it asks a public
-        /// resolver instead, and play.skiprocking.ca is a real registered name whose public
-        /// record is the registrar's parking page. A missing hosts entry therefore does not
-        /// look like "unknown host". It looks like the relay is up but rejecting the
-        /// connection, because Unity is talking to a stranger's web server on the internet.
-        /// RelayClient retries that forever without ever saying anything is wrong.
-        ///
-        /// Run after EnsureOfflineSetup, so the entry it writes is already in place, and
-        /// before tethering, so a wrong answer is reported instead of a hotspot nobody can
-        /// use. Deliberately not gated on the address existing yet — the hosts file is
-        /// consulted whether or not the hotspot adapter is up.
-        /// </remarks>
+        // Confirms this machine resolves <see cref="MagicDomain.HostName"/> to the hotspot address, which is what the... doc-ref 4a38 docs/4-systems/HostingAndCertificates.md
         private bool VerifyHostNameResolves()
         {
             var hostName = MagicDomain.HostName;
