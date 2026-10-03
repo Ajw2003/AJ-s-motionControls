@@ -65,6 +65,7 @@ have already cost someone a day.
 | Event system | [`4-systems/EventSystem.md`](../4-systems/EventSystem.md) | Publish/subscribe across four scenes, subscriber lifetime |
 | Networking | [`4-systems/Networking.md`](../4-systems/Networking.md) | The relay, the wire format, `RelayClient`, reconnection |
 | Motion pipeline | [`4-systems/MotionPipeline.md`](../4-systems/MotionPipeline.md) | Phone sensors → normalized quaternion → the stone's rotation |
+| Phone controller | [`4-systems/PhoneController.md`](../4-systems/PhoneController.md) | The phone page: join and choose screens, AIM streams |
 | Skip physics | [`4-systems/SkipPhysics.md`](../4-systems/SkipPhysics.md) | The bounce solver, the purity rule, the forgiveness bands |
 | Scoring and turns | [`4-systems/ScoringAndTurns.md`](../4-systems/ScoringAndTurns.md) | Match phases, the roster, whose turn it is, where points come from |
 | Hosting and certificates | [`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) | The hotspot, the secure context, the certificate, offline play |

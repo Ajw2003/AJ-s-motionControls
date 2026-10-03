@@ -1,18 +1,8 @@
 'use strict';
 
-/**
- * A stand-in TV host for exercising a phone against a relay without Unity.
- *
- * It does what TurnManager does for one player at a time. Every phone that joins gets
- * TURN yourTurn:true. Each THROW is logged, and SETTLE_MS later (the stone "settling")
- * TURN is sent again. Once a second it prints how many AIM frames each phone sent, which
- * is how to see the stream stop during a stone's flight, or a stall's backlog land at once.
- *
- *   node relay/fake-host.js                      (relay on ws://127.0.0.1:3000)
- *   RELAY_URL=ws://127.0.0.1:3998 SETTLE_MS=5000 node relay/fake-host.js
- *
- * Stop it with Ctrl+C.
- */
+// A stand-in TV host that exercises a phone against a relay without Unity.
+// Usage: node relay/fake-host.js (RELAY_URL, SETTLE_MS); stop with Ctrl+C.
+// doc-ref 93e6 docs/4-systems/Verification.md
 
 const { WebSocket } = require('ws');
 

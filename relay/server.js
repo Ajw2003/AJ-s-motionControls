@@ -1,28 +1,8 @@
 'use strict';
 
-/**
- * Rock Skipping relay server.
- *
- * Routes messages between one Unity host (the PC driving the TV) and up to
- * MAX_PLAYERS_PER_ROOM phone controllers, keyed by a short room code.
- *
- * Routing is deliberately generic: the relay knows nothing about AIM, THROW or
- * SPECTATE. Anything a player sends goes to the host; anything the host sends
- * goes to every player, or to one player if it carries `targetPlayerId`. New
- * message types can be added to the game without touching this file.
- *
- * Static file serving is deliberately an allowlist rather than a directory listing
- * (see `isAllowedRelativePath`): a bare prefix check on the resolved path let a
- * phone read anything checked into `controller/` — package.json, eslint config,
- * test scripts, whatever gets added next to `js/` later — with nothing to notice
- * a new file had joined the public surface (C4, docs/Findings-NetworkAndThrowStability.md).
- * Naming exactly what a phone needs (`/`, `index.html`, `js/<name>.js`) keeps that
- * surface from silently growing. Request handling is also per-request try/catch'd
- * rather than guarded by a global `uncaughtException` handler, because a malformed
- * request path used to throw synchronously with nothing catching it and took the
- * whole process — every room on it — down with it (C1, same doc). A handler scoped
- * to one request can never do that; a global one would only paper over the crash.
- */
+// Routes messages between one host and its phones generically, serves only an allowlist of static files,
+// and handles errors per request rather than globally.
+// doc-ref 2e34 docs/4-systems/Networking.md
 
 const { WebSocketServer, WebSocket } = require('ws');
 const qrcode = require('qrcode-generator');
@@ -527,20 +507,8 @@ function pickSharingUpstream() {
   );
 }
 
-// Android and iOS each probe a domain of their choosing right after joining a network, to
-// decide whether to show "No internet" and whether to keep cellular as the default route.
-// Unless SHARE_INTERNET is on, guests are isolated from the host's internet by design, so
-// these probes always fail on their own, and "it just stopped working" reports are very
-// likely a phone that decided this network was useless rather than an actual game bug. Answering them ourselves (this list, plus
-// /generate_204 and /hotspot-detect.html below) fixes the symptom without re-enabling
-// forwarding and undoing the isolation decision — see docs/plans/magic-domain-replacement.md
-// Phase 4 and docs/6-decisions/Decision-OfflineHosting.md.
-//
-// Every name here is one we intend to SERVE: the phone's plain-HTTP probe reaches :80 and gets
-// a 204 or "Success". Adding a name in order to have it refused is a different idea and does
-// not belong here — `www.google.com`, Android's HTTPS probe host, was added on exactly that
-// reasoning and removed again when hardware testing falsified it. Android resolved it, got our
-// address, and still issued no HTTP probe.
+// Answers the OS connectivity probes ourselves; only names we intend to SERVE belong in this list.
+// doc-ref 144d docs/4-systems/Networking.md
 const CONNECTIVITY_PROBE_DOMAINS = [
   'connectivitycheck.gstatic.com',
   'connectivitycheck.android.com',
@@ -925,31 +893,9 @@ async function startDns() {
   }
 }
 
-/**
- * What :80 answers. It has its own handler rather than reusing `handleRequest`, and that is
- * a bug fix, not tidying: `handleRequest` ends in `serveStatic`, so this listener used to
- * serve the ENTIRE CONTROLLER over plain HTTP on every interface the host has, despite the
- * comment below claiming it served the probes only. A guest who typed the host name without
- * `https://` got a controller page that loaded, looked correct, and could not read a single
- * sensor — a secure context is required for DeviceMotion and there is none here. Redirecting
- * instead turns that silent dead end into the right page. See
- * docs/plans/join-failure-reduction.md §1.
- */
-/**
- * Appends one line to probe-access.log, beside this file.
- *
- * The :80 listener and the DNS responder are the only parts of the relay a phone touches
- * before it has joined, and they are the parts nobody can see: the relay is a child of the
- * Unity Editor, so its stdout reaches the Console only when LocalServices.verboseLogging is
- * on. Three separate diagnoses in this project were blind exactly here — netstat proves a
- * connection arrived but not what it asked for, and "the phone shows No internet" looks
- * identical whether the probe never came, came for a path we do not answer, or was answered
- * correctly and ignored by the platform. A file sidesteps the Unity plumbing entirely, and
- * survives the session that produced it.
- *
- * Best-effort by design: a logging failure must never take down a listener a guest is
- * mid-request on, so every error here is swallowed.
- */
+// What :80 answers: probes and a redirect, never the controller over plain HTTP.
+// The probe-access log is best-effort, because the relay is otherwise invisible here.
+// doc-ref f8e4 docs/4-systems/Networking.md
 function appendAccessLog(line) {
   try {
     fs.appendFileSync(nodePath.join(__dirname, 'probe-access.log'), `${line}\n`);
@@ -992,17 +938,8 @@ function handleProbeRequest(req, res) {
   logProbeRequest(req, url.pathname, `302 -> ${GAME_URL}`);
 }
 
-/**
- * Plain-HTTP listener on :80 for the connectivity probes — the game
- * itself is never served here (see handleProbeRequest), only redirected to.
- *
- * Per the plan's resolved open question: some machines already have :80 taken (IIS, Docker
- * Desktop, Skype's old binding), and a failed launch is a worse outcome than a phone that
- * shows "No internet" while the game still works perfectly over :8443. So this DEGRADES
- * QUIETLY — EADDRINUSE and friends are caught and logged, never thrown past this function —
- * and LOGS LOUDLY, because the resulting symptom is easy to misdiagnose as a network
- * problem rather than a cosmetic one.
- */
+// The :80 listener for connectivity probes degrades quietly if the port is taken, but logs loudly.
+// doc-ref f70b docs/4-systems/Networking.md
 function startHttpProbeListener() {
   http80Server = http.createServer(handleProbeRequest);
 

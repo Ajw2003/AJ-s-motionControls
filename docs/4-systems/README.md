@@ -18,6 +18,7 @@ assume you already have.
 | Event system | [`EventSystem.md`](EventSystem.md) | `Assets/Scripts/EventSystems/`, `EventTypes/` |
 | Networking | [`Networking.md`](Networking.md) | `Assets/Scripts/Net/`, `relay/` |
 | Motion pipeline | [`MotionPipeline.md`](MotionPipeline.md) | `controller/js/`, `Assets/Scripts/Game/Physics/PhoneAttitude.cs` |
+| Phone controller | [`PhoneController.md`](PhoneController.md) | `controller/js/app.js` |
 | Skip physics | [`SkipPhysics.md`](SkipPhysics.md) | `Assets/Scripts/Game/Physics/` |
 | Scoring and turns | [`ScoringAndTurns.md`](ScoringAndTurns.md) | `Assets/Scripts/Managers/` |
 | Hosting and certificates | [`HostingAndCertificates.md`](HostingAndCertificates.md) | `Assets/Scripts/Net/`, `deploy/`, `hotspot/` |

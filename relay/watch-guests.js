@@ -1,23 +1,8 @@
 'use strict';
 
-/**
- * Watches, live, every TCP connection a hotspot guest opens to this host.
- *
- * `diagnose-hotspot.js` answers "does the relay serve the right thing?" from the host. This
- * answers the question that one structurally cannot: "did the phone's request arrive at all?"
- * Those look identical on the phone — a page that never loads is the same screen whether the
- * request was blocked, was answered wrongly, or was never sent over the Wi-Fi in the first
- * place. Only the host's connection table separates them.
- *
- * The distinction matters most for Android. A network flagged "no internet" is not made the
- * device's default network, so ordinary apps — Chrome included — can route to cellular while
- * the OS's own connectivity probe stays bound to the Wi-Fi. When that happens the probe
- * shows up here and the browser never does, from the same phone, at the same moment.
- *
- * Read-only: it shells out to `netstat` and prints. It changes nothing and touches no socket.
- *
- * Usage:  node watch-guests.js          (Ctrl+C to stop)
- */
+// Watches, live and read-only, every TCP connection a hotspot guest opens to this host (via netstat).
+// Usage: node watch-guests.js (Ctrl+C to stop)
+// doc-ref a16c docs/4-systems/Networking.md
 
 const { execFile } = require('child_process');
 

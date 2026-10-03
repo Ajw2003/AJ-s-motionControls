@@ -1,16 +1,7 @@
 'use strict';
 
-/**
- * Tests for the per-device join funnel. Run with: npm test
- *
- * The funnel decides what the TV says while people are joining, off signals that arrive out
- * of order, from three different layers, keyed only by IP. Every case below is one of the
- * ways that combination can lie:
- *
- *   - a stage regressing would make the TV nag someone mid-throw,
- *   - an untracked address being counted would invent a phone on a developer's machine,
- *   - a device never expiring would leave the TV nagging about a guest who went home.
- */
+// Funnel tests; each case is a way that out-of-order, IP-keyed signals can lie.
+// doc-ref 044b docs/4-systems/Verification.md
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');

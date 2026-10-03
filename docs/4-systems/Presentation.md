@@ -1109,3 +1109,35 @@ docs/plans/remove-direct-transport.md. Hotspot is the only mode there is now (LA
 was removed outright, not merely deprecated — its certificate stopped validating once
 local-ip.sh's wildcard was replaced by a single-name one), so this screen shows no
 choice at all.
+
+### `tools/art/lake-louise/build_lake_louise.py` — The FBX axis rule was observed, not assumed
+<!-- ref:0448 -->
+
+Was `tools/art/lake-louise/build_lake_louise.py:637-647`.
+
+FBX for Unity: Blender's standard Unity settings, -Z forward, Y up, transform baked.
+
+The file then stores Blender (X, Y, Z) as (X, Z, -Y), and Unity's importer reads a file's
+(x, y, z) as (x, y, -z), so Unity gets (X, Z, Y): x right, y up, z down the lake.
+
+That importer rule was OBSERVED, not assumed, and at some cost: the first export used
+axis_forward='Z' on paper reasoning, and in Unity the whole valley came in turned 180
+degrees - behind the camera and mirrored left-right (2026-09-28). The file then held
+(-X, Z, Y); Unity showing it turned 180 degrees is what pins the rule down.
+LakeLouiseEnvironment.cs still checks on load and corrects a 180 degree turn with a warning.
+
+### `tools/art/lake-louise/build_lake_louise.py` — Crest samples land exactly on the photo skyline
+<!-- ref:4a6f -->
+
+Was `tools/art/lake-louise/build_lake_louise.py:181-191`.
+
+Dense crest samples along one ridge, each as high as the photo's silhouette says.
+
+A crest sample at horizontal distance d from the camera, in a direction where the photo's
+(scaled) skyline stands e degrees up, gets height CAMERA_HEIGHT + d * tan(e), so it lands
+exactly on that skyline. Directions past either end of a traced line take its end value,
+which is how the ridges carry on beyond the photo's edges.
+
+The crest dominates the skyline because every data-slope (0.6-1.15) is steeper than any
+sight line to a crest (tan of at most ~15 degrees, 0.27): ground in front of a crest,
+along the same sight line, always drops away below it.

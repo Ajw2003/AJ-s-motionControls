@@ -697,3 +697,185 @@ the relay (<c>handleCreateRoom</c>) still decides whether the code is actually f
 may hand back a different one, which <see cref="RelayClient"/> then saves here via
 <see cref="Save"/>. So this file records "the code we'll ask for next time", not a
 guarantee.
+
+### `deploy/setup-offline.ps1` — Why exit 3 means "not set up yet"
+<!-- ref:c36f -->
+
+Was `deploy/setup-offline.ps1:456-464`.
+
+Exit 3 = "nothing is wrong, but this machine is not set up yet". HotspotService.cs runs this
+script with -DryRun (which needs no elevation) purely to ask that question before deciding
+whether to raise a UAC prompt, so it needs an answer it can read from an exit code.
+
+It used to ask a cheaper proxy question instead - "does the scheduled task exist?" - and that
+proxy went stale the moment this script grew steps the task does not imply. On every machine
+set up before 2026-09-03 the task was present while the play.skiprocking.ca hosts entry was
+not, so setup was skipped, the host could not resolve its own relay, and the game sat retrying
+forever. One question, answered by the script that defines the answer.
+
+### `deploy/spike/dns-responder.js` — Mirroring output to a file, synchronously
+<!-- ref:25f5 -->
+
+Was `deploy/spike/dns-responder.js:37-44`.
+
+Mirror everything to a file as well as the console. The console lives in a window the
+person running this may not be watching - and during the 2026-08-20 run it was a separate
+window nobody could read back, which made the single most important output of the spike
+something that had to be relayed by hand.
+Appended synchronously on purpose. A buffered stream loses whatever it is holding when the
+process is killed rather than Ctrl+C'd, which is how a test rig usually dies - and losing
+the last few lines loses exactly the ones that matter. The volume here is a handful of DNS
+queries, so the cost of a sync write is irrelevant.
+
+### `deploy/spike/hotspot-dns-test.ps1` — Upstream forwarding and the 0.0.0.0 bind
+<!-- ref:1715 -->
+
+Was `deploy/spike/hotspot-dns-test.ps1:133-144`.
+
+192.168.137.1 is the conventional Windows ICS host address; confirmed below.
+
+Upstream forwarding matters more than it looks. Without it every other name returns
+NXDOMAIN, the phone decides the network has no internet, and Android in particular
+may quietly fall back to mobile data - which fails the test for a reason that has
+nothing to do with what is being tested. Forwarding keeps the phone connected and
+still discriminates, because play.local-ip.sh resolves nowhere but here.
+Bound to 0.0.0.0 out of necessity, not preference: 192.168.137.1 does not exist until
+the hotspot is up, and we must hold :53 BEFORE that to win the race against ICS. The
+source guard (--allow) is therefore the real protection here - without it, listening
+everywhere while forwarding upstream is an open resolver and an amplification
+reflector. See ../../docs/SecurityReview.md section 4.
+
+### `deploy/verify-stack.ps1` — Accepting any certificate on a loopback probe
+<!-- ref:335c -->
+
+Was `deploy/verify-stack.ps1:283-291`.
+
+The certificate's SAN never covers 127.0.0.1, and probing loopback is a liveness check on a
+process this script just started rather than a trust decision - the same reasoning, and the
+same narrow scope, as LocalServices.AcceptAnyCertificate.
+
+A compiled delegate rather than the usual `= { $true }` scriptblock. .NET invokes the
+validation callback on a TLS worker thread, which under -NonInteractive has no runspace to
+run PowerShell in, so the scriptblock form fails with "There is no Runspace available to run
+scripts in this thread" - surfaced as a bare "the underlying connection was closed", which
+reads exactly like the relay refusing the connection.
+
+### `hotspot/hotspot-control.ps1` — Verify the isolation fact, not the task launch
+<!-- ref:da53 -->
+
+Was `hotspot/hotspot-control.ps1:371-385`.
+
+ICS re-enables forwarding on every tethering start, so this must run fresh each
+session - the scheduled task exists precisely to do that without a UAC prompt per
+party (docs/ZeroSetupPlan.md Phase 4.2 / 5). A missing/failed task means the hotspot
+is up but NOT isolated: HotspotService treats a non-null warning here as a failure,
+not a soft caveat, and stops tethering rather than leave that state running.
+
+VERIFY THE FACT, NOT THE LAUNCH. This used to report success when Start-ScheduledTask
+returned, which proves only that a task was started - not that forwarding changed, and
+not that it stayed changed. It reported isolation on a machine that measurably had
+none, for as long as the task existed, which is the worst way for this to fail. The
+state is read back below instead, and it needs no elevation to read.
+
+Polled rather than read once, because this is a race: the task runs asynchronously and
+ICS may re-assert forwarding after it. If the flag will not stay down within the
+window, that is the honest answer and the caller should act on it.
+
+### `hotspot/hotspot-control.ps1` — Tethering needs a connection profile, not internet
+<!-- ref:83ad -->
+
+Was `hotspot/hotspot-control.ps1:226-233`.
+
+Tethering needs *a* connection profile to hang off. It does not need that profile to carry
+internet, or even to be connected - measured 2026-08-21, see docs/6-decisions/Decision-OfflineHosting.md.
+
+This used to ask only GetInternetConnectionProfile(), which returns null whenever there is no
+internet, and reported that as no-connection-profile. That single call is the entire reason
+Hotspot mode appeared not to work offline, and why ZeroSetupPlan.md recorded Open Question 2
+as "answered - no". Confirmed with the Ethernet cable out and Wi-Fi joined to nothing:
+tethering starts, takes 192.168.137.1, and serves DHCP and DNS.
+
+### `hotspot/hotspot-control.ps1` — Matching the AP band to the station band
+<!-- ref:9c91 -->
+
+Was `hotspot/hotspot-control.ps1:78-93`.
+
+Which TetheringWiFiBand the access point should ask for, given what this radio is
+already doing. Returns a band name, plus the human-readable station band for logging.
+
+WHY THIS EXISTS. Adapters in this class report "Soft AP : Not supported", so Windows
+runs Mobile Hotspot as a Wi-Fi Direct GO on the SAME PHYSICAL RADIO as the station
+link. Ask for a band the station is not on and the radio has to time-slice between
+two channels: packets are queued rather than dropped, and the 20Hz AIM stream reaches
+the game in bursts. That is felt directly as a jerky, delayed aim preview.
+
+Measured 2026-09-09, host on 5 GHz ch44, AP pinned to 2.4 GHz, 60 pings to a joined
+phone: mean 156.9ms, stdev 194.3ms, max 1161ms, 2% loss. Disconnecting the station
+link and changing nothing else: mean 26.6ms, stdev 52.9ms, max 289ms, 0% loss.
+See docs/plans/aim-preview-lag-on-shared-radio.md.
+
+Matching the band is what lets the GO share the station's channel instead of
+alternating with it. It is a request, not a guarantee - the driver places the GO.
+
+### `relay/dns.js` — Responder options
+<!-- ref:7fec -->
+
+Was `relay/dns.js:200-228`.
+
+@param {object}   options
+@param {string}   options.ip        address to answer with
+@param {string}  [options.suffix]   answer anything ending in this
+@param {string}  [options.name]     or answer exactly this name
+@param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
+                                    hostname plus the connectivity probe domains —
+                                    see docs/plans/magic-domain-replacement.md Phase 4)
+@param {string[]} [options.fallbackNames] names forwarded upstream first, answered locally
+                                    (like `names`) only if the upstream stays silent for
+                                    `fallbackMs` or errors. For sharing mode, where the probe
+                                    domains must resolve for real if the internet is up.
+                                    With no `upstream` they behave exactly like `names`.
+@param {string[]} [options.blockedNames] names always answered NXDOMAIN, never forwarded —
+                                    iCloud Private Relay's opt-out signal (#79)
+@param {number}  [options.fallbackMs] how long to wait for upstream before answering a
+                                    fallback name locally (default 1500)
+@param {number}  [options.upstreamPort] upstream's UDP port (default 53; tests override)
+@param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
+@param {number}  [options.rate]     max queries per second per source
+@param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
+@param {function} [options.onQuery] called with the source address of every query that
+                                    passes the allow-list and rate limit, whatever name it
+                                    asked for. This is the earliest evidence a phone is on
+                                    the hotspot at all — both platforms probe for internet
+                                    access within about a second of associating, unprompted —
+                                    so it is what the join funnel keys ASSOCIATED off.
+                                    See funnel.js.
+
+### `relay/dns.js` — Why the DNS responder exists and where it must not run
+<!-- ref:680e -->
+
+Was `relay/dns.js:3-28`.
+
+A deliberately small authoritative DNS responder, for hotspot mode only.
+
+WHY THIS EXISTS
+Certificates can be cached, so a host only needs the internet once a quarter for those.
+DNS cannot be cached, because the cache that matters lives on *each phone* — a guest
+joining for the first time has nothing. Answering locally is the only way round that, and
+it is what makes playing with no internet possible at all.
+
+When the PC is the access point it is already its clients' DNS server, so it can answer
+authoritatively with no upstream. Proven with a real phone resolving `play.local-ip.sh`,
+a name no public resolver answers.
+
+WHERE IT MUST NOT RUN
+LAN mode. There, phones use the router's DNS, which is none of our business — and running
+a resolver a phone did not ask for would be both useless and rude. Env-gated accordingly.
+
+SECURITY - READ BEFORE CHANGING ANY DEFAULT
+An earlier cut of this bound every interface and forwarded for anyone, which is the
+textbook definition of an open recursive resolver: free for any host on any attached
+network, and a DNS amplification reflector for spoofed-source DDoS.
+
+The source guard is therefore LOAD-BEARING, not defence in depth. It cannot be replaced by
+binding narrowly, because the hotspot address does not exist until the hotspot is running
+and :53 must be held *before* that to win the race with ICS. See SecurityReview.md §4.

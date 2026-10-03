@@ -77,14 +77,8 @@ export const ThrowTuning = {
   // leaving the player armed forever.
   maxSwingMs: 900,
 
-  // --- spin ----------------------------------------------------------------
-  // How long a spin peak is held before it has decayed away. Spin is peaky: a
-  // wrist flick is over in about 100ms, so a 20Hz aim frame samples it up to 50ms
-  // late and mostly catches the tail. Holding the peak briefly is what turns that
-  // into a ghost that spins up and winds down instead of one that flickers.
-  //
-  // The throw uses the same envelope, so the stone spins at the rate the ghost was
-  // showing. Raise this if a slow release is bleeding away spin the player earned.
+  // How long a spin peak is held; the throw and the ghost share it so the stone spins at the rate the ghost showed.
+  // doc-ref 10f3 docs/4-systems/MotionPipeline.md
   spinEnvelopeTauMs: 250,
 };
 
@@ -155,19 +149,8 @@ export const ThrowState = {
   ARMED: 'ARMED',
 };
 
-/**
- * Reduce a whole swing to the handful of numbers Unity needs.
- *
- * Pure: takes samples, returns a descriptor. No device access, no side effects,
- * so it is fully unit testable without a phone.
- *
- * @param {Array} samples oldest-to-newest, from MotionSource's ring buffer
- * @param {object} tuning
- * @param {number} [spinRate] the live spin envelope at release — see the spinRate
- *   field below. Omitting it replays the envelope over `samples`, which keeps this
- *   function usable from a buffer alone.
- * @returns {object|null} descriptor, or null if the gesture was too weak to count
- */
+// Pure: reduces a whole swing to the numbers Unity needs, with no device access or side effects.
+// doc-ref b68d docs/4-systems/MotionPipeline.md
 export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate, releaseIndex) {
   if (!samples || samples.length === 0) return null;
 
@@ -180,14 +163,8 @@ export function computeThrowDescriptor(samples, tuning = ThrowTuning, spinRate, 
   const swingSpeed = peakSwingSpeed(samples, tuning);
 
   return {
-    // Raw m/s. The only thing that decides how far the stone goes — Unity converts
-    // it once, via SkipConstants.SpeedScale. There used to be a normalised `power`
-    // here and a timingQuality alongside it, scaling launch speed by how fast the
-    // phone came to rest after its peak — but a hard swing takes longer to stop, so
-    // it landed hardest on the throws it should have rewarded, and the extra
-    // normalisation was a second lossy conversion of the same measurement Unity was
-    // about to convert again. Effort and result now agree, and there is only one
-    // conversion left, on the Unity side.
+    // Raw m/s is the only thing that decides range; Unity converts it once, via SkipConstants.SpeedScale.
+    // doc-ref 22d2 docs/4-systems/MotionPipeline.md
     swingSpeed,
 
     // Unclamped, deliberately. Throwing backwards, sideways or straight up is a
@@ -230,38 +207,9 @@ export function calmestIndexAfterPeak(samples) {
   return best === -1 ? samples.length - 1 : best;
 }
 
-/**
- * A peak-hold envelope over the spin signal: jumps straight to any new peak, then
- * decays exponentially toward zero.
- *
- * Pure, and takes the elapsed time rather than counting samples, because the device
- * sample rate wobbles on real phones — a per-sample decay constant would make the
- * ghost wind down faster on a phone that happens to be reporting quickly.
- *
- * @param {number} previous  the envelope's last value
- * @param {number} instantaneous  spin magnitude from the newest sample
- * @param {number} dtMs  time since the last update
- */
-/**
- * Peak hand speed during the swing, in m/s, by integrating linear acceleration.
- *
- * The physically correct measure of how hard a throw was. Peak *acceleration* — what
- * this used to key off exclusively — is a poor proxy: a short sharp jerk and a long
- * powerful pull peak identically, and on real hardware the useful range was squashed
- * into the top of the window, so a throw with two to three times less effort still
- * read within about 13% of a maximum one. Velocity is the integral of exactly the
- * thing that differs between them, so it separates what peak cannot.
- *
- * Integrated from the start of the swing rather than the whole buffer, because any
- * residual bias accumulates and a 1.5s window would collect far more of it than a
- * 300ms one. Tracks the running peak instead of the endpoint: the swing ends with the
- * phone stopped, so the value at the stop is by definition near zero — it is the
- * maximum along the way that the stone leaves the hand at.
- *
- * Only as good as the gravity removal feeding it; see sensors.js gravityInDeviceFrame.
- *
- * Pure.
- */
+// Peak hand speed during the swing in m/s, integrated from the swing start and tracked as a running peak,
+// not an endpoint.
+// doc-ref a10f docs/4-systems/MotionPipeline.md
 export function peakSwingSpeed(samples, tuning = ThrowTuning) {
   if (!samples || samples.length < 2) return 0;
 
@@ -302,18 +250,8 @@ export function peakSwingSpeed(samples, tuning = ThrowTuning) {
   return best;
 }
 
-/**
- * Peak-hold with an exponential decay: jumps straight to any new peak, then falls back
- * toward zero. Signed — the peak is chosen by magnitude but keeps its direction.
- *
- * Generic, despite the name it grew up with. Spin uses it so a wrist flick that is over
- * in 100ms still reaches a 20Hz aim frame; the live power estimate uses it for the same
- * reason with a different time constant.
- *
- * Signed because spin is now a signed rate about the phone's screen normal. Taking a
- * plain max() would have let a decaying positive peak win over a genuine negative one,
- * so a counter-clockwise flick following a clockwise one would read as clockwise.
- */
+// Signed peak-hold with exponential decay, used for spin and the live power estimate.
+// doc-ref 4519 docs/4-systems/MotionPipeline.md
 export function decaySpinEnvelope(
   previous,
   instantaneous,
@@ -324,20 +262,8 @@ export function decaySpinEnvelope(
   return Math.abs(instantaneous) > Math.abs(decayed) ? instantaneous : decayed;
 }
 
-/**
- * Replay decaySpinEnvelope across a whole buffer and return where it ended up.
- *
- * ThrowController already tracks this envelope live, so the real device path passes
- * its value straight in. This is for callers holding only samples — tests, tooling,
- * and computeThrowDescriptor's own fallback — and it agrees with the live tracker by
- * construction, because it is the same function over the same samples.
- *
- * The tau does the windowing: spin from before the swing, while the player was
- * lining the shot up, has decayed away by the time the buffer reaches the release,
- * so there is no separate window constant to keep in sync.
- *
- * Pure.
- */
+// Replays decaySpinEnvelope across a buffer, for callers that hold only samples.
+// doc-ref b6d3 docs/4-systems/MotionPipeline.md
 export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
   if (!samples || samples.length === 0) return 0;
 
@@ -358,17 +284,8 @@ export function peakSpinEnvelope(samples, tuning = ThrowTuning) {
   return spin;
 }
 
-/**
- * Cosmetic aim frame. Never authoritative — see the module header.
- *
- * Raw and unclamped, matching the throw descriptor exactly. Clamping here while the
- * throw went through unclamped would put the preview and the stone back into
- * disagreement, which is the whole class of bug this pass exists to remove.
- *
- * `spinRate` is passed in rather than read off the sample because the useful value is
- * the envelope tracked at sample rate — see ThrowController. Omitting it falls back to
- * this instant's spin, which keeps the function usable on its own and honest either way.
- */
+// Cosmetic aim frame, never authoritative, and raw and unclamped so the preview and the stone agree.
+// doc-ref b388 docs/4-systems/MotionPipeline.md
 export function buildAimPayload(sample, seq, spinRate, swingSpeed = 0) {
   if (!sample) return null;
   return {
@@ -384,29 +301,9 @@ export function buildAimPayload(sample, seq, spinRate, swingSpeed = 0) {
   };
 }
 
-/**
- * Owns the arm/swing gesture and the AIM stream while armed.
- *
- * The gesture is: <b>tap to arm, then swing</b>. The throw fires when the phone
- * stops, not when a finger lifts — accelerate hard, stop dead, and the stone goes.
- * A second tap disarms instead, so a player who armed with the phone pointing the
- * wrong way can re-aim.
- *
- * Calibration itself is no longer something the tap does. MotionSource tracks a
- * steadiness-gated reference continuously (Settling ⇄ Aiming — see
- * docs/4-systems/MotionPipeline.md), so most of the time the reference is already
- * wherever the phone actually rests by the time this arms. arm() still calls
- * `motion.recentre()` for a guaranteed-fresh zero at the exact moment that matters
- * most, alongside `motion.prepareForThrow()` for the gravity/buffer reset that used
- * to live in the same call.
- *
- * Firing on the stop is what lets orientation be read raw. A throwing motion ends
- * pointing where it was thrown, so the stop sample already is the aim — nothing has
- * to be inferred from earlier in the swing, and nothing can disagree with it.
- *
- * Deliberately does not know about the network — it calls onAim/onThrow and lets
- * the caller decide what to do with them, so this can be tested with plain stubs.
- */
+// Owns tap-to-arm, the swing and the AIM stream while armed, and fires on the stop;
+// it knows nothing about the network.
+// doc-ref f8d8 docs/4-systems/MotionPipeline.md
 export class ThrowController {
   constructor(motion, { onAim, onThrow, onStateChange, aimHz = 20, tuning = ThrowTuning } = {}) {
     this.motion = motion;
@@ -650,14 +547,9 @@ export class ThrowController {
     const releaseIndex = timedOut ? calmestIndexAfterPeak(samples) : undefined;
     const descriptor = computeThrowDescriptor(samples, this.tuning, peakSpin, releaseIndex);
 
-    // A5/A6: a discarded gesture — no descriptor at all, or a computed swingSpeed
-    // below minThrowSwingSpeed — must not cancel() the arm. cancel() drops the
-    // player back to IDLE, forcing a re-tap, and the re-tap's own jolt is exactly
-    // the kind of accidental sample this guard exists to stop (A5's "re-aims by
-    // itself"). Resetting only the swing-detection state and staying ARMED lets a
-    // player who is still genuinely swinging just keep going. _graceStartT is
-    // deliberately NOT reset here — the grace window applies once, right after
-    // arm(), not again after every discard.
+    // A discarded gesture resets only the swing detection and stays ARMED;
+    // _graceStartT is deliberately not reset.
+    // doc-ref 5b13 docs/4-systems/MotionPipeline.md
     if (!descriptor || descriptor.swingSpeed < this.tuning.minThrowSwingSpeed) {
       this._resetSwingState();
       return null;

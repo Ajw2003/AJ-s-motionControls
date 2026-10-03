@@ -249,3 +249,41 @@ zero, which is a dog whistle rather than a climax.
 
 Spatial is off for anything that has no place in the world. A fanfare emitted
 from wherever the last stone sank would drift around the lake between matches.
+
+### `tools/audio/generate-sfx.js` — Why the water plop has no click
+<!-- ref:67c5 -->
+
+Was `tools/audio/generate-sfx.js:277-288`.
+
+A stone touching water and coming off it. A soft, rounded plop.
+
+The earlier version layered a high-passed noise click on top to sell the contact, and
+that click was the harshness: it fires twenty to thirty times in three seconds, and
+broadband high frequencies repeated that fast are fatiguing however quiet each one is.
+Water does not click. It displaces, which is a pitched drop, not a transient.
+
+So the contact is carried entirely by how FAST the pitch falls — 25 ms — rather than by
+anything bright. The remaining noise layer is low-passed to keep only its body; it reads
+as wetness rather than as spray.
+
+### `tools/audio/generate-sfx.js` — Why the tone is struck wood, not FM bell
+<!-- ref:68fb -->
+
+Was `tools/audio/generate-sfx.js:88-105`.
+
+A soft struck-wood tone — marimba or kalimba rather than bell.
+
+This replaced a 2-operator FM bell, and the swap is the single biggest reason the set
+stopped sounding harsh. FM with a high modulation index produces dense inharmonic
+partials high in the spectrum: that is precisely what "metallic" and "clangy" mean, and
+it is wrong for a game about stones and water. Additive synthesis with a few LOW
+harmonics cannot produce that texture at all.
+
+Two details do most of the warmth:
+
+- Higher partials decay faster than the fundamental. That is what real wood does, and it
+  means the sound is only briefly bright before settling to a pure note. A bell holds its
+  upper partials, which is why it rings and why it cuts.
+- The attack is a few milliseconds of raised cosine, not an instant jump. An instant
+  attack is a step discontinuity, and a step is broadband click — audible as a hard edge
+  on the front of every note.

@@ -477,3 +477,23 @@ Anchored to renderer bounds rather than a fixed height above the centre: the old
 text inside the rock. Wrapping to the neighbour gap is what lets the description be
 full size without running into the next one, and without the old fixed 160 px box
 that cut most descriptions off mid-sentence (issue #41).
+
+### `tools/art/rocks/build_rocks.py` — Asserting face normals before triangulating
+<!-- ref:5e21 -->
+
+Was `tools/art/rocks/build_rocks.py:109-123`.
+
+bmesh.ops.recalc_face_normals, then assert every face points away from mesh centre.
+
+A second, independent check on top of the winding-reversal in build_object — recalc can
+itself get a mesh's global orientation backwards on a topology it cannot disambiguate, so
+this asserts the actual outcome rather than trusting the fix that produced it.
+
+Run BEFORE triangulate, on the same quad/triangle-fan faces rock_shape.py's own --check
+verifies (its centroid-vs-normal test, which already passes 0 bad on every rock). Checking
+afterward instead would test individual post-triangulation half-quads, where a jittered,
+non-planar quad's own two triangles can legitimately fail a whole-mesh centroid heuristic
+even though the quad they came from is correctly wound — rock_shape.py's docstring notes
+exactly this ("jittered quads are not perfectly planar"). Triangulating a correctly-wound
+face preserves its winding, so checking before is equivalent for catching a real mistake
+(an axis-mapping or reversal bug) without tripping on that geometric non-planarity.

@@ -178,16 +178,8 @@ def load_photo_silhouettes():
 
 
 def ridge_samples(plan, silhouettes, ridge_id):
-    """Dense crest samples along one ridge, each as high as the photo's silhouette says.
-
-    A crest sample at horizontal distance d from the camera, in a direction where the photo's
-    (scaled) skyline stands e degrees up, gets height CAMERA_HEIGHT + d * tan(e), so it lands
-    exactly on that skyline. Directions past either end of a traced line take its end value,
-    which is how the ridges carry on beyond the photo's edges.
-
-    The crest dominates the skyline because every data-slope (0.6-1.15) is steeper than any
-    sight line to a crest (tan of at most ~15 degrees, 0.27): ground in front of a crest,
-    along the same sight line, always drops away below it.
+    """Dense crest samples along one ridge, each placed so it lands exactly on the photo's skyline.
+    doc-ref 4a6f docs/4-systems/Presentation.md
     """
     element, points = require(plan, ridge_id, "valley-plan.svg")
     crest = plan_to_world(points)
@@ -634,16 +626,8 @@ def flat_shade(objects):
 
 
 def export_fbx(objects):
-    """FBX for Unity: Blender's standard Unity settings, -Z forward, Y up, transform baked.
-
-    The file then stores Blender (X, Y, Z) as (X, Z, -Y), and Unity's importer reads a file's
-    (x, y, z) as (x, y, -z), so Unity gets (X, Z, Y): x right, y up, z down the lake.
-
-    That importer rule was OBSERVED, not assumed, and at some cost: the first export used
-    axis_forward='Z' on paper reasoning, and in Unity the whole valley came in turned 180
-    degrees - behind the camera and mirrored left-right (2026-09-28). The file then held
-    (-X, Z, Y); Unity showing it turned 180 degrees is what pins the rule down.
-    LakeLouiseEnvironment.cs still checks on load and corrects a 180 degree turn with a warning.
+    """FBX for Unity with the importer axis rule that was observed in Unity, not assumed.
+    doc-ref 0448 docs/4-systems/Presentation.md
     """
     FBX_PATH.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")

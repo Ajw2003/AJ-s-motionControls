@@ -75,22 +75,9 @@ function Await-Action {
 }
 
 function Get-StationBandName {
-    # Which TetheringWiFiBand the access point should ask for, given what this radio is
-    # already doing. Returns a band name, plus the human-readable station band for logging.
-    #
-    # WHY THIS EXISTS. Adapters in this class report "Soft AP : Not supported", so Windows
-    # runs Mobile Hotspot as a Wi-Fi Direct GO on the SAME PHYSICAL RADIO as the station
-    # link. Ask for a band the station is not on and the radio has to time-slice between
-    # two channels: packets are queued rather than dropped, and the 20Hz AIM stream reaches
-    # the game in bursts. That is felt directly as a jerky, delayed aim preview.
-    #
-    # Measured 2026-09-09, host on 5 GHz ch44, AP pinned to 2.4 GHz, 60 pings to a joined
-    # phone: mean 156.9ms, stdev 194.3ms, max 1161ms, 2% loss. Disconnecting the station
-    # link and changing nothing else: mean 26.6ms, stdev 52.9ms, max 289ms, 0% loss.
-    # See docs/plans/aim-preview-lag-on-shared-radio.md.
-    #
-    # Matching the band is what lets the GO share the station's channel instead of
-    # alternating with it. It is a request, not a guarantee - the driver places the GO.
+    # Choose the AP band the station is already on, because the hotspot shares one physical radio
+    # and a mismatch time-slices it, making the aim stream bursty.
+    # doc-ref 9c91 docs/4-systems/HostingAndCertificates.md
     $text = (netsh wlan show interfaces | Out-String)
 
     if ($text -notmatch '(?m)^\s*State\s*:\s*connected') {
@@ -223,14 +210,8 @@ function Write-Result {
     exit ([int](-not $Result.ok))
 }
 
-# Tethering needs *a* connection profile to hang off. It does not need that profile to carry
-# internet, or even to be connected - measured 2026-08-21, see docs/6-decisions/Decision-OfflineHosting.md.
-#
-# This used to ask only GetInternetConnectionProfile(), which returns null whenever there is no
-# internet, and reported that as no-connection-profile. That single call is the entire reason
-# Hotspot mode appeared not to work offline, and why ZeroSetupPlan.md recorded Open Question 2
-# as "answered - no". Confirmed with the Ethernet cable out and Wi-Fi joined to nothing:
-# tethering starts, takes 192.168.137.1, and serves DHCP and DNS.
+# Tethering needs a connection profile but not internet, so Hotspot mode works fully offline.
+# doc-ref 83ad docs/4-systems/HostingAndCertificates.md
 $script:TetheringProfileName = $null
 
 function Get-TetheringManager {
@@ -368,21 +349,9 @@ if ($Action -eq 'Start') {
         }
         else {
             Write-Progress2 'Tethering is on. Disabling IP forwarding on the hotspot interface...'
-            # ICS re-enables forwarding on every tethering start, so this must run fresh each
-            # session - the scheduled task exists precisely to do that without a UAC prompt per
-            # party (docs/ZeroSetupPlan.md Phase 4.2 / 5). A missing/failed task means the hotspot
-            # is up but NOT isolated: HotspotService treats a non-null warning here as a failure,
-            # not a soft caveat, and stops tethering rather than leave that state running.
-            #
-            # VERIFY THE FACT, NOT THE LAUNCH. This used to report success when Start-ScheduledTask
-            # returned, which proves only that a task was started - not that forwarding changed, and
-            # not that it stayed changed. It reported isolation on a machine that measurably had
-            # none, for as long as the task existed, which is the worst way for this to fail. The
-            # state is read back below instead, and it needs no elevation to read.
-            #
-            # Polled rather than read once, because this is a race: the task runs asynchronously and
-            # ICS may re-assert forwarding after it. If the flag will not stay down within the
-            # window, that is the honest answer and the caller should act on it.
+            # ICS re-enables forwarding on every start, so isolation is verified by polling the state back,
+            # not by the scheduled task having launched.
+            # doc-ref da53 docs/4-systems/HostingAndCertificates.md
             try {
                 Start-ScheduledTask -TaskName $ForwardingTaskName -ErrorAction Stop
             } catch {

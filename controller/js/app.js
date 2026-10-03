@@ -173,13 +173,9 @@ let myPlayerId = '';
 // rejoin), so identity.js's stored name and the relay's copy of it never diverge.
 let myName = '';
 
-// True from the moment this phone has ever actually held a seat this page-load, onward.
-// Distinguishes an ERROR/ROOM_CLOSED worth retrying forever (a seat that exists somewhere
-// and is worth getting back into — a mid-match Wi-Fi blip, a host restart) from one that
-// means exactly what it says: a room code that was never valid, typed wrong on the very
-// first join attempt, which must still show the form rather than retry a room that never
-// existed. See handleMessage's ERROR/ROOM_CLOSED cases and
-// docs/plans/seamless-rejoin.md "the repeated tap to play" §2-3.
+// Set once this phone has actually held a seat, so a mistyped first room code still shows the form
+// while a seat lost mid-match keeps retrying.
+// doc-ref 88e9 docs/4-systems/PhoneController.md
 let hasJoinedOnce = false;
 
 // The phone's own belief about whose turn it is, sourced only from TURN — the message
@@ -362,20 +358,9 @@ function renderGripButton(state) {
 
 // ---------------------------------------------------------------- aim streams
 
-/**
- * One AIM sequence number for the whole phone, stamped on the way out.
- *
- * Three things produce AIM frames now — the lobby stream, the turn-idle stream and
- * ThrowController while armed — and AimPreview drops any frame whose seq is not
- * greater than the last one it accepted from that player. Counting separately per
- * producer meant handing over mid-turn could go backwards: after ten seconds of
- * lobby pointing the lobby counter is past 200 while ThrowController's is in single
- * figures, so every armed frame was dropped until it climbed back past the lobby's,
- * and the ghost stayed missing for the first several seconds of a turn.
- *
- * Stamped here rather than inside each producer so a fourth one cannot reintroduce
- * the problem: `sendAim` is the only route onto the wire.
- */
+// One AIM sequence number for the whole phone, stamped in sendAim
+// so no producer can count separately and have its frames dropped.
+// doc-ref c25b docs/4-systems/PhoneController.md
 let aimSeq = 0;
 
 function sendAim(payload) {
@@ -385,21 +370,9 @@ function sendAim(payload) {
   connection?.sendIfClear({ ...payload, seq: ++aimSeq });
 }
 
-/**
- * The cosmetic 20Hz AIM stream, deliberately independent of ThrowController's
- * arm/swing state machine rather than reusing `thrower.arm()`.
- *
- * That independence is the whole safety property: ThrowController's release
- * detection (`_onSample` -> `_fire()`) only runs while `state === ARMED`, so a
- * stream that never arms it can never fire a throw no matter how the phone is
- * swung. Suppressing `_fire()` after the fact would have meant trusting every
- * future change to the swing detector to remember these streams exist; not arming
- * it at all needs no such promise.
- *
- * Two callers, one timer: the lobby's shore-pointing picker, and a player whose turn
- * has started but who has not tapped to arm yet. Sharing the timer is what stops the
- * two ever running at once and double-feeding the TV.
- */
+// The cosmetic 20Hz AIM stream never arms ThrowController,
+// so no swing of the phone can fire a throw from it.
+// doc-ref 30f7 docs/4-systems/PhoneController.md
 let previewAimTimer = null;
 
 function startPreviewAim() {
@@ -447,20 +420,9 @@ function stopLobbyAim() {
   stopPreviewAim();
 }
 
-/**
- * Keeps the TV's ghost stone alive between the moment a turn starts and the moment
- * the player taps to arm.
- *
- * Without this the ghost vanishes half a second into every turn. The lobby stream is
- * stopped by TURN, ThrowController's stream does not exist until `arm()`, and
- * AimPreview hides the ghost after `staleAfterSeconds` with no frames — so a player
- * looking up at the TV to line a shot up saw empty water until they tapped, which
- * reads as the preview being broken. See docs/Findings-AimGhostVanishesOnNewRound.md.
- *
- * Not an auto-arm, and that distinction is the point: arming would hand the release
- * detector a live phone before the player has looked up, and a swing at turn start
- * would throw.
- */
+// Keeps the TV's ghost stone alive between turn start and the tap to arm,
+// and deliberately does not auto-arm.
+// doc-ref 2a2d docs/4-systems/PhoneController.md
 function startTurnAim() {
   if (!myTurn) return;
   startPreviewAim();
@@ -468,18 +430,8 @@ function startTurnAim() {
 
 // ---------------------------------------------------------------- advancing
 
-/**
- * Move the match on from a phone: start it from the lobby, resume from a re-pick,
- * begin the next one from final scores.
- *
- * The TV's Space key still does all three and remains the way to get the very first
- * match going — this is what stops a couch session needing a keyboard between every
- * match. TurnManager runs one switch for both, so they cannot disagree about where
- * "on" is; the phone deliberately names no destination (see AdvanceMessage).
- *
- * Buttons are hidden until a SPECTATE says the current phase can be advanced, so
- * neither one is ever offered mid-turn.
- */
+// Advance the match from a phone: start it, resume from a re-pick, or begin the next one.
+// doc-ref 0e08 docs/4-systems/PhoneController.md
 function bindAdvance() {
   for (const button of [ui.advanceBtn, ui.againBtn]) {
     button.addEventListener('click', () => {
@@ -622,15 +574,8 @@ function applyMyColour(colour) {
   }
 }
 
-/**
- * Shows this player's actual stone on the choose screen (#51), tinted by --accent.
- *
- * The SVG strings in ROCK_ART are constants generated by tools/art/rocks/make_phone_art.py;
- * no player-supplied text ever reaches innerHTML, which is why assigning it is safe here.
- * The name goes in via textContent. Colour needs no work here: the art fills with
- * currentColor and the button's CSS colour is var(--accent), which applyMyColour sets, so a
- * colour change recolours the stone on its own. Idempotent, because SPECTATE repeats.
- */
+// Shows this player's stone on the choose screen; ROCK_ART is constant, so assigning innerHTML is safe.
+// doc-ref 8306 docs/4-systems/PhoneController.md
 function renderMyStone(mine) {
   const art = (mine?.rockId && ROCK_ART[mine.rockId]) || (mine?.rockName && ROCK_ART[mine.rockName]);
   if (!art) {
@@ -645,15 +590,8 @@ function renderMyStone(mine) {
   ui.chooseRock.hidden = false;
 }
 
-/**
- * Rebuilds the palette circles from the host's palette, marking the ones other players hold.
- *
- * The palette comes down the wire rather than being duplicated here: it is authored on
- * the PlayerColourPalette asset, and a second copy in this file would be the third place
- * player colours live. Idempotent — SPECTATE repeats constantly, so this returns early
- * unless the palette or who holds what actually changed (#51). Held-by-others comes from
- * message.colours, excluding this phone, matched on lower-cased hex.
- */
+// Rebuilds the palette circles from the host's palette and returns early when nothing changed.
+// doc-ref 4fda docs/4-systems/PhoneController.md
 let renderedPalette = '';
 
 function renderSwatches(palette, colours, names) {
@@ -720,16 +658,8 @@ function bindGrip() {
 
 // ---------------------------------------------------------------- tutorial
 
-/**
- * One inline SVG `<g>` for a phone held in a hand — the shared piece every tutorial page
- * draws its scene from, rather than each page hand-authoring its own phone shape. This is
- * literal on purpose (a rounded phone body with a camera dot, gripping fingers, a thumb)
- * rather than an abstract glyph: the walkthrough exists to show what to physically do with
- * the phone, so the phone needs to actually look like a phone in a hand, at a glance.
- *
- * `dim` renders a faint echo (an earlier position in a motion, not the current one) and
- * `tapRipple` draws the ripple that marks the exact instant a tap is captured.
- */
+// One shared inline-SVG phone-in-hand piece that every tutorial page draws its scene from.
+// doc-ref bf71 docs/4-systems/PhoneController.md
 function phoneGlyph({ x = 0, y = 0, rotate = 0, scale = 1, dim = false, tapRipple = false } = {}) {
   return `<g transform="translate(${x},${y}) rotate(${rotate}) scale(${scale})" opacity="${dim ? 0.3 : 1}">
     <path d="M -20 4 Q -25 30 -6 35 L 16 35 Q 27 32 25 12 Q 23 -1 10 -1 L -12 -1 Q -20 -1 -20 4 Z" fill="var(--muted)"/>
@@ -1277,14 +1207,8 @@ function updateDebug() {
   const s = motion.latest;
   ui.debug.textContent = [
     `state    ${thrower.state}   seq ${thrower.seq}   windup ${thrower._windSpeed.toFixed(2)} m/s`,
-    // A5/A6 guard state — onset run toward swingOnsetSamples, and whether the arm
-    // grace window (armGraceMs) is still blocking a swing from starting. Both are
-    // otherwise invisible from outside ThrowController, which is exactly why a
-    // real throw that gets eaten on hardware is hard to tune blind.
-    // The grace countdown reads the same clock the guard does — sample time since
-    // _graceStartT — not performance.now() since arm(). Those two clocks need not
-    // share an origin, and a readout that disagrees with the rule it describes is
-    // worse than none while tuning armGraceMs on a phone.
+    // Debug readout of the A5/A6 guard state, using the same sample clock the guard itself uses.
+    // doc-ref 641e docs/4-systems/PhoneController.md
     `onset    ${thrower._onsetRun}/${thrower.tuning.swingOnsetSamples}   grace ${
       thrower._graceStartT === null || !s
         ? 'n/a'
@@ -1348,17 +1272,9 @@ function init() {
     setStatus('Ready to join');
   }
 
-  // Prefill the join form from a stored identity rather than skipping the form entirely —
-  // a skipped form is a dead end for a phone that can never see the naming/renaming UI
-  // again (docs/plans/seamless-rejoin-round2.md Fix A). Same on both platforms:
-  // requestMotionPermission still runs inside the JOIN tap's own gesture either way, so
-  // there is nothing iOS needs that Android doesn't also get here.
-  //
-  // The name comes back whenever one is stored, deliberately NOT gated on the room
-  // matching. A player who reaches the page from a bookmark, a stale QR, or a bare URL
-  // with no ?room= at all has the same name they always had, and re-typing it is exactly
-  // the friction this work exists to remove. The room code is prefilled from the URL
-  // above, and stays the URL's business.
+  // Prefill the join form from a stored identity rather than skipping it,
+  // and do not gate the stored name on the room matching.
+  // doc-ref 7df3 docs/4-systems/PhoneController.md
   const identity = loadIdentity();
   if (identity?.name) ui.nameInput.value = identity.name;
   if (!hiddenRoomCode && identity?.room) hiddenRoomCode = identity.room;

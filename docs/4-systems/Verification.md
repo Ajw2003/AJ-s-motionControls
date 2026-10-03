@@ -220,3 +220,134 @@ integrating the same circular-segment area DiscContact.WettedArea is built from
 of (2/3)*(R^2-d^2)^1.5, so centroid distance x̄ = moment / area. At d = -R (fully
 wet) that reduces to 0 (a whole circle's centroid is its own centre); at d = 0 (half
 wet) it reduces to the textbook semicircle centroid 4R/(3*pi).
+
+### `controller/test-sensors.js` — Rotating a stationary phone must measure as zero
+<!-- ref:0d59 -->
+
+Was `controller/test-sensors.js:242-248`.
+
+The bug this replaced. GravityFilter estimates gravity in DEVICE coordinates, so
+a fast turn sweeps the gravity vector through that frame faster than the filter
+tracks — and the lag reads as user acceleration that has nothing to do with how
+hard the phone was thrown. Rotating a stationary phone must measure as ~zero.
+A wrist snap at roughly the speed a real throw produces: 180 degrees in ~190ms,
+about 900 deg/s. The phone is only turning — it is not accelerating through
+space at all — so an honest measurement reads zero.
+
+### `relay/fake-host.js` — What the fake host does
+<!-- ref:93e6 -->
+
+Was `relay/fake-host.js:3-15`.
+
+A stand-in TV host for exercising a phone against a relay without Unity.
+
+It does what TurnManager does for one player at a time. Every phone that joins gets
+TURN yourTurn:true. Each THROW is logged, and SETTLE_MS later (the stone "settling")
+TURN is sent again. Once a second it prints how many AIM frames each phone sent, which
+is how to see the stream stop during a stone's flight, or a stall's backlog land at once.
+
+  node relay/fake-host.js                      (relay on ws://127.0.0.1:3000)
+  RELAY_URL=ws://127.0.0.1:3998 SETTLE_MS=5000 node relay/fake-host.js
+
+Stop it with Ctrl+C.
+
+### `relay/test-dns.js` — Exercising the source guard for real
+<!-- ref:bb33 -->
+
+Was `relay/test-dns.js:293-303`.
+
+Exercises the guard for real, which needs a source that is not loopback.
+
+Loopback is unconditionally exempt so local testing works, so querying 127.0.0.1 proves
+nothing about the guard — it only proves the exemption. Binding the *client* to this
+machine's LAN address makes the source address a real one, and that is the path an
+attacker would use.
+
+Skipped rather than faked when there is no LAN address to bind, because a test that
+silently downgrades to testing nothing is worse than one that says it did not run.
+
+### `relay/test-dns.js` — What the DNS tests cover and why
+<!-- ref:4117 -->
+
+Was `relay/test-dns.js:3-14`.
+
+Tests for the local DNS responder. Run with: npm test
+
+Two halves, deliberately. The pure wire encoding and the guards are exercised directly,
+because that is where the subtle mistakes live and none of it needs a socket. Then a real
+responder is bound on a high port to prove the pieces work together.
+
+The AAAA and source-guard cases are not padding. Both were wrong in the first draft, and
+both fail in ways that look like something else entirely: NXDOMAIN on AAAA makes a phone
+abandon a name it could have resolved over IPv4, and a missing source guard turns this
+into a DDoS amplifier without changing anything a local test would notice.
+
+### `relay/test-funnel.js` — What the funnel tests cover
+<!-- ref:044b -->
+
+Was `relay/test-funnel.js:3-13`.
+
+Tests for the per-device join funnel. Run with: npm test
+
+The funnel decides what the TV says while people are joining, off signals that arrive out
+of order, from three different layers, keyed only by IP. Every case below is one of the
+ways that combination can lie:
+
+  - a stage regressing would make the TV nag someone mid-throw,
+  - an untracked address being counted would invent a phone on a developer's machine,
+  - a device never expiring would leave the TV nagging about a guest who went home.
+
+### `tools/audit/check-standards.js` — The coding-standards audit
+<!-- ref:1334 -->
+
+Was `tools/audit/check-standards.js:4-19`.
+
+Coding-standards audit for RockSkipping.
+
+Plain Node, zero dependencies. Walks the repo, runs a flat list of named
+checks, prints one PASS/FAIL line per check with a count, and exits
+non-zero if any check fails.
+
+This file is meant to be read and edited by a human without an agent
+present -- keep each check a small, self-contained function that returns
+{ pass, count, detail } and is registered in the CHECKS list at the
+bottom.
+
+Comment DENSITY is reported as an informational number only and must
+NEVER cause a failing check -- high density is this codebase's deliberate
+strength.
+
+### `tools/physics/HeadlessSolver/Program.cs` — What the HeadlessSolver drives
+<!-- ref:9d9d -->
+
+Was `tools/physics/HeadlessSolver/Program.cs:7-17`.
+
+<summary>
+Drives the project's real <see cref="Game.DiscContact"/> / <see cref="Game.RigidDisc"/>
+outside Unity, so the skip model can be calibrated in seconds instead of one Editor
+menu click at a time.
+</summary>
+<remarks>
+The run loop here is the one that becomes SkipPhysics.Step in phase 2 — flight under
+gravity at a coarse step, contact sub-stepped finely, attitude integrated throughout.
+Calibrating it here and then porting the settled numbers is the whole point: the
+alternative is guessing in the Editor.
+</remarks>
+
+### `tools/physics/HeadlessSolver/UnityShim.cs` — Why a UnityEngine shim, and what pins it
+<!-- ref:0e68 -->
+
+Was `tools/physics/HeadlessSolver/UnityShim.cs:3-14`.
+
+Minimal managed stand-ins for the handful of UnityEngine maths types the physics core
+touches, so the REAL physics files compile and run on plain dotnet.
+
+Why a shim rather than referencing UnityEngine.CoreModule.dll: several Quaternion members
+(Inverse, FromToRotation, AngleAxis, Euler) are native ECalls into the Unity player. The
+DLL loads fine but throws "ECall methods must be packaged into a system module" the moment
+one is called. Everything the physics core needs is ordinary maths, so it is reimplemented
+here from Unity's own documented formulas.
+
+These MUST match Unity's conventions exactly or the harness would validate a solver that
+is not the one that ships. `SelfTest()` checks that, and Program runs it before anything
+else — see the assertions there for what "matching" is pinned to.

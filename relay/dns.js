@@ -1,31 +1,8 @@
 'use strict';
 
-/**
- * A deliberately small authoritative DNS responder, for hotspot mode only.
- *
- * WHY THIS EXISTS
- * Certificates can be cached, so a host only needs the internet once a quarter for those.
- * DNS cannot be cached, because the cache that matters lives on *each phone* — a guest
- * joining for the first time has nothing. Answering locally is the only way round that, and
- * it is what makes playing with no internet possible at all.
- *
- * When the PC is the access point it is already its clients' DNS server, so it can answer
- * authoritatively with no upstream. Proven with a real phone resolving `play.local-ip.sh`,
- * a name no public resolver answers.
- *
- * WHERE IT MUST NOT RUN
- * LAN mode. There, phones use the router's DNS, which is none of our business — and running
- * a resolver a phone did not ask for would be both useless and rude. Env-gated accordingly.
- *
- * SECURITY - READ BEFORE CHANGING ANY DEFAULT
- * An earlier cut of this bound every interface and forwarded for anyone, which is the
- * textbook definition of an open recursive resolver: free for any host on any attached
- * network, and a DNS amplification reflector for spoofed-source DDoS.
- *
- * The source guard is therefore LOAD-BEARING, not defence in depth. It cannot be replaced by
- * binding narrowly, because the hotspot address does not exist until the hotspot is running
- * and :53 must be held *before* that to win the race with ICS. See SecurityReview.md §4.
- */
+// A small authoritative DNS responder for hotspot mode only; its source guard is load-bearing,
+// so do not loosen any default.
+// doc-ref 680e docs/4-systems/HostingAndCertificates.md
 
 const dgram = require('dgram');
 
@@ -197,35 +174,8 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
 
 // ----------------------------------------------------------------------- responder
 
-/**
- * @param {object}   options
- * @param {string}   options.ip        address to answer with
- * @param {string}  [options.suffix]   answer anything ending in this
- * @param {string}  [options.name]     or answer exactly this name
- * @param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
- *                                     hostname plus the connectivity probe domains —
- *                                     see docs/plans/magic-domain-replacement.md Phase 4)
- * @param {string[]} [options.fallbackNames] names forwarded upstream first, answered locally
- *                                     (like `names`) only if the upstream stays silent for
- *                                     `fallbackMs` or errors. For sharing mode, where the probe
- *                                     domains must resolve for real if the internet is up.
- *                                     With no `upstream` they behave exactly like `names`.
- * @param {string[]} [options.blockedNames] names always answered NXDOMAIN, never forwarded —
- *                                     iCloud Private Relay's opt-out signal (#79)
- * @param {number}  [options.fallbackMs] how long to wait for upstream before answering a
- *                                     fallback name locally (default 1500)
- * @param {number}  [options.upstreamPort] upstream's UDP port (default 53; tests override)
- * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
- * @param {number}  [options.rate]     max queries per second per source
- * @param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
- * @param {function} [options.onQuery] called with the source address of every query that
- *                                     passes the allow-list and rate limit, whatever name it
- *                                     asked for. This is the earliest evidence a phone is on
- *                                     the hotspot at all — both platforms probe for internet
- *                                     access within about a second of associating, unprompted —
- *                                     so it is what the join funnel keys ASSOCIATED off.
- *                                     See funnel.js.
- */
+// Options for the responder; `allow` is required in practice and `onQuery` feeds the join funnel.
+// doc-ref 7fec docs/4-systems/HostingAndCertificates.md
 function createResponder(options) {
   const {
     ip,

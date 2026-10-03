@@ -239,13 +239,8 @@ console.log('\ngravity removal');
     check(`gravity magnitude holds at ${a}/${b}/${g}`, near(magnitude(v), G, 1e-9));
   }
 
-  // The bug this replaced. GravityFilter estimates gravity in DEVICE coordinates, so
-  // a fast turn sweeps the gravity vector through that frame faster than the filter
-  // tracks — and the lag reads as user acceleration that has nothing to do with how
-  // hard the phone was thrown. Rotating a stationary phone must measure as ~zero.
-  // A wrist snap at roughly the speed a real throw produces: 180 degrees in ~190ms,
-  // about 900 deg/s. The phone is only turning — it is not accelerating through
-  // space at all — so an honest measurement reads zero.
+  // Rotating a stationary phone fast must measure as ~zero, the GravityFilter lag this replaced.
+  // doc-ref 0d59 docs/4-systems/Verification.md
   const filter = new GravityFilter(0.8);
   let filterWorst = 0;
   let exactWorst = 0;

@@ -1,17 +1,8 @@
 'use strict';
 
-/**
- * Tests for the local DNS responder. Run with: npm test
- *
- * Two halves, deliberately. The pure wire encoding and the guards are exercised directly,
- * because that is where the subtle mistakes live and none of it needs a socket. Then a real
- * responder is bound on a high port to prove the pieces work together.
- *
- * The AAAA and source-guard cases are not padding. Both were wrong in the first draft, and
- * both fail in ways that look like something else entirely: NXDOMAIN on AAAA makes a phone
- * abandon a name it could have resolved over IPv4, and a missing source guard turns this
- * into a DDoS amplifier without changing anything a local test would notice.
- */
+// DNS responder tests: wire encoding and guards directly, then a real responder on a high port.
+// The AAAA and source-guard cases are not padding.
+// doc-ref 4117 docs/4-systems/Verification.md
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
@@ -290,17 +281,8 @@ describe('Responder integration', () => {
   });
 });
 
-/**
- * Exercises the guard for real, which needs a source that is not loopback.
- *
- * Loopback is unconditionally exempt so local testing works, so querying 127.0.0.1 proves
- * nothing about the guard — it only proves the exemption. Binding the *client* to this
- * machine's LAN address makes the source address a real one, and that is the path an
- * attacker would use.
- *
- * Skipped rather than faked when there is no LAN address to bind, because a test that
- * silently downgrades to testing nothing is worse than one that says it did not run.
- */
+// Exercises the source guard from a non-loopback LAN address, and says so when it has to skip.
+// doc-ref bb33 docs/4-systems/Verification.md
 describe('Out-of-range sources are dropped, not refused', () => {
   function findLocalAddress() {
     const os = require('os');
