@@ -16,7 +16,7 @@ document rather than duplicating it.
 
 **Decision.** Docs moved into the six numbered tiers. Every long block moved verbatim into the `docs/4-systems/` doc that owns it, with a `doc-ref <id> <path>` pointer left in the code. Three systems docs are new: Audio, Presentation, Verification, plus PhoneController. Plan: `docs/plans/comment-harvest-worklist.txt`; tracking issue #82.
 
-**Why.** The code stays lean and the reasoning stays checkable: `docref check` reports every pointer resolving, and the code was verified unchanged apart from comments. Moved text was kept verbatim, so most of it sits in each doc's "Notes moved from source comments" section and has not yet been merged into How it works / Invariants / Traps.
+**Why.** The code stays lean and the reasoning stays checkable: `docref check` reports every pointer resolving, and the code was verified unchanged apart from comments. Moved text was kept verbatim, then sorted into each doc's How it works / Invariants / Traps sections (#87).
 
 **Status.** Standing.
 
