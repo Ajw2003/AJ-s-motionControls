@@ -8,36 +8,7 @@ using UnityEngine;
 
 namespace Managers
 {
-    /// <summary>
-    /// Owns what colour every player is. The only source of truth for "which dot is
-    /// theirs" — everything downstream (the shore pointer today, a stone or a scoreboard
-    /// row later) reads through here rather than deriving a colour of its own.
-    /// </summary>
-    /// <remarks>
-    /// Modelled on <see cref="RockSelection"/>, which is the same shape of problem: a
-    /// per-player choice a phone makes, held in a dictionary keyed by player id, seeded
-    /// with a default the moment they join, and broadcast to every phone by TurnManager.
-    ///
-    /// <b>Keyed by identity, and nothing else.</b> This replaces the expression that used
-    /// to live in ShoreRocks.CreateMarker:
-    /// <code>PointerPalette[Mathf.Abs(playerId.GetHashCode() + ordinal) % Length]</code>
-    /// where <c>ordinal</c> was how many pointers existed when this one was created. Every
-    /// phase change destroys the pointers and clears that collection, so a player's colour
-    /// depended on how many other people happened to have aimed before them that round —
-    /// it moved between rounds, and <c>hash + ordinal</c> collided freely inside eight
-    /// slots. Both complaints in notes.txt were that one expression.
-    ///
-    /// <b>A colour outlives a disconnect.</b> Unlike RockSelection, which drops a picked
-    /// rock when a player leaves, a colour is held until the roster empties: a phone that
-    /// drops and rejoins within the relay's grace window is the same player to everyone
-    /// watching, and handing it a new colour would look exactly like the bug this
-    /// replaces.
-    ///
-    /// <b>The host decides, not the phone.</b> A PICK_COLOUR is a request. See
-    /// <see cref="Pick"/> for the two things it is checked against — legibility against
-    /// the lake, and distance from the other players — both authored on
-    /// <see cref="PlayerColourPalette"/>.
-    /// </remarks>
+    // Owns what colour every player is. doc-ref 0d02 docs/4-systems/ScoringAndTurns.md
     public class PlayerColours : SingletonBase<PlayerColours>
     {
         private PlayerColourPalette _palette;
@@ -61,13 +32,16 @@ namespace Managers
         /// <summary>
         /// Subscribes straight to RelayClient rather than waiting for something else to
         /// resolve the message, because unlike PICK_ROCK there is nothing to resolve — the
-        /// phone sent the colour it wants. Bound from Update on the same
-        /// wait-until-it-exists pattern TurnManager.BindRelay uses, so creation order
-        /// between the two managers cannot drop the subscription.
+        /// phone sent the colour it wants. Bound once in Start, after Bootstrap's
+        /// Awake has created every manager.
         /// </summary>
-        private void Update()
+        private void Start()
         {
-            if (_relay != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[PlayerColours] No RelayClient at Start; phone messages will not be received.");
+                return;
+            }
 
             _relay = RelayClient.Instance;
             _relay.PickColourReceived += OnPickColour;
@@ -115,46 +89,14 @@ namespace Managers
         /// <summary>Every player who has a colour, for the SPECTATE broadcast.</summary>
         public IEnumerable<KeyValuePair<string, Color>> All => _colours;
 
-        /// <summary>
-        /// A stone in this player's colour: their colour blended over the rock's own tint by
-        /// <see cref="PlayerColourPalette.ConfirmedBlend"/>. Partway rather than flat, so the
-        /// stone still looks like stone while answering "whose is that" across a room.
-        /// </summary>
-        /// <remarks>
-        /// The one place that calculation lives. The shore stone a player claims, the stone
-        /// they throw and the ghost they aim with all call this, so the three cannot drift
-        /// apart — the rock you picked has to look like the rock you threw, and a second copy
-        /// of the blend is how that would quietly stop being true.
-        ///
-        /// Returns <paramref name="baseColour"/> untouched when there is no palette, so a
-        /// build without the asset degrades to the rock's authored tint rather than to
-        /// nothing.
-        /// </remarks>
+        // A stone in this player's colour: their colour blended over the rock's own tint by <see cref="PlayerColourPa... doc-ref ba92 docs/4-systems/ScoringAndTurns.md
         public Color StoneColourFor(string playerId, Color baseColour)
         {
             if (_palette == null) return baseColour;
             return Color.Lerp(baseColour, For(playerId), _palette.ConfirmedBlend);
         }
 
-        /// <summary>
-        /// Records a colour a phone asked for, after making it usable.
-        /// </summary>
-        /// <remarks>
-        /// Accepted in any phase, unlike <see cref="RockSelection.Pick"/>. A rock pick
-        /// arriving mid-throw is stale and has to be refused; a colour change never is —
-        /// it is cosmetic, it cannot affect a throw in flight, and a player who wants a
-        /// different colour while watching somebody else throw should simply get one.
-        ///
-        /// Two adjustments, in order, both authored on the palette asset:
-        /// <list type="number">
-        /// <item>raise value/saturation to the floors, so the dot reads against dark water;</item>
-        /// <item>rotate hue away from any connected player within MinSeparation, so no two
-        /// dots on the TV are confusable.</item>
-        /// </list>
-        /// Nudged rather than refused, because a refusal the phone cannot see just looks
-        /// broken — the settled colour goes back out in the next SPECTATE, so the picker
-        /// shows what the player actually got.
-        /// </remarks>
+        // Records a colour a phone asked for, after making it usable. doc-ref 77fa docs/4-systems/ScoringAndTurns.md
         public void Pick(string playerId, Color requested)
         {
             if (string.IsNullOrEmpty(playerId)) return;

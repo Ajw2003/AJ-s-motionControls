@@ -19,10 +19,10 @@
 > [`../archive/Findings-HistoryUntangle.md`](../archive/Findings-HistoryUntangle.md) §4.
 
 **Status:** superseded. Originally approved 2026-09-02. Supersedes
-[`Plan-ThrowDrivenSkipModel.md`](Plan-ThrowDrivenSkipModel.md),
-[`Plan-SkipEnergyInvariant.md`](Plan-SkipEnergyInvariant.md),
-[`../Guide-TuningFailure.md`](../Guide-TuningFailure.md) and the physics half of
-[`../Reference-SkipTuning.md`](../Reference-SkipTuning.md). Those three describe the heuristic
+`Plan-ThrowDrivenSkipModel.md` (deleted in 0b7c500; recover with `git show 0b7c500^:docs/plans/Plan-ThrowDrivenSkipModel.md`),
+`Plan-SkipEnergyInvariant.md` (deleted in 0b7c500; recover with `git show 0b7c500^:docs/plans/Plan-SkipEnergyInvariant.md`),
+`../Guide-TuningFailure.md` (deleted in 0b7c500; recover with `git show 0b7c500^:docs/Guide-TuningFailure.md`) and the physics half of
+`../Reference-SkipTuning.md` (deleted in 0b7c500; recover with `git show 0b7c500^:docs/Reference-SkipTuning.md`). Those three describe the heuristic
 quality/energy-budget bounce that this plan deletes outright.
 
 The threshold this is built on, the **Lift Condition**:

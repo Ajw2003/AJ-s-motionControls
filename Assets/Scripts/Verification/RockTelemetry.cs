@@ -8,34 +8,8 @@ using UnityEngine;
 
 namespace Verification
 {
-    /// <summary>
-    /// Records one CSV row per real throw — the corpus of what players actually do with
-    /// the throw-driven model, next to what SkipCurve measures offline.
-    /// </summary>
-    /// <remarks>
-    /// This used to record the Authored/Derived comparison (docs/plans/rock-choosing-system.md
-    /// Part 6); that apparatus is gone (docs/plans/Plan-ThrowDrivenSkipModel.md), and so is
-    /// the `tuningSet` column. What is left is the honest thing to keep measuring: the raw
-    /// signal a real swing produced (swingSpeed, spinRate) against the three axes the bounce
-    /// now judges (pitchDeg, rollDeg, yawDeg) and what it scored. yawDeg is always 0 at
-    /// launch — the velocity starts aligned with the stone's heading by construction — so
-    /// this records the number that would actually separate a straight throw from one that
-    /// curved, once something downstream tracks sideslip at landing rather than at release.
-    ///
-    /// Written beside skip-curve.txt (repo root in the Editor, next to the executable in a
-    /// build), the same file-beside-the-exe convention as relay-url.txt and
-    /// match-settings.json. Append-only and closed after every row: a session that crashes,
-    /// or a host that alt-F4s out of a match, keeps every throw up to that point. Losing a
-    /// corpus to a buffered write would cost a play session that cannot be re-run, because
-    /// the people are what made it.
-    ///
-    /// Reads rather than publishes — it is an observer, and nothing in the game may depend
-    /// on it running. Turning it off in Bootstrap changes no behaviour, only what is recorded.
-    ///
-    /// The 73 rows logged under the old model (commit 34932cc) are not comparable to
-    /// anything this writes — see the "archive, don't delete" note on rock-throws.csv in
-    /// the plan's Risks section. That file was archived, not appended to, when this changed.
-    /// </remarks>
+    // One CSV row per real throw, appended and closed each row so a crash keeps the corpus; an observer
+    // nothing depends on. doc-ref 59aa docs/4-systems/Verification.md
     public class RockTelemetry : MonoBehaviour
     {
         private const string FileName = "rock-throws.csv";

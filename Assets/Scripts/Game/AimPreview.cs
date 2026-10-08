@@ -7,28 +7,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Live trajectory preview on the TV while a player aims.
-    /// </summary>
-    /// <remarks>
-    /// Two things on screen: a ghost stone that matches the phone's rotation exactly, and
-    /// an arc showing roughly where a throw from that angle would go.
-    ///
-    /// Smoothing is not polish here, it is what makes the feature work: AIM frames arrive
-    /// at only ~20Hz over a jittery connection, so applying them raw looks choppy. One
-    /// Slerp toward the last received attitude every frame is the whole of it — it used
-    /// to be four SmoothDampAngle calls over four separate scalars, which is what a
-    /// three-angle wire format forces you into.
-    ///
-    /// The arc comes from SkipPhysics.Predict — the same solver the live throw uses, so
-    /// what a player sees is what they get. It runs at a nominal power because the real
-    /// power is unknown until release; the arc teaches the angle, not an exact landing
-    /// spot. There used to be a per-player learned-power model here trying to close that
-    /// gap; it made the arc's meaning depend on throw history, which is worse than it
-    /// simply being approximate and obviously so.
-    ///
-    /// This never publishes gameplay events. Prediction is speculative by definition.
-    /// </remarks>
+    // Ghost follows the phone with one Slerp per frame; the arc comes from SkipPhysics.Predict at a
+    // nominal power and never publishes events. doc-ref caf5 docs/4-systems/Presentation.md
     public class AimPreview : MonoBehaviour
     {
         [Header("Setup")]
@@ -198,28 +178,8 @@ namespace Game
             EventManager.Instance?.Subscribe<PlayerJoinedEvent>(this, OnPlayerJoined);
         }
 
-        /// <summary>
-        /// Binds the launcher and the relay client once, rather than re-testing for them
-        /// every frame.
-        /// </summary>
-        /// <remarks>
-        /// Start rather than Awake, and that is the whole reason this can be a one-shot.
-        /// Bootstrap.Awake creates RelayClient.Instance before it calls CreateAimPreview, and
-        /// CreateAimPreview adds RockLauncher to this same object immediately after this
-        /// component — so at OUR Awake the launcher does not exist yet, but by the first
-        /// Start every Awake in that chain has run and both are guaranteed present. Bootstrap
-        /// is the only thing that ever builds an AimPreview (it guards on
-        /// FindFirstObjectByType), so there is no other construction order to survive.
-        ///
-        /// The previous shape ran this same resolution from Update: a GetComponent plus two
-        /// UnityEngine.Object null comparisons plus a HasInstance probe, every frame, for the
-        /// entire session — all of them native interop calls, and all of them answering a
-        /// question that stops changing after the first frame.
-        ///
-        /// HasInstance, not Instance — Instance would create a RelayClient, and a preview
-        /// that conjures its own data source hides a real failure. If it is genuinely absent
-        /// the preview is inert for the session, so say so loudly rather than sitting dark.
-        /// </remarks>
+        // Bound in Start, not Awake, because Bootstrap adds the launcher after this component; HasInstance, so a missing
+        // RelayClient is loud rather than conjured. doc-ref 0fb4 docs/4-systems/Presentation.md
         private void Start()
         {
             _launcher = GetComponent<RockLauncher>();
@@ -254,19 +214,8 @@ namespace Game
             _client.AimReceived -= OnAim;
         }
 
-        /// <summary>
-        /// Resolves the new active player's rock and tuning once per turn, and swaps the
-        /// ghost's mesh and scale to match — see the class remarks on <see cref="Tuning"/>.
-        /// </summary>
-        /// <remarks>
-        /// Only sharedMesh and localScale are touched. RockDefinition.MeshRotation is
-        /// deliberately left unapplied here — the ghost's rotation is overwritten every
-        /// frame from the phone's live attitude (see UpdateGhost), and RockController does
-        /// the same from the solver's attitude, so neither has anywhere to compose a
-        /// per-mesh correction without also changing what the solver reads as the stone's
-        /// face angle. Every mesh RockCatalogBuilder has produced so far imports flat, so
-        /// this has not yet needed solving for real.
-        /// </remarks>
+        // Only the ghost's mesh and scale change per turn; MeshRotation stays unapplied because rotation is overwritten
+        // from the phone every frame. doc-ref 1a25 docs/4-systems/Presentation.md
         private void OnTurnStarted(TurnStartedEvent e)
         {
             if (!RockSelection.HasInstance) return;
@@ -317,27 +266,8 @@ namespace Game
             if (TurnManager.HasInstance && e.PlayerId == TurnManager.Instance.ActivePlayer) TintGhost(e.PlayerId);
         }
 
-        /// <summary>
-        /// A phone that joins has a brand new ThrowController, whose sequence counter starts
-        /// at zero again — so the ordering guard in <see cref="OnAim"/> must forget the number
-        /// it was holding for that player, or every frame they send is older than what it
-        /// already saw and the preview starves.
-        /// </summary>
-        /// <remarks>
-        /// This is what left the ghost and arc hidden for the rest of a session after a player
-        /// closed their tab and came back. The guard rejected each frame before
-        /// <c>_lastAimTime</c> was updated, so HasSignal went stale and Update hid both.
-        /// See docs/Findings-AimPreviewAfterRejoin.md.
-        ///
-        /// Deliberately NOT gated on <see cref="PlayerJoinedEvent.Reconnected"/>. The relay
-        /// deletes a player from the room on socket close (relay/server.js, the 'close'
-        /// handler), so closing a tab and coming back arrives as a fresh join with that flag
-        /// false — which is precisely the case being fixed. Any join at all means a phone with
-        /// a sequence counter back at zero, and that is the fact this depends on.
-        ///
-        /// Only the player the guard is currently tracking matters. For anyone else the reset
-        /// already happens in OnAim, the moment the aiming player changes.
-        /// </remarks>
+        // A join must reset the ordering guard because the new phone's sequence counter restarts at zero; do not gate on
+        // Reconnected, the relay reports a rejoin as a fresh join. doc-ref f6df docs/4-systems/Presentation.md
         private void OnPlayerJoined(PlayerJoinedEvent e)
         {
             if (e.PlayerId == _lastAimPlayer) _lastSeq = -1;
@@ -358,19 +288,8 @@ namespace Game
             _curAttitude = Quaternion.Slerp(_curAttitude, _targetAttitude, smoothing);
             _curSwingSpeed = Mathf.Lerp(_curSwingSpeed, _targetSwingSpeed, smoothing);
 
-            // Nothing to predict while a stone is already in the air, and leaving the arc
-            // up through the throw means the line the player was aiming with is still
-            // drawn over the result. Both the tooltip above and the debug HUD used to
-            // claim this happened; it did not, because _line.enabled was set true
-            // unconditionally just before the early return below.
-            //
-            // CameraSettled as well as the flying check, because the throw is not over when
-            // the stone is. The camera is still downrange and swinging back for a second or
-            // so afterwards, and the preview coming back at the top of that move drew a
-            // ghost and an arc that slid across the frame from wherever the chase had left
-            // them — pointing somewhere the player was not aiming, for as long as the return
-            // took. Waiting for the shot to be the aiming shot again is what makes the
-            // preview mean what it says. See RockLauncher.CameraSettled.
+            // Hide the preview until the stone has landed and CameraSettled, or a ghost slides across
+            // the frame while the camera swings back. doc-ref 0c3d docs/4-systems/Presentation.md
             var launcherBusy = _launcher != null &&
                                ((_launcher.ActiveRock != null && _launcher.ActiveRock.IsFlying) ||
                                 !_launcher.CameraSettled);
@@ -405,16 +324,9 @@ namespace Game
 
         private void OnAim(AimMessage aim)
         {
-            // Playing only. TurnManager.ActivePlayer is null outside Playing, so the old
-            // guard here (active-is-empty-or-matches) let every lobby AIM frame from every
-            // phone through — latent until ShoreRocks started streaming AIM during
-            // selection, at which point it would have yanked this ghost around a lobby it
-            // has no business appearing in. See the plan's constraints section.
-            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing)
-            {
-                LogRejectedAim($"phase is {(TurnManager.HasInstance ? TurnManager.Instance.Phase.ToString() : "no TurnManager")}, not Playing");
-                return;
-            }
+            // React to AIM only while Playing; lobby AIM frames belong to ShoreRocks, and logging them
+            // as rejected reads like lost input. doc-ref e8c1 docs/4-systems/Presentation.md
+            if (!TurnManager.HasInstance || TurnManager.Instance.Phase != MatchPhase.Playing) return;
 
             var active = TurnManager.Instance.ActivePlayer;
             if (aim.playerId != active)
@@ -470,17 +382,8 @@ namespace Game
 
         private void UpdateArc()
         {
-            // Drawn at how hard the phone is being swung right now, floored at the nominal.
-            //
-            // The floor is what makes this usable. Real speed is genuinely unknowable
-            // before release, so a player holding still to line a shot up reads as zero
-            // effort — and an arc that collapses to a two-metre dribble every time they
-            // stop moving is not an aiming guide. So the arc shows at least a nominal
-            // throw, and winding up extends it from there.
-            //
-            // It used to be pinned at the nominal outright, which made the HUD's
-            // "predicted N skips over M m" mathematically incapable of responding to how
-            // hard anyone threw. That was the 13-skip ceiling.
+            // The arc is drawn at live swing speed floored at a nominal throw, so holding still still
+            // shows a usable arc. doc-ref 460e docs/4-systems/Presentation.md
             var drawSwingSpeed = Mathf.Max(previewSwingSpeed, _curSwingSpeed);
 
             // Zero spin: real spin is measured at throw release, not while aiming, and
@@ -505,21 +408,8 @@ namespace Game
             UpdateArcColour();
         }
 
-        /// <summary>
-        /// Red through amber to green by how many skips the solver just predicted.
-        /// </summary>
-        /// <remarks>
-        /// This is a readability fix rather than decoration. Arc LENGTH was the only signal
-        /// a bad angle gave, and the angle-quality curve in SkipPhysics is a smooth gradient
-        /// with no cliff in it — so a mediocre throw looks broadly like a good one right up
-        /// until it is in the water. Colour makes that gradient legible while there is still
-        /// time to correct.
-        ///
-        /// Tinting via startColor/endColor rather than the material, because the material is
-        /// shared with nothing but is drawn with a gradient the LineRenderer applies as
-        /// vertex colour — writing the material colour instead would multiply underneath and
-        /// leave two places that decide one hue.
-        /// </remarks>
+        // Arc colour runs red to green by predicted skips and is set on the LineRenderer's vertex
+        // colour, not on the material. doc-ref acf8 docs/4-systems/Presentation.md
         private void UpdateArcColour()
         {
             var quality = feedback.QualityOf(PredictedSkips);
@@ -543,17 +433,8 @@ namespace Game
         {
             _ghost.position = throwOrigin.position;
 
-            // The phone IS the rock. Nothing is added on top.
-            //
-            // There used to be an accumulated spin angle here, and it was wrong twice over.
-            // It double-counted: _curAttitude already contains every rotation the phone
-            // made, wrist twist included, so spinning the phone turned the ghost twice. And
-            // it only ever grew, off an unsigned three-axis rotation magnitude, so merely
-            // turning to aim ratcheted the ghost's yaw permanently and it never came back.
-            // The stone appeared to increment rather than to match the phone.
-            //
-            // The thrown stone still spins, because once it leaves the hand there is no
-            // phone left to track — see RockController.
+            // The ghost's rotation is the phone's attitude verbatim; adding a spin angle on top
+            // double-counted twist and ratcheted the yaw. doc-ref 478e docs/4-systems/Presentation.md
             _ghost.rotation = _curAttitude;
         }
 
@@ -631,19 +512,8 @@ namespace Game
             shore.AddComponent<ShoreRocks>().Bind(throwOrigin);
         }
 
-        /// <summary>
-        /// The placeholder water's geometry, named because more than one thing needs it.
-        /// <see cref="Verification.SkipCurve"/> asserts that a full-power throw stays on the
-        /// drawn mesh, and it can only do that honestly if it is reading the same numbers the
-        /// mesh is built from — it runs in the Editor without entering Play mode, so there is
-        /// no live plane for it to measure. Duplicating the values there instead would go
-        /// stale silently the first time the water changed size, which is exactly the failure
-        /// the check exists to catch.
-        /// </summary>
-        /// <remarks>
-        /// Unity's Plane primitive is 10 x 10 units before scaling, hence the base size — a
-        /// scale of 200 gives 2000 m across, not 200.
-        /// </remarks>
+        // Water size constants are shared with SkipCurve so its on-mesh check reads the real numbers;
+        // Unity's Plane is 10 units before scaling. doc-ref b58d docs/4-systems/Presentation.md
         public const float WaterPlaneBaseSize = 10f;
         public const float WaterPlaneScale = 200f;
         public const float WaterCentreZ = 60f;
@@ -658,23 +528,8 @@ namespace Game
         public const float WaterReachFromOrigin =
             WaterCentreZ + WaterPlaneBaseSize * WaterPlaneScale * 0.5f;
 
-        /// <summary>
-        /// How far down the lake the far bank sits, in metres. Well past the ~50 m a throw
-        /// covers, so it is never in the flight path, and inside the camera's 1000-unit far
-        /// clip so it is not cut off by the frustum.
-        /// </summary>
-        /// <remarks>
-        /// Pulled in from 480 m, and the reason is the fog rather than the composition. Linear
-        /// fog runs 120 m to 600 m, so at 480 m the bank is about three-quarters faded into the
-        /// horizon colour — only a quarter of its own colour survives, which is why a sand
-        /// colour there still rendered as blue-grey. It reads as haze, and haze cannot be
-        /// recoloured by choosing a different albedo.
-        ///
-        /// At 320 m roughly 58% of the material colour comes through, which is enough for sand
-        /// to look like sand while still leaving the distance haze that makes it sit back behind
-        /// the lake. Still six times further out than a throw travels, so nothing about the
-        /// flight path changes.
-        /// </remarks>
+        // The far bank sits at 320 m so enough of its colour survives the fog to read as sand, while
+        // staying far outside a throw's ~50 m. doc-ref 8bec docs/4-systems/Presentation.md
         private const float ShoreDistance = 320f;
 
         private void BuildPlaceholderScene()
@@ -710,18 +565,8 @@ namespace Game
             var camera = Camera.main;
             if (camera == null) return;
 
-            // One colour for the empty sky and for what the lake fades into, so the two
-            // cannot disagree — see the fog block below, where the hard horizon is fixed.
-            //
-            // Derived from the water rather than picked independently. The water's authored
-            // _BaseColor is a bright mid-blue (0.06, 0.36, 0.72); the sky used to be an almost
-            // black (0.05, 0.09, 0.15), and a headless capture shows the two meeting as a hard
-            // line across the frame — the fog cannot hide an edge when the colour on the far
-            // side of it is nothing like the water's own.
-            //
-            // Lightened and desaturated from the water instead of set to a taste value, so the
-            // relationship survives someone retuning the lake: change _BaseColor and the sky
-            // follows it rather than drifting apart from it again.
+            // The sky clear colour is derived from the water's base colour so the horizon has no hard
+            // line and retuning the lake carries the sky. doc-ref 5850 docs/4-systems/Presentation.md
             var horizon = new Color(0.42f, 0.58f, 0.74f);
 
             // Owner-chosen framing (2026-10-01, #42): higher and steeper than the old 2 m /
@@ -735,22 +580,8 @@ namespace Game
             camera.transform.rotation = Quaternion.Euler(15f, 0f, 0f);
             camera.backgroundColor = horizon;
 
-            // SolidColor, and a SKYBOX IS NOT AN OPTION HERE. Tried and measured: a gradient
-            // skybox renders correctly and the lake disappears completely.
-            //
-            // The reason is the water's depth behaviour, not the skybox. Clearing to a solid
-            // colour happens BEFORE any geometry, so the water draws over it. URP's skybox pass
-            // instead runs AFTER opaques and relies on the depth buffer to skip pixels already
-            // covered — and WaterRipples keeps the water's ZWrite OFF except for the length of a
-            // sink (see PlaceholderArt.SetWaterDepthWrite, which explains why: with depth on,
-            // the water swallows the stone). Writing no depth, the water leaves nothing for the
-            // skybox pass to test against, so the sky paints straight over the lake.
-            //
-            // So a gradient sky needs either water that writes depth — which reintroduces the
-            // stone-cut-in-half bug that toggle exists to prevent — or a background quad drawn
-            // at the Background queue before the water rather than RenderSettings.skybox. Do not
-            // simply set a skybox and expect it to work; it will look fine in isolation and take
-            // the lake with it.
+            // Do not use a skybox: URP draws it after opaques and the depth-less water leaves nothing to test against, so
+            // the sky paints over the lake. doc-ref 27c2 docs/4-systems/Presentation.md
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.farClipPlane = 1000f;
 
@@ -760,18 +591,8 @@ namespace Game
             if (environment != null) environment.Build(transform, skyMaterial, constants.WaterY, camera, water.transform);
             else BuildFarShore();
 
-            // The lake is 2000 units across (a 10-unit Plane scaled by 200) but the far
-            // clip is 1000, so the far half is cut off by the frustum and the cut shows as
-            // a hard line across the middle of the screen with flat background above it.
-            //
-            // Fogging to the background colour rather than moving the clip plane out:
-            // pushing the far plane past 2000 would double the depth range and spend real
-            // depth precision on water nobody can make out anyway, and the plane would
-            // still end in a hard edge — just further away. Fading it into the same colour
-            // the sky is cleared to means the edge is gone rather than relocated.
-            //
-            // Ends well inside the clip plane so the fade is complete before the geometry
-            // is cut, which is the whole point.
+            // Fog fades the lake into the sky colour before the far clip plane cuts it, rather than
+            // pushing the clip plane out. doc-ref 3a02 docs/4-systems/Presentation.md
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogColor = horizon;
@@ -786,29 +607,8 @@ namespace Game
         /// </summary>
         private const float SkyQuadDistance = 50f;
 
-        /// <summary>
-        /// A gradient-and-cloud backdrop, drawn behind everything as a camera-parented quad.
-        /// </summary>
-        /// <remarks>
-        /// A quad rather than <c>RenderSettings.skybox</c>, and that is not a stylistic choice.
-        /// A skybox was tried and measured: it rendered correctly and the lake vanished
-        /// completely. URP's skybox pass runs AFTER opaques and skips pixels the depth buffer
-        /// says are covered — and the water writes no depth (WaterRipples holds its ZWrite off
-        /// except during a sink), so the sky painted straight over the lake. A Background-queue
-        /// quad draws BEFORE the water instead, so the water lands on top of it exactly as it
-        /// lands on the camera's clear colour today.
-        ///
-        /// Parented to the camera so it follows the chase without ever leaving the frustum. The
-        /// gradient itself is computed from the world view direction inside the shader, not from
-        /// the quad's UVs, so it still tilts like real sky when the camera pitches to follow a
-        /// throw — a UV gradient would be welded to the screen and would not.
-        ///
-        /// Failure leaves the flat clear colour, which is the previous look rather than a broken
-        /// one, and says WHICH failure it was: not found, versus found but failed to compile.
-        /// Both render identically and need entirely different fixes.
-        ///
-        /// Returns the material (null on failure) so a LakeLouiseEnvironment can restyle it.
-        /// </remarks>
+        // The backdrop is a Background-queue quad on the camera, with its gradient taken from view
+        // direction, because a skybox hides the lake. doc-ref a26e docs/4-systems/Presentation.md
         private Material BuildSkyBackdrop(Camera camera, Color horizon)
         {
             var shader = Resources.Load<Shader>("SkyBackdrop");
@@ -857,41 +657,16 @@ namespace Game
             return material;
         }
 
-        /// <summary>
-        /// A low bank across the far end of the lake, so the water meets land instead of ending.
-        /// </summary>
-        /// <remarks>
-        /// FAR, not near, and that is the correction to the obvious placement. A bank behind the
-        /// throw origin is the intuitive choice — it keeps geometry out of the flight path — and
-        /// it is invisible: the camera sits at z = -3 looking toward +z, so anything behind the
-        /// origin is behind the camera and appears in no frame. A headless capture of that
-        /// version showed nothing at all.
-        ///
-        /// Across the far end it is out of the flight path anyway (a throw covers about 50 m,
-        /// this sits at <see cref="ShoreDistance"/>) and it does a job the near bank could not:
-        /// it gives the horizon something to be, so the six selectable stones stop reading as
-        /// floating on an empty plane.
-        ///
-        /// Drawn at PlaceholderArt.ShoreQueue, BELOW the water's queue. That is not a detail —
-        /// at or above it, the bank paints over the entire lake, because the water writes no
-        /// depth for it to be occluded by.
-        /// </remarks>
+        // The bank goes at the far end, since anything behind the origin is behind the camera, and is
+        // drawn below the water's queue. doc-ref 094c docs/4-systems/Presentation.md
         private static void BuildFarShore()
         {
             var bank = GameObject.CreatePrimitive(PrimitiveType.Cube);
             bank.name = "FarShore";
             Destroy(bank.GetComponent<Collider>());
 
-            // A flattened cube rather than a Plane: a Plane is single-sided and shows as a hole
-            // from underneath, and the water sits at y = 0 with the camera slightly above it.
-            //
-            // Wide enough to cross the whole frustum at this distance. A strip that ends inside
-            // the view reads as an island, and an island nobody can reach raises a question the
-            // game never answers.
-            //
-            // Sized for the distance, not for the ruler. A measured capture at 480 m showed a
-            // 6-unit bank as a five-pixel hairline nobody would read as land. Standing ~10 units
-            // above the waterline at 320 m is a low ridge rather than a wall.
+            // The bank is a flattened cube wide enough to cross the frustum and sized for its distance,
+            // so it reads as land and not a hairline. doc-ref 4be6 docs/4-systems/Presentation.md
             bank.transform.position = new Vector3(0f, 1f, ShoreDistance);
             bank.transform.localScale = new Vector3(1600f, 18f, 140f);
             bank.GetComponent<MeshRenderer>().sharedMaterial = Sand();
@@ -899,38 +674,13 @@ namespace Game
             BuildDunes();
         }
 
-        /// <summary>
-        /// The shore material — sand, picked for what survives the fog rather than for realism.
-        /// </summary>
-        /// <remarks>
-        /// Deliberately far brighter and warmer than sand actually is. Linear fog runs 120 m to
-        /// 600 m, so at <see cref="ShoreDistance"/> roughly 40% of this is already replaced by
-        /// the horizon's blue-grey before it reaches the screen; a realistic sand albedo arrives
-        /// as mud. Picked for the far side of the fog, not the inspector swatch — which is also
-        /// why moving <see cref="ShoreDistance"/> means re-checking this colour.
-        /// </remarks>
+        // The sand is far brighter than real sand because fog replaces about 40% of it; recheck it
+        // whenever ShoreDistance moves. doc-ref 2612 docs/4-systems/Presentation.md
         private static Material Sand() =>
             PlaceholderArt.Create(new Color(0.86f, 0.74f, 0.52f), PlaceholderArt.ShoreQueue);
 
-        /// <summary>
-        /// Low mounds along the bank, so the shoreline has a silhouette instead of a straight
-        /// edge.
-        /// </summary>
-        /// <remarks>
-        /// <b>Spheres, never cubes.</b> A previous attempt at shore detail used rotated cubes,
-        /// and a capture showed exactly what they are — a row of shipping containers along the
-        /// horizon. Hard vertical edges catch the light identically on every instance, and at
-        /// this distance that regularity is the only thing the eye picks up. A squashed sphere
-        /// has no edge to catch, so it reads as a landform at any size.
-        ///
-        /// Sunk into the bank rather than resting on it. A mound sitting exactly on a flat strip
-        /// draws a contact line under itself, and thirty of those in a row read as objects placed
-        /// on a shelf rather than as terrain.
-        ///
-        /// Seeded Random so the coastline is identical every run. An unseeded scatter means a
-        /// screenshot cannot be reproduced and "it looked better last time" is unanswerable —
-        /// which matters here specifically because this gets tuned by capturing it.
-        /// </remarks>
+        // Mounds are squashed spheres sunk into the bank with a seeded Random, so the coastline reads
+        // as terrain and is reproducible. doc-ref 2f4a docs/4-systems/Presentation.md
         private static void BuildDunes()
         {
             var sand = Sand();
@@ -973,28 +723,8 @@ namespace Game
             }
         }
 
-        /// <summary>
-        /// Puts the scene's directional light at a low side angle so the stones have form.
-        /// </summary>
-        /// <remarks>
-        /// Adjusts the light the scene already has rather than adding one — a second
-        /// directional light would double the ambient contribution and wash out the very
-        /// shading this is for.
-        ///
-        /// Found by type, not by name: Game.unity's is called "Directional Light", but a
-        /// string lookup breaks silently the moment somebody renames it, leaving the scene lit
-        /// by the old values with no error to follow.
-        ///
-        /// The angle is the point, and the obvious choice is the wrong one. A LOW raking light
-        /// is what gives most scenes form, and it was tried first: a headless capture at 28
-        /// degrees came back with the stones darker and flatter than Unity's default. These
-        /// stones are flat and horizontal, so their large visible face is their TOP, and a low
-        /// sun barely lands on it — it lights the thin rims instead, which is nothing.
-        ///
-        /// So the elevation goes up, not down, and the direction comes from the azimuth
-        /// instead: high enough to actually reach the top faces, swung off-axis so the two
-        /// halves of each stone are lit differently and the silhouettes separate.
-        /// </remarks>
+        // Raise the existing directional light high and swing it off-axis; a low sun misses the stones'
+        // flat tops and lights only the rims. doc-ref 1a80 docs/4-systems/Presentation.md
         private static void AngleTheSun()
         {
             Light sun = null;

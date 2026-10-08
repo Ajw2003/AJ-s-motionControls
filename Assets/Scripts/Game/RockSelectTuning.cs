@@ -2,21 +2,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Every number behind the shore-pointing rock picker: layout, hysteresis and colour.
-    /// One asset, edited in the inspector, no recompile.
-    /// </summary>
-    /// <remarks>
-    /// A ScriptableObject at Resources/RockSelectTuning for the same reason
-    /// AimFeedbackTuning is one: <see cref="ShoreRocks"/> is built by AimPreview with
-    /// AddComponent, so a [SerializeField] on it would sit at its C# field initializer
-    /// forever. See AimPreview.Awake's own note about having been caught by that once.
-    ///
-    /// The asset is optional — <see cref="CreateDefault"/> is a fully playable fallback,
-    /// the same load-or-warn pattern every other tuning asset in this project uses. Create
-    /// the asset from the menu (RockSkipping/Rock Select Tuning) only once these numbers
-    /// are worth hand-tuning against a real phone.
-    /// </remarks>
+    // ShoreRocks is built with AddComponent so it cannot hold inspector values; this asset is optional
+    // and CreateDefault is playable. doc-ref 0cb9 docs/4-systems/RockCatalogAndTuning.md
     [CreateAssetMenu(menuName = "RockSkipping/Rock Select Tuning", fileName = "RockSelectTuning")]
     public class RockSelectTuning : ScriptableObject
     {

@@ -7,23 +7,7 @@ using UnityEngine.Networking;
 
 namespace Net
 {
-    /// <summary>
-    /// Finds a usable Node.js runtime, downloading a portable copy when this machine has
-    /// none — the thing that was missing for a clean install to ever reach the npm stage.
-    /// </summary>
-    /// <remarks>
-    /// Before this, a machine with no Node on PATH failed at "npm install" with an exit
-    /// code that named npm, not Node — the actual missing piece was never installed, only
-    /// asked for. This downloads the official Windows zip distribution (no installer, no
-    /// admin rights, no PATH edit) into <see cref="Application.persistentDataPath"/> and
-    /// hands back its node.exe, which InstallDependencies then uses directly to run npm's
-    /// own CLI script — so npm never has to be found on PATH either.
-    ///
-    /// Windows-only, matching every other elevation/registry/ICS assumption already baked
-    /// into this project's networking stack (see CertificateProvider's remarks on
-    /// StreamingAssets for the same call). A non-Windows editor falls back to a PATH-only
-    /// lookup and the same "install it yourself" failure this replaces.
-    /// </remarks>
+    // Finds a usable Node.js runtime, downloading a portable copy when this machine has none — the thing that was... doc-ref 7972 docs/4-systems/HostingAndCertificates.md
     public static class NodeProvisioner
     {
         /// <summary>

@@ -20,15 +20,20 @@ const PORT = 3987;
 const HOST_NAME = 'play.skiprocking.ca';
 
 /** Does not follow redirects — the redirect itself is what is under test. */
-function request(port, requestPath) {
+function request(port, requestPath, headers = {}) {
   return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: requestPath }, (res) => {
+    const req = http.get({ host: '127.0.0.1', port, path: requestPath, headers }, (res) => {
       let body = '';
       res.on('data', (chunk) => {
         body += chunk;
       });
       res.on('end', () =>
-        resolve({ status: res.statusCode, location: res.headers.location, body }),
+        resolve({
+          status: res.statusCode,
+          location: res.headers.location,
+          contentType: res.headers['content-type'],
+          body,
+        }),
       );
     });
     // Resolves rather than rejects so a listener that never bound (:80 taken by IIS, Docker
@@ -36,6 +41,10 @@ function request(port, requestPath) {
     req.on('error', (err) => resolve({ error: err.code }));
   });
 }
+
+// Apple's own page, byte for byte (#78). The bare word "Success" was served before and iPhones
+// still opened the "log in to this network" sheet.
+const APPLE_SUCCESS_PAGE = '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -70,14 +79,28 @@ describe('Connectivity probes', () => {
     assert.equal(res.body, '');
   });
 
-  test('Apple gets the exact literal "Success", even before the controller is opened', async () => {
-    const res = await request(PORT, '/hotspot-detect.html');
+  test("Apple gets Apple's own Success page, even before the controller is opened", async () => {
+    const res = await request(PORT, '/hotspot-detect.html', { Host: 'captive.apple.com' });
     assert.equal(res.status, 200);
-    assert.equal(
-      res.body,
-      'Success',
-      'Apple needs this exact literal to stop flagging "No internet"',
-    );
+    assert.equal(res.body, APPLE_SUCCESS_PAGE, 'anything else makes iOS open its login sheet');
+    assert.match(res.contentType, /^text\/html/);
+  });
+
+  test('any path on an Apple probe host gets the Success page, never a redirect', async () => {
+    for (const [host, probePath] of [
+      ['captive.apple.com', '/'],
+      ['captive.apple.com', '/abc123/def456/hotspot-detect.html'],
+      ['www.appleiphonecell.com', '/library/test/success.html'],
+      ['captive.apple.com:80', '/hotspot-detect.html'],
+    ]) {
+      const res = await request(PORT, probePath, { Host: host });
+      assert.equal(
+        res.status,
+        200,
+        `${host}${probePath} must not redirect: iOS reads that as a portal`,
+      );
+      assert.equal(res.body, APPLE_SUCCESS_PAGE);
+    }
   });
 
   test('the answers do not change once the controller has been opened', async () => {
@@ -93,7 +116,7 @@ describe('Connectivity probes', () => {
     assert.equal(android.body, '');
 
     const apple = await request(PORT, '/hotspot-detect.html');
-    assert.equal(apple.body, 'Success');
+    assert.equal(apple.body, APPLE_SUCCESS_PAGE);
   });
 
   test('there is no /portal page', async () => {

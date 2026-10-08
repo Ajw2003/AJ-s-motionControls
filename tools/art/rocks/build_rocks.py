@@ -106,20 +106,8 @@ def triangulate(obj):
 
 
 def recalc_and_verify_normals(obj):
-    """bmesh.ops.recalc_face_normals, then assert every face points away from mesh centre.
-
-    A second, independent check on top of the winding-reversal in build_object — recalc can
-    itself get a mesh's global orientation backwards on a topology it cannot disambiguate, so
-    this asserts the actual outcome rather than trusting the fix that produced it.
-
-    Run BEFORE triangulate, on the same quad/triangle-fan faces rock_shape.py's own --check
-    verifies (its centroid-vs-normal test, which already passes 0 bad on every rock). Checking
-    afterward instead would test individual post-triangulation half-quads, where a jittered,
-    non-planar quad's own two triangles can legitimately fail a whole-mesh centroid heuristic
-    even though the quad they came from is correctly wound — rock_shape.py's docstring notes
-    exactly this ("jittered quads are not perfectly planar"). Triangulating a correctly-wound
-    face preserves its winding, so checking before is equivalent for catching a real mistake
-    (an axis-mapping or reversal bug) without tripping on that geometric non-planarity.
+    """Recalculates face normals, then asserts every face points away from the mesh centre, before triangulating.
+    doc-ref 5e21 docs/4-systems/RockCatalogAndTuning.md
     """
     bm = bmesh.new()
     bm.from_mesh(obj.data)

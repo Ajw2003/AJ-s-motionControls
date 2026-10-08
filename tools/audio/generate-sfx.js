@@ -85,24 +85,8 @@ function noise(seconds, seed) {
   return out;
 }
 
-/**
- * A soft struck-wood tone — marimba or kalimba rather than bell.
- *
- * This replaced a 2-operator FM bell, and the swap is the single biggest reason the set
- * stopped sounding harsh. FM with a high modulation index produces dense inharmonic
- * partials high in the spectrum: that is precisely what "metallic" and "clangy" mean, and
- * it is wrong for a game about stones and water. Additive synthesis with a few LOW
- * harmonics cannot produce that texture at all.
- *
- * Two details do most of the warmth:
- *
- * - Higher partials decay faster than the fundamental. That is what real wood does, and it
- *   means the sound is only briefly bright before settling to a pure note. A bell holds its
- *   upper partials, which is why it rings and why it cuts.
- * - The attack is a few milliseconds of raised cosine, not an instant jump. An instant
- *   attack is a step discontinuity, and a step is broadband click — audible as a hard edge
- *   on the front of every note.
- */
+// A soft struck-wood tone from a few low additive harmonics, replacing the harsh FM bell.
+// doc-ref 68fb docs/4-systems/Audio.md
 function mallet(seconds, freq, { release = 0.45, partials = null } = {}) {
   // Near-integer ratios, detuned slightly so the partials beat gently against each other
   // instead of fusing into one sterile tone. Deliberately not a marimba's true 1 : 3.9 :
@@ -274,18 +258,8 @@ function writeWav(file, buf) {
 
 // ---------------------------------------------------------------- the sounds
 
-/**
- * A stone touching water and coming off it. A soft, rounded plop.
- *
- * The earlier version layered a high-passed noise click on top to sell the contact, and
- * that click was the harshness: it fires twenty to thirty times in three seconds, and
- * broadband high frequencies repeated that fast are fatiguing however quiet each one is.
- * Water does not click. It displaces, which is a pitched drop, not a transient.
- *
- * So the contact is carried entirely by how FAST the pitch falls — 25 ms — rather than by
- * anything bright. The remaining noise layer is low-passed to keep only its body; it reads
- * as wetness rather than as spray.
- */
+// A soft rounded plop carried by a fast pitch fall, with no bright click.
+// doc-ref 67c5 docs/4-systems/Audio.md
 function skip(seed, tune = 1) {
   const plop = shape(
     osc(0.2, (t) => glide(820 * tune, 300 * tune, Math.min(1, t / 0.025))),

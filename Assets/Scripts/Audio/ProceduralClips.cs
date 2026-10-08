@@ -5,29 +5,7 @@ using UnityEngine;
 
 namespace Audio
 {
-    /// <summary>
-    /// Synthesised stand-in clips, so every sound in the game is audible before any audio
-    /// asset exists.
-    /// </summary>
-    /// <remarks>
-    /// This exists because of a real gap rather than as a toy: there are currently zero
-    /// .wav/.mp3/.ogg files anywhere in Assets, and Plan-SfxVfx.md's open question 1 — where
-    /// the audio is coming from — is still open. The plan's M3 says "placeholder clips are
-    /// fine, the ladder and the impact-speed mapping are what's being tuned, not the
-    /// samples," which is true and needs placeholders to exist.
-    ///
-    /// Generated rather than committed as files, for the reason PlaceholderArt.CreateWater
-    /// gives about assets reached by name: a thing built in code cannot go missing from a
-    /// build. It also cannot be mistaken for finished art, which matters more here — nobody
-    /// is going to ship a sine wave by accident.
-    ///
-    /// These are placeholders and they sound like it. Every one is replaced the moment a
-    /// real clip is dropped into the matching AudioBank entry's Variants; nothing else has
-    /// to change, and this class stops being reached for that sound.
-    ///
-    /// Cached per SoundId. AudioClip.Create allocates and uploads sample data, and a long
-    /// run asks for the same skip sound thirty times in three seconds.
-    /// </remarks>
+    // Synthesised stand-in clips, so every sound in the game is audible before any audio asset exists. doc-ref c731 docs/4-systems/Audio.md
     public static class ProceduralClips
     {
         private static readonly Dictionary<SoundId, AudioClip> Cache = new();

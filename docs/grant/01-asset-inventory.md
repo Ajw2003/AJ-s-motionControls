@@ -42,7 +42,7 @@ process; `HotspotService.cs` (610) drives Windows Mobile Hotspot via `hotspot/ho
 StreamingAssets as the floor; `ChildProcessGroup.cs` / `ProcessUtil.cs` handle child-process
 lifetime so a crashed session does not wedge the next one.
 
-**The finding worth showing a reviewer** is `docs/Decision-OfflineHosting.md`. Windows Mobile
+**The finding worth showing a reviewer** is `docs/6-decisions/Decision-OfflineHosting.md`. Windows Mobile
 Hotspot was believed unable to start without an internet connection. It can — the blocker was
 `GetInternetConnectionProfile()` returning null by definition when offline, where
 `GetConnectionProfiles()` enumerates every profile including ones carrying no connectivity.
@@ -120,7 +120,7 @@ Unusual for a solo project and worth citing directly:
   and bought nothing but ~510 lines and a native dependency.
 - `docs/archive/plans/remove-direct-transport.md` — plain LAN mode removed, not deprecated, with the
   certificate reasoning that forced it.
-- `docs/Decision-OfflineHosting.md` — Wi-Fi Direct evaluated and rejected: it works as a radio
+- `docs/6-decisions/Decision-OfflineHosting.md` — Wi-Fi Direct evaluated and rejected: it works as a radio
   but leaves port 53 free and builds no DNS proxy, so phones cannot resolve a name, so it
   cannot serve an HTTPS origin without also shipping a DHCP server.
 - `docs/archive/Findings-DnsAudit.md`, `docs/archive/Findings-AimPreviewAfterRejoin.md`.

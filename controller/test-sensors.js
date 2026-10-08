@@ -47,6 +47,8 @@ import {
   SimulatedThrow,
 } from './js/throw.js';
 
+import { RelayConnection } from './js/net.js';
+
 let failures = 0;
 
 function check(label, ok, detail) {
@@ -237,13 +239,8 @@ console.log('\ngravity removal');
     check(`gravity magnitude holds at ${a}/${b}/${g}`, near(magnitude(v), G, 1e-9));
   }
 
-  // The bug this replaced. GravityFilter estimates gravity in DEVICE coordinates, so
-  // a fast turn sweeps the gravity vector through that frame faster than the filter
-  // tracks — and the lag reads as user acceleration that has nothing to do with how
-  // hard the phone was thrown. Rotating a stationary phone must measure as ~zero.
-  // A wrist snap at roughly the speed a real throw produces: 180 degrees in ~190ms,
-  // about 900 deg/s. The phone is only turning — it is not accelerating through
-  // space at all — so an honest measurement reads zero.
+  // Rotating a stationary phone fast must measure as ~zero, the GravityFilter lag this replaced.
+  // doc-ref 0d59 docs/4-systems/Verification.md
   const filter = new GravityFilter(0.8);
   let filterWorst = 0;
   let exactWorst = 0;
@@ -486,6 +483,40 @@ console.log('\nMotionSource calibration (Settling/Aiming)');
       sameRotation(afterRecentre.attitude, IDENTITY, 1e-6),
       `${rotationAngleDeg(afterRecentre.attitude).toFixed(4)} deg`,
     );
+  }
+
+  {
+    // Issue #53 (N1): a pause at the top of the backswing used to look like "the phone
+    // is at rest", dropping to Settling and sliding the reference to the backswing
+    // pose. With a throw armed, Aiming must hold until the throw ends.
+    let clock = 0;
+    const m = new MotionSource({ now: () => clock });
+    m._onOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    m._onMotion(motionEvent());
+    const thrower = new ThrowController(m, { aimHz: 1000 });
+    thrower.arm();
+
+    const frames = (n, gamma) => {
+      for (let i = 0; i < n; i++) {
+        clock += 16;
+        m._onMotion(motionEvent({ alpha: 0, beta: 0, gamma }));
+      }
+    };
+    frames(15, 200); // backswing
+    frames(30, 0); // ~480 ms pause at the top
+    check('armed throw stays Aiming through the pause', m.calState === 'aiming', m.calState);
+    frames(15, -200); // back to the arm pose
+
+    const angle = rotationAngleDeg(m.latest.attitude);
+    check(
+      'a pause at the top of the backswing does not slide the reference',
+      angle < 2,
+      `${angle.toFixed(3)} deg`,
+    );
+    check('throw is still armed', thrower.state === ThrowState.ARMED, thrower.state);
+
+    thrower.cancel();
+    check('cancel releases the aim lock', m.holdAimLock === false, String(m.holdAimLock));
   }
 
   {
@@ -1100,6 +1131,54 @@ console.log('\nThrowController: arm, swing, stop');
     check('firing returns the controller to idle', c.state === ThrowState.IDLE);
   }
 
+  // #54 (N2): the calm-stop path reads the attitude from the stop sample itself.
+  {
+    const sent = [];
+    const stopAtt = aboutY(40);
+    const stopped = hardSwing.map((s, i) =>
+      i === hardSwing.length - 1 ? makeSample(s.t, s.power, { attitude: stopAtt }) : s,
+    );
+    const motion = makeMotion(null, stopped);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, stopped);
+    check(
+      'a calm stop throws with the stop sample attitude',
+      sent.length === 1 &&
+        sameRotation({ w: sent[0].qw, x: sent[0].qx, y: sent[0].qy, z: sent[0].qz }, stopAtt),
+    );
+  }
+
+  // #54 (N2): when the phone never settles, the maxSwingMs fallback fires ~900ms into
+  // the follow-through. The attitude must come from the calmest sample after the peak
+  // (the release), not from the last sample, where the arm has swung somewhere else.
+  {
+    const sent = [];
+    const releaseAtt = aboutY(20);
+    const followAtt = aboutY(160);
+    const timedOut = [
+      makeSample(0, 2),
+      makeSample(260, 2),
+      makeSample(280, 60),
+      makeSample(300, 80),
+      makeSample(320, 100), // peak
+      makeSample(340, 3, { attitude: releaseAtt }), // the release: one calm sample only
+    ];
+    // Follow-through stays above stopAccel and below swingAccel, so neither the
+    // calm-stop path nor a new onset run can fire; only the timeout can.
+    for (let t = 360; t <= 1240; t += 20) timedOut.push(makeSample(t, 8, { attitude: followAtt }));
+
+    const motion = makeMotion(null, timedOut);
+    const c = new ThrowController(motion, { onThrow: (p) => sent.push(p), aimHz: 1000 });
+    swing(c, motion, timedOut);
+
+    const got = sent[0] && { w: sent[0].qw, x: sent[0].qx, y: sent[0].qy, z: sent[0].qz };
+    check('a swing that never settles still throws on the timeout', sent.length === 1);
+    check(
+      'the timed-out throw takes the release attitude, not the last sample',
+      sent.length === 1 && sameRotation(got, releaseAtt) && !sameRotation(got, followAtt),
+    );
+  }
+
   // A swing passes through near-zero acceleration at its own turnaround. Firing
   // there would throw halfway through the arc.
   {
@@ -1492,6 +1571,23 @@ console.log('\nThrowController: live windup on the aim stream');
     );
     c.cancel();
   }
+}
+
+// ---------------------------------------- RelayConnection.sendIfClear (#57)
+//
+// AIM goes out latest-wins: a frame is skipped while earlier bytes are still queued, so
+// a Wi-Fi stall cannot build a backlog of stale aim frames ahead of the THROW.
+console.log('\nRelayConnection: latest-wins AIM');
+{
+  globalThis.WebSocket ??= { OPEN: 1 };
+  const sent = [];
+  const conn = new RelayConnection({ url: 'ws://unused' });
+  conn.socket = { readyState: WebSocket.OPEN, bufferedAmount: 0, send: (s) => sent.push(s) };
+
+  check('sends when nothing is queued', conn.sendIfClear({ type: 'AIM' }) && sent.length === 1);
+  conn.socket.bufferedAmount = 120;
+  check('skips while bytes are still queued', !conn.sendIfClear({ type: 'AIM' }) && sent.length === 1);
+  check('send() still queues regardless (THROW path)', conn.send({ type: 'THROW' }) && sent.length === 2);
 }
 
 console.log(

@@ -5,22 +5,7 @@ using UnityEngine;
 
 namespace EventSystems
 {
-    /// <summary>
-    /// Central publish/subscribe hub. Subscribers are held weakly, so a destroyed
-    /// listener is dropped on the next publish even if it forgot to unsubscribe.
-    /// </summary>
-    /// <remarks>
-    /// Ported from FactoryTM with four changes, all required by this project's
-    /// multi-scene structure (Bootstrap -> Lobby -> Game -> Results):
-    /// <list type="number">
-    /// <item>persistBetweenScenes is now true, so the manager survives scene loads.</item>
-    /// <item>Destroyed-subscriber detection accounts for Unity's fake-null semantics.</item>
-    /// <item>OnDestroy calls base.OnDestroy so the singleton static is cleared.</item>
-    /// <item>UnsubscribeFromAllEvents no longer uses reflection, and removes every
-    /// matching subscription rather than only the first.</item>
-    /// </list>
-    /// The unused FactoryTM-only using directives were also stripped.
-    /// </remarks>
+    // Central publish/subscribe hub. doc-ref 35fd docs/4-systems/EventSystem.md
     public class EventManager : SingletonBase<EventManager>
     {
         /// <summary>Set true while wiring new events; publish failures are otherwise quiet.</summary>
@@ -106,18 +91,7 @@ namespace EventSystems
             if (DebugLoggingEnabled) Debug.Log($"EventManager: Found {subscriptionList.Count} subscriptions for {eventType.Name}");
             _isPublishing = true;
 
-            // Forward, in subscription order. Bootstrap depends on this and says so:
-            // ScoreManager is created before TurnManager precisely so a throw's points
-            // are banked before TurnManager handles the same event, ends the match and
-            // reads the standings. This loop used to run backwards, which inverted that
-            // silently — the match ended and broadcast scores to the phones before the
-            // final throw was counted, so every phone showed a total one throw short of
-            // the host's while agreeing with each other.
-            //
-            // Count is snapshotted so a handler that subscribes mid-dispatch does not
-            // receive the event it is currently handling. Removals during a publish are
-            // deferred (see RemoveMatching), so the list only grows here and every index
-            // below the snapshot stays valid.
+            // Forward, in subscription order. doc-ref 6323 docs/4-systems/EventSystem.md
             var count = subscriptionList.Count;
 
             for (int i = 0; i < count; i++)
@@ -150,17 +124,7 @@ namespace EventSystems
             CleanupPendingRemovals();
         }
 
-        /// <summary>
-        /// True when a subscriber can no longer receive events.
-        /// </summary>
-        /// <remarks>
-        /// The UnityEngine.Object branch is load-bearing. WeakReference.Target is typed
-        /// object, so a plain <c>== null</c> is reference equality and bypasses Unity's
-        /// overloaded <c>==</c> that reports destroyed objects as null. Without it,
-        /// destroyed MonoBehaviours keep getting invoked and throw
-        /// MissingReferenceException into the catch above on every single publish —
-        /// which with multiple scenes happens on every transition.
-        /// </remarks>
+        // True when a subscriber can no longer receive events. doc-ref 643d docs/4-systems/EventSystem.md
         private static bool IsDead(object target)
         {
             if (target == null) return true;

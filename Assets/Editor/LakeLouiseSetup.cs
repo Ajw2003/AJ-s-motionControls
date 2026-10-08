@@ -6,16 +6,8 @@ using UnityEngine;
 
 namespace RockSkippingEditor
 {
-    /// <summary>
-    /// Makes Assets/Scenes/LakeLouise.unity: a copy of Bootstrap with a LakeLouiseEnvironment
-    /// in it. Open that scene and press Play. Batchmode entry point: CreateScene.
-    /// </summary>
-    /// <remarks>
-    /// A copy of Bootstrap rather than a new scene because Bootstrap is what creates the
-    /// persistent managers and the AimPreview that builds the lake; the environment only
-    /// restyles what AimPreview builds. Not added to the build settings: Bootstrap stays at
-    /// index 0 and this scene is reached by opening it (docs/plans/alpine-lake-level.md).
-    /// </remarks>
+    // LakeLouiseSetup.cs creates the LakeLouise scene as a copy of Bootstrap, so the real managers and AimPreview build
+    // the lake; it is deliberately not in build settings. doc-ref 95c3 docs/4-systems/Presentation.md
     public static class LakeLouiseSetup
     {
         private const string SourceScene = "Assets/Scenes/Bootstrap.unity";

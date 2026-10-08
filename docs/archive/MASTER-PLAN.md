@@ -12,14 +12,14 @@ Its content now lives in five tiers:
 | Was in `MASTER-PLAN.md` | Now in |
 |---|---|
 | "Where the project stands", the document index | [`README.md`](README.md) — tier 1 |
-| The M0–M4 milestone table | [`Roadmap.md`](Roadmap.md) — tier 2, rewritten as ten milestones with acceptance criteria |
-| Track A/B/C status | [`ProjectState.md`](ProjectState.md) — tier 3 |
-| §5, "supporting ground truth: hosting & offline architecture" | [`systems/HostingAndCertificates.md`](systems/HostingAndCertificates.md) — tier 4 |
-| Nothing — this did not exist | [`Today.md`](Today.md) — tier 5 |
+| The M0–M4 milestone table | [`Roadmap.md`](../2-roadmap/Roadmap.md) — tier 2, rewritten as ten milestones with acceptance criteria |
+| Track A/B/C status | [`ProjectState.md`](../3-state/ProjectState.md) — tier 3 |
+| §5, "supporting ground truth: hosting & offline architecture" | [`systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) — tier 4 |
+| Nothing — this did not exist | [`Today.md`](../5-today/Today.md) — tier 5 |
 
 The `(deleted)` markers this file carried were an honest response to commit `0b7c500` removing 34
 documents. That situation is now handled differently: see
-[`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md) for the audit, and
-[`archive/`](archive/) for the documents that are inert rather than missing.
+[`Findings-DocumentationAudit.md`](../Findings-DocumentationAudit.md) for the audit, and
+[`archive/`](./) for the documents that are inert rather than missing.
 
 **Start at [`README.md`](README.md).**

@@ -1,17 +1,8 @@
 'use strict';
 
-/**
- * Answers "why does the phone say No internet?" against a LIVE game.
- *
- * Run it with Unity in Play mode and the hotspot up. It touches the relay the same way a
- * phone does — the same ports, the same paths, the same Host headers — and reports each
- * link in the chain separately, because the symptom on the phone ("connected, no internet")
- * is identical whether DNS failed, :80 never bound, or :80 answered the wrong thing.
- *
- * Read-only. It sends requests and prints what came back; it changes nothing.
- *
- * Usage:  node diagnose-hotspot.js
- */
+// Answers "why does the phone say No internet?" against a live game, one link at a time, read-only.
+// Usage: node diagnose-hotspot.js
+// doc-ref c5cf docs/4-systems/Networking.md
 
 const http = require('http');
 const https = require('https');
@@ -191,16 +182,8 @@ async function main() {
       'Bound but blocked. Check the "RockSkipping connectivity probe" firewall rule.',
     );
   } else {
-    // Deliberately hedged. This request originates on the host and is destined for the host's
-    // own address, so Windows does not evaluate it against the inbound firewall rules the way
-    // it evaluates a packet arriving over the wireless interface from a phone. A PASS here
-    // proves the socket is listening and answering; it does NOT prove a guest can reach it.
-    //
-    // Nor does opening the URL on the phone's browser, which is what this used to advise. On
-    // Android a Wi-Fi network flagged "no internet" is not the default network, so the
-    // browser can route to cellular and time out while the platform's own probe — bound to
-    // the Wi-Fi — reaches :80 fine. Only the host's connection table settles it, which is
-    // what watch-guests.js prints.
+    // A host-side PASS proves the socket answers, not that a guest can reach it.
+    // doc-ref acb3 docs/4-systems/Networking.md
     report(
       PASS,
       `:80 answers on ${HOTSPOT_IP} (from this machine)`,

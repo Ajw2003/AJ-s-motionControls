@@ -459,7 +459,7 @@ dropping `* constants.SpeedScale`. But:
 - `RockController.Launch` still **divides** by it to recover `RockLaunchedEvent.SwingSpeed` and
   `power` (`RockController.cs:177-178`).
 - `RockLaunchedEvent.cs:22` still documents the multiplication.
-- `Assets/CLAUDE.md` and `docs/systems/SkipPhysics.md` still call it "the one conversion".
+- `Assets/CLAUDE.md` and `docs/4-systems/SkipPhysics.md` still call it "the one conversion".
 
 **Effect:** every `rock-throws.csv` row since `9c3f201` under-reports swing speed by 1.2×, and
 `SkipCurve`'s speed sweep now means stone speed rather than hand speed. `9c3f201` also dropped the

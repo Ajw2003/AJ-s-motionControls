@@ -185,7 +185,7 @@ work on.
 - Mark `NetworkMode.Lan` `[Obsolete]` with a pointer to this doc, and mark `ResolveLanAddress` /
   `ToHostName`'s encoding as LAN-only and slated for removal.
 - Do **not** delete them this pass — that is a follow-up once Hotspot is proven on real hardware.
-- Update `docs/plans/network-mode-selection.md`, `docs/Decision-OfflineHosting.md`,
+- Update `docs/plans/network-mode-selection.md`, `docs/6-decisions/Decision-OfflineHosting.md`,
   `docs/OfflineSetup.md`, `README.md`.
 
 ### Phase 4 — Make the Hotspot path actually robust
@@ -214,13 +214,13 @@ isolation decision:
   plain HTTP listener on :80 and a matching firewall rule in `setup-offline.ps1`.
 - Alternative worth a deliberate decision, not a silent one: leave ICS forwarding enabled so the
   hotspot has real internet and the problem disappears. That trades away the guest isolation in
-  [Decision-OfflineHosting.md](../Decision-OfflineHosting.md). Recommended: keep isolation,
+  [Decision-OfflineHosting.md](../6-decisions/Decision-OfflineHosting.md). Recommended: keep isolation,
   answer the probes.
 
 **Everything else fixed and constant.** With the hostname, IP and port all constants, the join
 URL QR is identical on every install — it can be rendered before the hotspot finishes coming up
 instead of waiting on it. Two QRs, Wi-Fi payload then URL, per
-the QR rule in [systems/HostingAndCertificates.md](../systems/HostingAndCertificates.md).
+the QR rule in [4-systems/HostingAndCertificates.md](../4-systems/HostingAndCertificates.md).
 
 **Offline chain validation.** Let's Encrypt certs no longer carry OCSP URLs, so a phone with no
 internet validates without a soft-fail stall. Confirm on real hardware in step 6.

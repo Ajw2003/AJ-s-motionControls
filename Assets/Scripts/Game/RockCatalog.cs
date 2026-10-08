@@ -3,19 +3,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Every rock in the game, in a fixed order. Loaded by name from Resources/RockCatalog.
-    /// </summary>
-    /// <remarks>
-    /// The order is load-bearing twice over: it is the left-to-right layout of the stones on
-    /// the shore, and it is the index the random assignment draws against. Reordering this
-    /// array moves stones under players' pointers and changes what a recorded match seed
-    /// replays as, so treat it as fixed once matches have been played.
-    ///
-    /// Only the catalog lives in Resources. The definitions and their tunings sit in
-    /// Assets/Rocks and come along as asset dependencies — Resources stays a short list of
-    /// things genuinely loaded by name, which is what it is for.
-    /// </remarks>
+    // Catalog order is load-bearing: it sets the shore layout and the random-assignment index, so treat
+    // it as fixed once matches have been played. doc-ref d540 docs/4-systems/RockCatalogAndTuning.md
     [CreateAssetMenu(menuName = "RockSkipping/Rock Catalog", fileName = "RockCatalog")]
     public class RockCatalog : ScriptableObject
     {
@@ -54,18 +43,8 @@ namespace Game
             return -1;
         }
 
-        /// <summary>
-        /// Checks the catalog is playable: every slot filled, every rock has a mesh, an id
-        /// and a tuning, and no id repeats.
-        /// </summary>
-        /// <returns>Empty when the catalog is sound; one line per problem otherwise.</returns>
-        /// <remarks>
-        /// Used to also enforce that every rock's tuning agreed on shared fields like
-        /// MaxSpeed and Gravity — see docs/plans/Plan-ThrowDrivenSkipModel.md. Those fields
-        /// are not per-rock anymore; they live once, globally, on SkipConstants, so
-        /// disagreement between rocks is no longer representable and there is nothing left
-        /// to check there.
-        /// </remarks>
+        // Validate checks slots, mesh, id and tuning; per-rock disagreement on shared fields is no longer representable,
+        // so it is not checked. doc-ref 5bc6 docs/4-systems/RockCatalogAndTuning.md
         public List<string> Validate()
         {
             var problems = new List<string>();
@@ -94,18 +73,8 @@ namespace Game
             return problems;
         }
 
-        /// <summary>
-        /// Last-resort empty catalog, so a missing asset degrades to the old single-rock game
-        /// rather than taking the throw path down.
-        /// </summary>
-        /// <remarks>
-        /// Same shape as SkipTuning.CreateDefault and for the same reason — but note what
-        /// "default" means here. There is nothing sensible to invent: a catalog needs mesh
-        /// references, and code cannot conjure those. So this is empty on purpose, and every
-        /// caller treats an empty catalog as "fall back to Resources/SkipTuning". Reaching it
-        /// means rock choosing is silently off, which is worth noticing rather than quietly
-        /// living with.
-        /// </remarks>
+        // CreateDefault is empty on purpose and callers fall back to Resources/SkipTuning; reaching it
+        // means rock choosing is silently off. doc-ref ccf1 docs/4-systems/RockCatalogAndTuning.md
         public static RockCatalog CreateDefault()
         {
             var catalog = CreateInstance<RockCatalog>();

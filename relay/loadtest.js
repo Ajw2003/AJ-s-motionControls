@@ -1,29 +1,8 @@
 'use strict';
 
-/**
- * Capacity measurement: simulates concurrent parties and reports what they cost.
- *
- * Each room is 1 host + PLAYERS_PER_ROOM phones. One phone streams AIM at 20Hz —
- * turn-based, so only the active player aims. That is the real rate, from `aimHz`
- * in throw.js, not an invented one.
- *
- * The host sends SPECTATE only on state changes — a join, a turn, a completed throw,
- * the match ending — so it is not modelled as steady traffic here. It used to go out
- * at 4Hz to every player for the whole time a rock was in the air, which dominated
- * this measurement; a match now sends single-digit SPECTATEs per turn instead of
- * dozens. If you reintroduce anything periodic on the host side, model it here or
- * these numbers stop meaning anything.
- *
- *   npm run loadtest                    25 rooms x 4 players, 15s
- *   node loadtest.js 250 8 20           250 rooms x 8 players, 20s
- *   RELAY_URL=ws://127.0.0.1:3100 node loadtest.js 100 6 15
- *
- * Reads the counters that /health exposes, so point it at a relay running this
- * version or newer. Run it against a LOCAL relay for capacity planning; pointing
- * it at production is a denial-of-service against your own players.
- *
- * Measured numbers and what they imply: HostingPlan.md §14.
- */
+// Capacity measurement: simulates concurrent parties and reports what they cost; run it against a local relay only.
+// Usage: npm run loadtest, or node loadtest.js ROOMS PLAYERS SECONDS.
+// doc-ref ff84 docs/4-systems/Networking.md
 
 const { WebSocket } = require('ws');
 

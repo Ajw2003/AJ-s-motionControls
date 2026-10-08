@@ -6,9 +6,9 @@ The Unity console shows `[PeerLink] <id>: DIRECT — input is now peer-to-peer` 
 `[TurnManager] <id> joined (1 players)` about twice a second, continuously, mid-match, for one
 device. Neither line is a transport "flip" in the sense it reads as — `DIRECT` is only ever
 logged when a **brand new** `RTCPeerConnection` finishes negotiating
-([PeerLink.cs:269](Scripts/Net/PeerLink.cs:269)), and `AcceptOffer` is only reached when the phone
+(PeerLink.cs:269 (deleted in b0e35ba; recover with `git show b0e35ba^:Assets/Scripts/Net/PeerLink.cs`)), and `AcceptOffer` is only reached when the phone
 sends a fresh `RTC_OFFER`, which `app.js` only sends on a `JOINED`
-([app.js:485](../../../Desktop/GameDev/RockSkipping/controller/js/app.js:485)).
+([app.js:485](../../../controller/js/app.js:485)).
 
 So the console is not showing a flapping data channel. It is showing **the phone re-joining the
 room roughly once a second, all match long**, and the peer link faithfully renegotiating from
@@ -16,13 +16,13 @@ scratch each time. The WebRTC layer is the symptom, not the cause.
 
 Two separate problems, and the answer to the second question folds into the first:
 
-**1. A join ping-pong with no exit.** [relay/server.js:250](../../../Desktop/GameDev/RockSkipping/relay/server.js:250)
+**1. A join ping-pong with no exit.** [relay/server.js:250](../../../relay/server.js:250)
 kicks whatever socket currently holds a `playerId` when that id joins again
 (`existing.close(1000, 'Replaced by a new connection')`). The displaced client cannot tell that
-close apart from the host vanishing, so [net.js:111](../../../Desktop/GameDev/RockSkipping/controller/js/net.js:111)
+close apart from the host vanishing, so [net.js:111](../../../controller/js/net.js:111)
 reconnects and re-joins — kicking the socket that displaced it. Two sockets sharing one
 `playerId` therefore evict each other forever, and `backoff` resets to 500ms on every successful
-`onopen` ([net.js:78](../../../Desktop/GameDev/RockSkipping/controller/js/net.js:78)), so it never
+`onopen` ([net.js:78](../../../controller/js/net.js:78)), so it never
 backs off. That matches the observed ~0.7s cadence exactly.
 
 The second socket needs no second device. `RelayConnection.connect()` assigns `this.socket`
@@ -36,12 +36,12 @@ permanently. Two tabs on one phone reach the same state via `identity.js`'s pers
 
 **2. The direct transport no longer buys anything.** `PeerLink` exists, by its own docstring, to
 avoid "round-tripping through the hosted relay". There is no hosted relay any more — the Fly.io
-deployment was torn down ([Bootstrap.cs:81](Scripts/Managers/Bootstrap.cs:81)), `LocalServices`
+deployment was torn down ([Bootstrap.cs:81](../../../Assets/Scripts/Managers/Bootstrap.cs:81)), `LocalServices`
 runs the relay on the host PC, and in Hotspot mode the phone is associated with that same PC's
 soft AP. Relay path and direct path are now the identical single wireless hop to the identical
 machine. The one residual advantage — dodging TCP head-of-line blocking — was given up
 deliberately by choosing `{ ordered: true }` on a reliable channel
-([peer.js:93](../../../Desktop/GameDev/RockSkipping/controller/js/peer.js:93)). What remains is
+(peer.js:93 (deleted in b0e35ba; recover with `git show b0e35ba^:controller/js/peer.js`)). What remains is
 ~510 lines across two languages, a native `com.unity.webrtc` dependency, and, in this bug, a
 fresh `RTCPeerConnection` constructed and disposed once a second for a whole match.
 
@@ -72,7 +72,7 @@ reading `[PeerLink] DIRECT` in an old log needs to know why the class is gone.
   point: a closed orphan whose handlers are still attached is what schedules the next
   `connect()`.
 - Hold the reconnect `setTimeout` in a field and clear it before scheduling another, the same
-  way `rejoinTimer` already is ([net.js:151](../../../Desktop/GameDev/RockSkipping/controller/js/net.js:151)).
+  way `rejoinTimer` already is ([net.js:151](../../../controller/js/net.js:151)).
 - In `onclose`, return early when a displaced-by-newer-connection close code arrives (below), so
   the losing socket stays down instead of retaliating.
 
@@ -80,7 +80,7 @@ reading `[PeerLink] DIRECT` in an old log needs to know why the class is gone.
 `existing.close(1000, …)` becomes an application close code (4001) meaning "you were replaced by
 a newer connection for this same player". 1000 is indistinguishable from an ordinary server-side
 close, which is exactly why the client retaliates. Apply the same to `resumeRoom`'s host
-replacement at [server.js:200](../../../Desktop/GameDev/RockSkipping/relay/server.js:200) for
+replacement at [server.js:200](../../../relay/server.js:200) for
 consistency, and export the code as a named constant so client and server do not drift.
 
 This pair fixes both routes into the loop: the invariant handles the single-page orphan, and the
@@ -97,19 +97,19 @@ Remove outright:
 Edit:
 
 - **`Assets/Scripts/Managers/Bootstrap.cs`** — drop the `usePeerConnections` field
-  ([:53-56](Scripts/Managers/Bootstrap.cs:53)) and its creation line ([:92-95](Scripts/Managers/Bootstrap.cs:92)).
-- **`Assets/Scripts/Net/RelayClient.cs`** — delete `IngestFromPeer` ([:416-432](Scripts/Net/RelayClient.cs:416))
-  and the peer reference in the comment at [:104](Scripts/Net/RelayClient.cs:104). `Dispatch`'s
+  ([:53-56](../../../Assets/Scripts/Managers/Bootstrap.cs:53)) and its creation line ([:92-95](../../../Assets/Scripts/Managers/Bootstrap.cs:92)).
+- **`Assets/Scripts/Net/RelayClient.cs`** — delete `IngestFromPeer` ([:416-432](../../../Assets/Scripts/Net/RelayClient.cs:416))
+  and the peer reference in the comment at [:104](../../../Assets/Scripts/Net/RelayClient.cs:104). `Dispatch`'s
   `trustedPlayerId` parameter stays — the relay path passes `null` and it is load-bearing there.
-- **`Assets/Scripts/Net/Messages.cs`** — drop `RtcOffer`/`RtcAnswer`/`RtcIce` ([:37-39](Scripts/Net/Messages.cs:37)).
-- **`Assets/Scripts/Net/RelayDebugHud.cs`** — drop the direct-peer row ([:163-174](Scripts/Net/RelayDebugHud.cs:163)).
+- **`Assets/Scripts/Net/Messages.cs`** — drop `RtcOffer`/`RtcAnswer`/`RtcIce` ([:37-39](../../../Assets/Scripts/Net/Messages.cs:37)).
+- **`Assets/Scripts/Net/RelayDebugHud.cs`** — drop the direct-peer row ([:163-174](../../../Assets/Scripts/Net/RelayDebugHud.cs:163)).
 - **`controller/js/app.js`** — the `PeerLink`/`Transport` import, `PEER_ENABLED`
-  ([:85](../../../Desktop/GameDev/RockSkipping/controller/js/app.js:85)), the `peer` variable and
-  its construction in `ensureConnection` ([:741-753](../../../Desktop/GameDev/RockSkipping/controller/js/app.js:741)),
-  `peer.handleSignal` ([:462](../../../Desktop/GameDev/RockSkipping/controller/js/app.js:462)),
+  ([:85](../../../controller/js/app.js:85)), the `peer` variable and
+  its construction in `ensureConnection` ([:741-753](../../../controller/js/app.js:741)),
+  `peer.handleSignal` ([:462](../../../controller/js/app.js:462)),
   both `peer.start()` calls, the three `peer?.close()` calls, and the debug line's `input`
-  transport row ([:839](../../../Desktop/GameDev/RockSkipping/controller/js/app.js:839)).
-  `sendInput` at [:89](../../../Desktop/GameDev/RockSkipping/controller/js/app.js:89) collapses to
+  transport row ([:839](../../../controller/js/app.js:839)).
+  `sendInput` at [:89](../../../controller/js/app.js:89) collapses to
   the `connection` call it already falls through to.
 
 `relay/server.js` needs no change here: `RTC_*` messages ride the generic `relayToHost` /
@@ -117,27 +117,27 @@ Edit:
 
 ### 4. Strip LAN mode
 
-LAN is already a hard stop at [LocalServices.cs:232](Scripts/Net/LocalServices.cs:232), so nothing
+LAN is already a hard stop at [LocalServices.cs:232](../../../Assets/Scripts/Net/LocalServices.cs:232), so nothing
 about behaviour changes — this only removes the branches that can no longer be reached.
 
 - Delete `Assets/Scripts/Net/NetworkMode.cs` (+ `.meta`): both the enum and `NetworkModeStore`.
 - **`LocalServices.cs`** — delete the `Mode` property and `NetworkModeStore.Load()` call
-  ([:192](Scripts/Net/LocalServices.cs:192)), the LAN hard-stop block ([:212-240](Scripts/Net/LocalServices.cs:212)),
-  the `lanAddressOverride` field ([:70](Scripts/Net/LocalServices.cs:70)), and collapse
-  `EffectiveLanAddressOverride` ([:274](Scripts/Net/LocalServices.cs:274)) to a named
+  ([:192](../../../Assets/Scripts/Net/LocalServices.cs:192)), the LAN hard-stop block ([:212-240](../../../Assets/Scripts/Net/LocalServices.cs:212)),
+  the `lanAddressOverride` field ([:70](../../../Assets/Scripts/Net/LocalServices.cs:70)), and collapse
+  `EffectiveLanAddressOverride` ([:274](../../../Assets/Scripts/Net/LocalServices.cs:274)) to a named
   `HotspotHostAddress = "192.168.137.1"` constant — keeping its remarks, which explain *why* the
   address is forced rather than detected.
 - **`CertificateProvider.cs`** — delete `ToHostName`, `LegacyLanSuffix`, the `VirtualAdapter`
-  regex ([:69](Scripts/Net/CertificateProvider.cs:69)), and the auto-detection body of
-  `ResolveLanAddress` ([:283 onward](Scripts/Net/CertificateProvider.cs:283)). With the address
-  always forced, only the override branch ([:268-281](Scripts/Net/CertificateProvider.cs:268)) is
+  regex ([:69](../../../Assets/Scripts/Net/CertificateProvider.cs:69)), and the auto-detection body of
+  `ResolveLanAddress` ([:283 onward](../../../Assets/Scripts/Net/CertificateProvider.cs:283)). With the address
+  always forced, only the override branch ([:268-281](../../../Assets/Scripts/Net/CertificateProvider.cs:268)) is
   reachable; what survives becomes a small `ValidateHostAddress(address, out error, out detail)`
-  that `Ensure` ([:102](Scripts/Net/CertificateProvider.cs:102)) calls. This is the single
+  that `Ensure` ([:102](../../../Assets/Scripts/Net/CertificateProvider.cs:102)) calls. This is the single
   largest chunk of dead code the strip reclaims.
 - **`HotspotService.cs`** — check and remove any `NotApplicable` self-gating that keyed off
   `LocalServices.Mode`; with one mode it can no longer be reached.
-- **`StartScreen.cs`** — the deprecation hint at [:113](Scripts/UI/StartScreen.cs:113) and the
-  class remarks at [:22-25](Scripts/UI/StartScreen.cs:22) / [:37-40](Scripts/UI/StartScreen.cs:37).
+- **`StartScreen.cs`** — the deprecation hint at [:113](../../../Assets/Scripts/UI/StartScreen.cs:113) and the
+  class remarks at [:22-25](../../../Assets/Scripts/UI/StartScreen.cs:22) / [:37-40](../../../Assets/Scripts/UI/StartScreen.cs:37).
 - **`<see cref="NetworkModeStore"/>` references** in `MatchSettingsStore.cs`, `RoomCodeStore.cs`
   and `HotspotCredentialsStore.cs` — these cite it as the precedent for the
   file-beside-the-executable convention. Re-point at `MatchSettingsStore` (which survives and

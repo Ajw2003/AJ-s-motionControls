@@ -4,23 +4,7 @@ using UnityEngine;
 
 namespace Net
 {
-    /// <summary>
-    /// Remembers the room code across launches, so a returning phone's stored/remembered join
-    /// URL still points somewhere real after the host restarts, instead of landing on the join
-    /// form because the room code changed underneath it.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not PlayerPrefs, for the same reason <see cref="Managers.MatchSettingsStore"/>
-    /// isn't: on Windows that writes into the registry, which is invisible and isn't cleared by
-    /// deleting the game folder. A plain one-line file beside the executable follows the same
-    /// convention already used for <c>relay-url.txt</c> and <c>relay-env.txt</c>.
-    ///
-    /// This only seeds <c>preferredCode</c> on <see cref="RelayClient"/>'s first CREATE_ROOM —
-    /// the relay (<c>handleCreateRoom</c>) still decides whether the code is actually free and
-    /// may hand back a different one, which <see cref="RelayClient"/> then saves here via
-    /// <see cref="Save"/>. So this file records "the code we'll ask for next time", not a
-    /// guarantee.
-    /// </remarks>
+    // Remembers the room code across launches, so a returning phone's stored/remembered join URL still points som... doc-ref 588e docs/4-systems/HostingAndCertificates.md
     public static class RoomCodeStore
     {
         private const string FileName = "room-code.txt";

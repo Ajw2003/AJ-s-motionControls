@@ -1,8 +1,20 @@
+# Today — 2026-10-03 (documentation day)
+
+Not tied to a milestone: the docs were restructured into the six tiers and the long code comments
+moved into `docs/4-systems/` (see the 2026-10-03 entry in Decisions.md; issue #82).
+**Next, in order:** (1) sort each systems doc's "Notes moved from source comments" into How it
+works / Invariants / Traps and merge duplicates; (2) fix or archive the 65 pre-existing broken
+links in `docs/archive/` and `docs/plans/Plan-LiftConditionPhysics.md`; (3) check the five
+one-line Findings descriptions in `docs/1-landing/README.md`, written from file names.
+Not done: Unity compile check (the open Editor holds the project lock; code changes are comment-only).
+
+---
+
 # Today — 2026-10-01 (handoff)
 
 **Tier 5.** Where the last session stopped, and what the next one picks up. Written for a fresh
 session after `/clear`. The 2026-09-08 design-session record that used to be here is in git
-history (`git log -- docs/Today.md`).
+history (`git log -- docs/5-today/Today.md`).
 
 Branch: `claude/rock-rework`, pushed. Tracking issue for finishing this work: #43
 (child of #39).
@@ -47,7 +59,7 @@ phone session before it has a fix.
 
 ## After the UI: audio (#26)
 
-The plan is in [`plans/ai-audio.md`](plans/ai-audio.md), with steps #32–#38. It is waiting for the
+The plan is in [`plans/ai-audio.md`](../plans/ai-audio.md), with steps #32–#38. It is waiting for the
 owner's go-ahead.
 
 ## How to see things without a phone

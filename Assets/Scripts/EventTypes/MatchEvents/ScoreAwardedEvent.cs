@@ -2,16 +2,7 @@ namespace EventTypes.MatchEvents
 {
     using EventSystems;
 
-    /// <summary>Published when a completed throw's points are committed to a player.</summary>
-    /// <remarks>
-    /// From ScoreManager, which is documented as the only place that decides what anything
-    /// is worth. Presentation reads the numbers off this rather than recomputing them, so a
-    /// score popup and the scoreboard cannot disagree after a retune.
-    ///
-    /// Fires once per throw, not once per skip. ScoreManager banks points as skips arrive
-    /// and commits the total on ThrowCompletedEvent — this is the commit. A per-skip tick
-    /// should ride on SkipOccurredEvent instead.
-    /// </remarks>
+    // Published when a completed throw's points are committed to a player. doc-ref 26a4 docs/4-systems/EventSystem.md
     public class ScoreAwardedEvent : IEvent
     {
         public string PlayerId { get; }

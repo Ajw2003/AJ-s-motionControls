@@ -4,23 +4,7 @@ using UnityEngine;
 
 namespace Managers
 {
-    /// <summary>
-    /// Reads and writes the host's match settings as a plain JSON file beside the executable
-    /// (repo root in the Editor, since <see cref="Application.dataPath"/> resolves to
-    /// <c>Assets/</c> either way).
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not PlayerPrefs: on Windows PlayerPrefs writes into the registry, which is
-    /// invisible, isn't cleared by deleting the game folder, and isn't something a host can
-    /// inspect or edit by hand. This follows the identical file-beside-the-exe convention
-    /// already used for <c>relay-url.txt</c> and <c>relay-env.txt</c>.
-    ///
-    /// <c>tuningSet</c> used to live in this file — the Authored/Derived comparison it picked
-    /// between is gone (docs/plans/Plan-ThrowDrivenSkipModel.md). SettingsData no longer
-    /// declares that field, and JsonUtility silently ignores unknown JSON keys on parse, so an
-    /// existing <c>match-settings.json</c> with a stale <c>tuningSet</c> entry loads fine
-    /// rather than erroring — the key is just never read again, and the next Save drops it.
-    /// </remarks>
+    // Reads and writes the host's match settings as a plain JSON file beside the executable (repo root in the Edi... doc-ref b541 docs/4-systems/ScoringAndTurns.md
     public static class MatchSettingsStore
     {
         private const string FileName = "match-settings.json";
@@ -30,17 +14,21 @@ namespace Managers
         {
             public bool randomRocks;
             public int roundsPerMatch = 5;
+            // Initializer matters: JsonUtility keeps it for files written before this field existed.
+            public bool shareInternet = true;
         }
 
         public readonly struct Loaded
         {
             public readonly bool RandomRocks;
             public readonly int RoundsPerMatch;
+            public readonly bool ShareInternet;
 
-            public Loaded(bool randomRocks, int roundsPerMatch)
+            public Loaded(bool randomRocks, int roundsPerMatch, bool shareInternet)
             {
                 RandomRocks = randomRocks;
                 RoundsPerMatch = roundsPerMatch;
+                ShareInternet = shareInternet;
             }
         }
 
@@ -62,7 +50,7 @@ namespace Managers
             }
         }
 
-        public static void Save(bool randomRocks, int roundsPerMatch)
+        public static void Save(bool randomRocks, int roundsPerMatch, bool shareInternet)
         {
             try
             {
@@ -70,6 +58,7 @@ namespace Managers
                 {
                     randomRocks = randomRocks,
                     roundsPerMatch = roundsPerMatch,
+                    shareInternet = shareInternet,
                 };
                 File.WriteAllText(ResolvePath(), JsonUtility.ToJson(data, prettyPrint: true));
             }
@@ -80,7 +69,7 @@ namespace Managers
         }
 
         private static Loaded FromData(SettingsData data) =>
-            new(data.randomRocks, Mathf.Clamp(data.roundsPerMatch, 1, 10));
+            new(data.randomRocks, Mathf.Clamp(data.roundsPerMatch, 1, 10), data.shareInternet);
 
         /// <summary>Same resolution as RelayClient.ReadOverride / RoomCodeStore.ResolvePath.</summary>
         private static string ResolvePath() =>

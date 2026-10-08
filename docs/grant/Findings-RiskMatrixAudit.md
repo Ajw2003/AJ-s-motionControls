@@ -72,7 +72,7 @@ come from a real, publicly-trusted CA (Let's Encrypt) against a domain the proje
 `Assets/Scripts/Net/CertificateProvider.cs:94-193`, renewed automatically via
 `.github/workflows/renew-cert.yml`, with a seed cert shipped in `StreamingAssets` for offline
 first-run. The host resolves that real hostname to the fixed hotspot IP `192.168.137.1` via a
-local DNS responder (`docs/systems/HostingAndCertificates.md`) — that's how it avoids browser
+local DNS responder (`docs/4-systems/HostingAndCertificates.md`) — that's how it avoids browser
 cert warnings, not a "192.168.x.x + local hostname mapping matching browser local-network
 rules" as the matrix describes. There genuinely are **two QR codes** (Wi-Fi join, then game URL)
 as claimed — that part's accurate.

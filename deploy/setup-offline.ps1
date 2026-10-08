@@ -22,7 +22,7 @@
     and is only checked here, not changed.
 
     See docs/OfflineSetup.md for the reasoning behind each item, and
-    docs/Decision-OfflineHosting.md for how offline hosting was proven.
+    docs/6-decisions/Decision-OfflineHosting.md for how offline hosting was proven.
 
     IDEMPOTENT BY DESIGN, because this gets re-run on machines in every half-configured state.
     Register-ScheduledTask -Force is naturally idempotent; New-NetFirewallRule and Add-Content
@@ -453,15 +453,9 @@ if ($script:Failed) {
     exit 1
 }
 
-# Exit 3 = "nothing is wrong, but this machine is not set up yet". HotspotService.cs runs this
-# script with -DryRun (which needs no elevation) purely to ask that question before deciding
-# whether to raise a UAC prompt, so it needs an answer it can read from an exit code.
-#
-# It used to ask a cheaper proxy question instead - "does the scheduled task exist?" - and that
-# proxy went stale the moment this script grew steps the task does not imply. On every machine
-# set up before 2026-09-03 the task was present while the play.skiprocking.ca hosts entry was
-# not, so setup was skipped, the host could not resolve its own relay, and the game sat retrying
-# forever. One question, answered by the script that defines the answer.
+# Exit 3 means nothing is wrong but this machine is not set up; HotspotService reads it from a -DryRun
+# before deciding whether to raise a UAC prompt.
+# doc-ref c36f docs/4-systems/HostingAndCertificates.md
 if ($DryRun -and $script:Changed) {
     Write-Host '   Setup needed. Re-run without -DryRun, as Administrator, to apply.' -ForegroundColor Magenta
     Write-Host ''

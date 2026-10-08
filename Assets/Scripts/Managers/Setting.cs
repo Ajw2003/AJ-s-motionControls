@@ -7,6 +7,7 @@ namespace Managers
     /// setting wraps a get/set pair pointing at a property that already lives somewhere else
     /// (<see cref="RockSelection"/>, <see cref="TurnManager"/>), so there is exactly one source
     /// of truth per value and the settings list is just a generic way to browse and edit it.
+    /// (Exception: share internet has no live owner, so <see cref="MatchSettings"/> holds it.)
     /// </summary>
     public abstract class Setting
     {

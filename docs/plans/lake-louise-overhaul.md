@@ -1,6 +1,6 @@
 # Lake Louise graphics overhaul — SVG → Blender → shaders
 
-**Status:** stages 1–3 built and checked in Blender renders, 2026-09-27; **Unity side written, not yet run in the Editor**. **Tier 5** against [`../Roadmap.md`](../Roadmap.md)
+**Status:** stages 1–3 built and checked in Blender renders, 2026-09-27; **Unity side written, not yet run in the Editor**. **Tier 5** against [`../Roadmap.md`](../2-roadmap/Roadmap.md)
 milestone 9. Builds on [`alpine-lake-level.md`](alpine-lake-level.md), which already settled the
 low-poly technique, render-queue rules and budget; this plan keeps all of those and changes
 three things, listed under *What changes from the alpine-lake plan*.

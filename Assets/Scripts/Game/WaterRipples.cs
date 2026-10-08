@@ -5,16 +5,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Feeds bounce positions to the water material so each skip leaves an expanding ring.
-    /// </summary>
-    /// <remarks>
-    /// Lives on the water rather than inside SkipPhysics for the reason the solver spells
-    /// out: observable effects belong to the caller, never in the solver. Ripples hang off
-    /// SkipOccurredEvent, which only RockController publishes, so the aim preview — which
-    /// runs the same solver hundreds of times a frame for a throw that never happened —
-    /// cannot produce them. That safety is inherited, not re-implemented here.
-    /// </remarks>
+    // Ripples hang off SkipOccurredEvent, which only RockController publishes, so the aim preview can
+    // never produce them. doc-ref 029b docs/4-systems/Presentation.md
     public class WaterRipples : MonoBehaviour
     {
         /// <summary>Must match MAX_RIPPLES in WaterRipple.hlsl (and WaterRipple.shader, while it lasts).</summary>
@@ -107,6 +99,9 @@ namespace Game
             EventManager.Instance?.UnsubscribeFromAllEvents(this);
         }
 
+        // True once an all-zero ripple array has been uploaded; see LateUpdate.
+        private bool _publishedEmpty;
+
         private void OnSkipOccurred(SkipOccurredEvent e) => AddRipple(e.Position, e.Speed);
 
         /// <summary>
@@ -138,6 +133,10 @@ namespace Game
             // below — so this no longer needs the material at all. With nothing bound
             // there is no water to read the globals either, so publishing them is free.
 
+            // Idle lake: the empty array is already on the GPU, so there is nothing to
+            // re-upload until a ripple is added (#66).
+            if (_ripples.Count == 0 && _publishedEmpty) return;
+
             // Drop what has expired, then pack the survivors into the front of the array.
             // Compacting is what lets the fragment loop run zero iterations while idle.
             var live = 0;
@@ -158,18 +157,11 @@ namespace Game
 
             for (var i = live; i < MaxRipples; i++) _packed[i] = Vector4.zero;
 
-            // Global rather than per-material, and that is a URP requirement rather than a
-            // preference. Shader Graph has no array property type, so an array can never
-            // live inside the UnityPerMaterial CBUFFER the SRP Batcher requires — which
-            // makes Material.SetVectorArray a global set wearing a per-material costume.
-            // Setting the global directly is the same operation without the ambiguity, and
-            // costs nothing here: there is exactly one water plane, so global scope is not
-            // a restriction. See the matching remarks in WaterRipple.hlsl.
-            //
-            // The fixed-size caveat is unchanged and still load-bearing: the array length
-            // is fixed by the first call, and a shorter one later is silently ignored.
+            // The ripple array is set as a global because Shader Graph arrays cannot live in the SRP Batcher CBUFFER; its
+            // length is fixed by the first call. doc-ref a765 docs/4-systems/Presentation.md
             Shader.SetGlobalVectorArray(RipplesId, _packed);
             Shader.SetGlobalInt(RippleCountId, live);
+            _publishedEmpty = live == 0;
         }
 
         private void PushTuning()

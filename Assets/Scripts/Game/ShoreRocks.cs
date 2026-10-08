@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Linq;
 using EventSystems;
 using EventTypes.MatchEvents;
 using Managers;
@@ -8,30 +7,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// The six stones on the shore in the lobby, and the per-player pointer that picks
-    /// one by heading alone. See docs/plans/rock-choosing-system.md Part 3.
-    /// </summary>
-    /// <remarks>
-    /// Active while <see cref="TurnManager.IsChoosingPhase"/> is true — Lobby (a fresh
-    /// match) or Choosing (a mid-match re-pick TurnManager can trigger periodically or on
-    /// demand). This is the other half of the fix the plan's constraints call for:
-    /// AimPreview only reacts to AIM while Playing, this only reacts during a choosing
-    /// phase, so the two never fight over the same frame. Built by AimPreview alongside
-    /// the placeholder water, sharing its throw origin and camera framing — see
-    /// <see cref="Bind"/>.
-    ///
-    /// Yaw only, on purpose. A player thinking about their choice naturally lets the phone
-    /// drop, and a 2-D pick would lose their selection when they did. Absolute compass
-    /// heading is deliberately not used anywhere in this project (it disagrees across
-    /// platforms), so the fan is centred on wherever a player happened to be pointing when
-    /// they tapped to calibrate — not on the TV. See the plan's "honest limitation" note.
-    ///
-    /// A PICK_ROCK carries no rock id (see PickRockMessage) — it means "confirm whichever
-    /// stone this player is currently pointing at", which only this class can answer. It
-    /// is the one thing in the rock-choosing feature that resolves that event into an
-    /// actual RockSelection.Pick call.
-    /// </remarks>
+    // Active only in a choosing phase and yaw-only on purpose; PICK_ROCK carries no id, so this class
+    // resolves which stone a player points at. doc-ref 9fa8 docs/4-systems/RockCatalogAndTuning.md
     public class ShoreRocks : MonoBehaviour
     {
         private RockCatalog _catalog;
@@ -85,6 +62,11 @@ namespace Game
             EventManager.Instance?.Subscribe<PlayerLeftEvent>(this, OnPlayerLeft);
             EventManager.Instance?.Subscribe<MatchPhaseChangedEvent>(this, OnMatchPhaseChanged);
             EventManager.Instance?.Subscribe<PlayerColourChangedEvent>(this, OnPlayerColourChanged);
+
+            // Awake, not Start: Bind() can SetActive(false) before the first Start would run,
+            // which would defer the subscription to the first re-show. Awake runs exactly once
+            // regardless, and AimPreview (our creator) is built after RelayClient.
+            BindRelay();
         }
 
         /// <summary>
@@ -172,7 +154,6 @@ namespace Game
             // calling Update on this GameObject at all — a poll here would work right up
             // until the first time it hid itself, and then never see the phase come back
             // to Lobby to reactivate.
-            EnsureBound();
             if (_origin == null) return;
 
             PruneStalePointers();
@@ -195,9 +176,13 @@ namespace Game
             UpdateStoneLooks();
         }
 
-        private void EnsureBound()
+        private void BindRelay()
         {
-            if (_client != null || !RelayClient.HasInstance) return;
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[ShoreRocks] No RelayClient at Awake; the shore will not react to phone aim or picks.");
+                return;
+            }
 
             _client = RelayClient.Instance;
             _client.AimReceived += OnAim;
@@ -355,37 +340,33 @@ namespace Game
                 // can be tinted toward that player's own colour. This is the first thing
                 // outside the pointer dots to read a player colour, and the hook the rest
                 // of the rock-colouring work is meant to build on.
-                var owner = _pointers.FirstOrDefault(p => p.Value.Confirmed && p.Value.ConfirmedIndex == index).Key;
+                // Plain loop, not LINQ: this runs per stone, every lobby frame (#63).
+                string owner = null;
+                var highlightedHere = false;
+                foreach (var pair in _pointers)
+                {
+                    var pointer = pair.Value;
+                    if (pointer.Confirmed && pointer.ConfirmedIndex == index) owner = pair.Key;
+                    else if (pointer.HighlightIndex == index) highlightedHere = true;
+                }
                 var confirmedHere = owner != null;
-                var highlightedHere = !confirmedHere && _pointers.Values.Any(p => p.HighlightIndex == index);
+                highlightedHere &= !confirmedHere;
 
-                stone.Material.color = confirmedHere ? ConfirmedColourFor(owner, stone.BaseColour)
+                var colour = confirmedHere ? ConfirmedColourFor(owner, stone.BaseColour)
                     : highlightedHere ? _tuning.HighlightColour
                     : stone.BaseColour;
+                var scale = stone.BaseScale * (confirmedHere || highlightedHere ? _tuning.HighlightScale : 1f);
 
-                stone.Transform.localScale = stone.BaseScale * (confirmedHere || highlightedHere ? _tuning.HighlightScale : 1f);
+                // Written only on change: both setters cross into native code.
+                if (stone.Material.color != colour) stone.Material.color = colour;
+                if (stone.Transform.localScale != scale) stone.Transform.localScale = scale;
             }
         }
 
         // ------------------------------------------------------------------ pointer markers
 
-        /// <summary>
-        /// A player's dot, in the colour that player owns.
-        /// </summary>
-        /// <remarks>
-        /// This used to take an ordinal — <c>_pointers.Count</c> at the call site — and mix
-        /// it into a hash of the player id to index a palette held here. Every phase change
-        /// clears <c>_pointers</c> (see OnMatchPhaseChanged), so that ordinal was really
-        /// "how many other people had aimed before you, this round": a player's colour moved
-        /// between rounds, and hash-plus-ordinal collided freely inside eight slots. Colour
-        /// is now owned by Managers.PlayerColours, keyed by identity alone, and the palette
-        /// itself lives on the PlayerColourPalette asset where it can be edited.
-        /// </remarks>
-        /// <summary>
-        /// A claimed stone, in its owner's colour. The blend itself lives on
-        /// PlayerColours.StoneColourFor, shared with the thrown stone and the aim ghost so
-        /// the stone a player picks looks like the stone they throw.
-        /// </summary>
+        // Pointer and stone colours come from PlayerColours keyed by identity alone, replacing the ordinal-hash palette
+        // that moved colours between rounds. doc-ref b845 docs/4-systems/RockCatalogAndTuning.md
         private Color ConfirmedColourFor(string playerId, Color baseColour) =>
             PlayerColours.HasInstance
                 ? PlayerColours.Instance.StoneColourFor(playerId, baseColour)
@@ -427,18 +408,8 @@ namespace Game
             DrawConfirmations();
         }
 
-        /// <summary>
-        /// The rock's name over its description, as one block whose bottom sits just above
-        /// the rock's actual top, and whose description wraps to the gap between this rock and
-        /// its nearest neighbour on screen.
-        /// </summary>
-        /// <remarks>
-        /// Anchored to renderer bounds rather than a fixed height above the centre: the old
-        /// +0.8 m / +0.5 m offsets were set for 0.75-scale stones, and at x2.47 they put the
-        /// text inside the rock. Wrapping to the neighbour gap is what lets the description be
-        /// full size without running into the next one, and without the old fixed 160 px box
-        /// that cut most descriptions off mid-sentence (issue #41).
-        /// </remarks>
+        // The label is anchored to renderer bounds and wraps to the neighbour gap, since fixed offsets
+        // sat inside the x2.47 stones (issue #41). doc-ref 732a docs/4-systems/RockCatalogAndTuning.md
         private void DrawStoneLabel(int index)
         {
             var stone = _stones[index];

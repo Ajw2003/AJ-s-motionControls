@@ -1,28 +1,8 @@
 'use strict';
 
-/**
- * Rock Skipping relay server.
- *
- * Routes messages between one Unity host (the PC driving the TV) and up to
- * MAX_PLAYERS_PER_ROOM phone controllers, keyed by a short room code.
- *
- * Routing is deliberately generic: the relay knows nothing about AIM, THROW or
- * SPECTATE. Anything a player sends goes to the host; anything the host sends
- * goes to every player, or to one player if it carries `targetPlayerId`. New
- * message types can be added to the game without touching this file.
- *
- * Static file serving is deliberately an allowlist rather than a directory listing
- * (see `isAllowedRelativePath`): a bare prefix check on the resolved path let a
- * phone read anything checked into `controller/` — package.json, eslint config,
- * test scripts, whatever gets added next to `js/` later — with nothing to notice
- * a new file had joined the public surface (C4, docs/Findings-NetworkAndThrowStability.md).
- * Naming exactly what a phone needs (`/`, `index.html`, `js/<name>.js`) keeps that
- * surface from silently growing. Request handling is also per-request try/catch'd
- * rather than guarded by a global `uncaughtException` handler, because a malformed
- * request path used to throw synchronously with nothing catching it and took the
- * whole process — every room on it — down with it (C1, same doc). A handler scoped
- * to one request can never do that; a global one would only paper over the crash.
- */
+// Routes messages between one host and its phones generically, serves only an allowlist of static files,
+// and handles errors per request rather than globally.
+// doc-ref 2e34 docs/4-systems/Networking.md
 
 const { WebSocketServer, WebSocket } = require('ws');
 const qrcode = require('qrcode-generator');
@@ -55,7 +35,11 @@ const ROOM_SWEEP_MS = 5 * 60 * 1000;
 const HOST_GRACE_MS = Number(process.env.HOST_GRACE_MS) || 60_000;
 const HOST_GRACE_SWEEP_MS = 2_000;
 const RATE_WINDOW_MS = 1000;
-const RATE_MAX_MESSAGES = 60; // AIM streams at 20Hz; leaves headroom for bursts
+// AIM is lossy and streams at 20Hz, so it gets its own budget; everything else (THROW,
+// JOIN_ROOM, the host's TURN/SPECTATE) only meets a flood cap. One shared budget let a
+// stall's AIM backlog push the THROW behind it over the limit (#58).
+const RATE_MAX_AIM = 60;
+const RATE_MAX_MESSAGES = 300;
 
 // No I and no O — these are read aloud off a TV and typed on a phone.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -126,14 +110,16 @@ function normalizeRoomCode(raw) {
   return trimmed.length === CODE_LENGTH ? trimmed : null;
 }
 
-/** Rolling-window rate limit. Returns true if the message should be dropped. */
-function isRateLimited(meta) {
+/** Fixed 1 s window per socket. Returns true if the message should be dropped. */
+function isRateLimited(meta, type) {
   const now = Date.now();
   if (now - meta.rateWindowStart >= RATE_WINDOW_MS) {
     meta.rateWindowStart = now;
     meta.rateCount = 0;
+    meta.aimCount = 0;
   }
   meta.rateCount++;
+  if (type === 'AIM' && ++meta.aimCount > RATE_MAX_AIM) return true;
   return meta.rateCount > RATE_MAX_MESSAGES;
 }
 
@@ -500,20 +486,29 @@ const DNS_NAME = process.env.DNS_NAME || 'play.skiprocking.ca';
 const DNS_UPSTREAM = process.env.DNS_UPSTREAM || null;
 const useDns = Boolean(DNS_RESPOND_IP);
 
-// Android and iOS each probe a domain of their choosing right after joining a network, to
-// decide whether to show "No internet" and whether to keep cellular as the default route.
-// Guests are isolated from the host's own internet by design, so these probes always fail on
-// their own, and "it just stopped working" reports are very likely a phone that decided this
-// network was useless rather than an actual game bug. Answering them ourselves (this list, plus
-// /generate_204 and /hotspot-detect.html below) fixes the symptom without re-enabling
-// forwarding and undoing the isolation decision — see docs/plans/magic-domain-replacement.md
-// Phase 4 and docs/Decision-OfflineHosting.md.
-//
-// Every name here is one we intend to SERVE: the phone's plain-HTTP probe reaches :80 and gets
-// a 204 or "Success". Adding a name in order to have it refused is a different idea and does
-// not belong here — `www.google.com`, Android's HTTPS probe host, was added on exactly that
-// reasoning and removed again when hardware testing falsified it. Android resolved it, got our
-// address, and still issued no HTTP probe.
+// '1' when the host shares its internet with hotspot guests. Then the probe domains must
+// resolve for real (the phones' own internet checks), so they are only a local fallback.
+const SHARE_INTERNET = process.env.SHARE_INTERNET === '1';
+
+/** Upstream for sharing mode: DNS_UPSTREAM, else the host's first usable IPv4 resolver. */
+function pickSharingUpstream() {
+  if (DNS_UPSTREAM) return DNS_UPSTREAM;
+  const isHotspot = makeSubnetTest('192.168.137.0/24');
+  return (
+    require('dns')
+      .getServers()
+      .find(
+        (s) =>
+          /^\d{1,3}(\.\d{1,3}){3}$/.test(s) &&
+          !s.startsWith('127.') &&
+          s !== '0.0.0.0' &&
+          !isHotspot(s),
+      ) || null
+  );
+}
+
+// Answers the OS connectivity probes ourselves; only names we intend to SERVE belong in this list.
+// doc-ref 144d docs/4-systems/Networking.md
 const CONNECTIVITY_PROBE_DOMAINS = [
   'connectivitycheck.gstatic.com',
   'connectivitycheck.android.com',
@@ -521,6 +516,16 @@ const CONNECTIVITY_PROBE_DOMAINS = [
   'captive.apple.com',
   'www.appleiphonecell.com',
 ];
+
+const APPLE_PROBE_HOSTS = new Set(['captive.apple.com', 'www.appleiphonecell.com']);
+const APPLE_SUCCESS_PAGE = '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>';
+
+// Apple's documented "this network does not allow iCloud Private Relay" signal (#79): a
+// negative answer for these names, and iOS turns Private Relay off for this network alone.
+// With it on, Safari looks names up through Apple instead of us, and the game's public
+// record is the registrar's parking page, not 192.168.137.1. NXDOMAIN, never a timeout:
+// Apple warns a silent drop makes the phone wait.
+const PRIVATE_RELAY_DOMAINS = ['mask.icloud.com', 'mask-h2.icloud.com'];
 
 let dnsResponder = null;
 let http80Server = null;
@@ -609,7 +614,7 @@ function handleRequest(req, res) {
       return;
     }
 
-    if (serveConnectivityProbe(res, url.pathname)) return;
+    if (serveConnectivityProbe(req, res, url.pathname)) return;
 
     serveStatic(req, res);
   } catch (err) {
@@ -631,7 +636,7 @@ const GAME_URL = `https://${DNS_NAME}:${PORT}/`;
  * stops preferring cellular — a phone that drops to cellular mid-match is the failure Phase 4
  * was written to prevent (docs/plans/magic-domain-replacement.md).
  */
-function serveConnectivityProbe(res, pathname) {
+function serveConnectivityProbe(req, res, pathname) {
   // Android treats anything other than a bare 204 as "there is a login page here" — so the
   // answer must be an empty body, not JSON, not even an empty object.
   if (pathname === '/generate_204') {
@@ -639,10 +644,13 @@ function serveConnectivityProbe(res, pathname) {
     return true;
   }
 
-  // Apple looks for this exact literal body (no whitespace, no trailing newline) on a plain
-  // page load.
-  if (pathname === '/hotspot-detect.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end('Success');
+  // Apple's own page, byte for byte. The bare word "Success" served here until #78 was never
+  // seen to work on an iPhone, and iPhones on the hotspot kept opening the login sheet,
+  // whose Cancel button disconnects them. Any path on an Apple probe host gets it too: a
+  // redirect there is, to iOS, the definition of a captive portal.
+  const host = (req.headers.host || '').split(':')[0].toLowerCase();
+  if (pathname === '/hotspot-detect.html' || APPLE_PROBE_HOSTS.has(host)) {
+    res.writeHead(200, { 'Content-Type': 'text/html' }).end(APPLE_SUCCESS_PAGE);
     return true;
   }
 
@@ -668,6 +676,7 @@ wss.on('connection', (ws, req) => {
     isAlive: true,
     rateWindowStart: Date.now(),
     rateCount: 0,
+    aimCount: 0,
     // Captured here rather than read at JOIN time: by then the socket may be mid-close and
     // remoteAddress reads back undefined. Only the funnel uses it, and only to count devices.
     remoteAddress: req && req.socket ? req.socket.remoteAddress : null,
@@ -679,7 +688,6 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (raw) => {
     metrics.messagesIn++;
-    if (isRateLimited(ws.meta)) return; // drop silently; a flooding client gets no feedback loop
 
     let data;
     try {
@@ -687,6 +695,7 @@ wss.on('connection', (ws, req) => {
     } catch {
       // The prototype let this throw, which killed the whole process and every
       // other room with it. One bad client must never take down the server.
+      if (isRateLimited(ws.meta, null)) return;
       sendError(ws, 'BAD_JSON', 'Message was not valid JSON.');
       return;
     }
@@ -695,6 +704,10 @@ wss.on('connection', (ws, req) => {
       sendError(ws, 'BAD_MESSAGE', 'Message must be an object with a "type".');
       return;
     }
+
+    // After parsing, so the budget can tell AIM from THROW (#58). Drops silently; a
+    // flooding client gets no feedback loop.
+    if (isRateLimited(ws.meta, data.type)) return;
 
     switch (data.type) {
       case 'CREATE_ROOM':
@@ -833,11 +846,23 @@ httpServer.listen(PORT, BIND_HOST, () => {
 
 async function startDns() {
   try {
+    const sharingUpstream = SHARE_INTERNET ? pickSharingUpstream() : null;
+    if (SHARE_INTERNET && !sharingUpstream) {
+      log('sharing requested but no upstream DNS found; guests get no internet lookups');
+    }
+    const sharing = Boolean(sharingUpstream);
+    log(
+      sharing
+        ? `dns mode: sharing, upstream ${sharingUpstream}`
+        : `dns mode: isolated, upstream ${DNS_UPSTREAM || 'none'}`,
+    );
     dnsResponder = createResponder({
       ip: DNS_RESPOND_IP,
-      names: [DNS_NAME, ...CONNECTIVITY_PROBE_DOMAINS],
+      names: sharing ? [DNS_NAME] : [DNS_NAME, ...CONNECTIVITY_PROBE_DOMAINS],
+      fallbackNames: sharing ? CONNECTIVITY_PROBE_DOMAINS : null,
+      blockedNames: PRIVATE_RELAY_DOMAINS,
       allow: DNS_ALLOW,
-      upstream: DNS_UPSTREAM,
+      upstream: sharing ? sharingUpstream : DNS_UPSTREAM,
       // Teed into probe-access.log as well as stdout: which names the phone asks for is
       // the half of the join picture the :80 log cannot show.
       log: logDnsLine,
@@ -868,31 +893,9 @@ async function startDns() {
   }
 }
 
-/**
- * What :80 answers. It has its own handler rather than reusing `handleRequest`, and that is
- * a bug fix, not tidying: `handleRequest` ends in `serveStatic`, so this listener used to
- * serve the ENTIRE CONTROLLER over plain HTTP on every interface the host has, despite the
- * comment below claiming it served the probes only. A guest who typed the host name without
- * `https://` got a controller page that loaded, looked correct, and could not read a single
- * sensor — a secure context is required for DeviceMotion and there is none here. Redirecting
- * instead turns that silent dead end into the right page. See
- * docs/plans/join-failure-reduction.md §1.
- */
-/**
- * Appends one line to probe-access.log, beside this file.
- *
- * The :80 listener and the DNS responder are the only parts of the relay a phone touches
- * before it has joined, and they are the parts nobody can see: the relay is a child of the
- * Unity Editor, so its stdout reaches the Console only when LocalServices.verboseLogging is
- * on. Three separate diagnoses in this project were blind exactly here — netstat proves a
- * connection arrived but not what it asked for, and "the phone shows No internet" looks
- * identical whether the probe never came, came for a path we do not answer, or was answered
- * correctly and ignored by the platform. A file sidesteps the Unity plumbing entirely, and
- * survives the session that produced it.
- *
- * Best-effort by design: a logging failure must never take down a listener a guest is
- * mid-request on, so every error here is swallowed.
- */
+// What :80 answers: probes and a redirect, never the controller over plain HTTP.
+// The probe-access log is best-effort, because the relay is otherwise invisible here.
+// doc-ref f8e4 docs/4-systems/Networking.md
 function appendAccessLog(line) {
   try {
     fs.appendFileSync(nodePath.join(__dirname, 'probe-access.log'), `${line}\n`);
@@ -926,7 +929,7 @@ function logDnsLine(...args) {
 function handleProbeRequest(req, res) {
   const url = new URL(req.url || '/', 'http://localhost');
 
-  if (serveConnectivityProbe(res, url.pathname)) {
+  if (serveConnectivityProbe(req, res, url.pathname)) {
     logProbeRequest(req, url.pathname, `answered ${res.statusCode}`);
     return;
   }
@@ -935,17 +938,8 @@ function handleProbeRequest(req, res) {
   logProbeRequest(req, url.pathname, `302 -> ${GAME_URL}`);
 }
 
-/**
- * Plain-HTTP listener on :80 for the connectivity probes — the game
- * itself is never served here (see handleProbeRequest), only redirected to.
- *
- * Per the plan's resolved open question: some machines already have :80 taken (IIS, Docker
- * Desktop, Skype's old binding), and a failed launch is a worse outcome than a phone that
- * shows "No internet" while the game still works perfectly over :8443. So this DEGRADES
- * QUIETLY — EADDRINUSE and friends are caught and logged, never thrown past this function —
- * and LOGS LOUDLY, because the resulting symptom is easy to misdiagnose as a network
- * problem rather than a cosmetic one.
- */
+// The :80 listener for connectivity probes degrades quietly if the port is taken, but logs loudly.
+// doc-ref f70b docs/4-systems/Networking.md
 function startHttpProbeListener() {
   http80Server = http.createServer(handleProbeRequest);
 

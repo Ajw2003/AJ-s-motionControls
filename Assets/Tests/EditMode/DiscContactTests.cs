@@ -4,21 +4,8 @@ using UnityEngine;
 
 namespace RockSkipping.Physics.Tests
 {
-    /// <summary>
-    /// Closed-form geometry coverage for Assets/Scripts/Game/Physics/DiscContact.cs —
-    /// wetted area and its centroid against analytic values at known depths, plus the
-    /// symmetry the geometry must obey. This file is the reason DiscContact was written as
-    /// pure, static, closed-form maths in the first place: everything here is checkable
-    /// against a formula with no simulation involved.
-    /// </summary>
-    /// <remarks>
-    /// Centroid derivation (not separately published in [B] — DiscContact.cs cites this):
-    /// integrating the same circular-segment area DiscContact.WettedArea is built from
-    /// (docs/Findings-RealSkipPhysics.md §2 / [B] Eq. 9) against x dA gives a first moment
-    /// of (2/3)*(R^2-d^2)^1.5, so centroid distance x̄ = moment / area. At d = -R (fully
-    /// wet) that reduces to 0 (a whole circle's centroid is its own centre); at d = 0 (half
-    /// wet) it reduces to the textbook semicircle centroid 4R/(3*pi).
-    /// </remarks>
+    // Closed-form geometry tests; the centroid derivation is recorded in the docs.
+    // doc-ref e6d5 docs/4-systems/Verification.md
     public class DiscContactTests
     {
         private const float Radius = 0.05f; // ReferenceStone.Radius — arbitrary here, any R>0 works

@@ -5,24 +5,8 @@ using Utils;
 // Namespace is `Ui`, not `UI` — see JoinScreen.cs for why.
 namespace Ui
 {
-    /// <summary>
-    /// The first thing a player sees, in its own scene ahead of Bootstrap. Nothing
-    /// network-related exists yet at this point — LocalServices, RelayClient and
-    /// HotspotService are all created in the Bootstrap scene, which this screen only loads
-    /// once Start is pressed.
-    /// </summary>
-    /// <remarks>
-    /// That scene boundary is the whole gate: no relay spawns, no certificate is fetched, and
-    /// in particular no hotspot starts — nothing happens on this PC's network — until a person
-    /// standing at it deliberately presses Start.
-    ///
-    /// The LAN/Hotspot picker that used to live here is gone — see
-    /// docs/plans/magic-domain-replacement.md Phase 3 and
-    /// docs/plans/remove-direct-transport.md. Hotspot is the only mode there is now (LAN mode
-    /// was removed outright, not merely deprecated — its certificate stopped validating once
-    /// local-ip.sh's wildcard was replaced by a single-name one), so this screen shows no
-    /// choice at all.
-    /// </remarks>
+    // Start is a scene boundary ahead of Bootstrap, so nothing touches the network until a person
+    // presses Start; hotspot is the only mode. doc-ref 3bb9 docs/4-systems/Presentation.md
     public class StartScreen : MonoBehaviour
     {
         [SerializeField] private KeyCode startKey = KeyCode.Return;

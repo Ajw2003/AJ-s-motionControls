@@ -2,37 +2,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Every number behind the one thing a player reads while aiming: what colour the arc
-    /// is, from red through amber to green as the predicted throw gets better. One asset,
-    /// edited in the inspector, no recompile.
-    /// </summary>
-    /// <remarks>
-    /// A ScriptableObject at Resources/AimFeedbackTuning for exactly the reason TrailTuning
-    /// is one. AimPreview is built by Bootstrap with AddComponent, so anything held as a
-    /// [SerializeField] on it sits at its C# field initializer forever — AimPreview.Awake
-    /// already carries the note about having been caught by that once, when "the whole game
-    /// ran on C# field initializers and the numbers were only reachable by recompiling."
-    /// These are look numbers, which is precisely the kind that get tuned twenty times in an
-    /// evening, so they are the last ones that should need a compile.
-    ///
-    /// Nothing in here is read by the simulation. The arc's colour is downstream of
-    /// SkipPhysics.Predict and feeds back into nothing — the same presentation-only
-    /// guarantee RockTrail states, and it matters here for the same reason: the preview runs
-    /// the solver every frame for a throw that never happened.
-    ///
-    /// The ghost used to swell, pulse and glow with wind-up (a "Ghost charge" header lived
-    /// here). That feature is gone — the ghost now simply shows the throwing player's
-    /// colour, from PlayerColours via AimPreview.TintGhost — and every field that only fed
-    /// it went with it.
-    ///
-    /// Skip counts are stored as ABSOLUTE counts rather than fractions of anything, and that
-    /// is not an oversight of the fractions rule TrailTuning documents. That rule exists
-    /// because a threshold in metres-per-second silently stops meaning anything when
-    /// SkipConstants.ReferenceSpeed is retuned. A skip count has no such scale behind it —
-    /// six skips is six skips at any launch speed, and it is the number a player counts
-    /// out loud.
-    /// </remarks>
+    // Arc-colour numbers live in a Resources asset because AddComponent-built components never see inspector values; skip
+    // counts are absolute on purpose. doc-ref 7c43 docs/4-systems/Presentation.md
     [CreateAssetMenu(menuName = "RockSkipping/Aim Feedback Tuning", fileName = "AimFeedbackTuning")]
     public class AimFeedbackTuning : ScriptableObject
     {

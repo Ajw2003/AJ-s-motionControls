@@ -8,30 +8,7 @@ using UnityEngine.Audio;
 
 namespace Managers
 {
-    /// <summary>
-    /// Owns every sound in the game. Gameplay publishes PlaySoundEvent describing what
-    /// happened; this is the only place that decides what it sounds like.
-    /// </summary>
-    /// <remarks>
-    /// Written fresh rather than ported from FactoryTM, and that was the cheaper route.
-    /// Plan-SfxVfx.md section 2 lists nine defects in that file ranging from "does nothing"
-    /// to "will actively sound broken here" — persistBetweenScenes assigned in Start() where
-    /// SingletonBase has already read it in Awake(), an inspector-assigned source clobbered
-    /// by GetComponent, a coroutine created but never started, PlayOneShot used for music so
-    /// it cannot loop, a per-clip volume written to a shared source so one quiet sound ducks
-    /// every later one permanently, and a declared-but-unused mixer field. Fixing nine
-    /// things in a file whose shape is wrong for this game — see section 3.1 on why
-    /// AudioClipEvent cannot be the primary API here — is more work than writing the right
-    /// one. The lessons are kept; the code is not.
-    ///
-    /// Sources are built in code, so there is no prefab and nothing to wire in an inspector.
-    /// Section 1.3 offers a Resources prefab or a ScriptableObject plus code-built sources
-    /// and recommends both; with the bank holding every number and the pool built here,
-    /// there is nothing left for a prefab to carry, so this is route (b) alone. The trap
-    /// that section warns about still applies and is handled in Bootstrap: this must be
-    /// created BEFORE anything can touch AudioManager.Instance, because SingletonBase
-    /// auto-creates a bare instance for whoever asks first.
-    /// </remarks>
+    // Owns every sound in the game. doc-ref ed06 docs/4-systems/Audio.md
     public class AudioManager : SingletonBase<AudioManager>
     {
         [Header("Pool")]
@@ -121,22 +98,7 @@ namespace Managers
             }
         }
 
-        /// <summary>
-        /// Builds the pool of 3D sources every sound plays through.
-        /// </summary>
-        /// <remarks>
-        /// A pool rather than the one shared source the ported version used, for two
-        /// independent reasons and either one alone would force it.
-        ///
-        /// Pitch is a property of the SOURCE, not of the shot. A pitch ladder across a skip
-        /// run sets pitch and then plays — but skips land 150-400 ms apart and the previous
-        /// one is still ringing, so retuning the source audibly bends the tail of the skip
-        /// before it. It sounds like a tape warble, and it defeats per-shot pitch jitter for
-        /// the same reason.
-        ///
-        /// Position is the other. One 2D source plays a skip at 5 m and a skip at 120 m
-        /// identically, and a run that should travel away from you reads flat.
-        /// </remarks>
+        // Builds the pool of 3D sources every sound plays through. doc-ref 5c1f docs/4-systems/Audio.md
         private void BuildVoicePool()
         {
             _voices = new AudioSource[Mathf.Max(1, voiceCount)];

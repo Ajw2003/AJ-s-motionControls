@@ -36,23 +36,7 @@ namespace EventTypes.AudioEvents
         /// </remarks>
         public int Step { get; }
 
-        /// <summary>
-        /// Seconds to wait before it sounds. Zero plays immediately.
-        /// </summary>
-        /// <remarks>
-        /// Here from the start rather than added later, and that is deliberate. When a rock
-        /// sinks, RockController publishes the splash, then Finish publishes
-        /// ThrowCompletedEvent, which banks the score and rotates the turn — all
-        /// synchronously, in one frame. So the sink, the score tally and the turn sting all
-        /// want to sound at the same instant, which is mush, and the score sound (the
-        /// rewarding one) is the one that gets buried.
-        ///
-        /// Plan-SfxVfx.md section 7.1 argues the presentation layer must schedule rather
-        /// than react, and warns that retrofitting scheduling into a fire-on-event design
-        /// means touching every handler. A delay on the event is the cheap version of that:
-        /// callers stagger their own sounds now, and the fuller queue in M6 can take over
-        /// without any caller changing.
-        /// </remarks>
+        // Seconds to wait before it sounds. doc-ref 6215 docs/4-systems/Audio.md
         public float Delay { get; }
 
         public PlaySoundEvent(

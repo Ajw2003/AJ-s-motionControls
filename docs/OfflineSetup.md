@@ -12,7 +12,7 @@
 **Status: working.** A match runs on this machine with no network of any kind — no internet, no
 router, no Wi-Fi association. Phones join by QR and reach the game.
 
-Background and evidence: [Decision-OfflineHosting.md](Decision-OfflineHosting.md).
+Background and evidence: [Decision-OfflineHosting.md](6-decisions/Decision-OfflineHosting.md).
 Why Wi-Fi Direct was tried and dropped: `Findings-WiFiDirect.md` (deleted; in git history).
 
 ---

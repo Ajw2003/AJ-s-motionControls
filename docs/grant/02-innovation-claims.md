@@ -27,7 +27,7 @@ under a fixed name whose certificate is fetched while online and served locally 
 (`Assets/Scripts/Net/CertificateProvider.cs`). The hotspot is raised by
 `hotspot/hotspot-control.ps1` from a connection profile with no connectivity at all.
 
-**Evidence.** `docs/Decision-OfflineHosting.md` — measured, reproducible via
+**Evidence.** `docs/6-decisions/Decision-OfflineHosting.md` — measured, reproducible via
 `deploy/spike/hotspot-offline-spike.ps1`, including tethering started from a physically
 unplugged adapter. The document also records the rejected alternative (Wi-Fi Direct) and
 exactly why it loses: it leaves `:53` free and builds no DNS proxy.
@@ -122,7 +122,7 @@ this offline" conclusion was re-derived and found to be a four-line bug in this 
 script, and the post-mortem names the process failure (testing on phones before checking the
 host) as more expensive than the technical one.
 
-**Evidence.** `docs/archive/Findings-DirectTransportFlapping.md`, `docs/Decision-OfflineHosting.md`
+**Evidence.** `docs/archive/Findings-DirectTransportFlapping.md`, `docs/6-decisions/Decision-OfflineHosting.md`
 (§"What went wrong in getting here"), `docs/archive/plans/remove-direct-transport.md`,
 `docs/archive/Findings-DnsAudit.md`.
 

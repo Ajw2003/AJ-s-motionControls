@@ -132,7 +132,7 @@ There is no Unity CLI test runner in this project; verification is in-editor.
 4. **A real hard throw** — the only way `MaxLaunchSpeed: 20` gets validated. If a full-power
    swing still sails, lower it; if a normal strong throw feels capped, raise it.
 
-### 4. `docs/systems/SkipPhysics.md`
+### 4. `docs/4-systems/SkipPhysics.md`
 
 Three new constants land on the one asset that documents the global/per-rock split. Add
 `MaxLaunchSpeed`, `MaxLaunchPitchDeg` and `MaxLiftShare` there, and note that `MaxLiftShare`

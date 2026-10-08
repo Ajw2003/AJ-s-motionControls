@@ -4,20 +4,7 @@ using UnityEngine;
 
 namespace Audio
 {
-    /// <summary>
-    /// What each SoundId actually sounds like. One asset, edited in the inspector, no
-    /// recompile — the same contract SkipTuning and TrailTuning hold to.
-    /// </summary>
-    /// <remarks>
-    /// Lives at Resources/AudioBank and is loaded the way SkipTuning is. Every number that
-    /// shapes a sound is here rather than in the code that triggers it, so retuning how a
-    /// skip run climbs is an inspector edit and not a build.
-    ///
-    /// An entry with no variants is not an error. AudioManager falls back to a synthesised
-    /// placeholder for that SoundId, so the ladder and the impact-speed mapping can be tuned
-    /// against something audible before a single .wav exists — which is the state this
-    /// project is actually in. See ProceduralClips.
-    /// </remarks>
+    // What each SoundId actually sounds like. doc-ref 79d1 docs/4-systems/Audio.md
     [CreateAssetMenu(menuName = "RockSkipping/Audio Bank", fileName = "AudioBank")]
     public class AudioBank : ScriptableObject
     {

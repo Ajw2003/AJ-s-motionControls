@@ -5,25 +5,7 @@ using UnityEngine;
 
 namespace Net
 {
-    /// <summary>
-    /// Reads and writes the host's Wi-Fi hotspot credentials as a plain JSON file beside the
-    /// executable, so a returning phone can remember this network instead of being handed a
-    /// fresh SSID and passphrase — and therefore a fresh QR to scan — every single launch.
-    /// </summary>
-    /// <remarks>
-    /// Same <c>JsonUtility</c> + file-beside-the-executable convention as
-    /// <see cref="Managers.MatchSettingsStore"/> and <see cref="RoomCodeStore"/>: not
-    /// PlayerPrefs, because on Windows that writes into the registry, which is invisible and
-    /// isn't cleared by deleting the game folder, and a host can open this file by hand to read
-    /// the passphrase off a stuck TV.
-    ///
-    /// Security note: a guest who once played keeps access to this hotspot forever, since the
-    /// credentials no longer change. That is acceptable only because
-    /// <c>deploy/setup-offline.ps1</c> disables IP forwarding every session — what a returning
-    /// guest can reach is the game's relay and other phones on it, not the host's internet or
-    /// LAN. That isolation is the reason stable credentials are safe; re-enabling forwarding
-    /// would silently change that trade-off.
-    /// </remarks>
+    // Reads and writes the host's Wi-Fi hotspot credentials as a plain JSON file in this Windows user's app-data... doc-ref 69e1 docs/4-systems/HostingAndCertificates.md
     public static class HotspotCredentialsStore
     {
         private const string FileName = "hotspot-credentials.json";
@@ -59,27 +41,43 @@ namespace Net
         /// </summary>
         public static Loaded LoadOrCreate()
         {
-            try
+            if (TryRead(ResolvePath(), out var stored)) return stored;
+
+            if (TryRead(LegacyPath(), out var legacy))
             {
-                var path = ResolvePath();
-                if (File.Exists(path))
-                {
-                    var data = JsonUtility.FromJson<CredentialsData>(File.ReadAllText(path));
-                    if (data != null && !string.IsNullOrEmpty(data.ssid) &&
-                        !string.IsNullOrEmpty(data.passphrase))
-                    {
-                        return new Loaded(data.ssid, data.passphrase);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[HotspotCredentialsStore] Could not read {FileName}: {e.Message}");
+                Debug.Log($"[HotspotCredentialsStore] Copying the saved network '{legacy.Ssid}' from beside the game to {ResolvePath()}.");
+                Save(legacy);
+                return legacy;
             }
 
             var fresh = new Loaded(GenerateSsid(), GeneratePassphrase());
+            Debug.Log($"[HotspotCredentialsStore] No saved network; created '{fresh.Ssid}' at {ResolvePath()}.");
             Save(fresh);
             return fresh;
+        }
+
+        private static bool TryRead(string path, out Loaded loaded)
+        {
+            loaded = default;
+            try
+            {
+                if (!File.Exists(path)) return false;
+
+                var data = JsonUtility.FromJson<CredentialsData>(File.ReadAllText(path));
+                if (data == null || string.IsNullOrEmpty(data.ssid) || string.IsNullOrEmpty(data.passphrase))
+                {
+                    Debug.LogWarning($"[HotspotCredentialsStore] {path} has no SSID or passphrase; ignoring it.");
+                    return false;
+                }
+
+                loaded = new Loaded(data.ssid, data.passphrase);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[HotspotCredentialsStore] Could not read {path}: {e.Message}");
+                return false;
+            }
         }
 
         private static void Save(Loaded loaded)
@@ -87,11 +85,15 @@ namespace Net
             try
             {
                 var data = new CredentialsData { ssid = loaded.Ssid, passphrase = loaded.Passphrase };
-                File.WriteAllText(ResolvePath(), JsonUtility.ToJson(data, prettyPrint: true));
+                var path = ResolvePath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, JsonUtility.ToJson(data, prettyPrint: true));
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[HotspotCredentialsStore] Could not write {FileName}: {e.Message}");
+                // An error, not a warning: an unsaved network is a different network next launch,
+                // and every phone that saved this one will not rejoin it.
+                Debug.LogError($"[HotspotCredentialsStore] Could not save {FileName}, so the network will change next launch: {e.Message}");
             }
         }
 
@@ -110,8 +112,11 @@ namespace Net
             return new string(chars);
         }
 
-        /// <summary>Same resolution as MatchSettingsStore.ResolvePath / HotspotCredentialsStore.ResolvePath.</summary>
         private static string ResolvePath() =>
+            Path.GetFullPath(Path.Combine(Application.persistentDataPath, FileName));
+
+        /// <summary>Where versions before #81 kept it: beside the executable, like MatchSettingsStore.</summary>
+        private static string LegacyPath() =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", FileName));
     }
 }

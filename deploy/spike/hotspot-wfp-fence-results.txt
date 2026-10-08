@@ -1,0 +1,10 @@
+WFP fence spike, 2026-10-01 23:52, router http://10.0.0.1
+forwarding Enabled on the hotspot interface
+Stage 1: did https://example.com load -> y
+Stage 1: did the router page load (anything, even an error page) -> y
+WFP filter added at FWPM_LAYER_IPFORWARD_V4: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10
+host itself reaches router with filter on: yes
+Stage 2: did https://example.com load -> y
+Stage 2: did the router page load (anything, even an error page) -> y
+Stage 2: did the phone's Wi-Fi still show Connected (no 'no internet') -> n
+cleanup: WFP session closed (filter gone), hotspot stopped

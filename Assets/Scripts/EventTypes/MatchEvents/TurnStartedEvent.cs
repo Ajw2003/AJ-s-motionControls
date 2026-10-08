@@ -2,16 +2,7 @@ namespace EventTypes.MatchEvents
 {
     using EventSystems;
 
-    /// <summary>Published when the turn passes to a player.</summary>
-    /// <remarks>
-    /// Fires on every turn handover, which with two to eight players is constantly — so
-    /// anything hung off it has to stay short. Plan-SfxVfx.md section 6.9 puts the ceiling
-    /// at about 1.2 seconds, past which the turn-change presentation becomes the dominant
-    /// experience of the game.
-    ///
-    /// Also fires when the active player leaves mid-turn and the turn is handed to whoever
-    /// takes their index, which is a genuine turn start and not a duplicate.
-    /// </remarks>
+    // Published when the turn passes to a player. doc-ref 16dd docs/4-systems/EventSystem.md
     public class TurnStartedEvent : IEvent
     {
         /// <summary>Whose turn it now is.</summary>

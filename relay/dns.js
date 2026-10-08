@@ -1,31 +1,8 @@
 'use strict';
 
-/**
- * A deliberately small authoritative DNS responder, for hotspot mode only.
- *
- * WHY THIS EXISTS
- * Certificates can be cached, so a host only needs the internet once a quarter for those.
- * DNS cannot be cached, because the cache that matters lives on *each phone* — a guest
- * joining for the first time has nothing. Answering locally is the only way round that, and
- * it is what makes playing with no internet possible at all.
- *
- * When the PC is the access point it is already its clients' DNS server, so it can answer
- * authoritatively with no upstream. Proven with a real phone resolving `play.local-ip.sh`,
- * a name no public resolver answers.
- *
- * WHERE IT MUST NOT RUN
- * LAN mode. There, phones use the router's DNS, which is none of our business — and running
- * a resolver a phone did not ask for would be both useless and rude. Env-gated accordingly.
- *
- * SECURITY - READ BEFORE CHANGING ANY DEFAULT
- * An earlier cut of this bound every interface and forwarded for anyone, which is the
- * textbook definition of an open recursive resolver: free for any host on any attached
- * network, and a DNS amplification reflector for spoofed-source DDoS.
- *
- * The source guard is therefore LOAD-BEARING, not defence in depth. It cannot be replaced by
- * binding narrowly, because the hotspot address does not exist until the hotspot is running
- * and :53 must be held *before* that to win the race with ICS. See SecurityReview.md §4.
- */
+// A small authoritative DNS responder for hotspot mode only; its source guard is load-bearing,
+// so do not loosen any default.
+// doc-ref 680e docs/4-systems/HostingAndCertificates.md
 
 const dgram = require('dgram');
 
@@ -197,31 +174,18 @@ function makeRateLimiter(perSecond, now = () => Date.now()) {
 
 // ----------------------------------------------------------------------- responder
 
-/**
- * @param {object}   options
- * @param {string}   options.ip        address to answer with
- * @param {string}  [options.suffix]   answer anything ending in this
- * @param {string}  [options.name]     or answer exactly this name
- * @param {string[]} [options.names]   or answer exactly any of these names (e.g. the game's
- *                                     hostname plus the connectivity probe domains —
- *                                     see docs/plans/magic-domain-replacement.md Phase 4)
- * @param {string}  [options.allow]    CIDR permitted to query. REQUIRED in practice.
- * @param {number}  [options.rate]     max queries per second per source
- * @param {string}  [options.upstream] forward non-matching names here; omitted means NXDOMAIN
- * @param {function} [options.onQuery] called with the source address of every query that
- *                                     passes the allow-list and rate limit, whatever name it
- *                                     asked for. This is the earliest evidence a phone is on
- *                                     the hotspot at all — both platforms probe for internet
- *                                     access within about a second of associating, unprompted —
- *                                     so it is what the join funnel keys ASSOCIATED off.
- *                                     See funnel.js.
- */
+// Options for the responder; `allow` is required in practice and `onQuery` feeds the join funnel.
+// doc-ref 7fec docs/4-systems/HostingAndCertificates.md
 function createResponder(options) {
   const {
     ip,
     suffix = null,
     name = null,
     names = null,
+    fallbackNames = null,
+    blockedNames = null,
+    fallbackMs = 1500,
+    upstreamPort = 53,
     port = 53,
     bind = '0.0.0.0',
     allow,
@@ -248,13 +212,32 @@ function createResponder(options) {
     [...(names || []), name].filter(Boolean).map((n) => n.toLowerCase()),
   );
 
+  // Only forwarded-first when there is an upstream; without one these are just more exact names.
+  const fallbackSet = new Set((fallbackNames || []).map((n) => n.toLowerCase()));
+
+  const blockedSet = new Set((blockedNames || []).map((n) => n.toLowerCase()));
+
   let socket = null;
 
   const matches = (queried) => {
     const lower = queried.toLowerCase();
     if (exactNames.size > 0 && exactNames.has(lower)) return true;
+    if (!upstream && fallbackSet.has(lower)) return true;
     return suffix ? lower.endsWith(suffix.toLowerCase()) : false;
   };
+
+  function answerLocally(query, message, remote) {
+    stats.answered += 1;
+    if (query.type === TYPE_A) {
+      socket.send(buildReply(query, message, { answerIp: ip, ttl }), remote.port, remote.address);
+      log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> ${ip}`);
+    } else {
+      // Empty NOERROR, never NXDOMAIN. NXDOMAIN means "this name does not exist" for
+      // EVERY record type, so a dual-stack phone that believes it never goes on to try
+      // A — the difference between working and failing silently on some devices.
+      socket.send(buildReply(query, message, {}), remote.port, remote.address);
+    }
+  }
 
   function handle(message, remote) {
     // Both guards DROP rather than reply. Answering a source outside the hotspot — even
@@ -297,23 +280,32 @@ function createResponder(options) {
       return;
     }
 
+    if (blockedSet.has(query.name.toLowerCase())) {
+      stats.refused += 1;
+      socket.send(
+        buildReply(query, message, { rcode: RCODE_NXDOMAIN }),
+        remote.port,
+        remote.address,
+      );
+      log(
+        `dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> NXDOMAIN (blocked)`,
+      );
+      return;
+    }
+
     if (matches(query.name)) {
-      if (query.type === TYPE_A) {
-        stats.answered += 1;
-        socket.send(buildReply(query, message, { answerIp: ip, ttl }), remote.port, remote.address);
-        log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> ${ip}`);
-      } else {
-        // Empty NOERROR, never NXDOMAIN. NXDOMAIN means "this name does not exist" for
-        // EVERY record type, so a dual-stack phone that believes it never goes on to try
-        // A — the difference between working and failing silently on some devices.
-        stats.answered += 1;
-        socket.send(buildReply(query, message, {}), remote.port, remote.address);
-      }
+      answerLocally(query, message, remote);
       return;
     }
 
     if (upstream) {
-      forward(message, remote);
+      if (fallbackSet.has(query.name.toLowerCase())) {
+        forward(message, remote, () => {
+          if (socket) answerLocally(query, message, remote);
+        });
+      } else {
+        forward(message, remote);
+      }
       return;
     }
 
@@ -325,39 +317,45 @@ function createResponder(options) {
     log(`dns ${remote.address} ${TYPE_NAMES[query.type] || query.type} ${query.name} -> NXDOMAIN`);
   }
 
-  function forward(message, remote) {
+  /** `onGiveUp`, if given, runs once if upstream errors or is silent past `fallbackMs`. */
+  function forward(message, remote, onGiveUp = null) {
     const client = dgram.createSocket('udp4');
-    const timer = setTimeout(() => {
+    let gaveUp = false;
+
+    const closeClient = () => {
       try {
         client.close();
       } catch {
         // Socket may already be closing/closed by the time we call close();
         // nothing to recover from, safe to ignore.
       }
-    }, 3000);
+    };
+    const giveUp = () => {
+      if (gaveUp || !onGiveUp) return;
+      gaveUp = true;
+      onGiveUp();
+    };
+
+    const fallbackTimer = onGiveUp ? setTimeout(giveUp, fallbackMs) : null;
+    const timer = setTimeout(closeClient, 3000);
 
     client.on('error', () => {
       clearTimeout(timer);
-      try {
-        client.close();
-      } catch {
-        // Socket may already be closing/closed by the time we call close();
-        // nothing to recover from, safe to ignore.
-      }
+      clearTimeout(fallbackTimer);
+      closeClient();
+      giveUp();
     });
     client.on('message', (reply) => {
       clearTimeout(timer);
+      clearTimeout(fallbackTimer);
+      closeClient();
+      // A reply after we already answered locally would be a second answer; drop it.
+      if (gaveUp) return;
       stats.forwarded += 1;
       socket.send(reply, remote.port, remote.address);
-      try {
-        client.close();
-      } catch {
-        // Socket may already be closing/closed by the time we call close();
-        // nothing to recover from, safe to ignore.
-      }
     });
 
-    client.send(message, 53, upstream);
+    client.send(message, upstreamPort, upstream);
   }
 
   return {

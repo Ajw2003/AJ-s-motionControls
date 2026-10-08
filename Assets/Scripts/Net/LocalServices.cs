@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using Managers;
 using Singleton;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -23,24 +24,7 @@ namespace Net
         Failed,
     }
 
-    /// <summary>
-    /// Runs the relay on this machine. This is how the game is hosted — not a dev convenience.
-    /// </summary>
-    /// <remarks>
-    /// ON BY DEFAULT, and there is nothing to fall back to: the hosted Fly.io relay this used
-    /// to be an alternative to was deliberately torn down. Bootstrap's startLocalServices
-    /// creates this, and RelayClient takes its address from SecureSocketUrl rather than
-    /// needing a relay-url.txt — that file is now only the manual escape hatch for pointing a
-    /// build at a relay somebody started by hand.
-    ///
-    /// HTTPS is not optional in practice. Phone motion-sensor APIs only unlock on a secure
-    /// origin, so the certificate step (CertificateProvider, MagicDomain) runs before the
-    /// relay and hands it TLS material through the environment.
-    ///
-    /// This class used to also spawn a cloudflared tunnel and scrape the assigned hostname
-    /// out of its stderr, because a quick tunnel offers no machine-readable channel for it.
-    /// A fixed service address removed the need for both.
-    /// </remarks>
+    // Runs the relay on this machine. doc-ref 80a3 docs/4-systems/HostingAndCertificates.md
     public class LocalServices : SingletonBase<LocalServices>
     {
         /// <summary>
@@ -109,43 +93,12 @@ namespace Net
         public string SecureSocketUrl =>
             _certificate.Ok ? $"wss://{_certificate.HostName}:{securePort}" : null;
 
-        /// <summary>
-        /// Where the relay actually lives, derived from the same relay-url.txt RelayClient
-        /// reads so the two can never disagree about it.
-        /// </summary>
-        /// <remarks>
-        /// This used to be hardcoded to http://127.0.0.1:3000, which quietly broke the reuse
-        /// path below for any relay not on that address: a relay started by hand on another
-        /// port looked absent, so this spawned a second one that nothing ever connected to.
-        ///
-        /// This is the address shown to a human (log messages, the Fail() hint) and handed to
-        /// a phone (SecureSocketUrl, JoinUrlFor) — it is NOT what LocalServices probes its own
-        /// process with. See ProbeHealthUrl for why those had to split.
-        /// </remarks>
+        // Where the relay actually lives, derived from the same relay-url.txt RelayClient reads so the two can never... doc-ref 9fca docs/4-systems/HostingAndCertificates.md
         private string Origin => _origin ??= ResolveOrigin();
 
         private string HealthUrl => $"{Origin}/health";
 
-        /// <summary>
-        /// The address ProbeHealth/ProbeDnsBound actually connect to — loopback, once a
-        /// certificate is in play, never the public hostname in HealthUrl.
-        /// </summary>
-        /// <remarks>
-        /// In Hotspot mode the certificate's address (192.168.137.1) is not reachable on
-        /// this host until Hotspot tethering has actually started — which happens only after
-        /// this class reaches Ready. Probing the public hostname here deadlocks forever:
-        /// LocalServices waits on its own health check to reach Ready, HotspotService waits
-        /// on Ready before starting tethering, and the address the health check needs does
-        /// not exist until tethering has started. Loopback sidesteps the whole cycle — it is
-        /// always reachable regardless of hotspot state, because this is really just asking
-        /// "is the process I just spawned still alive," not a network question at all.
-        ///
-        /// A phone never sees this URL — SecureSocketUrl/JoinUrlFor still hand out the real
-        /// hostname, validated normally by every phone that connects to it. Loopback HTTPS
-        /// needs its own certificate handling since the cert's SAN never includes
-        /// "127.0.0.1"; see AcceptAnyCertificate for why that is scoped tightly enough to be
-        /// safe here and nowhere else.
-        /// </remarks>
+        // The address ProbeHealth/ProbeDnsBound actually connect to — loopback, once a certificate is in play, never... doc-ref bf91 docs/4-systems/HostingAndCertificates.md
         private string ProbeHealthUrl => useHttps && _certificate.Ok
             ? $"https://127.0.0.1:{securePort}/health"
             : HealthUrl;
@@ -218,15 +171,7 @@ namespace Net
                 : $"Local relay at {Origin}.");
         }
 
-        /// <summary>
-        /// The one address a hotspot host is ever reachable at. Forced rather than detected —
-        /// the hotspot's own AP adapter has no default gateway of its own (it hands out this
-        /// same address as a gateway to its clients but has none configured on itself), so any
-        /// attempt to detect it by sweeping network interfaces would fail or guess wrong every
-        /// time. With Hotspot the only mode, this is simply a constant rather than something
-        /// to compute per launch — see CertificateProvider.ValidateHostAddress, which is all
-        /// that is left to check once nothing needs discovering.
-        /// </summary>
+        // The one address a hotspot host is ever reachable at. doc-ref 250a docs/4-systems/HostingAndCertificates.md
         private const string HotspotHostAddress = "192.168.137.1";
 
         private IEnumerator ObtainCertificate()
@@ -398,17 +343,7 @@ namespace Net
             public HealthDns dns;
         }
 
-        /// <summary>
-        /// Probes /health and reports whether the DNS responder has actually finished
-        /// binding — a plain health-endpoint success only proves the HTTP listener is up.
-        /// </summary>
-        /// <remarks>
-        /// relay/server.js initiates the UDP :53 bind inside its httpServer.listen()
-        /// callback but does not await it before that callback returns, so /health can
-        /// answer before the bind has resolved one way or the other. HotspotService needs
-        /// the stronger guarantee before starting tethering, since the responder must win a
-        /// race against ICS for :53 — this turns that inferred timing into a confirmed one.
-        /// </remarks>
+        // Probes /health and reports whether the DNS responder has actually finished binding — a plain health-endpoin... doc-ref eeb6 docs/4-systems/HostingAndCertificates.md
         public IEnumerator ProbeDnsBound(Action<bool> onResult)
         {
             using var request = UnityWebRequest.Get(ProbeHealthUrl);
@@ -465,6 +400,11 @@ namespace Net
             // longer needed once the hotspot's address is a fixed constant.
             env.Add(new KeyValuePair<string, string>("DNS_NAME", MagicDomain.HostName));
             Debug.Log("[LocalServices] DNS responder will bind on 192.168.137.0/24.");
+
+            // Before the overrides, like the certificate, so relay-env.txt can still win.
+            var shareInternet = MatchSettingsStore.Load().ShareInternet;
+            if (shareInternet) env.Add(new KeyValuePair<string, string>("SHARE_INTERNET", "1"));
+            Debug.Log($"[LocalServices] DNS mode: {(shareInternet ? "sharing internet (real lookups allowed)" : "game-only")}.");
 
             var overrides = ReadRelayEnvironment();
             env.AddRange(overrides);

@@ -5,25 +5,7 @@ using Debug = UnityEngine.Debug;
 
 namespace Net
 {
-    /// <summary>
-    /// Binds spawned child processes to the lifetime of this one, so a development relay
-    /// cannot outlive the game.
-    /// </summary>
-    /// <remarks>
-    /// Killing a process on Windows does NOT kill its children. Without this, every
-    /// crashed editor session, every "stop responding and force quit", and every domain
-    /// reload at the wrong moment leaves an orphaned node.exe holding port 3000. The next
-    /// launch then finds the port taken and fails in a way that looks like a bug in the
-    /// game.
-    ///
-    /// A job object with KILL_ON_JOB_CLOSE is the OS-level fix: when the last handle to
-    /// the job closes — including when the process holding it dies for any reason,
-    /// gracefully or not — Windows terminates every process in the job. That covers the
-    /// crash case, which an OnApplicationQuit hook cannot.
-    ///
-    /// LocalServices still kills its children explicitly on the way out. This is the
-    /// backstop for when there is no way out.
-    /// </remarks>
+    // Binds spawned child processes to the lifetime of this one, so a development relay cannot outlive the game. doc-ref 348f docs/4-systems/HostingAndCertificates.md
     public sealed class ChildProcessGroup : IDisposable
     {
         private IntPtr _handle;

@@ -2,35 +2,12 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// A disc's mass properties and the full Euler rigid-body integration of its attitude
-    /// and angular velocity under an applied torque.
-    /// </summary>
-    /// <remarks>
-    /// PURE. No Unity scene access, no events, no side effects — see the assembly-level
-    /// remarks in <see cref="DiscContact"/>; this file lives alongside it for the same
-    /// reason (EditMode-testable, referenced by nothing outside System.Collections.Generic
-    /// / UnityEngine).
-    ///
-    /// docs/plans/real-skip-physics.md is explicit that this must be the FULL Euler
-    /// equations, not the fast-spin gyroscopic shortcut (`ṅ̂ = (τ × n̂)/(I_a·Ω)`) that the
-    /// literature usually reaches for: that approximation divides by the spin rate and
-    /// diverges as `Ω → 0`, and an unspun throw tumbling on its own — with no invented
-    /// `WanderDeg` fudge to make it happen — is exactly the behaviour this rewrite exists
-    /// to get for free. [B] Eq. (A1) (Findings §2) is the standard Euler set this
-    /// implements.
-    /// </remarks>
+    // Pure like DiscContact, and it must integrate the full Euler equations because the fast-spin
+    // shortcut diverges as spin approaches zero. doc-ref 50b4 docs/4-systems/SkipPhysics.md
     public static class RigidDisc
     {
-        /// <summary>
-        /// A disc's two distinct principal moments of inertia. Bocquet's axis convention
-        /// (Findings §2 / [B] Appendix A): axis 2 is along the disc's own normal `n̂` (the
-        /// spin axis) with `I₂ ≡ J₀`; axes 1 and 3 lie in the disc's plane (one of them is
-        /// `t̂`) and share `I₁ = I₃ ≡ J₁`. In this file's local-frame convention (matching
-        /// <see cref="PhoneAttitude.FaceNormal"/>, which is `attitude * Vector3.up`) that
-        /// maps onto Unity's local axes as: local Y = `n̂` (axial, `J₀`), local X and local Z
-        /// = the two transverse axes (`J₁`).
-        /// </summary>
+        // The axial moment J0 is on local Y (the face normal); local X and Z share the transverse
+        // moment J1. doc-ref b1e1 docs/4-systems/SkipPhysics.md
         public struct Inertia
         {
             /// <summary>`J₀ = ½MR²` — moment about the disc's own normal (spin axis).</summary>
@@ -54,19 +31,8 @@ namespace Game
             };
         }
 
-        /// <summary>
-        /// Advance attitude and angular velocity by one substep under an applied
-        /// world-space torque, integrating the full Euler rigid-body equations (not the
-        /// fast-spin approximation — see the class remarks).
-        /// </summary>
-        /// <param name="attitude">World-space orientation. Updated in place.</param>
-        /// <param name="angularVelocityWorld">World-space angular velocity, rad/s. Updated
-        /// in place.</param>
-        /// <param name="torqueWorld">Applied torque about the disc centre, world space,
-        /// N·m (from <see cref="DiscContact.Evaluate"/> during contact; zero in free
-        /// flight — gravity acts at the centre of mass and exerts no torque).</param>
-        /// <param name="inertia">This disc's principal moments.</param>
-        /// <param name="dt">Substep, seconds.</param>
+        // Integrates attitude and angular velocity in place from a world torque in N.m (rad/s); free
+        // flight has zero torque. doc-ref 9bb2 docs/4-systems/SkipPhysics.md
         public static void Integrate(
             ref Quaternion attitude, ref Vector3 angularVelocityWorld,
             Vector3 torqueWorld, Inertia inertia, float dt)

@@ -11,20 +11,8 @@ using UnityEngine.Networking;
 // `UI.Something` reference elsewhere an ambiguous one.
 namespace Ui
 {
-    /// <summary>
-    /// The screen guests actually look at: how to join, and the code to type. Shows the
-    /// launch progress first, so a slow tunnel reads as "working" rather than "broken".
-    /// </summary>
-    /// <remarks>
-    /// Scaffolding in the same spirit as RelayDebugHud — OnGUI, no Canvas, no prefab, so
-    /// it works in whatever scene is loaded. Replace with authored UI when the real Lobby
-    /// scene exists; the QR fetch and the join-URL construction are the parts worth
-    /// keeping.
-    ///
-    /// The QR matrix comes from the relay rather than being generated here. The relay is
-    /// already a required running process and already has a QR library, so this stays a
-    /// texture blit instead of a Reed-Solomon implementation.
-    /// </remarks>
+    // OnGUI scaffolding; the QR matrix comes from the relay, so this stays a texture blit.
+    // doc-ref 17f0 docs/4-systems/Presentation.md
     public class JoinScreen : MonoBehaviour
     {
         [SerializeField] private bool isVisible = true;
@@ -74,21 +62,42 @@ namespace Ui
             public string[] rows;
         }
 
+        private void Start()
+        {
+            // LocalServices is optional (a normal host has none), so its absence is not logged.
+            if (LocalServices.HasInstance) _services = LocalServices.Instance;
+
+            if (RelayClient.HasInstance) _client = RelayClient.Instance;
+            else Debug.LogWarning("[JoinScreen] No RelayClient at Start; no QR code or room code will be shown.");
+
+            StartCoroutine(KeepQrsCurrent());
+        }
+
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey)) isVisible = !isVisible;
+        }
 
-            if (_services == null && LocalServices.HasInstance) _services = LocalServices.Instance;
-            if (_client == null && RelayClient.HasInstance) _client = RelayClient.Instance;
-
-            EnsureQrMatchesJoinUrl();
-            EnsureWifiQrMatchesHotspot();
+        /// <summary>
+        /// Once a second rather than every frame (#64): the checks below build the join URL
+        /// and Wi-Fi payload strings just to compare them, and both only change when the
+        /// room code or hotspot does.
+        /// </summary>
+        private IEnumerator KeepQrsCurrent()
+        {
+            var wait = new WaitForSecondsRealtime(1f);
+            while (true)
+            {
+                EnsureQrMatchesJoinUrl();
+                EnsureWifiQrMatchesHotspot();
+                yield return wait;
+            }
         }
 
         /// <summary>
         /// The room code and the tunnel URL arrive from different systems at different
         /// times, and either can change (a reconnect issues a new room). Rather than
-        /// coordinating both, this re-derives the join URL each frame and refetches only
+        /// coordinating both, this re-derives the join URL once a second and refetches only
         /// when it actually differs from what is on screen.
         /// </summary>
         private void EnsureQrMatchesJoinUrl()

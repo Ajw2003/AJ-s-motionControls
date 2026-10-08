@@ -34,14 +34,8 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-// Mirror everything to a file as well as the console. The console lives in a window the
-// person running this may not be watching - and during the 2026-08-20 run it was a separate
-// window nobody could read back, which made the single most important output of the spike
-// something that had to be relayed by hand.
-// Appended synchronously on purpose. A buffered stream loses whatever it is holding when the
-// process is killed rather than Ctrl+C'd, which is how a test rig usually dies - and losing
-// the last few lines loses exactly the ones that matter. The volume here is a handful of DNS
-// queries, so the cost of a sync write is irrelevant.
+// Mirror output to a file as well as the console, appended synchronously so a killed rig loses no lines.
+// doc-ref 25f5 docs/4-systems/HostingAndCertificates.md
 const LOG_PATH = path.join(__dirname, 'dns-responder.log');
 let logBroken = false;
 

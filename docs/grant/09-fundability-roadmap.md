@@ -28,7 +28,7 @@ first action is to open the README.
       anywhere** — `01-asset-inventory.md`, `02-innovation-claims.md`, `08-narrative-core.md`, and
       the grant `README.md` all point to it now and all say so until you do.
 - [ ] **Finish the link cleanup.** `README.md`, `docs/MASTER-PLAN.md`,
-      `docs/Decision-OfflineHosting.md` and `docs/OfflineSetup.md` are repaired. Still broken,
+      `docs/6-decisions/Decision-OfflineHosting.md` and `docs/OfflineSetup.md` are repaired. Still broken,
       in the older planning docs: `ZeroSetupPlan.md`, `MagicDnsFallback.md`,
       `plans/magic-domain-replacement.md`, `plans/join-failure-reduction.md`,
       `plans/remove-direct-transport.md` and both `seamless-rejoin` docs. Three causes —

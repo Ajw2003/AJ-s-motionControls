@@ -1,0 +1,13 @@
+Hotspot rejoin spike, 2026-10-02 00:11, network 'Rock Skipping CPt5'
+00:11:25  hotspot On, forwarding Enabled (internet shared)
+00:11:25  hotspot clients: 0
+00:13:03  hotspot clients: 1
+00:13:49  Joined, and the phone shows it Connected with no 'no internet' warning -> y
+00:14:07  hotspot clients: 0
+00:14:12  hotspot clients: 1
+00:14:41  hotspot clients: 0
+00:14:56  hotspot clients: 1
+00:15:08  Test A: did the phone rejoin 'Rock Skipping CPt5' by itself -> y
+00:15:32  hotspot clients: 0
+00:16:07  Test B: did it pick 'Rock Skipping CPt5' over your home Wi-Fi -> n
+00:16:14  cleanup: hotspot stopped

@@ -1,6 +1,7 @@
 using Managers;
 using Net;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Game
 {
@@ -51,29 +52,14 @@ namespace Game
 
         public RockController ActiveRock => _active;
 
-        /// <summary>
-        /// True while the camera is framing the aiming shot — false from the moment a throw
-        /// takes it away until it has come all the way back.
-        /// </summary>
-        /// <remarks>
-        /// AimPreview holds the ghost and the arc off until this is true. Showing them the
-        /// instant the stone despawns put a full-size ghost on screen while the camera was
-        /// still metres downrange and swinging round, so it slid across the frame from
-        /// wherever the chase had left it — an aiming guide that lies about where the player
-        /// is aiming for as long as the move takes.
-        ///
-        /// True when there is no Camera.main at all, deliberately. There is then no return to
-        /// wait on, and a preview that hides itself forever over a missing camera is a worse
-        /// failure than one drawn against an unframed shot.
-        /// </remarks>
+        // CameraSettled is false while a throw's camera swings back, and true with no Camera.main so a
+        // missing camera cannot hide the preview forever. doc-ref 3c82 docs/4-systems/Presentation.md
         public bool CameraSettled => _camera == null || _cameraSettled;
 
         /// <summary>A flat stone, sized once so the rock and the aim ghost cannot differ.</summary>
 
         private void Update()
         {
-            EnsureBound();
-
             // Unconditional, where this used to be gated on _active != null. The rock is
             // destroyed at the end of its despawn delay, and that used to cut the camera's
             // return off wherever it had got to — leaving the shot subtly wrong until the
@@ -85,26 +71,47 @@ namespace Game
         private void OnDestroy()
         {
             if (_client != null) _client.ThrowReceived -= OnThrow;
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+        }
+
+        // Every scene brings its own camera and the load destroys the last one, so the
+        // cached camera is re-resolved per load rather than polled for every frame (#62).
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ResolveCamera();
+
+        private void ResolveCamera()
+        {
+            _camera = Camera.main;
+            if (_camera == null)
+            {
+                Debug.LogWarning("[RockLauncher] No Camera.main; the throw camera will not follow or return home.");
+                return;
+            }
+
+            // Captured after AimPreview has framed the shot, so "home" is the
+            // aiming view rather than the scene's default camera placement.
+            _cameraHome = _camera.transform.position;
+            _cameraHomeRotation = _camera.transform.rotation;
         }
         
 
-        private void EnsureBound()
+        private void Start()
         {
-            if (_preview == null) _preview = FindFirstObjectByType<AimPreview>();
-
-            if (_camera == null)
+            // Same GameObject as AimPreview (Bootstrap), and it frames the camera in its
+            // Awake, so by Start the shot is already framed. No ordering risk.
+            _preview = GetComponent<AimPreview>();
+            if (_preview == null)
             {
-                _camera = Camera.main;
-                if (_camera != null)
-                {
-                    // Captured after AimPreview has framed the shot, so "home" is the
-                    // aiming view rather than the scene's default camera placement.
-                    _cameraHome = _camera.transform.position;
-                    _cameraHomeRotation = _camera.transform.rotation;
-                }
+                Debug.LogWarning("[RockLauncher] No AimPreview on this object; throws will have nothing to launch from.");
             }
 
-            if (_client != null || !RelayClient.HasInstance) return;
+            ResolveCamera();
+            SceneManager.sceneLoaded += OnSceneLoaded;
+
+            if (!RelayClient.HasInstance)
+            {
+                Debug.LogWarning("[RockLauncher] No RelayClient at Start; throws will never arrive.");
+                return;
+            }
 
             _client = RelayClient.Instance;
             _client.ThrowReceived += OnThrow;
@@ -130,7 +137,14 @@ namespace Game
                 return;
             }
 
-            if (_active != null && _active.IsFlying) return; // one rock at a time
+            // One rock at a time, until the last one has COMPLETED, not just landed.
+            // IsSinking holds through the settle; a stone launched then overwrote _active
+            // and the old one's completion advanced the turn under it (#56).
+            if (_active != null && (_active.IsFlying || _active.IsSinking))
+            {
+                Debug.Log($"[RockLauncher] Refused THROW from {message.playerId}: the previous stone is still out.");
+                return;
+            }
 
             // Both read from AimPreview rather than re-resolved here, so the ghost this
             // player just aimed with and the stone that actually flies can never land on
@@ -226,19 +240,8 @@ namespace Game
             _cameraSettled = true;
         }
 
-        /// <summary>
-        /// The live stone: <paramref name="rock"/>'s mesh, scale and tint when there is
-        /// one, else the prefab's own plain box — the original single-rock look, kept as
-        /// the fallback for a catalog that failed to load rather than taking the throw
-        /// path down over it. See RockCatalog.CreateDefault's doc for why an empty
-        /// catalog degrading to this is the deliberate behaviour project-wide.
-        /// </summary>
-        /// <remarks>
-        /// A box was the original shape for a reason worth keeping in mind for the
-        /// fallback: a scaled sphere is a surface of revolution and renders identically at
-        /// every yaw, so a box was chosen so the stone shows its own rotation from every
-        /// angle. RockCatalogBuilder's meshes carry that concern themselves now.
-        /// </remarks>
+        // The live stone uses the rock's mesh and falls back to the prefab box if the catalog failed to load; a box shows
+        // its yaw where a sphere would not. doc-ref eb45 docs/4-systems/RockCatalogAndTuning.md
         private static RockController CreateRockObject(RockDefinition rock, SkipConstants constants, string playerId)
         {
             var prefab = Resources.Load<GameObject>("RockObject");
@@ -268,13 +271,8 @@ namespace Game
 
             var controller = go.AddComponent<RockController>();
 
-            // After the controller, because the trail reads IsFlying and Speed off it. The
-            // same constants the throw is about to be simulated with are handed over so the
-            // trail's speed thresholds cannot drift from the launch speed they scale
-            // against — see TrailTuning's remarks on why they are fractions. The stone's
-            // own tint goes to the trail, not the raw player colour, so the ribbon is the
-            // colour of the rock it streams from. After localScale is set above, because
-            // the trail sizes itself off the stone's world width.
+            // The trail is initialised after the controller and localScale, with the same constants and the rock's tint,
+            // so its thresholds cannot drift. doc-ref cb6f docs/4-systems/Presentation.md
             RockTrail.Attach(go, constants, tint);
 
             return controller;

@@ -4,17 +4,8 @@ using UnityEngine;
 
 namespace HeadlessSolver
 {
-    /// <summary>
-    /// Drives the project's real <see cref="Game.DiscContact"/> / <see cref="Game.RigidDisc"/>
-    /// outside Unity, so the skip model can be calibrated in seconds instead of one Editor
-    /// menu click at a time.
-    /// </summary>
-    /// <remarks>
-    /// The run loop here is the one that becomes SkipPhysics.Step in phase 2 — flight under
-    /// gravity at a coarse step, contact sub-stepped finely, attitude integrated throughout.
-    /// Calibrating it here and then porting the settled numbers is the whole point: the
-    /// alternative is guessing in the Editor.
-    /// </remarks>
+    // Drives the real DiscContact / RigidDisc outside Unity, so the skip model can be calibrated in seconds.
+    // doc-ref 9d9d docs/4-systems/Verification.md
     internal static class Program
     {
         // Measured envelope from 124 real throws — docs/Findings-RealSkipPhysics.md §6.

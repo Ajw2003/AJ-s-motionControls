@@ -66,7 +66,7 @@ promise not to look. Android additionally keeps mobile data as its default route
 judges unvalidated, so at a real party guests' traffic and DNS bypass the PC entirely.
 
 **Catch:** the toggle needs administrator rights and ICS re-enables forwarding on every tethering
-start, making it a per-session runtime action. See [../../docs/systems/HostingAndCertificates.md](../../docs/systems/HostingAndCertificates.md)
+start, making it a per-session runtime action. See [../../docs/4-systems/HostingAndCertificates.md](../../docs/4-systems/HostingAndCertificates.md)
 §2 for the scheduled-task approach that avoids a UAC prompt per party.
 
 **Testing note:** turn **off mobile data** on the phone first. Otherwise Android falls back to

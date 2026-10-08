@@ -1,6 +1,6 @@
 # Project state — 2026-09-08
 
-**Tier 3.** Where the project actually stands against [`Roadmap.md`](Roadmap.md). Update this
+**Tier 3.** Where the project actually stands against [`Roadmap.md`](../2-roadmap/Roadmap.md). Update this
 file when a milestone's status changes; update the roadmap only when the *definition* changes.
 
 **Branch:** `claude/mobile-motion-controls-grant-xeg4v9` · **Tree:** clean at session start ·
@@ -17,7 +17,7 @@ whole of the remaining work and now has a plan behind it. Milestone 10 has not s
 first blocker fails before any of the others is reached.
 
 **The centre of gravity moved on 2026-09-08.** Everything left is presentation, and
-[`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) is the document that now drives
+[`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md) is the document that now drives
 it. It settles fifteen decisions across art direction, the UI framework, the in-play HUD, rock
 differentiation and sequencing. Read it before starting anything below.
 
@@ -39,7 +39,7 @@ differentiation and sequencing. Read it before starting anything below.
 **2026-09-27 — Lake Louise environment.** SVG → Blender → shader pipeline built and checked in
 Blender renders; Unity shaders, `LakeLouiseEnvironment` and a scene-creation menu are written
 but not yet compiled or run in the Editor. Status and first-run steps:
-[`plans/lake-louise-overhaul.md`](plans/lake-louise-overhaul.md).
+[`plans/lake-louise-overhaul.md`](../plans/lake-louise-overhaul.md).
 
 ## The one thing that is not what it looks like
 
@@ -47,18 +47,18 @@ but not yet compiled or run in the Editor. Status and first-run steps:
 
 During a throw the TV shows no scoreboard, no turn indicator, no skip counter, no distance. The
 number the whole game is *about* exists only as a `Debug.Log`
-([RockController.cs:281](../Assets/Scripts/Game/RockController.cs:281)) — visible in the Editor
+([RockController.cs:281](../../Assets/Scripts/Game/RockController.cs:281)) — visible in the Editor
 console and nowhere else. A spectator on the couch cannot tell whose turn it is or how the
 current throw is going without asking the person holding the phone.
 
 Everything needed to fix it already fires. `SkipOccurredEvent` is published per bounce,
 `SPECTATE` already carries a per-player score map, and the chase camera settles the stone at
 frame centre with empty sky above it
-([RockLauncher.cs:132-148](../Assets/Scripts/Game/RockLauncher.cs:132)) — so a top-centre counter
+([RockLauncher.cs:132-148](../../Assets/Scripts/Game/RockLauncher.cs:132)) — so a top-centre counter
 has somewhere to live. It is not blocked on anything. It has simply never been built, and its
 absence is easy to miss because every *screen* exists and only the in-match layer does not.
 
-[`plans/presentation-and-ui.md`](plans/presentation-and-ui.md) D4 specifies it, and ranks the
+[`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md) D4 specifies it, and ranks the
 live per-bounce counter as the single highest-value item in the remaining project.
 
 ### What this section used to say
@@ -67,7 +67,7 @@ It used to say milestone 8 read as nearly finished and was not, because all six 
 `SpinMultiplier: 1`, `VerticalMultiplier: 1`, `HorizontalMultiplier: 1` and therefore skip
 identically. That is still **factually true of the assets**, but it is no longer a gap: D5
 settles that the rocks differentiate visually and stay mechanically identical, and
-[`Roadmap.md`](Roadmap.md) milestone 8's acceptance criterion was rewritten to match. Mechanical
+[`Roadmap.md`](../2-roadmap/Roadmap.md) milestone 8's acceptance criterion was rewritten to match. Mechanical
 character is deferred deliberately, along one axis, when there is playtest budget for it.
 
 ---
@@ -87,7 +87,7 @@ current attitude and sends four floats; `PhoneAttitude.ToUnity` performs the sin
 the result is applied to the stone verbatim. No Euler decomposition survives anywhere in the
 path, which is what fixed "the rock's rotation doesn't match my phone".
 
-**The caveat:** [`DeviceMatrix.md`](DeviceMatrix.md) is the authoritative cross-device record and
+**The caveat:** [`DeviceMatrix.md`](../DeviceMatrix.md) is the authoritative cross-device record and
 **every row in it is a `TODO` placeholder.** The file says so itself, prominently. iOS and
 Android are both known to work from real sessions, but the specific models and OS versions exist
 only in the developer's memory. This matters beyond tidiness — the grant kit cites this file as
@@ -123,6 +123,11 @@ before ICS can take it, and gates on both halves of name resolution — the gues
 — because they fail independently. Guest isolation is verified by reading the forwarding flag
 back rather than by trusting that a scheduled task launched. One-time elevated machine setup runs
 itself behind a single UAC prompt.
+
+Since 2026-10-02 the host's internet is shared with guests by default (the lobby setting "Share
+internet" turns it off from the next hotspot start); isolation applies only when it is off.
+Measured on one Samsung S26 only. Not tested yet: a full Play-mode session with sharing on and a
+phone; iPhones; other Android brands; a host whose upstream is Wi-Fi; rejoin after days.
 
 ### 7 — Frictionless join ✅
 
@@ -205,14 +210,14 @@ Not built, and this is now most of the remaining project: the entire art directi
 HUD, the UI Toolkit port, music (`MusicDirector`, crossfading), and the same-frame
 sound-collision scheduler.
 
-**Planned in full as of 2026-09-08.** [`plans/presentation-and-ui.md`](plans/presentation-and-ui.md)
+**Planned in full as of 2026-09-08.** [`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md)
 carries fifteen decisions and a nine-phase sequence. The order matters and is deliberate: **art
 before UI**, because the HUD's colours are chosen against the sky, and building the HUD first
 means picking them against a default skybox that is about to be deleted.
 
 The state the plan starts from, stated plainly because it is easy to under-estimate: the entire
 art content of this project is two FBX files, one shader and two materials.
-[`Scenes/Game.unity`](../Assets/Scenes/Game.unity) holds exactly two GameObjects — a camera and a
+[`Scenes/Game.unity`](../../Assets/Scenes/Game.unity) holds exactly two GameObjects — a camera and a
 directional light — and the lake is a runtime `CreatePrimitive(Plane)`. Every TV screen is legacy
 IMGUI rendered in Unity's built-in Arial.
 
@@ -228,7 +233,7 @@ IMGUI rendered in Unity's built-in Arial.
 ### 10 — Zero-setup distribution ❌
 
 Not started. Phase 2 (automatic certificates) is done and Phase 5's installer script exists but
-has never been compiled. The four blockers in [`ZeroSetupPlan.md`](ZeroSetupPlan.md) are
+has never been compiled. The four blockers in [`ZeroSetupPlan.md`](../ZeroSetupPlan.md) are
 unchanged:
 
 1. Node is not bundled — hard failure on a machine without it
@@ -246,7 +251,7 @@ milestone is downstream of fixing it.
 
 ### Documentation — repaired today, watch for regression
 
-The 2026-09-08 audit ([`Findings-DocumentationAudit.md`](Findings-DocumentationAudit.md)) found
+The 2026-09-08 audit ([`Findings-DocumentationAudit.md`](../Findings-DocumentationAudit.md)) found
 20 broken links, caused by commit `0b7c500` deleting 34 documents that the survivors still
 pointed at. The decision taken was **restore nothing** — surviving content was rewritten into
 this five-tier structure and dead links removed rather than repaired.
@@ -255,8 +260,8 @@ Two consequences to be aware of:
 
 - **`Rule-RenderQR.md` is gone and was binding.** Its substance — always render a QR for
   network/URL joining, never ask someone to type or hunt for one — is preserved in
-  [`Roadmap.md`](Roadmap.md) milestone 7 and in
-  [`systems/HostingAndCertificates.md`](systems/HostingAndCertificates.md). The rule stands; the
+  [`Roadmap.md`](../2-roadmap/Roadmap.md) milestone 7 and in
+  [`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md). The rule stands; the
   document does not.
 - **The tuning-drift finding is gone.** `Findings-TuningAudit.md` recorded that 11 of 19
   `SkipTuning` fields had drifted between code and assets. That finding predates the model
@@ -290,12 +295,14 @@ Worth separating, because the difference is where surprises come from.
 
 | Claim | Evidence |
 |---|---|
-| Relay routing, identity stamping, reconnect, DNS, funnel, connectivity probes | `cd relay && npm test` — 45 pass |
+| Relay routing, identity stamping, reconnect, DNS, funnel, connectivity probes | `cd relay && npm test` — 55 pass (2026-10-02) |
 | Event system survives scene loads | `RockSkipping/Verify/Run Event System Verification` |
 | Physics energy invariant holds | `RockSkipping/Verify/Print Skip Curve` |
 | `PhoneAttitude` and `SkipPhysics` behaviour | NUnit EditMode tests in `Assets/Tests/EditMode/` |
 | Offline play works | Direct observation, plus `deploy/spike/hotspot-offline-spike.ps1` as an unattended regression check |
-| Guest isolation | Forwarding flag read back, not assumed |
+| Guest isolation (sharing off only) | Forwarding flag read back, not assumed |
+| Internet sharing (default) | Samsung S26 rejoined itself in 5-15 s; Play-mode session, iPhones, other Android brands, Wi-Fi upstream, rejoin after days **not tested** |
+| iPhone join fixes (#77: #78–#81) | Relay half `npm test` 55/55 and a live run, 2026-10-02; 2026-10-02 Play-mode run (owner-reported): iPhone 17 joined from another Wi-Fi with mobile data on, host had no upstream, played a match; Console showed `security: Wpa2`. Same SSID across launches and Wi-Fi off/on rejoin **not reported**. See `Findings-iPhoneWifiJoin-2026-10-02.md` |
 | Five-player cross-platform match | One real session — **not** recorded per-device; see the `DeviceMatrix.md` caveat |
 | Six rocks play differently | **Not verified, and currently false** |
 | A stranger can install and play | **Never attempted** |

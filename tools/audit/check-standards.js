@@ -1,22 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
-/*
- * Coding-standards audit for RockSkipping.
- *
- * Plain Node, zero dependencies. Walks the repo, runs a flat list of named
- * checks, prints one PASS/FAIL line per check with a count, and exits
- * non-zero if any check fails.
- *
- * This file is meant to be read and edited by a human without an agent
- * present -- keep each check a small, self-contained function that returns
- * { pass, count, detail } and is registered in the CHECKS list at the
- * bottom.
- *
- * Comment DENSITY is reported as an informational number only and must
- * NEVER cause a failing check -- high density is this codebase's deliberate
- * strength.
- */
+// Zero-dependency coding-standards audit; comment density is informational and must never fail a check.
+// doc-ref 1334 docs/4-systems/Verification.md
 
 const fs = require("fs");
 const path = require("path");

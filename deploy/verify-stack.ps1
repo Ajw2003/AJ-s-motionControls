@@ -280,15 +280,9 @@ function Test-Relay {
     return $relay
 }
 
-# The certificate's SAN never covers 127.0.0.1, and probing loopback is a liveness check on a
-# process this script just started rather than a trust decision - the same reasoning, and the
-# same narrow scope, as LocalServices.AcceptAnyCertificate.
-#
-# A compiled delegate rather than the usual `= { $true }` scriptblock. .NET invokes the
-# validation callback on a TLS worker thread, which under -NonInteractive has no runspace to
-# run PowerShell in, so the scriptblock form fails with "There is no Runspace available to run
-# scripts in this thread" - surfaced as a bare "the underlying connection was closed", which
-# reads exactly like the relay refusing the connection.
+# Loopback probing is a liveness check, so any certificate is accepted through a compiled delegate,
+# because a scriptblock has no runspace on the TLS worker thread.
+# doc-ref 335c docs/4-systems/HostingAndCertificates.md
 if (-not ('RockSkipping.LoopbackTrust' -as [type])) {
     Add-Type -TypeDefinition @'
 namespace RockSkipping {

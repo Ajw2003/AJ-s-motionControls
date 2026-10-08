@@ -1,17 +1,8 @@
 using System;
 
-// Minimal managed stand-ins for the handful of UnityEngine maths types the physics core
-// touches, so the REAL physics files compile and run on plain dotnet.
-//
-// Why a shim rather than referencing UnityEngine.CoreModule.dll: several Quaternion members
-// (Inverse, FromToRotation, AngleAxis, Euler) are native ECalls into the Unity player. The
-// DLL loads fine but throws "ECall methods must be packaged into a system module" the moment
-// one is called. Everything the physics core needs is ordinary maths, so it is reimplemented
-// here from Unity's own documented formulas.
-//
-// These MUST match Unity's conventions exactly or the harness would validate a solver that
-// is not the one that ships. `SelfTest()` checks that, and Program runs it before anything
-// else — see the assertions there for what "matching" is pinned to.
+// Minimal UnityEngine maths stand-ins so the real physics compiles on plain dotnet;
+// SelfTest() pins them to Unity's conventions.
+// doc-ref 0e68 docs/4-systems/Verification.md
 namespace UnityEngine
 {
     public static class Mathf

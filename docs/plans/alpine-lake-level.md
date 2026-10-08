@@ -123,7 +123,7 @@ Render-order rules from the existing code stay in force:
 5. Tune colours, fog and flare live against the reference, taking Game-view screenshots through MCP.
 
 ### 4. Docs
-- `docs/ProjectState.md`: a new Alpine Lake scene now exists.
+- `docs/3-state/ProjectState.md`: a new Alpine Lake scene now exists.
 - `docs/plans/presentation-and-ui.md` D12: note that the preset is delivered without a catalog.
 - A short `tools/art/README.md` on regenerating the meshes. Re-exporting the FBX updates the scene
   automatically.

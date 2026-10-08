@@ -3,23 +3,8 @@ using UnityEngine;
 
 namespace Game
 {
-    /// <summary>
-    /// Turns AimPreview's placeholder lake into Lake Louise: the Blender-built valley and its
-    /// mirrored reflection, turquoise see-through water, and a sky that mirrors itself below
-    /// the horizon.
-    /// </summary>
-    /// <remarks>
-    /// Placed in a scene rather than looked up from Resources, so the ordinary Bootstrap scene
-    /// is untouched and "Resources stays short". <c>RockSkipping/Environments/Create Lake
-    /// Louise Scene</c> makes that scene and fills both fields. AimPreview finds this component
-    /// while building its placeholder scene and hands over the water and sky; everything built
-    /// here is parented to AimPreview, which Bootstrap marks DontDestroyOnLoad, so it survives
-    /// the Lobby/Game/Results loads exactly as the water does.
-    ///
-    /// All look numbers come from <see cref="look"/> (LakeLouiseLook.json). The Blender preview
-    /// in tools/art/lake-louise reads the same file, so the preview and the game cannot drift.
-    /// The pipeline and the reasons behind it: docs/plans/lake-louise-overhaul.md.
-    /// </remarks>
+    // Lives in a scene, not Resources; AimPreview hands it the water and sky, and its look numbers come from
+    // LakeLouiseLook.json shared with the Blender preview. doc-ref e918 docs/4-systems/Presentation.md
     public class LakeLouiseEnvironment : MonoBehaviour
     {
         [Tooltip("Assets/Environments/LakeLouise/LakeLouise.fbx")]
@@ -106,18 +91,8 @@ namespace Game
             return material;
         }
 
-        /// <summary>
-        /// Builds the valley and its reflection under <paramref name="parent"/>, scaled up by
-        /// scenery_scale about the camera, and restyles the sky. <paramref name="skyMaterial"/>
-        /// may be null (AimPreview logs why); the scenery is still built, but the water then
-        /// shows flat horizon colour where sky should reflect.
-        /// </summary>
-        /// <remarks>
-        /// The scale exists because throws reached the mountains at their built size. Scaling
-        /// about the camera keeps every view angle, so the look is unchanged from the throw
-        /// position; the water plane and the camera's far clip must grow with it, or the lake
-        /// ends in a hard edge and the glacier is clipped away.
-        /// </remarks>
+        // The scenery is scaled about the camera so view angles are unchanged; the water plane and far clip must grow
+        // with it or the lake ends in an edge. doc-ref 8efd docs/4-systems/Presentation.md
         public void Build(Transform parent, Material skyMaterial, float waterY, Camera camera, Transform water)
         {
             if (!TryLoadLook()) return;
@@ -259,16 +234,8 @@ namespace Game
             material.SetFloat("_HazeMax", _look.haze_max);
         }
 
-        /// <summary>
-        /// The turn that puts the valley in front of the camera, measured on the raw instance.
-        /// </summary>
-        /// <remarks>
-        /// The first export imported turned 180 degrees about y - behind the camera and
-        /// mirrored left-right - because its axis setting was reasoned rather than observed
-        /// (see export_fbx in tools/art/lake-louise/build_lake_louise.py, now fixed). A 180 degree
-        /// turn is corrected here with a warning, so an old or mis-set FBX still plays; anything
-        /// else is an error, since no rotation about y can fix it.
-        /// </remarks>
+        // The valley's turn is measured on the raw instance; a 180-degree error is corrected with a
+        // warning, anything else is an error. doc-ref 2ccd docs/4-systems/Presentation.md
         private static Quaternion CorrectiveTurn(GameObject scenery)
         {
             var forestLeft = scenery.transform.Find("Forest_Left");

@@ -10,12 +10,58 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-03 — Long reasoning lives in the systems docs, not in code comments
+
+**Context.** 234 comment blocks of 500+ characters were spread over 94 source files, and the docs lived in an older five-tier layout.
+
+**Decision.** Docs moved into the six numbered tiers. Every long block moved verbatim into the `docs/4-systems/` doc that owns it, with a `doc-ref <id> <path>` pointer left in the code. Three systems docs are new: Audio, Presentation, Verification, plus PhoneController. Plan: `docs/plans/comment-harvest-worklist.txt`; tracking issue #82.
+
+**Why.** The code stays lean and the reasoning stays checkable: `docref check` reports every pointer resolving, and the code was verified unchanged apart from comments. Moved text was kept verbatim, then sorted into each doc's How it works / Invariants / Traps sections (#87).
+
+**Status.** Standing.
+
+## 2026-10-02 — Share the host's internet with guests by default
+
+**Context.** Guests were isolated (forwarding off). Android only treats the hotspot as a normal
+network when it has real internet, so with isolation phones showed "no internet" and did not
+rejoin by themselves. Three fences meant to block the LAN while sharing failed on this machine (a
+firewall rule, a WFP filter at the forward layer, a WFP filter at the inbound-packet layer), so
+sharing is unfenced. Evidence:
+[`Findings-HotspotForwardingAndInternet-2026-10-01.md`](../Findings-HotspotForwardingAndInternet-2026-10-01.md).
+
+**Decision.** Ayden, 2026-10-02: share the host's internet with hotspot guests by default. Guests
+reaching the home router/LAN is no new exposure, since party guests already use the home Wi-Fi;
+a sensitive venue can run the host offline. A lobby setting "Share internet" turns it off from
+the next hotspot start. This supersedes the guest-isolation-by-default stance. No earlier entry in
+this log states it, so there is no Status line to flip; it lived in
+[`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) and
+[`SecurityReview.md`](../SecurityReview.md), both updated.
+
+**Why.** Measured on a Samsung S26: with sharing, it rejoined by itself within 5-15 s when no
+other known Wi-Fi was in range, and stayed on home Wi-Fi when that was in range. Built:
+`relay/dns.js` (`fallbackNames`, `fallbackMs`) and `relay/server.js` (`SHARE_INTERNET=1`) forward
+other names to the host's first usable IPv4 resolver, and forward the phones' connectivity-probe
+names too, answering them locally only if upstream is silent for 1.5 s; the game name is always
+answered locally. `hotspot/hotspot-control.ps1 -ShareInternet` skips the forwarding-disable task
+and reports `shared` (measured: Windows keeps forwarding Enabled by itself).
+`MatchSettingsStore.shareInternet` (default true), the `MatchSettings` toggle, `LocalServices`
+and `HotspotService` carry it through.
+
+**Alternatives rejected.** Keep isolation as the default: phones do not rejoin by themselves.
+Fence the LAN while sharing: three attempts failed (above); no positive control was run, so this
+shows only that those filters did not work here.
+
+**Status.** Standing. Not tested yet: a full Play-mode session with sharing on and a phone;
+iPhones; other Android brands; a host whose upstream is Wi-Fi; rejoin after days.
+
+---
+
 ## 2026-09-08 — Stop the relay/direct flapping by deleting the WebRTC transport
 
 **Context.** The Unity console showed `[PeerLink] <id>: DIRECT` interleaved with join logs about
 twice a second, mid-match. Root cause: a phone re-joining the room continuously, with the WebRTC
 peer link faithfully renegotiating from scratch each time — the transport was the symptom, not
-the cause. See [`archive/plans/remove-direct-transport.md`](archive/plans/remove-direct-transport.md).
+the cause. See [`archive/plans/remove-direct-transport.md`](../archive/plans/remove-direct-transport.md).
 
 **Decision.** Fix the join ping-pong, then delete the WebRTC DataChannel transport (`PeerLink.cs`,
 `com.unity.webrtc`) entirely rather than keep maintaining a peer-to-peer path nothing required.
@@ -34,7 +80,7 @@ the symptom.
 **Context.** `local-ip.sh`, the third-party service the certificate hostname was borrowed from,
 went permanently dead at the DNS layer — no drop-in replacement exists (`local-ip.co`,
 `traefik.me`, `sslip.io`, `nip.io` all checked and rejected; see
-[`plans/magic-domain-replacement.md`](plans/magic-domain-replacement.md)). A fresh install could no
+[`plans/magic-domain-replacement.md`](../plans/magic-domain-replacement.md)). A fresh install could no
 longer get a certificate at all.
 
 **Decision.** Deprecate LAN mode (it required the phone to be on the host's network, which
@@ -52,7 +98,7 @@ see the 2026-08-21 entry below on why Hotspot was already preferred).
 **Status.** Standing. Executed and implemented in `relay/dns.js`, `CertificateProvider.cs`, and
 `.github/workflows/renew-cert.yml`. Superseded the certificate design described (now stale) in
 [`Decision-OfflineHosting.md`](Decision-OfflineHosting.md) and
-[`OfflineSetup.md`](OfflineSetup.md) — both carry an update notice pointing here.
+[`OfflineSetup.md`](../OfflineSetup.md) — both carry an update notice pointing here.
 
 ---
 

@@ -23,29 +23,9 @@
 // Pure math — no browser APIs below this line until the MotionSource section.
 // ---------------------------------------------------------------------------
 
-// --------------------------------------------------------------- quaternions
-//
-// Orientation is handled as quaternions rather than as three independent Euler
-// deltas, and that is not a stylistic preference — the Euler version was broken in
-// the exact pose this game is played in.
-//
-// DeviceOrientationEvent reports intrinsic Z-X'-Y'' Tait-Bryan angles with beta in
-// [-180, 180) and gamma confined to [-90, 90). beta = 90 is "phone upright, screen
-// facing you", which is how you hold a phone to aim at a television. So the grip
-// reference sits ON the gimbal singularity, not near it, and three things go wrong at
-// once: alpha and gamma become individually indeterminate (only their sum is real, so
-// sensor noise alone swings aim by tens of degrees); the browser's branch selection
-// flips and injects genuine 180-degree steps; and beta's derivative mirrors, so
-// pitching further back starts reporting as pitching forward.
-//
-// Differencing quaternions has none of that. The delta from grip to now is exact at
-// every pose, and — this is the part that matters — it is never decomposed at all.
-// It goes on the wire as four floats and Unity applies it to the stone directly, so
-// there is no three-angle parameterisation anywhere for the singularity to break.
-// An earlier version differenced quaternions and THEN decomposed the delta into
-// aim/attack/roll, which fixed the conditioning but kept a lossy re-composition (and
-// two hand-found sign flips) on the Unity side. That is what "the rock's rotation
-// doesn't match my phone" was.
+// Orientation is handled as quaternions end to end, because the Euler version broke at the grip pose,
+// which sits on the gimbal singularity.
+// doc-ref 6102 docs/4-systems/MotionPipeline.md
 
 const DEG2RAD = Math.PI / 180;
 
@@ -115,16 +95,8 @@ export function quaternionFromRotationVector(rx, ry, rz) {
   return { w: Math.cos(half), x: rx * scale, y: ry * scale, z: rz * scale };
 }
 
-/**
- * Normalized lerp from `a` toward `b` by `t` (0..1), shortest path.
- *
- * The low-pass primitive continuous calibration tracking is built on: nlerp rather
- * than slerp because this runs every motion sample (up to 60Hz) while Settling, and
- * at the small per-sample steps a tracking filter takes, nlerp and slerp are
- * indistinguishable but nlerp costs no trig. The dot-product flip is what stops a
- * lerp between q and -q (the same rotation, opposite sign) taking the long way
- * around and momentarily reporting a near-180-degree reference jump.
- */
+// Normalized lerp with a shortest-path flip, the low-pass primitive for continuous calibration tracking.
+// doc-ref 87f9 docs/4-systems/MotionPipeline.md
 export function quaternionNlerp(a, b, t) {
   const flip = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z < 0 ? -1 : 1;
   return quaternionNormalize({
@@ -159,31 +131,14 @@ export function rotateVectorByQuaternion(q, v) {
   };
 }
 
-/**
- * The rotation that takes `qRef` to `qNow`, expressed in the device's own frame.
- *
- * This is the entire control scheme. Identity means the phone has not moved since the
- * player tapped, and Unity draws that as a flat stone facing forward; every physical
- * degree of rotation from there is one degree on the stone.
- *
- * Left as a quaternion on purpose. Anything that turns it into angles — here or on the
- * far side — reintroduces a parameterisation that has a pole in it, and the pole sits
- * exactly where this game is played. Unity applies the four floats directly.
- */
+// The rotation from qRef to qNow in the device frame, kept as a quaternion and sent as four floats.
+// doc-ref 3086 docs/4-systems/MotionPipeline.md
 export function orientationDelta(qRef, qNow) {
   return quaternionNormalize(quaternionMultiply(quaternionConjugate(qRef), qNow));
 }
 
-/**
- * How far a device-frame attitude has tilted off level, as pitch/roll degrees.
- *
- * Rotates the device's own forward axis (+z, out through the glass) by the attitude
- * and reads the two axes of tilt off the result via atan2/asin — the same
- * "rotate a known vector, read the angle back" shape as gravityInDeviceFrame, not a
- * second decomposition of the quaternion itself. Shared by D2 (the live tilt bubble,
- * which only needs a pixel offset) and D8 (the post-throw recap's "12° low"), so the
- * geometry exists in exactly one place.
- */
+// Tilt off level as pitch/roll degrees, shared by the tilt bubble and the post-throw recap.
+// doc-ref 230e docs/4-systems/MotionPipeline.md
 export function tiltAngleDeg(attitude) {
   const q = attitude ?? { w: 1, x: 0, y: 0, z: 0 };
   const forward = rotateVectorByQuaternion(q, { x: 0, y: 0, z: 1 });
@@ -205,19 +160,8 @@ export function magnitude(v) {
   return Math.hypot(v.x, v.y, v.z);
 }
 
-/**
- * How fast the phone is spinning about its own screen normal, in deg/s. Signed.
- *
- * The single definition of "spin" in the codebase, and the axis a player means by the
- * word: the frisbee flick, the one that makes a stone skip. `rotationRate.alpha` is
- * the rate about device Z, which is the axis out through the glass.
- *
- * This used to be hypot(alpha, beta, gamma) — unsigned, and across all three axes at
- * once. Two things were wrong with that. The arm's swing is a far larger rotation than
- * the wrist's twist, so the number mostly reported how hard the phone was being waved
- * rather than how it was spun. And with the sign discarded, every stone turned the same
- * way no matter which way the wrist actually went.
- */
+// The one definition of spin: the signed rate about the screen normal, in deg/s.
+// doc-ref ea00 docs/4-systems/MotionPipeline.md
 export function screenSpinRate(rate) {
   return rate?.alpha ?? 0;
 }
@@ -234,37 +178,13 @@ export function normalize01(value, min, max) {
 
 export const GRAVITY_MS2 = 9.80665;
 
-/**
- * Longest gap between two samples that is still worth integrating across, in ms.
- *
- * At 60Hz samples land ~17ms apart. A gap this long means the browser stopped
- * delivering events — the phone was backgrounded, the screen locked, the tab was
- * throttled — and the motion during it was never measured. Integrating velocity or
- * attitude across that invents a swing out of a pause, which reads as a throw the
- * player never made.
- *
- * Not to be confused with ThrowTuning.spinEnvelopeTauMs, which is also 250 and means
- * something entirely unrelated.
- */
+// Longest sample gap worth integrating across, so a backgrounded page cannot invent a swing out of a pause.
+// doc-ref 43e3 docs/4-systems/MotionPipeline.md
 export const MAX_SAMPLE_GAP_MS = 250;
 
-/**
- * The gravity component an accelerometer reads, in device coordinates, for a device
- * at the given attitude.
- *
- * An accelerometer at rest reads the reaction force, so it reports +g along whichever
- * device axis points UP — flat on a table, that is +z. Rotating world up into the
- * device frame and scaling by g reproduces exactly that, with no estimation involved.
- *
- * This is what replaces GravityFilter wherever orientation is available, and it is
- * the single biggest correction to how hard a throw measures. The filter estimates
- * gravity in DEVICE coordinates, so when the phone turns quickly the gravity vector
- * sweeps through that frame faster than the filter can track — and the lag comes out
- * as spurious "user acceleration" of up to ~19.6 m/s^2. Every throw involves a large
- * wrist rotation regardless of how hard it was thrown, so that error sat under every
- * reading as a big effort-independent offset, compressing genuinely different throws
- * into the top of the range. Subtracting a computed vector has no lag to leak.
- */
+// Gravity as an accelerometer reads it at a given attitude, computed rather than filtered
+// so a fast wrist rotation leaks no lag into the throw measurement.
+// doc-ref 6874 docs/4-systems/MotionPipeline.md
 export function gravityInDeviceFrame(q, g = GRAVITY_MS2) {
   return rotateVectorByQuaternion(quaternionConjugate(q), { x: 0, y: 0, z: g });
 }
@@ -374,18 +294,8 @@ export function readAcceleration(event) {
   return { x: a.x ?? 0, y: a.y ?? 0, z: a.z ?? 0 };
 }
 
-/**
- * The hardware's own gravity-free acceleration, or null where it does not exist.
- *
- * The other half of the iOS guard, and it does not weaken it. The failure the guard
- * exists to prevent is *depending* on `event.acceleration`, which reads undefined on
- * every iPhone; returning null and letting the caller fall back is the opposite of
- * depending on it. When it is present it is fused in hardware, so it has none of the
- * rotation artefact that both software methods have to work around.
- *
- * Confirmed on device: returns null throughout on iOS, so the iOS path always falls
- * through to exact quaternion subtraction. See docs/DeviceMatrix.md.
- */
+// The hardware's gravity-free acceleration or null, so iOS falls through to quaternion subtraction without depending on event.acceleration.
+// doc-ref 5a07 docs/4-systems/MotionPipeline.md
 export function readLinearAcceleration(event) {
   const a = event.acceleration;
   if (!a) return null;
@@ -517,7 +427,7 @@ export class MotionSource {
     this.referenceQuaternion = null;
     this.orientationQuaternion = { w: 1, x: 0, y: 0, z: 0 };
 
-    // Settling/Aiming reference state machine — see docs/systems/MotionPipeline.md
+    // Settling/Aiming reference state machine — see docs/4-systems/MotionPipeline.md
     // and _onMotion. Fires onCalibrationStateChange exactly once per flip, mirroring
     // ThrowController.onStateChange's edge-triggered shape rather than polling.
     this.calState = 'settling';
@@ -528,20 +438,18 @@ export class MotionSource {
     // on a rock (issue #23) — there, the zero is the explicit recentre() alone. The state
     // machine and its badge edges still run either way; only the nlerp is gated.
     this.trackingEnabled = true;
+
+    // While a throw is armed, once the phone has gone Aiming it must stay Aiming until
+    // the throw ends: a pause at the top of the backswing is not "the phone is at rest",
+    // and re-settling there slid the reference to the backswing pose (issue #53).
+    // Settling -> Aiming is unaffected. ThrowController sets this in arm()/cancel().
+    this.holdAimLock = false;
     this._aimRun = 0;
     this._settleRun = 0;
     this.onCalibrationStateChange = onCalibrationStateChange ?? (() => {});
 
-    // Attitude carried forward by the gyroscope between orientation events, and the
-    // timestamp it is current as of.
-    //
-    // deviceorientation and devicemotion are separate, unsynchronised streams. The
-    // old code read whatever orientation happened to be latched when a motion sample
-    // arrived, so on a device whose orientation event is slower, the same triple got
-    // stamped onto several consecutive samples — a staircase in the aim stream,
-    // worst exactly when the phone is moving fastest. rotationRate arrives on the
-    // motion event at motion rate, so integrating it across the gap costs nothing and
-    // removes the staircase where it is most visible.
+    // Attitude is carried forward by the gyroscope between orientation events, removing the staircase in the aim stream.
+    // doc-ref 9b76 docs/4-systems/MotionPipeline.md
     this._fusedQuaternion = { w: 1, x: 0, y: 0, z: 0 };
     this._fusedAtMs = null;
     this._orientationAtMs = null;
@@ -570,7 +478,7 @@ export class MotionSource {
    * `calibrate()` did to the reference — used by the two non-throw call sites
    * (the lobby preview aim, and the RE-CENTRE button) that still want an explicit
    * "zero right now" rather than the continuous Settling/Aiming tracking arm() relies
-   * on. See docs/systems/MotionPipeline.md.
+   * on. See docs/4-systems/MotionPipeline.md.
    */
   recentre() {
     this.referenceQuaternion = this._fusedQuaternion;
@@ -648,16 +556,8 @@ export class MotionSource {
     this._fusedQuaternion = quaternionNormalize(quaternionMultiply(this._fusedQuaternion, step));
   }
 
-  /**
-   * The Settling/Aiming reference state machine. See docs/systems/MotionPipeline.md.
-   *
-   * Lazy-inits the reference on the very first sample. While Settling, the reference
-   * nlerps toward the current fused attitude by a tau-derived alpha, so it quietly
-   * follows wherever the phone actually rests; while Aiming it is left alone. Gated
-   * on rotation rate rather than a timer, with a hysteresis pair of thresholds and
-   * debounce sample counts — the same threshold-and-hysteresis idiom
-   * ThrowTuning's swing detector already uses, applied to the reference instead.
-   */
+  // The Settling/Aiming reference state machine; the rotation-rate gating and hysteresis are explained in the doc.
+  // doc-ref 5d35 docs/4-systems/MotionPipeline.md
   _advanceCalibration(rotationRate, prevFusedAtMs, tMs) {
     if (this.referenceQuaternion === null) {
       this.referenceQuaternion = this._fusedQuaternion;
@@ -690,7 +590,9 @@ export class MotionSource {
       }
     } else {
       // Aiming: the reference is frozen — deliberately not touched here.
-      if (rateMag < tuning.settleRateThresholdDegS) {
+      if (this.holdAimLock) {
+        this._settleRun = 0; // armed throw: stillness here is a backswing pause (#53)
+      } else if (rateMag < tuning.settleRateThresholdDegS) {
         this._settleRun++;
         if (this._settleRun >= tuning.settleSamples) {
           this.calState = 'settling';
