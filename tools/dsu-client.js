@@ -12,6 +12,26 @@ const { buildPacket, parsePacket, parsePadData, MessageType, SlotState } = requi
   path.join(__dirname, '..', 'relay', 'dsu.js'),
 );
 
+// DualShock 4 names, as an emulator's DSU input view shows them.
+const DSU_BUTTON_NAMES = [
+  ['buttons1', 0x80, 'Left'],
+  ['buttons1', 0x40, 'Down'],
+  ['buttons1', 0x20, 'Right'],
+  ['buttons1', 0x10, 'Up'],
+  ['buttons1', 0x08, 'Options'],
+  ['buttons1', 0x04, 'R3'],
+  ['buttons1', 0x02, 'L3'],
+  ['buttons1', 0x01, 'Share'],
+  ['buttons2', 0x80, 'Square'],
+  ['buttons2', 0x40, 'Cross'],
+  ['buttons2', 0x20, 'Circle'],
+  ['buttons2', 0x10, 'Triangle'],
+  ['buttons2', 0x08, 'R1'],
+  ['buttons2', 0x04, 'L1'],
+  ['buttons2', 0x02, 'R2'],
+  ['buttons2', 0x01, 'L2'],
+];
+
 const port = Number(process.argv[2]) || 26760;
 const seconds = Number(process.argv[3]) || 10;
 const CLIENT_ID = 0x41a3c11e;
@@ -62,7 +82,12 @@ socket.bind(0, '127.0.0.1', () => {
     for (const [slot, { count, last }] of perSlot) {
       const a = last.accel.map((n) => n.toFixed(2)).join(' ');
       const g = last.gyro.map((n) => n.toFixed(0)).join(' ');
-      console.log(`slot ${slot + 1}: ${count} packets  accel(g) ${a}  gyro(deg/s) ${g}`);
+      const held = DSU_BUTTON_NAMES.filter(([byte, bit]) => last[byte] & bit).map(([, , n]) => n);
+      if (last.home) held.push('PS/Home');
+      console.log(
+        `slot ${slot + 1}: ${count} packets  accel(g) ${a}  gyro(deg/s) ${g}` +
+          `  buttons [${held.join(' ')}]  sticks ${last.sticks.join(' ')}`,
+      );
     }
   }, 1000);
 

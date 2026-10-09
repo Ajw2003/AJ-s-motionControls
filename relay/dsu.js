@@ -132,11 +132,80 @@ function phoneToDsuAxes(accel, gyro) {
 const PAD_DATA_PAYLOAD_BYTES = 84; // 100-byte packets with the header
 const STICK_CENTRE = 128;
 
+// Gamepad bits from controller/js/gamepad-state.js (Xbox positions), mirrored here because
+// the relay cannot import the phone's ES module. test-dsu.js checks both lists agree.
+const PadBit = Object.freeze({
+  south: 1 << 0,
+  east: 1 << 1,
+  west: 1 << 2,
+  north: 1 << 3,
+  lb: 1 << 4,
+  rb: 1 << 5,
+  back: 1 << 6,
+  start: 1 << 7,
+  home: 1 << 8,
+  ls: 1 << 9,
+  rs: 1 << 10,
+  up: 1 << 11,
+  down: 1 << 12,
+  left: 1 << 13,
+  right: 1 << 14,
+  lt: 1 << 15,
+  rt: 1 << 16,
+});
+
+// DSU uses the DualShock 4's buttons, by position: Square is west, Cross south, Circle east,
+// Triangle north. Bit values within each of the two button bytes.
+const DSU_BUTTONS_1 = [
+  ['left', 0x80],
+  ['down', 0x40],
+  ['right', 0x20],
+  ['up', 0x10],
+  ['start', 0x08], // Options
+  ['rs', 0x04], // R3
+  ['ls', 0x02], // L3
+  ['back', 0x01], // Share
+];
+const DSU_BUTTONS_2 = [
+  ['west', 0x80], // Square
+  ['south', 0x40], // Cross
+  ['east', 0x20], // Circle
+  ['north', 0x10], // Triangle
+  ['rb', 0x08], // R1
+  ['lb', 0x04], // L1
+  ['rt', 0x02], // R2
+  ['lt', 0x01], // L2
+];
+// The analog bytes, in packet order. Touch buttons are on or off, so each is 0 or 255.
+const DSU_ANALOG_ORDER = [
+  'left',
+  'down',
+  'right',
+  'up',
+  'west',
+  'south',
+  'east',
+  'north',
+  'rb',
+  'lb',
+  'rt',
+  'lt',
+];
+
+/** A stick axis in -1..1 to DSU's byte: 128 is centre, x grows rightward, y upward. */
+function stickByte(value) {
+  return Math.max(0, Math.min(255, Math.round(STICK_CENTRE + value * 127)));
+}
+
 /**
- * One pad-data message for a slot. Buttons, sticks and touch are neutral until the
- * on-screen gamepad exists (#4, #5); this carries motion only.
+ * One pad-data message for a slot: motion from `sample`, buttons and sticks from `gamepad`
+ * (a PAD state from pad-hub.js, or null before the phone has sent one, which reads as
+ * nothing pressed and sticks centred).
  */
-function padDataPayload(slot, packetNumber, sample) {
+function padDataPayload(slot, packetNumber, sample, gamepad = null) {
+  const buttons = gamepad ? gamepad.buttons : 0;
+  const sticks = gamepad ? gamepad.sticks : [0, 0, 0, 0];
+  const isDown = (name) => (buttons & PadBit[name]) !== 0;
   const payload = Buffer.alloc(PAD_DATA_PAYLOAD_BYTES);
   let o = 0;
   payload.writeUInt32LE(MessageType.PAD_DATA, o);
@@ -145,12 +214,16 @@ function padDataPayload(slot, packetNumber, sample) {
   payload.writeUInt8(1, o++); // connected
   payload.writeUInt32LE(packetNumber >>> 0, o);
   o += 4;
-  o += 2; // button bitmasks
-  o += 2; // HOME, touch button
-  for (let i = 0; i < 4; i++) payload.writeUInt8(STICK_CENTRE, o++); // LX, LY, RX, RY
-  o += 4; // analog D-pad
-  o += 4; // analog face buttons
-  o += 4; // analog shoulders and triggers
+  let byte1 = 0;
+  for (const [name, bit] of DSU_BUTTONS_1) if (isDown(name)) byte1 |= bit;
+  let byte2 = 0;
+  for (const [name, bit] of DSU_BUTTONS_2) if (isDown(name)) byte2 |= bit;
+  payload.writeUInt8(byte1, o++);
+  payload.writeUInt8(byte2, o++);
+  payload.writeUInt8(isDown('home') ? 1 : 0, o++);
+  o += 1; // touchpad button: no touchpad
+  for (const value of sticks) payload.writeUInt8(stickByte(value), o++); // LX, LY, RX, RY
+  for (const name of DSU_ANALOG_ORDER) payload.writeUInt8(isDown(name) ? 255 : 0, o++);
   o += 12; // two touch points, inactive
   payload.writeBigUInt64LE(BigInt(sample.ts), o);
   o += 8;
@@ -182,6 +255,8 @@ function parsePadData(body) {
     packetNumber: body.readUInt32LE(at(16)),
     buttons1: body.readUInt8(at(20)),
     buttons2: body.readUInt8(at(21)),
+    home: body.readUInt8(at(22)),
+    analog: [...body.subarray(at(28), at(40))],
     sticks: [
       body.readUInt8(at(24)),
       body.readUInt8(at(25)),
@@ -295,7 +370,31 @@ function createDsuServer({
     }
   });
 
+  // The newest motion per slot, so a button press can go out at once with current motion
+  // rather than waiting for the next sample.
+  const latestSample = new Array(4).fill(null);
+
+  function currentGamepad(slot) {
+    const pad = padHub.snapshot()[slot];
+    return pad ? pad.gamepad : null;
+  }
+
   function onSample(slot, sample) {
+    latestSample[slot] = sample;
+    broadcast(slot, sample, currentGamepad(slot));
+  }
+
+  function onPad(slot, gamepad) {
+    // Before the first motion sample, report the phone at rest: flat, gravity down its back.
+    const sample = latestSample[slot] || { ts: now() * 1000, accel: [0, 0, 1], gyro: [0, 0, 0] };
+    broadcast(slot, sample, gamepad);
+  }
+
+  function onDisconnect(slot) {
+    latestSample[slot] = null;
+  }
+
+  function broadcast(slot, sample, gamepad) {
     const t = now();
     for (const [key, client] of clients) {
       if (t - client.lastSeen > CLIENT_TIMEOUT_MS) {
@@ -304,10 +403,16 @@ function createDsuServer({
         continue;
       }
       if (!client.allSlots && !client.slots.has(slot)) continue;
-      send(padDataPayload(slot, client.packetNumber++, sample), client.address, client.port);
+      send(
+        padDataPayload(slot, client.packetNumber++, sample, gamepad),
+        client.address,
+        client.port,
+      );
     }
   }
   padHub.events.on('sample', onSample);
+  padHub.events.on('pad', onPad);
+  padHub.events.on('disconnect', onDisconnect);
 
   socket.on('error', (err) => {
     // Never fatal to the relay: a busy port (another DSU server, a second relay) only
@@ -316,6 +421,8 @@ function createDsuServer({
     stats.listening = false;
     log(`[dsu] disabled: ${err.message}`);
     padHub.events.off('sample', onSample);
+    padHub.events.off('pad', onPad);
+    padHub.events.off('disconnect', onDisconnect);
     socket.close();
   });
 
@@ -342,6 +449,8 @@ function createDsuServer({
 
   function close() {
     padHub.events.off('sample', onSample);
+    padHub.events.off('pad', onPad);
+    padHub.events.off('disconnect', onDisconnect);
     if (stats.listening) socket.close();
     stats.listening = false;
   }
@@ -357,6 +466,7 @@ module.exports = {
   phoneToDsuAxes,
   padDataPayload,
   parsePadData,
+  PadBit,
   MessageType,
   SlotState,
   PROTOCOL_VERSION,

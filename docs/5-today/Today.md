@@ -22,6 +22,8 @@ the groundwork the milestones are written against.
   5 s, 0 malformed). Dolphin check and axis signs outstanding.
 - **#4 on-screen gamepad built**: four layouts, multi-touch, checked headless; the screenshots
   caught three layout bugs and a scrolling bug, all fixed and now under test.
+- **#5 buttons over DSU built**: the DSU client sees on-screen presses and sticks alongside
+  motion. Dolphin check outstanding.
 
 ## Deliberately not done
 

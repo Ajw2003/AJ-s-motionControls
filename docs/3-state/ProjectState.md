@@ -5,16 +5,16 @@
 
 ## Headline: 0%
 
-No milestone's acceptance check has been run yet, so nothing counts as done. Milestone 1's code is
-built and checked headless, and so are milestones 2's and 3's; their acceptance needs real phones and Dolphin. Everything else builds on Rock
-Skipping's phone-controller stack, forked on 2026-10-08.
+No milestone's acceptance check has been run yet, so nothing counts as done. Milestones 1 to 4
+are built and checked headless; their acceptance needs real phones and Dolphin on the Windows PC.
+Everything builds on Rock Skipping's phone-controller stack, forked on 2026-10-08.
 
 | # | Milestone | Status | Issue |
 |---|---|---|---|
 | 1 | Raw motion stream | Built; checked headless; real-phone check outstanding | [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) |
 | 2 | Motion in emulators over DSU | Built; checked with a scripted DSU client; Dolphin check outstanding | [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) |
 | 3 | On-screen gamepad | Built; checked headless with emulated multi-touch; real-phone check outstanding | [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) |
-| 4 | Whole controller over DSU | Not started | [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) |
+| 4 | Whole controller over DSU | Built; checked with a scripted DSU client; Dolphin check outstanding | [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) |
 | 5 | Virtual Xbox controller | Not started | [#6](https://github.com/Ajw2003/AJ-s-motionControls/issues/6) |
 | 6 | Latency measured | Not started | [#8](https://github.com/Ajw2003/AJ-s-motionControls/issues/8) |
 | 7 | Low-latency channel | Not started | [#7](https://github.com/Ajw2003/AJ-s-motionControls/issues/7) |
@@ -90,6 +90,27 @@ landscape without a lock, or vibration on Android. Chrome's touch emulation is n
 **Outstanding for acceptance:** every layout on a real iPhone and a real Android phone, with
 simultaneous presses reaching `monitor.html`.
 
+## Milestone 4 — whole controller over DSU
+
+**Built** (see [`4-systems/DsuServer.md`](../4-systems/DsuServer.md)): DSU pad data now carries
+the on-screen gamepad's buttons, analog bytes and both sticks, mapped onto DualShock 4 positions,
+alongside the motion. A press goes out immediately.
+
+**Checked, 2026-10-09, in the sandbox:**
+- `relay` tests: 113 passed, 0 failed (22 new: every button's bit, Home, analog bytes, stick
+  bytes, the relay's button list against the phone's, and a press reaching a scripted client at
+  once), run twice.
+- `tools/verify-dsu.js`, run twice: with A and the left stick held through emulated touch, the
+  DSU client printed `buttons [Cross]  sticks 255 128 128 128` while motion kept arriving, 336
+  packets in 5 s, 0 malformed. Screenshot:
+  [`media/verify/dsu-buttons-phone.png`](../media/verify/dsu-buttons-phone.png).
+
+**What that cannot show:** whether Dolphin maps these the way the DualShock 4 layout says, and
+which other emulators read buttons from DSU at all.
+
+**Outstanding for acceptance:** Dolphin on the Windows PC taking the phone as a full controller,
+and the which-emulators record written into the DSU systems doc.
+
 ## What is inherited and already works
 
 Checked on real phones for Rock Skipping, per [`DeviceMatrix.md`](../DeviceMatrix.md). None of it
@@ -123,7 +144,7 @@ it first.
 
 | Assumption | Checked in |
 |---|---|
-| Dolphin and Cemu read buttons from DSU; Ryujinx takes only motion from it | Milestone 4 |
+| Dolphin and Cemu read buttons from DSU; Ryujinx takes only motion from it | Milestone 4 (code done; still unchecked) |
 | ViGEmBus (maintenance-ended in 2023) still installs and works on current Windows | Milestone 5 |
 | Touch-to-PC latency is roughly 25-65 ms over the hotspot | Milestone 6 |
 

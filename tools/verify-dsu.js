@@ -1,6 +1,7 @@
-// Visual check for issue #3, no phone or emulator needed: starts the PC server, streams
+// Visual check for issues #3 and #5, no phone or emulator needed: starts the PC server, streams
 // synthetic motion from an emulated phone, runs tools/dsu-client.js against the DSU port
-// the way an emulator would, and screenshots the PC monitor while the client is reading.
+// the way an emulator would, holds A and the left stick on the on-screen gamepad partway
+// through, and screenshots the phone and the PC monitor while the client is reading.
 //
 // Run from the repo root (needs Playwright with Chromium installed):
 //   node tools/verify-dsu.js docs/media/verify
@@ -25,8 +26,16 @@ const fakeMotion = () => {
       const pitch = 0.6 * Math.sin(Math.PI * t);
       window.dispatchEvent(
         new DeviceMotionEvent('devicemotion', {
-          accelerationIncludingGravity: { x: 0, y: 9.80665 * Math.sin(pitch), z: 9.80665 * Math.cos(pitch) },
-          rotationRate: { alpha: 0, beta: (0.6 * Math.PI * Math.cos(Math.PI * t) * 180) / Math.PI, gamma: 0 },
+          accelerationIncludingGravity: {
+            x: 0,
+            y: 9.80665 * Math.sin(pitch),
+            z: 9.80665 * Math.cos(pitch),
+          },
+          rotationRate: {
+            alpha: 0,
+            beta: (0.6 * Math.PI * Math.cos(Math.PI * t) * 180) / Math.PI,
+            gamma: 0,
+          },
           interval: 16.67,
         }),
       );
@@ -44,7 +53,7 @@ const fakeMotion = () => {
   await sleep(700);
   const browser = await chromium.launch();
   try {
-    const phoneContext = await browser.newContext({ ...devices['Pixel 7'] });
+    const phoneContext = await browser.newContext({ ...devices['Pixel 7 landscape'] });
     await phoneContext.addInitScript(fakeMotion);
     const phone = await phoneContext.newPage();
     phone.on('pageerror', (e) => console.log(`phone page error: ${e.message}`));
@@ -52,19 +61,44 @@ const fakeMotion = () => {
     await phone.click('#start');
     await phone.evaluate(() => window.__startFakeMotion());
 
-    const client = spawn(process.execPath, [path.join(repo, 'tools/dsu-client.js'), String(DSU_PORT), '5'], {
-      stdio: ['ignore', 'pipe', 'inherit'],
-    });
+    const client = spawn(
+      process.execPath,
+      [path.join(repo, 'tools/dsu-client.js'), String(DSU_PORT), '5'],
+      {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      },
+    );
     let clientOut = '';
     client.stdout.on('data', (d) => (clientOut += d));
     const clientExit = new Promise((resolve) => client.on('exit', resolve));
 
-    await sleep(3000);
-    const monitor = await (await browser.newContext({ viewport: { width: 1100, height: 640 } })).newPage();
+    // Hold Cross (A, south) and push the left stick fully right, through Chrome's touch
+    // emulation, while the DSU client is reading; let go after the screenshot.
+    await sleep(1500);
+    const box = async (selector) => {
+      const b = await phone.locator(selector).boundingBox();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width };
+    };
+    const a = await box('[data-button="south"]');
+    const stick = await box('[data-stick="left"]');
+    const touch = await phone.context().newCDPSession(phone);
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: a.x, y: a.y, id: 1 },
+        { x: stick.x + stick.w * 0.45, y: stick.y, id: 2 },
+      ],
+    });
+    await sleep(1500);
+    const monitor = await (
+      await browser.newContext({ viewport: { width: 1100, height: 640 } })
+    ).newPage();
     await monitor.goto(`http://127.0.0.1:${PORT}/monitor.html`);
     await sleep(800);
     await monitor.screenshot({ path: path.join(outDir, 'monitor-dsu-client.png') });
     console.log('monitor DSU line:', await monitor.textContent('#dsu'));
+    await phone.screenshot({ path: path.join(outDir, 'dsu-buttons-phone.png') });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 
     const code = await clientExit;
     console.log(`--- dsu-client (exit ${code}) ---\n${clientOut}`);

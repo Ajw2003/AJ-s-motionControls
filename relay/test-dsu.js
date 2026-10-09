@@ -16,6 +16,7 @@ const {
   phoneToDsuAxes,
   padDataPayload,
   parsePadData,
+  PadBit,
   MessageType,
   SlotState,
   PROTOCOL_VERSION,
@@ -79,6 +80,71 @@ describe('packets', () => {
     const expected = phoneToDsuAxes(sample.accel, sample.gyro);
     pad.accel.forEach((v, i) => assert.ok(Math.abs(v - expected.accel[i]) < 1e-6));
     pad.gyro.forEach((v, i) => assert.ok(Math.abs(v - expected.gyro[i]) < 1e-6));
+  });
+});
+
+describe('buttons and sticks', () => {
+  const sample = { ts: 1, accel: [0, 0, 1], gyro: [0, 0, 0] };
+  const padWith = (buttons, sticks = [0, 0, 0, 0]) => {
+    const body = parsePacket(
+      buildPacket('DSUS', 1, padDataPayload(0, 0, sample, { seq: 0, buttons, sticks })),
+      'DSUS',
+    ).body;
+    return parsePadData(body);
+  };
+
+  test("the relay's button bits match the phone's, name for name", async () => {
+    const { Button } = await import('../controller/js/gamepad-state.js');
+    assert.deepEqual({ ...PadBit }, { ...Button });
+  });
+
+  // [gamepad position, which DSU byte, bit] — DualShock 4 positions: Square west, Cross south.
+  for (const [name, byte, bit] of [
+    ['left', 1, 0x80],
+    ['down', 1, 0x40],
+    ['right', 1, 0x20],
+    ['up', 1, 0x10],
+    ['start', 1, 0x08],
+    ['rs', 1, 0x04],
+    ['ls', 1, 0x02],
+    ['back', 1, 0x01],
+    ['west', 2, 0x80],
+    ['south', 2, 0x40],
+    ['east', 2, 0x20],
+    ['north', 2, 0x10],
+    ['rb', 2, 0x08],
+    ['lb', 2, 0x04],
+    ['rt', 2, 0x02],
+    ['lt', 2, 0x01],
+  ]) {
+    test(`${name} sets only bit 0x${bit.toString(16)} of button byte ${byte}`, () => {
+      const pad = padWith(PadBit[name]);
+      assert.equal(pad[`buttons${byte}`], bit);
+      assert.equal(pad[`buttons${byte === 1 ? 2 : 1}`], 0);
+    });
+  }
+
+  test('home has its own byte', () => {
+    assert.equal(padWith(PadBit.home).home, 1);
+    assert.equal(padWith(0).home, 0);
+  });
+
+  test('analog bytes are 255 for held buttons, in DSU order', () => {
+    const pad = padWith(PadBit.up | PadBit.south | PadBit.rt);
+    // left, down, right, up, Square, Cross, Circle, Triangle, R1, L1, R2, L2
+    assert.deepEqual(pad.analog, [0, 0, 0, 255, 0, 255, 0, 0, 0, 0, 255, 0]);
+  });
+
+  test('sticks: -1 → 1, centre → 128, +1 → 255; up is up', () => {
+    assert.deepEqual(padWith(0, [-1, 1, 0, 0.5]).sticks, [1, 255, 128, 192]);
+  });
+
+  test('no gamepad yet reads as nothing pressed, sticks centred', () => {
+    const pad = parsePadData(
+      parsePacket(buildPacket('DSUS', 1, padDataPayload(0, 0, sample)), 'DSUS').body,
+    );
+    assert.equal(pad.buttons1 | pad.buttons2 | pad.home, 0);
+    assert.deepEqual(pad.sticks, [128, 128, 128, 128]);
   });
 });
 
@@ -199,6 +265,31 @@ describe('relay with a scripted DSU client', () => {
       (p) => p.type === MessageType.PORT_INFO && p.body.readUInt8(1) === SlotState.CONNECTED,
     );
     assert.equal(info.body.readUInt8(0), 0);
+  });
+
+  test("a button press goes out at once, with the phone's sticks, before the next motion sample", async () => {
+    received.length = 0;
+    pad.send(
+      JSON.stringify({ type: 'PAD', seq: 1, buttons: 1 | (1 << 11), sticks: [1, 0, 0, -1] }),
+    );
+    const reply = await waitFor((p) => p.type === MessageType.PAD_DATA);
+    const data = parsePadData(reply.body);
+    assert.equal(data.buttons2, 0x40, 'Cross (south)');
+    assert.equal(data.buttons1, 0x10, 'D-pad up');
+    assert.deepEqual(data.sticks, [255, 128, 128, 1]);
+    // and the next motion sample carries the same held buttons
+    received.length = 0;
+    pad.send(
+      JSON.stringify({
+        type: 'MOTION',
+        seq: 100,
+        ts: 9_000_000,
+        accel: [0, 0, 1],
+        gyro: [0, 0, 0],
+      }),
+    );
+    const next = parsePadData((await waitFor((p) => p.type === MessageType.PAD_DATA)).body);
+    assert.equal(next.buttons2, 0x40);
   });
 
   test('ignores garbage without replying or crashing', async () => {
