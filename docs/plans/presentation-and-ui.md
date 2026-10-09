@@ -1,11 +1,11 @@
 # Presentation and UI: art direction, HUD, and the IMGUI retirement
 
 **Status:** planned, not started. Decided 2026-09-08 in a design interrogation; no source
-touched. **Tier 5** (today's plan) against [`../Roadmap.md`](../2-roadmap/Roadmap.md) milestone 9.
+touched. **Tier 5** (today's plan) against [`../Roadmap.md`](../archive/rock-skipping/Roadmap.md) milestone 9.
 
 ## Context
 
-The project is ~75% by [`../ProjectState.md`](../3-state/ProjectState.md), and everything that is
+The project is ~75% by [`../ProjectState.md`](../archive/rock-skipping/ProjectState.md), and everything that is
 missing is presentation. Read plainly, the current state is:
 
 **The entire art content of the project** is `Resources/Fbx/Rock.fbx`,

@@ -1,6 +1,6 @@
 # System documentation
 
-**Tier 4.** Seven runtime-critical systems — if one of these is wrong, the game does not work.
+**Tier 4.** Runtime-critical systems: if one of these is wrong, the product does not work.
 
 Each document covers the same four things, in this order:
 
@@ -9,31 +9,45 @@ Each document covers the same four things, in this order:
 3. **Invariants** — what must stay true. Breaking one of these is how the expensive bugs happened
 4. **Traps** — specific things that have already cost someone a day
 
-They do not restate the code. The code in this project carries roughly 30% comment density by
-deliberate choice, and those comments explain *why*. These documents give the shape the comments
-assume you already have.
+They do not restate the code; they give the shape the code's comments assume you already have.
+
+## Systems AJ's Motion Controls reuses
+
+Inherited from Rock Skipping, still accurate for the code in this repo, and the base the
+milestones build on. Their wording still talks about "the game" in places.
+
+| System | Doc | Primary source |
+|---|---|---|
+| Motion pipeline | [`MotionPipeline.md`](MotionPipeline.md) | `controller/js/sensors.js` |
+| Phone controller | [`PhoneController.md`](PhoneController.md) | `controller/js/app.js`, `controller/index.html` |
+| Networking | [`Networking.md`](Networking.md) | `relay/` |
+| Hosting and certificates | [`HostingAndCertificates.md`](HostingAndCertificates.md) | `deploy/`, `hotspot/`, `relay/dns.js` |
+
+## Planned systems — no doc until built
+
+A systems doc for code that does not exist would be invented. Each of these gets a doc here when
+it is built; until then its design lives in the plan.
+
+| System | Plan |
+|---|---|
+| DSU server (motion and buttons to emulators) | [`../plans/dsu-server.md`](../plans/dsu-server.md), [`../plans/dsu-buttons.md`](../plans/dsu-buttons.md) |
+| On-screen gamepad | [`../plans/onscreen-gamepad.md`](../plans/onscreen-gamepad.md) |
+| Virtual Xbox controller | [`../plans/virtual-xbox-controller.md`](../plans/virtual-xbox-controller.md) |
+| Live input channel (raw stream, later WebRTC) | [`../plans/raw-motion-stream.md`](../plans/raw-motion-stream.md), [`../plans/webrtc-input-channel.md`](../plans/webrtc-input-channel.md) |
+
+## Rock Skipping game systems — not part of this product
+
+The game's code is still in the repo and these still describe it, so they stay here rather than
+in `archive/`. Whether the game code is removed is undecided
+([`../6-decisions/Decisions.md`](../6-decisions/Decisions.md), 2026-10-08); if it is, these move to
+`archive/` with it.
 
 | System | Doc | Primary source |
 |---|---|---|
 | Event system | [`EventSystem.md`](EventSystem.md) | `Assets/Scripts/EventSystems/`, `EventTypes/` |
-| Networking | [`Networking.md`](Networking.md) | `Assets/Scripts/Net/`, `relay/` |
-| Motion pipeline | [`MotionPipeline.md`](MotionPipeline.md) | `controller/js/`, `Assets/Scripts/Game/Physics/PhoneAttitude.cs` |
-| Phone controller | [`PhoneController.md`](PhoneController.md) | `controller/js/app.js` |
 | Skip physics | [`SkipPhysics.md`](SkipPhysics.md) | `Assets/Scripts/Game/Physics/` |
 | Scoring and turns | [`ScoringAndTurns.md`](ScoringAndTurns.md) | `Assets/Scripts/Managers/` |
-| Hosting and certificates | [`HostingAndCertificates.md`](HostingAndCertificates.md) | `Assets/Scripts/Net/`, `deploy/`, `hotspot/` |
 | Rock catalog and tuning | [`RockCatalogAndTuning.md`](RockCatalogAndTuning.md) | `Assets/Scripts/Game/Rock*.cs`, `Assets/Rocks/` |
 | Audio | [`Audio.md`](Audio.md) | `Assets/Scripts/Audio/`, `Managers/AudioManager.cs` |
-| Presentation | [`Presentation.md`](Presentation.md) | `Assets/Scripts/Game/` (aim preview, scenery, materials, trail, ripples), `Assets/Scripts/UI/` |
-| Verification | [`Verification.md`](Verification.md) | `Assets/Scripts/Verification/`, `Assets/Tests/EditMode/`, `Assets/Editor/SceneCaptureRunner.cs` |
-
-## Why these seven and not more
-
-Scope was chosen at the point where a document still gets maintained. Audio/VFX and
-build/distribution were considered and left out: audio is paused on a non-code decision, and
-distribution is already covered at the right depth by [`../ZeroSetupPlan.md`](../ZeroSetupPlan.md),
-which is live and accurate. Adding a document that duplicates a live one is how two documents
-start disagreeing.
-
-If a system doc here starts describing something that is not runtime-critical, that is a signal
-it has grown past its purpose.
+| Presentation | [`Presentation.md`](Presentation.md) | `Assets/Scripts/Game/`, `Assets/Scripts/UI/` |
+| Verification | [`Verification.md`](Verification.md) | `Assets/Scripts/Verification/`, `Assets/Tests/EditMode/` |

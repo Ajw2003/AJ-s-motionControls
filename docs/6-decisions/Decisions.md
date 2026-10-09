@@ -10,6 +10,23 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-09 — The tiers now describe AJ's Motion Controls; the game's tier pages are archived
+
+**Context.** After the fork, every tier described Rock Skipping. Seven GitHub issues (#2-#8,
+under #1) now define the product's work.
+
+**Decision.** New tiers 1, 2, 3 and 5 and `docs/README.md`, with one roadmap milestone and one
+plan in `docs/plans/` per issue. The game's versions of those five pages moved to
+`docs/archive/rock-skipping/`. The systems index now separates systems this product reuses
+(motion pipeline, phone controller, networking, hosting) from game-only ones, which stay in
+`4-systems/` because the game's code is still in the repo. Planned systems get no doc until built.
+
+**Why.** Archiving rather than deleting keeps every link working and the game's record readable.
+Leaving game-only systems docs in place avoids pre-empting the open decision on removing the game
+code. Writing systems docs for unbuilt code was rejected because it would be invented.
+
+**Status.** Standing.
+
 ## 2026-10-08 — Phone-as-emulator-motion-controller is its own product, forked from Rock Skipping
 
 **Context.** Rock Skipping's phone controller already does the hard parts of a general motion
