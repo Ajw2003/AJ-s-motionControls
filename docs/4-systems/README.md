@@ -38,7 +38,6 @@ it is built; until then its design lives in the plan.
 
 | System | Plan |
 |---|---|
-| Buttons and sticks over DSU (extends the DSU server) | [`../plans/dsu-buttons.md`](../plans/dsu-buttons.md) |
 | Virtual Xbox controller | [`../plans/virtual-xbox-controller.md`](../plans/virtual-xbox-controller.md) |
 | WebRTC input channel (replaces the stream's WebSocket for live input) | [`../plans/webrtc-input-channel.md`](../plans/webrtc-input-channel.md) |
 
