@@ -18,11 +18,14 @@ the groundwork the milestones are written against.
 - A Decisions entry recording the restructure.
 - **#2 raw motion stream built** and checked headless (tests twice, two emulated phones at
   62-63 Hz, screenshots in [`media/verify/`](../media/verify/)). Real-phone check outstanding.
+- **#3 DSU server built** and checked with a scripted DSU client (tests twice, 312-313 packets in
+  5 s, 0 malformed). Dolphin check and axis signs outstanding.
 
 ## Deliberately not done
 
-- No systems docs for the DSU server, on-screen gamepad or virtual controller: none of them exists
-  yet, and a systems doc for unbuilt code would be invented. Each gets one when it is built.
+- No systems docs for the on-screen gamepad or virtual controller: neither exists yet, and a
+  systems doc for unbuilt code would be invented. Each gets one when it is built (the controller
+  stream and DSU server got theirs today).
 - No game code or game docs removed. That is an open decision.
 
 ## Surfaced, not today's job

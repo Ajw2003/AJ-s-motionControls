@@ -6,13 +6,13 @@
 ## Headline: 0%
 
 No milestone's acceptance check has been run yet, so nothing counts as done. Milestone 1's code is
-built and checked headless; its acceptance needs real phones. Everything else builds on Rock
+built and checked headless, and so is milestone 2's; their acceptance needs real phones and Dolphin. Everything else builds on Rock
 Skipping's phone-controller stack, forked on 2026-10-08.
 
 | # | Milestone | Status | Issue |
 |---|---|---|---|
 | 1 | Raw motion stream | Built; checked headless; real-phone check outstanding | [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) |
-| 2 | Motion in emulators over DSU | Not started | [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) |
+| 2 | Motion in emulators over DSU | Built; checked with a scripted DSU client; Dolphin check outstanding | [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) |
 | 3 | On-screen gamepad | Not started | [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) |
 | 4 | Whole controller over DSU | Not started | [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) |
 | 5 | Virtual Xbox controller | Not started | [#6](https://github.com/Ajw2003/AJ-s-motionControls/issues/6) |
@@ -41,6 +41,28 @@ the hotspot. Synthetic events prove the page, socket, hub and readout, not the s
 **Outstanding for acceptance:** one real iPhone and one real Android phone streaming at their
 native rate into `monitor.html` on the Windows PC, with screenshots. Needs the page over HTTPS;
 see the Traps in the systems doc.
+
+## Milestone 2 — motion in emulators over DSU
+
+**Built** (see [`4-systems/DsuServer.md`](../4-systems/DsuServer.md)): a DSU server on UDP
+127.0.0.1:26760 inside the relay answers version, port-info and pad-data requests, and sends one
+100-byte pad-data packet per phone sample to each subscribed emulator. Motion only; buttons are
+milestone 4.
+
+**Checked, 2026-10-09, in the sandbox:**
+- `relay` tests: 83 passed, 0 failed (10 new in `relay/test-dsu.js`, including CRC-32 against the
+  standard check value `cbf43926` and the relay serving a scripted client end to end), run twice.
+- `tools/verify-dsu.js`, run twice: an emulated Pixel 7 streaming synthetic pitching motion; the
+  DSU client `tools/dsu-client.js` received 312 and 313 pad packets in 5 s, 0 malformed, with the
+  pitch showing on DSU gyro pitch. Screenshot:
+  [`media/verify/monitor-dsu-client.png`](../media/verify/monitor-dsu-client.png).
+
+**What that cannot show:** whether Dolphin reads these packets the same way, and whether the axis
+signs are right. Both tests and client were written from the same reading of the protocol, so a
+shared misreading would pass them all.
+
+**Outstanding for acceptance:** Dolphin's DSU client on the Windows PC showing a real phone's
+motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
 
 ## What is inherited and already works
 

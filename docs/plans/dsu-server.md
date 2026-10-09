@@ -1,6 +1,6 @@
 # DSU server: phone motion to emulators
 
-**Issue:** [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) · **Milestone:** 2 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** not started
+**Issue:** [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) · **Milestone:** 2 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** built; checked headless with a scripted DSU client; Dolphin check outstanding (see [`ProjectState.md`](../3-state/ProjectState.md))
 
 ## Goal
 A DSU (CemuHook) server in the Node PC app on UDP 26760, so Dolphin, Cemu, Ryujinx and the Citra

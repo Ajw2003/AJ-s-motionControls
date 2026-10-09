@@ -5,11 +5,11 @@
 // Run from the repo root (needs Playwright with Chromium installed):
 //   node tools/verify-pad-stream.js docs/media/verify
 // Prints each phone's readout, the /api/pads snapshot and the server's [pad] log lines.
-const { chromium, devices } = require("playwright");
-const { spawn } = require("child_process");
-const path = require("path");
-const repo = path.resolve(__dirname, "..");
-const outDir = path.resolve(process.argv[2] || "docs/media/verify");
+const { chromium, devices } = require('playwright');
+const { spawn } = require('child_process');
+const path = require('path');
+const repo = path.resolve(__dirname, '..');
+const outDir = path.resolve(process.argv[2] || 'docs/media/verify');
 const PORT = 3996;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -21,7 +21,7 @@ const fakeMotion = () => {
       t += 1 / 60;
       const tilt = Math.sin(2 * Math.PI * 0.5 * t + phase);
       window.dispatchEvent(
-        new DeviceMotionEvent("devicemotion", {
+        new DeviceMotionEvent('devicemotion', {
           accelerationIncludingGravity: {
             x: 9.80665 * 0.3 * tilt,
             y: 9.80665 * Math.sin(0.6 * tilt),
@@ -40,31 +40,29 @@ const fakeMotion = () => {
 };
 
 (async () => {
-  const server = spawn(process.execPath, [path.join(repo, "relay/server.js")], {
+  const server = spawn(process.execPath, [path.join(repo, 'relay/server.js')], {
     env: { ...process.env, PORT: String(PORT) },
-    stdio: ["ignore", "pipe", "inherit"],
+    stdio: ['ignore', 'pipe', 'inherit'],
   });
-  let serverLog = "";
-  server.stdout.on("data", (d) => (serverLog += d));
+  let serverLog = '';
+  server.stdout.on('data', (d) => (serverLog += d));
   await sleep(700);
   const browser = await chromium.launch();
   try {
     const phones = [];
     for (const [i, device] of [
-      [0, devices["iPhone 13"]],
-      [1, devices["Pixel 7"]],
+      [0, devices['iPhone 13']],
+      [1, devices['Pixel 7']],
     ]) {
       const ctx = await browser.newContext({ ...device });
       await ctx.addInitScript(fakeMotion);
       const page = await ctx.newPage();
-      page.on("pageerror", (e) =>
-        console.log(`phone ${i} page error: ${e.message}`),
-      );
+      page.on('pageerror', (e) => console.log(`phone ${i} page error: ${e.message}`));
       await page.goto(`http://localhost:${PORT}/pad.html`);
       await page.screenshot({
         path: path.join(outDir, `pad-${i}-before-start.png`),
       });
-      await page.click("#start");
+      await page.click('#start');
       await page.evaluate((p) => window.__startFakeMotion(p), i * 1.5);
       phones.push(page);
     }
@@ -76,10 +74,10 @@ const fakeMotion = () => {
       console.log(
         `phone ${i}:`,
         await page.evaluate(() => ({
-          status: document.getElementById("status").textContent,
-          slot: document.getElementById("slot").textContent,
-          rate: document.getElementById("rate").textContent,
-          sent: document.getElementById("sent").textContent,
+          status: document.getElementById('status').textContent,
+          slot: document.getElementById('slot').textContent,
+          rate: document.getElementById('rate').textContent,
+          sent: document.getElementById('sent').textContent,
         })),
       );
     }
@@ -89,11 +87,11 @@ const fakeMotion = () => {
     await monitor.goto(`http://127.0.0.1:${PORT}/monitor.html`);
     await sleep(800);
     await monitor.screenshot({
-      path: path.join(outDir, "monitor-two-phones.png"),
+      path: path.join(outDir, 'monitor-two-phones.png'),
     });
     const api = await (await fetch(`http://127.0.0.1:${PORT}/api/pads`)).json();
     console.log(
-      "api:",
+      'api:',
       JSON.stringify(
         api.pads.map(
           (p) =>
@@ -112,11 +110,11 @@ const fakeMotion = () => {
     await browser.close();
     server.kill();
     console.log(
-      "server log:\n" +
+      'server log:\n' +
         serverLog
-          .split("\n")
-          .filter((l) => l.includes("[pad]"))
-          .join("\n"),
+          .split('\n')
+          .filter((l) => l.includes('[pad]'))
+          .join('\n'),
     );
   }
 })().catch((e) => {

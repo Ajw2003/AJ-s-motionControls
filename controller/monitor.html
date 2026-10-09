@@ -100,6 +100,21 @@
         width: 1px;
         background: var(--muted);
       }
+      .dsu {
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        font-variant-numeric: tabular-nums;
+      }
+      .dsu .on {
+        color: var(--good);
+        font-weight: 600;
+      }
+      .dsu .off {
+        color: var(--bad);
+        font-weight: 600;
+      }
       #error {
         color: var(--bad);
       }
@@ -110,6 +125,7 @@
     <p class="sub">
       What each phone is sending to this PC. Updates four times a second. <span id="error"></span>
     </p>
+    <div id="dsu" class="dsu"></div>
     <div id="slots"></div>
 
     <script>
@@ -147,11 +163,24 @@
         </div>`;
       }
 
+      function renderDsu(dsu) {
+        if (!dsu)
+          return '<span class="label">Emulator link (DSU):</span> <span class="off">off</span> (DSU_PORT=0)';
+        if (!dsu.listening) {
+          return `<span class="label">Emulator link (DSU):</span> <span class="off">not running</span> ${dsu.error ?? ''}`;
+        }
+        const readers = dsu.clients.length
+          ? dsu.clients.map((c) => `${c.address} (${c.sent} packets)`).join(', ')
+          : 'no emulator connected yet';
+        return `<span class="label">Emulator link (DSU):</span> <span class="on">listening</span> on udp ${dsu.host}:${dsu.port} · ${readers}`;
+      }
+
       async function refresh() {
         try {
           const response = await fetch('/api/pads', { cache: 'no-store' });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const { pads } = await response.json();
+          const { pads, dsu } = await response.json();
+          document.getElementById('dsu').innerHTML = renderDsu(dsu);
           document.getElementById('slots').innerHTML = pads.map(renderSlot).join('');
           document.getElementById('error').textContent = '';
         } catch (err) {

@@ -13,6 +13,7 @@ const nodePath = require('path');
 const { createResponder, makeSubnetTest } = require('./dns');
 const { createFunnel, Stage } = require('./funnel');
 const { createPadHub } = require('./pad-hub');
+const { createDsuServer, DEFAULT_PORT: DSU_DEFAULT_PORT } = require('./dsu');
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -645,7 +646,7 @@ function servePadSnapshot(req, res) {
   }
   res
     .writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-    .end(JSON.stringify({ pads: padHub.snapshot() }));
+    .end(JSON.stringify({ pads: padHub.snapshot(), dsu: dsuServer ? dsuServer.status() : null }));
 }
 
 /** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */
@@ -691,6 +692,14 @@ const httpServer = useTls
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
 const padHub = createPadHub({ log });
+
+// Emulators read the controllers over DSU (#3). DSU_PORT=0 turns it off; DSU_BIND_HOST
+// widens it beyond this PC, which nothing needs unless the emulator runs elsewhere.
+const DSU_PORT = process.env.DSU_PORT === undefined ? DSU_DEFAULT_PORT : Number(process.env.DSU_PORT);
+const dsuServer =
+  DSU_PORT > 0
+    ? createDsuServer({ padHub, port: DSU_PORT, host: process.env.DSU_BIND_HOST || '127.0.0.1', log })
+    : null;
 
 wss.on('connection', (ws, req) => {
   // Controllers (#2) take their own path and never touch the game's rooms.
