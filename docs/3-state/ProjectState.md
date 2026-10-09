@@ -144,7 +144,7 @@ it first.
 
 | Assumption | Checked in |
 |---|---|
-| Dolphin and Cemu read buttons from DSU; Ryujinx takes only motion from it | Milestone 4 (code done; still unchecked) |
+| Dolphin and Cemu read buttons from DSU; Ryujinx takes only motion from it | Milestone 4: **Dolphin confirmed** on aj's PC, 2026-10-09 (its Default mapping filled buttons and sticks from the link; see `4-systems/DsuServer.md`). Cemu and Ryujinx unchecked |
 | ViGEmBus (maintenance-ended in 2023) still installs and works on current Windows | Milestone 5 |
 | Touch-to-PC latency is roughly 25-65 ms over the hotspot | Milestone 6 |
 

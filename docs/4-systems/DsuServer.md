@@ -76,8 +76,12 @@ it is fixed in `phoneToDsuAxes` and nowhere else.
 
 - **Only one program can own UDP 26760.** DS4Windows, BetterJoy and other DSU servers use the same
   default port. If one is running, the relay's DSU server is disabled, and the monitor says so.
-- **Which emulators read buttons from DSU is still unconfirmed.** Believed: Dolphin and Cemu take
-  a whole controller from it, Ryujinx only motion. Until checked, say "believed", not "does".
+- **Which emulators read buttons from DSU: Dolphin does; the rest are unconfirmed.** On aj's
+  Windows PC (2026-10-09) Dolphin listed the server as `DSUClient/0/<description>`, and its GameCube
+  **Default** mapping filled buttons and sticks with the DualShock 4 names this server sends:
+  Cross, Circle, Square, Triangle, Shoulder R, Start, Pad N/S/E/W, Left/Right X±/Y±, Trigger L/R.
+  Its L-Analog and R-Analog stayed empty. Cemu taking a whole controller and Ryujinx taking only
+  motion are still beliefs.
 - **Headless checks prove the protocol, not an emulator's reading of it.**
   `tools/verify-dsu.js` speaks DSU as documented. Whether Dolphin agrees, including the axis signs,
   is only known once Dolphin has been pointed at it.
