@@ -236,6 +236,37 @@ watch would swap the scrape for the CRL check. What this changes:
   this product) is the natural home. The Porkbun keys would move to that repo's secrets. Secrets
   aren't given to pull requests from forks, but every log line is public, so nothing may echo them.
 
+**Reporting back from the PC (aj's ask: only if it can't be spoofed).**
+
+A report that can't be spoofed isn't possible here. GitHub has no anonymous write. Any credential
+the launcher carries is public the moment it ships. A token able to start a workflow (Actions:
+write) can also disable or cancel workflows, and one able to send a repository dispatch can write
+the repo. A report tied to a person needs an account per user, or a service to check them, and
+both are ruled out.
+
+**Make spoofing pointless instead: a report is a nudge, never an order.** It can only make the job
+run its own checks sooner. The job reissues only on what it verifies itself:
+
+- the revocation list (above);
+- expiry;
+- *to confirm:* whether the key's fingerprint appears in Chromium's published key blocklist
+  (`net/data/ssl/blocklist`).
+
+A fake nudge costs one extra check. Nudge-triggered checks are capped (at most one per 10
+minutes), and Let's Encrypt's limits cap reissues anyway.
+
+**The channel needs no credentials: release download counts.** The cert release carries tiny
+empty "nudge" files, one per reason (`nudge-revoked`, `nudge-expired`, `nudge-phone-rejected`). The
+launcher downloads the one that applies; that's an ordinary HTTPS fetch, like getting the
+certificate. GitHub shows each file's download count publicly. The watchdog already polls every
+10 minutes, and it treats a rise in a count as a nudge. *Not tested: this session can't reach the
+cert repo's API to watch a count change, or measure how fast counts update.*
+
+**Failures the job can't verify** (a phone rejecting a certificate whose revocation list and
+expiry look fine) must not trigger an automatic reissue, because that is exactly the spoofable
+case. The job opens one GitHub issue for aj instead, at most once a day, saying how many
+`nudge-phone-rejected` downloads it saw. Spoofing that costs aj one issue a day.
+
 **What the launcher does:** on every start with internet, download the current certificate and
 key, run the same revocation check, and cache them. Offline, use the cache until it expires.
 
