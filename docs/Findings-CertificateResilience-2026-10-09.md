@@ -83,9 +83,47 @@ service, no cost, no domain, works offline indefinitely. Its one cost, a one-min
 phone, fits a product used with your own phone. B removes even that for users willing to make a
 free account. Neither publishes a key, so neither can be revoked by a stranger.
 
+## Revisited under aj's phone rule: two QR codes, nothing else
+
+aj, later the same day: the phone gets two QR codes and nothing else, with no app, no download and
+no other setup. If an installed certificate can't be avoided, a downloadable app would be better,
+since aj sees the install as more friction than an app.
+
+That rules out A on the phone, and only **B** meets the rule. The phone sees a normal, trusted
+certificate, so scanning the two QR codes is all it does. The setup moves to the PC instead:
+
+- **One free sign-in on the PC, once.** Either provider works with an account the user may already
+  have:
+  - **DuckDNS:** sign in with an existing account, copy a token, and set the TXT record with one
+    HTTPS request
+    ([Posh-ACME plugin](https://www.powershellgallery.com/packages/Posh-ACME/4.9.0/Content/Plugins%5CDuckDNS.ps1)).
+  - **deSEC:** a captcha plus an emailed activation link
+    ([deSEC quickstart](https://desec.readthedocs.io/en/latest/quickstart.html)).
+
+  The launcher (#12) can open the page and take the token, but the person has to do the sign-in.
+  Removing that step would need a service run by us, which aj ruled out.
+- **The PC must go online now and then to renew.** Certificates last 90 days today, 64 days from
+  February 2027 and 45 days from February 2028
+  ([Let's Encrypt](https://letsencrypt.org/docs/cert-lifetimes/)). If one lapses, the controller
+  page fails until the PC is next online.
+
+The fallbacks are worse:
+
+- **Accepting a warning ("proceed anyway").** This needs no install, but iOS Safari may refuse
+  untrusted certificates outright
+  ([Kurento docs](https://doc-kurento.readthedocs.io/en/latest/_sources/knowledge/selfsigned_certs.rst.txt)).
+  It is also unknown whether either browser still hands out motion data after the warning is
+  bypassed. *Needs testing; not relied on.*
+- **An app.** A native app needs no HTTPS. But iPhone distribution means Apple's paid developer
+  programme, a yearly fee, which breaks the no-running-cost rule. Android can be free to sideload,
+  but that is still a download.
+
 ## To check before building
 
 1. Android Chrome trusts a user-installed authority for a page at `https://192.168.137.1` (aj's phone).
 2. iOS accepts a long-lived certificate from a user-installed authority, and honours name constraints.
 3. iOS Safari grants motion permission on that page once the authority is trusted.
 4. For B: deSEC's API allows the `_acme-challenge` record, and `dedyn.io` is on the Public Suffix List.
+5. For B under the two-QR rule: DuckDNS's single shared TXT record works for one name per PC.
+6. The warning fallback: on each phone, does a page whose certificate warning was bypassed still
+   report `isSecureContext` and receive `devicemotion`?
