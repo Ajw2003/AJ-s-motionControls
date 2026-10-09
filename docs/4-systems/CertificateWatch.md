@@ -60,8 +60,11 @@ pad-cert-watchdog.yml (5-min wake) ──▶ one long loop ──▶ restarts th
   - `openssl verify` against the system trust store printed `OK`;
   - `check_cert.sh` printed `ok: not revoked`;
   - the key matches.
-- **Not yet proven:** the chain dispatching its own next run, and the watchdog starting. The first
-  `next` job dispatches about 60 minutes after 20:36 UTC.
+- **The chain keeps itself going:**
+  - Run 37988137248's `next` job dispatched run 37994483197 at 21:36:41 UTC, 60 minutes after the
+    first run.
+  - That run's `watch` job logged `Nothing to issue (reason: ok).` and skipped the issue steps.
+  - Watchdog run 37994485406 started at 21:36:43 UTC.
 
 ## Invariants
 
