@@ -19,8 +19,8 @@ between platforms, local HTTPS, and offline hosting. Status: **0%** — see
 
 | Part | Where | State |
 |---|---|---|
-| Phone page | `controller/` | Inherited: Rock Skipping's controller. Raw stream and gamepad layouts to be added (#2, #4) |
-| PC relay (Node) | `relay/` | Inherited: Rock Skipping's WebSocket relay and offline DNS |
+| Phone page | `controller/` | Rock Skipping's controller, plus `pad.html`: the raw motion stream (#2). Gamepad layouts to come (#4) |
+| PC relay (Node) | `relay/` | Rock Skipping's WebSocket relay and offline DNS, plus the pad hub (#2) and `monitor.html` readout |
 | DSU server | — | Planned (#3, #5) |
 | Virtual Xbox controller | — | Planned (#6) |
 | Offline hosting | `deploy/`, `hotspot/` | Inherited: hotspot, certificate and setup scripts |
@@ -48,6 +48,7 @@ when the definition of done changes. Tier 6 only grows.
 | Phone controller | [`4-systems/PhoneController.md`](../4-systems/PhoneController.md) | The phone page's screens and streams |
 | Networking | [`4-systems/Networking.md`](../4-systems/Networking.md) | The relay, the wire format, reconnection |
 | Hosting and certificates | [`4-systems/HostingAndCertificates.md`](../4-systems/HostingAndCertificates.md) | The hotspot, the secure context, offline play |
+| Controller stream | [`4-systems/ControllerStream.md`](../4-systems/ControllerStream.md) | Raw motion from each phone to the PC, controller slots, the monitor |
 
 Planned systems and the game-only systems are listed in
 [`4-systems/README.md`](../4-systems/README.md).

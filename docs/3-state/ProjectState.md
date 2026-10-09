@@ -5,13 +5,13 @@
 
 ## Headline: 0%
 
-Nothing emulator-specific is built. No milestone's acceptance check has been run. What exists is
-Rock Skipping's phone-controller stack, which this repo was forked from on 2026-10-08 and which
-the milestones build on.
+No milestone's acceptance check has been run yet, so nothing counts as done. Milestone 1's code is
+built and checked headless; its acceptance needs real phones. Everything else builds on Rock
+Skipping's phone-controller stack, forked on 2026-10-08.
 
 | # | Milestone | Status | Issue |
 |---|---|---|---|
-| 1 | Raw motion stream | Not started | [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) |
+| 1 | Raw motion stream | Built; checked headless; real-phone check outstanding | [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) |
 | 2 | Motion in emulators over DSU | Not started | [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) |
 | 3 | On-screen gamepad | Not started | [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) |
 | 4 | Whole controller over DSU | Not started | [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) |
@@ -20,6 +20,27 @@ the milestones build on.
 | 7 | Low-latency channel | Not started | [#7](https://github.com/Ajw2003/AJ-s-motionControls/issues/7) |
 
 ---
+
+## Milestone 1 — raw motion stream
+
+**Built** (see [`4-systems/ControllerStream.md`](../4-systems/ControllerStream.md)): `pad.html`
+streams every `devicemotion` reading to the PC's `/pad` socket; the pad hub gives up to four phones
+a slot each and publishes samples; `monitor.html` shows them on the PC.
+
+**Checked, 2026-10-09, in the sandbox, not on a phone:**
+- `relay` tests: 73 passed, 0 failed (18 new in `relay/test-pad-hub.js`), run twice.
+- `controller` tests: all green, including 9 new in `controller/test-motion-sample.js`.
+- `tools/verify-pad-stream.js`, run twice: an emulated iPhone 13 and Pixel 7 fed synthetic motion
+  at 60 Hz reached slots 1 and 2 at 62-63 Hz with 0 lost and 0 rejected. Screenshots:
+  [`media/verify/pad-0-streaming.png`](../media/verify/pad-0-streaming.png),
+  [`media/verify/monitor-two-phones.png`](../media/verify/monitor-two-phones.png).
+
+**What that cannot show:** a real phone's sensor rate, iOS's permission prompt, or the stream over
+the hotspot. Synthetic events prove the page, socket, hub and readout, not the sensors.
+
+**Outstanding for acceptance:** one real iPhone and one real Android phone streaming at their
+native rate into `monitor.html` on the Windows PC, with screenshots. Needs the page over HTTPS;
+see the Traps in the systems doc.
 
 ## What is inherited and already works
 

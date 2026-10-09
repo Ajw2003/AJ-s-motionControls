@@ -23,6 +23,12 @@ milestones build on. Their wording still talks about "the game" in places.
 | Networking | [`Networking.md`](Networking.md) | `relay/` |
 | Hosting and certificates | [`HostingAndCertificates.md`](HostingAndCertificates.md) | `deploy/`, `hotspot/`, `relay/dns.js` |
 
+## Systems built for AJ's Motion Controls
+
+| System | Doc | Primary source |
+|---|---|---|
+| Controller stream (#2) | [`ControllerStream.md`](ControllerStream.md) | `controller/js/pad.js`, `controller/js/motion-sample.js`, `relay/pad-hub.js` |
+
 ## Planned systems — no doc until built
 
 A systems doc for code that does not exist would be invented. Each of these gets a doc here when
@@ -33,7 +39,7 @@ it is built; until then its design lives in the plan.
 | DSU server (motion and buttons to emulators) | [`../plans/dsu-server.md`](../plans/dsu-server.md), [`../plans/dsu-buttons.md`](../plans/dsu-buttons.md) |
 | On-screen gamepad | [`../plans/onscreen-gamepad.md`](../plans/onscreen-gamepad.md) |
 | Virtual Xbox controller | [`../plans/virtual-xbox-controller.md`](../plans/virtual-xbox-controller.md) |
-| Live input channel (raw stream, later WebRTC) | [`../plans/raw-motion-stream.md`](../plans/raw-motion-stream.md), [`../plans/webrtc-input-channel.md`](../plans/webrtc-input-channel.md) |
+| WebRTC input channel (replaces the stream's WebSocket for live input) | [`../plans/webrtc-input-channel.md`](../plans/webrtc-input-channel.md) |
 
 ## Rock Skipping game systems — not part of this product
 

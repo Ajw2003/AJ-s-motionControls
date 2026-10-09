@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Controller Monitor</title>
+    <style>
+      :root {
+        --bg: #0d1b2a;
+        --surface: #1b263b;
+        --accent: #4cc9f0;
+        --good: #57cc99;
+        --bad: #ef476f;
+        --text: #e0e1dd;
+        --muted: #7d8597;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px 16px;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 4px;
+      }
+      p.sub {
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      #slots {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        align-items: start;
+      }
+      .slot {
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 16px;
+        font-variant-numeric: tabular-nums;
+      }
+      .slot h2 {
+        font-size: 1rem;
+        margin: 0 0 8px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .slot.empty {
+        opacity: 0.45;
+      }
+      .hz {
+        font-size: 2.4rem;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        padding: 3px 0;
+      }
+      .label {
+        color: var(--muted);
+      }
+      .bars {
+        display: grid;
+        grid-template-columns: 2.2em 1fr;
+        gap: 4px 8px;
+        align-items: center;
+        margin-top: 10px;
+      }
+      .track {
+        position: relative;
+        height: 10px;
+        background: #0d1b2a;
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        background: var(--good);
+      }
+      .track::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: var(--muted);
+      }
+      #error {
+        color: var(--bad);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Controller monitor</h1>
+    <p class="sub">
+      What each phone is sending to this PC. Updates four times a second. <span id="error"></span>
+    </p>
+    <div id="slots"></div>
+
+    <script>
+      // Bar ranges: ±2 g of acceleration, ±500 °/s of rotation.
+      const ACCEL_RANGE = 2;
+      const GYRO_RANGE = 500;
+
+      function bar(label, value, range) {
+        const clamped = Math.max(-1, Math.min(1, value / range));
+        const left = clamped < 0 ? 50 + clamped * 50 : 50;
+        const width = Math.abs(clamped) * 50;
+        return `<span class="label">${label}</span><div class="track"><div class="fill" style="left:${left}%;width:${width}%"></div></div>`;
+      }
+
+      function renderSlot(pad, index) {
+        if (!pad) {
+          return `<div class="slot empty"><h2><span>Slot ${index + 1}</span><span>empty</span></h2></div>`;
+        }
+        const s = pad.latest;
+        const values = s
+          ? `<div class="row"><span class="label">Accel (g)</span><span>${s.accel.map((n) => n.toFixed(2)).join('  ')}</span></div>
+             <div class="row"><span class="label">Gyro (°/s)</span><span>${s.gyro.map((n) => n.toFixed(0)).join('  ')}</span></div>
+             <div class="bars">
+               ${bar('ax', s.accel[0], ACCEL_RANGE)}${bar('ay', s.accel[1], ACCEL_RANGE)}${bar('az', s.accel[2], ACCEL_RANGE)}
+               ${bar('gx', s.gyro[0], GYRO_RANGE)}${bar('gy', s.gyro[1], GYRO_RANGE)}${bar('gz', s.gyro[2], GYRO_RANGE)}
+             </div>`
+          : '<div class="row"><span class="label">No samples yet</span></div>';
+        return `<div class="slot">
+          <h2><span>Slot ${index + 1}</span><span class="label">${pad.remoteAddress ?? ''}</span></h2>
+          <div><span class="hz">${pad.rateHz.toFixed(0)}</span> Hz</div>
+          <div class="row"><span class="label">Received</span><span>${pad.received}</span></div>
+          <div class="row"><span class="label">Lost on the way</span><span>${pad.dropped}</span></div>
+          <div class="row"><span class="label">Rejected</span><span>${pad.rejected}</span></div>
+          ${values}
+        </div>`;
+      }
+
+      async function refresh() {
+        try {
+          const response = await fetch('/api/pads', { cache: 'no-store' });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const { pads } = await response.json();
+          document.getElementById('slots').innerHTML = pads.map(renderSlot).join('');
+          document.getElementById('error').textContent = '';
+        } catch (err) {
+          // Shown, not swallowed: a monitor that silently freezes looks like a dead phone.
+          document.getElementById('error').textContent =
+            `Cannot reach the PC server (${err.message}).`;
+        }
+      }
+
+      refresh();
+      setInterval(refresh, 250);
+    </script>
+  </body>
+</html>

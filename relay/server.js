@@ -12,6 +12,7 @@ const fs = require('fs');
 const nodePath = require('path');
 const { createResponder, makeSubnetTest } = require('./dns');
 const { createFunnel, Stage } = require('./funnel');
+const { createPadHub } = require('./pad-hub');
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -353,6 +354,8 @@ const CONTENT_TYPES = {
 // silently growing back the next time a file gets added next to js/.
 function isAllowedRelativePath(relative) {
   if (relative === 'index.html') return true;
+  // The controller page (#2) and the PC-side readout of what the controllers send.
+  if (relative === 'pad.html' || relative === 'monitor.html') return true;
   if (/^js\/[^/]+\.js$/.test(relative)) return true;
   return false;
 }
@@ -614,6 +617,11 @@ function handleRequest(req, res) {
       return;
     }
 
+    if (url.pathname === '/api/pads') {
+      servePadSnapshot(req, res);
+      return;
+    }
+
     if (serveConnectivityProbe(req, res, url.pathname)) return;
 
     serveStatic(req, res);
@@ -623,6 +631,21 @@ function handleRequest(req, res) {
       res.writeHead(500, { 'Content-Type': 'text/plain' }).end('Internal error');
     }
   }
+}
+
+/**
+ * The controllers' live state, for monitor.html on the PC. Loopback only: it names each
+ * phone's address, and nothing on the hotspot needs it.
+ */
+function servePadSnapshot(req, res) {
+  const from = req.socket ? req.socket.remoteAddress : null;
+  if (from !== '127.0.0.1' && from !== '::1' && from !== '::ffff:127.0.0.1') {
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
+    return;
+  }
+  res
+    .writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    .end(JSON.stringify({ pads: padHub.snapshot() }));
 }
 
 /** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */
@@ -667,8 +690,15 @@ const httpServer = useTls
   : http.createServer(handleRequest);
 
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
+const padHub = createPadHub({ log });
 
 wss.on('connection', (ws, req) => {
+  // Controllers (#2) take their own path and never touch the game's rooms.
+  if (req && typeof req.url === 'string' && req.url.split('?')[0] === '/pad') {
+    padHub.attach(ws, req.socket ? req.socket.remoteAddress : null);
+    return;
+  }
+
   ws.meta = {
     role: null,
     roomCode: null,

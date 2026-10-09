@@ -16,6 +16,8 @@ the groundwork the milestones are written against.
 - The systems index split into systems this product reuses, game-only systems, and planned ones.
 - One plan per issue in [`plans/`](../plans/).
 - A Decisions entry recording the restructure.
+- **#2 raw motion stream built** and checked headless (tests twice, two emulated phones at
+  62-63 Hz, screenshots in [`media/verify/`](../media/verify/)). Real-phone check outstanding.
 
 ## Deliberately not done
 
