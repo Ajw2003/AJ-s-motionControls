@@ -1,6 +1,6 @@
 # On-screen gamepad with switchable layouts
 
-**Issue:** [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) · **Milestone:** 3 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** not started
+**Issue:** [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) · **Milestone:** 3 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** built; checked headless with emulated phones and multi-touch; real-phone check outstanding (see [`ProjectState.md`](../3-state/ProjectState.md))
 
 ## Goal
 Touch buttons, D-pad, sticks and triggers on the phone page, with layouts for a sideways Wii

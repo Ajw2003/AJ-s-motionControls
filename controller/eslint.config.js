@@ -37,8 +37,8 @@ export default [
     rules: {},
   },
   {
-    // test-sensors.js runs under Node, not the browser.
-    files: ['test-sensors.js'],
+    // The test files run under Node, not the browser.
+    files: ['test-sensors.js', 'test-motion-sample.js', 'test-gamepad-state.js'],
     languageOptions: {
       globals: {
         process: 'readonly',
