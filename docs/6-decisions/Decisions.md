@@ -10,6 +10,55 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-09 — HTTPS on the hotspot: a shared, hardened certificate for `pad.skiprocking.ca`
+
+**Context.** #13. Phones only give motion sensors to HTTPS pages. aj's constraints:
+
+- the phone scans two QR codes and does nothing else (no app, no install);
+- no new third-party service, no always-on server of ours, and no running cost;
+- internet is acceptable on first setup only.
+
+Rock Skipping's approach publishes one certificate's key, and anyone holding a published key can
+revoke the certificate. Full research: `docs/Findings-CertificateResilience-2026-10-09.md`.
+
+**Decision.** aj, 2026-10-09:
+
+- **Approach:** one shared public certificate, hardened. Each launcher downloads the certificate
+  and key at runtime, never shipped in a build, and caches them for offline play.
+- **Name:** `pad.skiprocking.ca`, with its own certificate and key, separate from Rock Skipping's
+  `play.skiprocking.ca`.
+- **Where it runs:** the public `Ajw2003/rockskipping-cert` repo. It hosts the published
+  certificate and a watch job built on CannaScraper's self-chaining job plus watchdog. The job
+  checks the revocation list about hourly and reissues with a new key when the certificate is
+  revoked or near expiry.
+- **First build:** runtime download and cache; the hourly revocation watch; three rotating spare
+  names; and download-count nudges from launchers. Nudges only make the job run its own checks
+  sooner, and a failure it can't verify opens at most one issue a day for aj. The plain-connection
+  fallback (buttons and sticks with motion off) is deferred to a follow-up issue.
+
+**Why.**
+
+- It is the only option that meets all of aj's constraints.
+- A name of its own costs nothing and stops one product's revocation taking down the other.
+- The public repo makes the round-the-clock watchdog free. In a private repo it would far exceed
+  the free minutes.
+
+**Rejected:**
+
+- **A per-PC certificate through DuckDNS:** it adds a third party and a sign-in on every PC.
+- **The PC as its own certificate authority:** every phone would need a certificate install.
+- **A new domain:** a yearly fee.
+- **Keeping `play.skiprocking.ca`:** the two products would share every failure.
+- **Hosting the job in the private RockSkipping repo:** the watchdog would use far more than the
+  free minutes.
+
+**Known risk accepted:** someone determined can still revoke each new certificate. The watch job
+turns that into an outage of roughly an hour per attempt, limited by Let's Encrypt's 50
+certificates a week per domain. Phones offline reportedly don't check revocation; this is
+unverified on real phones.
+
+**Status.** Standing.
+
 ## 2026-10-09 — The tiers now describe AJ's Motion Controls; the game's tier pages are archived
 
 **Context.** After the fork, every tier described Rock Skipping. Seven GitHub issues (#2-#8,

@@ -51,6 +51,7 @@ when the definition of done changes. Tier 6 only grows.
 | Controller stream | [`4-systems/ControllerStream.md`](../4-systems/ControllerStream.md) | Raw motion from each phone to the PC, controller slots, the monitor |
 | DSU server | [`4-systems/DsuServer.md`](../4-systems/DsuServer.md) | DSU packets to emulators, the axis mapping |
 | On-screen gamepad | [`4-systems/OnscreenGamepad.md`](../4-systems/OnscreenGamepad.md) | Touch controls, the four layouts, the PAD message |
+| Certificate watch | [`4-systems/CertificateWatch.md`](../4-systems/CertificateWatch.md) | The shared `pad.skiprocking.ca` certificate: hourly revocation check, reissue, publish (runs in `rockskipping-cert`) |
 
 Planned systems and the game-only systems are listed in
 [`4-systems/README.md`](../4-systems/README.md).
@@ -77,6 +78,8 @@ The other files in `plans/` are Rock Skipping's, kept with the game.
 | [`DeviceMatrix.md`](../DeviceMatrix.md) | Which phones have been tested, and how; the model for the latency table |
 | [`SecurityReview.md`](../SecurityReview.md) | Gaps in the relay and controller; a UDP DSU port adds to this |
 | [`Findings-iPhoneWifiJoin-2026-10-02.md`](../Findings-iPhoneWifiJoin-2026-10-02.md) | How iPhones join and stay on the hotspot |
+| [`Findings-OnboardingReuse-2026-10-09.md`](../Findings-OnboardingReuse-2026-10-09.md) | What Rock Skipping already does for joining and testing, and which issue (#12-#15) reuses each piece |
+| [`Findings-CertificateResilience-2026-10-09.md`](../Findings-CertificateResilience-2026-10-09.md) | Options for HTTPS (#13) that a stranger can't revoke, with no service and no cost; research only |
 | [`Findings-HotspotForwardingAndInternet-2026-10-01.md`](../Findings-HotspotForwardingAndInternet-2026-10-01.md) | Why the hotspot shares the PC's internet |
 | [`plans/aim-preview-lag-on-shared-radio.md`](../plans/aim-preview-lag-on-shared-radio.md) | The radio contention behind milestone 7 |
 | [`6-decisions/Decision-OfflineHosting.md`](../6-decisions/Decision-OfflineHosting.md) | Why Mobile Hotspot beat Wi-Fi Direct |
