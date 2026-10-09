@@ -259,8 +259,17 @@ minutes), and Let's Encrypt's limits cap reissues anyway.
 empty "nudge" files, one per reason (`nudge-revoked`, `nudge-expired`, `nudge-phone-rejected`). The
 launcher downloads the one that applies; that's an ordinary HTTPS fetch, like getting the
 certificate. GitHub shows each file's download count publicly. The watchdog already polls every
-10 minutes, and it treats a rise in a count as a nudge. *Not tested: this session can't reach the
-cert repo's API to watch a count change, or measure how fast counts update.*
+10 minutes, and it treats a rise in a count as a nudge. **Tested 2026-10-09** on the `rockskipping-cert` release:
+
+- `server.pem` read 22 downloads before the test.
+- Downloaded it 3 times at 18:57:07-08 UTC, each returning HTTP 200.
+- Polled the release API once a minute. The count stayed at 22 through 19:06:23, then read **25**
+  at 19:07:24.
+
+So each download counted exactly once, and the count appeared about **10 minutes** later. That fits
+the watchdog's 10-minute poll: a nudge is seen within roughly 10-20 minutes. Anyone can download
+the file, so the count proves nothing about who sent it, which is why the nudge only triggers the
+job's own checks.
 
 **Failures the job can't verify** (a phone rejecting a certificate whose revocation list and
 expiry look fine) must not trigger an automatic reissue, because that is exactly the spoofable
