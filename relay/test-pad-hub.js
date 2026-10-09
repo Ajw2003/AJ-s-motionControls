@@ -13,6 +13,7 @@ const path = require('path');
 const {
   createPadHub,
   parseMotionMessage,
+  parsePadMessage,
   MAX_PADS,
   MAX_MESSAGES_PER_SECOND,
 } = require('./pad-hub');
@@ -154,6 +155,60 @@ describe('pad hub', () => {
     }
     const rate = hub.snapshot()[0].rateHz;
     assert.ok(rate >= 59 && rate <= 61, `expected about 60 Hz, got ${rate}`);
+  });
+});
+
+describe('gamepad (PAD) messages', () => {
+  const pad = (seq, overrides = {}) => ({
+    type: 'PAD',
+    seq,
+    buttons: 0,
+    sticks: [0, 0, 0, 0],
+    ...overrides,
+  });
+
+  test('accepts a well-formed state and clamps sticks to -1..1', () => {
+    assert.deepEqual(parsePadMessage(pad(3, { buttons: 0b101, sticks: [1.0004, -1.2, 0.5, 0] })), {
+      seq: 3,
+      buttons: 0b101,
+      sticks: [1, -1, 0.5, 0],
+    });
+  });
+
+  for (const [label, bad] of [
+    ['a bit beyond the last button', pad(1, { buttons: 1 << 17 })],
+    ['negative buttons', pad(1, { buttons: -1 })],
+    ['three sticks', pad(1, { sticks: [0, 0, 0] })],
+    ['NaN stick', pad(1, { sticks: [0, NaN, 0, 0] })],
+    ['missing seq', { type: 'PAD', buttons: 0, sticks: [0, 0, 0, 0] }],
+  ]) {
+    test(`rejects ${label}`, () => assert.equal(parsePadMessage(bad), null));
+  }
+
+  test('keeps the newest state, ignores a late older one, publishes accepted ones', () => {
+    const hub = createPadHub();
+    const ws = fakeSocket();
+    const seen = [];
+    hub.events.on('pad', (slot, state) => seen.push(state.seq));
+    hub.attach(ws, 'x');
+    ws.deliver(pad(1, { buttons: 1 }));
+    ws.deliver(pad(3, { buttons: 2 }));
+    ws.deliver(pad(2, { buttons: 4 }));
+    assert.deepEqual(seen, [1, 3]);
+    assert.equal(hub.snapshot()[0].gamepad.buttons, 2);
+    assert.equal(hub.snapshot()[0].padMessages, 2);
+  });
+
+  test('gamepad and motion are tracked separately on one phone', () => {
+    const hub = createPadHub();
+    const ws = fakeSocket();
+    hub.attach(ws, 'x');
+    ws.deliver(motion(0));
+    ws.deliver(pad(0, { buttons: 1 }));
+    const snap = hub.snapshot()[0];
+    assert.equal(snap.received, 1);
+    assert.equal(snap.padMessages, 1);
+    assert.equal(snap.rejected, 0);
   });
 });
 

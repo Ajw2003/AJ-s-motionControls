@@ -6,14 +6,14 @@
 ## Headline: 0%
 
 No milestone's acceptance check has been run yet, so nothing counts as done. Milestone 1's code is
-built and checked headless, and so is milestone 2's; their acceptance needs real phones and Dolphin. Everything else builds on Rock
+built and checked headless, and so are milestones 2's and 3's; their acceptance needs real phones and Dolphin. Everything else builds on Rock
 Skipping's phone-controller stack, forked on 2026-10-08.
 
 | # | Milestone | Status | Issue |
 |---|---|---|---|
 | 1 | Raw motion stream | Built; checked headless; real-phone check outstanding | [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) |
 | 2 | Motion in emulators over DSU | Built; checked with a scripted DSU client; Dolphin check outstanding | [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) |
-| 3 | On-screen gamepad | Not started | [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) |
+| 3 | On-screen gamepad | Built; checked headless with emulated multi-touch; real-phone check outstanding | [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) |
 | 4 | Whole controller over DSU | Not started | [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) |
 | 5 | Virtual Xbox controller | Not started | [#6](https://github.com/Ajw2003/AJ-s-motionControls/issues/6) |
 | 6 | Latency measured | Not started | [#8](https://github.com/Ajw2003/AJ-s-motionControls/issues/8) |
@@ -63,6 +63,32 @@ shared misreading would pass them all.
 
 **Outstanding for acceptance:** Dolphin's DSU client on the Windows PC showing a real phone's
 motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
+
+## Milestone 3 — on-screen gamepad
+
+**Built** (see [`4-systems/OnscreenGamepad.md`](../4-systems/OnscreenGamepad.md)): Xbox, Switch,
+GameCube and sideways Wii Remote layouts on the phone page; multi-touch; a `PAD` message with the
+whole state on every change and every 250 ms; the PC validates it and the monitor shows it.
+Motion keeps streaming alongside.
+
+**Checked, 2026-10-09, in the sandbox:**
+- `controller` tests green twice, including `controller/test-gamepad-state.js`: sticks, D-pad, the
+  wire order of buttons, and every layout free of overlaps at three phone aspect ratios.
+- `relay` tests: 91 passed, 0 failed (8 new for `PAD` messages), run twice.
+- `tools/verify-gamepad.js`, run more than twice: every layout on an emulated iPhone 13 and Pixel 7
+  in landscape; three touches held at once (A, left stick up-right, D-pad up) reached the PC as
+  `buttons 2049` (south + up) and sticks `0.707, 0.707`, and all returned to zero on release.
+  Screenshots: [`media/verify/gamepad-three-touches-phone.png`](../media/verify/gamepad-three-touches-phone.png),
+  [`media/verify/gamepad-three-touches-monitor.png`](../media/verify/gamepad-three-touches-monitor.png),
+  and `media/verify/gamepad-*.png` for each layout.
+- Bugs the screenshots caught and fixed: overlapping controls on three layouts, the layout button
+  covering the C-stick, and the setup screen not scrolling in landscape.
+
+**What that cannot show:** how it feels under real thumbs, real touch latency, whether iOS keeps
+landscape without a lock, or vibration on Android. Chrome's touch emulation is not a touchscreen.
+
+**Outstanding for acceptance:** every layout on a real iPhone and a real Android phone, with
+simultaneous presses reaching `monitor.html`.
 
 ## What is inherited and already works
 

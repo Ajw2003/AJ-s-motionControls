@@ -12,15 +12,24 @@
       :root {
         --bg: #0d1b2a;
         --surface: #1b263b;
+        --raised: #273449;
         --accent: #4cc9f0;
         --good: #57cc99;
         --bad: #ef476f;
         --text: #e0e1dd;
         --muted: #7d8597;
+        --green: #57cc99;
+        --red: #ef476f;
+        --blue: #4cc9f0;
+        --yellow: #ffd166;
       }
       * {
         box-sizing: border-box;
         -webkit-tap-highlight-color: transparent;
+      }
+      html,
+      body {
+        overscroll-behavior: none;
       }
       body {
         margin: 0;
@@ -34,13 +43,22 @@
           sans-serif;
         background: var(--bg);
         color: var(--text);
-        touch-action: none;
+        /* The setup screen must scroll (in landscape Start is below the fold); only the
+           gamepad screen locks touch, in #pad below. */
+        touch-action: manipulation;
         user-select: none;
         -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
       h1 {
         font-size: 1.25rem;
         margin: 0 0 12px;
+      }
+      h2 {
+        font-size: 0.95rem;
+        color: var(--muted);
+        font-weight: 600;
+        margin: 0 0 8px;
       }
       #start {
         width: 100%;
@@ -51,9 +69,7 @@
         border-radius: 12px;
         background: var(--accent);
         color: var(--bg);
-      }
-      #start[hidden] {
-        display: none;
+        margin-top: 12px;
       }
       .card {
         background: var(--surface);
@@ -71,37 +87,220 @@
       .label {
         color: var(--muted);
       }
-      #status.ok {
+      .ok {
         color: var(--good);
       }
-      #status.bad {
+      .bad {
         color: var(--bad);
       }
       #rate {
         font-size: 2.2rem;
         font-weight: 700;
       }
+
+      /* Layout picker */
+      #layouts {
+        display: grid;
+        gap: 8px;
+      }
+      .layout-choice {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 2px solid transparent;
+        background: var(--raised);
+        color: var(--text);
+        font: inherit;
+      }
+      .layout-choice strong {
+        display: block;
+      }
+      .layout-choice span {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .layout-choice[aria-pressed='true'] {
+        border-color: var(--accent);
+      }
+
+      /* The gamepad, full screen once started */
+      #pad {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        display: none;
+        touch-action: none;
+      }
+      body.playing #pad {
+        display: block;
+      }
+      body.playing #setup {
+        display: none;
+      }
+      #chip {
+        position: absolute;
+        top: max(6px, env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 0;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        z-index: 2;
+      }
+      #chip .menu-hint {
+        color: var(--muted);
+      }
+      .control {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        color: var(--text);
+        background: var(--raised);
+        border: 2px solid #3a4a63;
+        touch-action: none;
+      }
+      .control.button {
+        border-radius: 50%;
+        font-size: 6vh;
+      }
+      .control.pill {
+        border-radius: 999px;
+        font-size: 4.5vh;
+      }
+      .control.button.pressed,
+      .dpad-arm.pressed {
+        background: var(--accent);
+        color: var(--bg);
+        border-color: var(--accent);
+      }
+      .control[data-color='green'] {
+        color: var(--green);
+      }
+      .control[data-color='red'] {
+        color: var(--red);
+      }
+      .control[data-color='blue'] {
+        color: var(--blue);
+      }
+      .control[data-color='yellow'] {
+        color: var(--yellow);
+      }
+      .control.stick {
+        border-radius: 50%;
+        background: radial-gradient(circle, #1f2b40 0%, #16202f 100%);
+      }
+      .stick-knob {
+        position: absolute;
+        width: 44%;
+        height: 44%;
+        border-radius: 50%;
+        background: var(--raised);
+        border: 2px solid #4a5d7a;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4vh;
+        pointer-events: none;
+      }
+      .control.stick.active .stick-knob {
+        border-color: var(--accent);
+      }
+      .control.dpad {
+        background: transparent;
+        border: 0;
+      }
+      .dpad-arm {
+        position: absolute;
+        width: 34%;
+        height: 34%;
+        background: var(--raised);
+        border: 2px solid #3a4a63;
+        border-radius: 8px;
+        pointer-events: none;
+      }
+      .dpad-arm[data-dir='up'] {
+        left: 33%;
+        top: 0;
+      }
+      .dpad-arm[data-dir='down'] {
+        left: 33%;
+        bottom: 0;
+      }
+      .dpad-arm[data-dir='left'] {
+        top: 33%;
+        left: 0;
+      }
+      .dpad-arm[data-dir='right'] {
+        top: 33%;
+        right: 0;
+      }
+      #rotate {
+        display: none;
+      }
+      @media (orientation: portrait) {
+        body.playing #rotate {
+          display: flex;
+          position: fixed;
+          inset: 0;
+          z-index: 5;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 24px;
+          background: var(--bg);
+          font-size: 1.3rem;
+        }
+      }
     </style>
   </head>
   <body>
-    <h1>AJ's Motion Controls</h1>
-    <button id="start" type="button">Start controller</button>
+    <div id="setup">
+      <h1>AJ's Motion Controls</h1>
 
-    <div class="card">
-      <div class="row">
-        <span class="label">Connection</span><span id="status">Not started</span>
+      <div class="card">
+        <h2>Layout</h2>
+        <div id="layouts"></div>
       </div>
-      <div class="row"><span class="label">Slot</span><span id="slot">–</span></div>
+
+      <button id="start" type="button">Start controller</button>
+
+      <div class="card">
+        <div class="row">
+          <span class="label">Connection</span><span id="status">Not started</span>
+        </div>
+        <div class="row"><span class="label">Slot</span><span id="slot">–</span></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <span class="label">Sending motion</span><span><span id="rate">0</span> Hz</span>
+        </div>
+        <div class="row"><span class="label">Accel (g)</span><span id="accel">–</span></div>
+        <div class="row"><span class="label">Gyro (°/s)</span><span id="gyro">–</span></div>
+        <div class="row"><span class="label">Sent</span><span id="sent">0</span></div>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="row">
-        <span class="label">Sending</span><span><span id="rate">0</span> Hz</span>
-      </div>
-      <div class="row"><span class="label">Accel (g)</span><span id="accel">–</span></div>
-      <div class="row"><span class="label">Gyro (°/s)</span><span id="gyro">–</span></div>
-      <div class="row"><span class="label">Sent</span><span id="sent">0</span></div>
+    <div id="pad">
+      <button id="chip" type="button">
+        <span id="chip-status">Connecting…</span><span class="menu-hint"> · Layout ▾</span>
+      </button>
+      <div id="controls"></div>
     </div>
+
+    <div id="rotate">Turn your phone sideways to use the controller.</div>
 
     <script type="module" src="js/pad.js"></script>
   </body>

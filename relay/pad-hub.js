@@ -33,6 +33,32 @@ function parseMotionMessage(data) {
   return { seq: data.seq, ts: data.ts, accel: data.accel.slice(), gyro: data.gyro.slice() };
 }
 
+// One bit per button in controller/js/gamepad-state.js; anything above is not a button.
+const PAD_BUTTON_MASK = (1 << 17) - 1;
+
+/**
+ * Validate one PAD message (the on-screen gamepad, #4). Returns a clean state or null.
+ * Sticks are clamped to -1..1 rather than rejected: a rounding overshoot is not an attack.
+ */
+function parsePadMessage(data) {
+  if (!data || data.type !== 'PAD') return null;
+  if (!Number.isSafeInteger(data.seq) || data.seq < 0) return null;
+  if (!Number.isInteger(data.buttons) || data.buttons < 0 || data.buttons > PAD_BUTTON_MASK)
+    return null;
+  if (
+    !Array.isArray(data.sticks) ||
+    data.sticks.length !== 4 ||
+    !data.sticks.every((n) => typeof n === 'number' && Number.isFinite(n))
+  ) {
+    return null;
+  }
+  return {
+    seq: data.seq,
+    buttons: data.buttons,
+    sticks: data.sticks.map((n) => Math.max(-1, Math.min(1, n))),
+  };
+}
+
 function createPadHub({ now = () => Date.now(), log = () => {} } = {}) {
   const events = new EventEmitter();
   const slots = new Array(MAX_PADS).fill(null);
@@ -57,6 +83,8 @@ function createPadHub({ now = () => Date.now(), log = () => {} } = {}) {
       remoteAddress,
       connectedAt: now(),
       latest: null,
+      gamepad: null, // latest PAD state; motion and buttons arrive separately
+      padMessages: 0,
       received: 0,
       dropped: 0, // gaps in seq: lost or reordered on the way
       rejected: 0, // malformed or over the rate cap
@@ -96,6 +124,19 @@ function createPadHub({ now = () => Date.now(), log = () => {} } = {}) {
       }
       if (data && data.type === 'PING') {
         ws.send(JSON.stringify({ type: 'PONG', t: data.t }));
+        return;
+      }
+      if (data && data.type === 'PAD') {
+        const state = parsePadMessage(data);
+        if (!state) {
+          pad.rejected++;
+          return;
+        }
+        // Each PAD message is the whole state, so a late one is simply stale.
+        if (pad.gamepad && state.seq <= pad.gamepad.seq) return;
+        pad.gamepad = state;
+        pad.padMessages++;
+        events.emit('pad', slot, state);
         return;
       }
       const sample = parseMotionMessage(data);
@@ -141,6 +182,8 @@ function createPadHub({ now = () => Date.now(), log = () => {} } = {}) {
             received: pad.received,
             dropped: pad.dropped,
             rejected: pad.rejected,
+            gamepad: pad.gamepad,
+            padMessages: pad.padMessages,
             latest: pad.latest,
           }
         : null,
@@ -150,4 +193,10 @@ function createPadHub({ now = () => Date.now(), log = () => {} } = {}) {
   return { attach, snapshot, events };
 }
 
-module.exports = { createPadHub, parseMotionMessage, MAX_PADS, MAX_MESSAGES_PER_SECOND };
+module.exports = {
+  createPadHub,
+  parseMotionMessage,
+  parsePadMessage,
+  MAX_PADS,
+  MAX_MESSAGES_PER_SECOND,
+};

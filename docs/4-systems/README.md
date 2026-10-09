@@ -29,6 +29,7 @@ milestones build on. Their wording still talks about "the game" in places.
 |---|---|---|
 | Controller stream (#2) | [`ControllerStream.md`](ControllerStream.md) | `controller/js/pad.js`, `controller/js/motion-sample.js`, `relay/pad-hub.js` |
 | DSU server (#3; buttons #5) | [`DsuServer.md`](DsuServer.md) | `relay/dsu.js` |
+| On-screen gamepad (#4) | [`OnscreenGamepad.md`](OnscreenGamepad.md) | `controller/js/gamepad-state.js`, `layouts.js`, `gamepad-view.js` |
 
 ## Planned systems — no doc until built
 
@@ -38,7 +39,6 @@ it is built; until then its design lives in the plan.
 | System | Plan |
 |---|---|
 | Buttons and sticks over DSU (extends the DSU server) | [`../plans/dsu-buttons.md`](../plans/dsu-buttons.md) |
-| On-screen gamepad | [`../plans/onscreen-gamepad.md`](../plans/onscreen-gamepad.md) |
 | Virtual Xbox controller | [`../plans/virtual-xbox-controller.md`](../plans/virtual-xbox-controller.md) |
 | WebRTC input channel (replaces the stream's WebSocket for live input) | [`../plans/webrtc-input-channel.md`](../plans/webrtc-input-channel.md) |
 

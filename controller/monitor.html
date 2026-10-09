@@ -115,6 +115,29 @@
         color: var(--bad);
         font-weight: 600;
       }
+      .stick {
+        display: inline-block;
+        position: relative;
+        width: 44px;
+        height: 44px;
+        margin-left: 8px;
+        border-radius: 50%;
+        background: #0d1b2a;
+        border: 1px solid var(--muted);
+        vertical-align: middle;
+      }
+      .stick .dot {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        margin: -5px 0 0 -5px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .pressed {
+        color: var(--accent);
+        font-weight: 600;
+      }
       #error {
         color: var(--bad);
       }
@@ -128,7 +151,9 @@
     <div id="dsu" class="dsu"></div>
     <div id="slots"></div>
 
-    <script>
+    <script type="module">
+      import { BUTTON_NAMES, Button } from './js/gamepad-state.js';
+
       // Bar ranges: ±2 g of acceleration, ±500 °/s of rotation.
       const ACCEL_RANGE = 2;
       const GYRO_RANGE = 500;
@@ -138,6 +163,17 @@
         const left = clamped < 0 ? 50 + clamped * 50 : 50;
         const width = Math.abs(clamped) * 50;
         return `<span class="label">${label}</span><div class="track"><div class="fill" style="left:${left}%;width:${width}%"></div></div>`;
+      }
+
+      function renderGamepad(pad) {
+        const g = pad.gamepad;
+        if (!g)
+          return '<div class="row"><span class="label">Gamepad</span><span>not used yet</span></div>';
+        const pressed = BUTTON_NAMES.filter((name) => g.buttons & Button[name]);
+        const stick = (x, y) =>
+          `<span class="stick"><span class="dot" style="left:${50 + x * 40}%;top:${50 - y * 40}%"></span></span>`;
+        return `<div class="row"><span class="label">Buttons</span><span class="pressed">${pressed.join(' ') || 'none'}</span></div>
+          <div class="row"><span class="label">Sticks</span><span>${stick(g.sticks[0], g.sticks[1])}${stick(g.sticks[2], g.sticks[3])}</span></div>`;
       }
 
       function renderSlot(pad, index) {
@@ -160,6 +196,7 @@
           <div class="row"><span class="label">Lost on the way</span><span>${pad.dropped}</span></div>
           <div class="row"><span class="label">Rejected</span><span>${pad.rejected}</span></div>
           ${values}
+          ${renderGamepad(pad)}
         </div>`;
       }
 
