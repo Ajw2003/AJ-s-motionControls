@@ -16,11 +16,19 @@ the groundwork the milestones are written against.
 - The systems index split into systems this product reuses, game-only systems, and planned ones.
 - One plan per issue in [`plans/`](../plans/).
 - A Decisions entry recording the restructure.
+- **#2 raw motion stream built** and checked headless (tests twice, two emulated phones at
+  62-63 Hz, screenshots in [`media/verify/`](../media/verify/)). Real-phone check outstanding.
+- **#3 DSU server built** and checked with a scripted DSU client (tests twice, 312-313 packets in
+  5 s, 0 malformed). Dolphin check and axis signs outstanding.
+- **#4 on-screen gamepad built**: four layouts, multi-touch, checked headless; the screenshots
+  caught three layout bugs and a scrolling bug, all fixed and now under test.
+- **#5 buttons over DSU built**: the DSU client sees on-screen presses and sticks alongside
+  motion. Dolphin check outstanding.
 
 ## Deliberately not done
 
-- No systems docs for the DSU server, on-screen gamepad or virtual controller: none of them exists
-  yet, and a systems doc for unbuilt code would be invented. Each gets one when it is built.
+- No systems doc for the virtual controller: it does not exist yet. The controller stream, DSU
+  server and on-screen gamepad got theirs today.
 - No game code or game docs removed. That is an open decision.
 
 ## Surfaced, not today's job

@@ -1,6 +1,6 @@
 # Raw motion stream from the phone
 
-**Issue:** [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) · **Milestone:** 1 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** not started
+**Issue:** [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) · **Milestone:** 1 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** built; checked headless, real-phone check outstanding (see [`ProjectState.md`](../3-state/ProjectState.md))
 
 ## Goal
 The phone page sends raw gyro (deg/s) and accelerometer (g) readings at the rate the browser

@@ -1,6 +1,6 @@
 # Buttons and sticks over DSU
 
-**Issue:** [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) · **Milestone:** 4 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** not started
+**Issue:** [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) · **Milestone:** 4 in [`Roadmap.md`](../2-roadmap/Roadmap.md) · **Status:** built; checked with a scripted DSU client and emulated touches; Dolphin check and the which-emulators record outstanding (see [`ProjectState.md`](../3-state/ProjectState.md))
 
 ## Goal
 Fill the button, stick, trigger and touch fields of DSU pad data from the on-screen gamepad, so an
