@@ -1,249 +1,110 @@
 # Roadmap — what 0% to 100% means
 
-**Tier 2.** This document defines *done*. It does not say where the project is — that is
-[`ProjectState.md`](../3-state/ProjectState.md), and the two are deliberately separate so that progress can
-move without the definition of the target moving with it.
+**Tier 2.** This document defines *done*. Where the project stands is
+[`ProjectState.md`](../3-state/ProjectState.md); the two are kept apart so progress can move
+without the target moving with it.
 
-Ten milestones, one per 10%. Each is written so that **someone else could check it**: the
-acceptance criterion is an observable outcome, not a feeling that the work is finished.
-
-> **Granularity is a choice, and this is the choice.** 10% bands put each milestone at roughly
-> one to two weeks of real work — coarse enough that a milestone is a meaningful unit, fine
-> enough that "where am I" has an answer better than "somewhere in the middle". Finer bands were
-> considered and rejected: at 1% this becomes a backlog that has to be re-cut every time
-> priorities move, and it would need re-cutting often, because this project reverses hosting and
-> physics decisions regularly.
+Seven milestones, one per GitHub issue under the parent issue
+[#1](https://github.com/Ajw2003/AJ-s-motionControls/issues/1). Each has an acceptance criterion
+someone else could check. **A milestone is done when that check has actually been run**, not when
+the code exists.
 
 ---
 
 ## What 100% is
 
-**A person who has never seen this repository downloads one file, runs it, and hosts a party for
-their friends in their living room — with no internet, no router, no configuration, and no
-instructions from you.** Their guests scan a QR code and play. Nobody types an address, installs
-an app, or troubleshoots a certificate.
+**On a Windows PC, a person opens a web page on the phone they already own and uses it as a
+complete controller — on-screen buttons and sticks plus motion — in Dolphin and in an ordinary PC
+game, for free, with no app installed, and with the latency measured and written down.**
 
-Everything below is on the way to exactly that sentence. A milestone that does not move toward
-it does not belong on this list.
-
-**What 100% is not.** Not a commercial release: no store pages, no localisation, no
-achievements, no online/remote play, no platform beyond Windows. Those are a different roadmap.
-This one ends at "a stranger can play it".
+**What 100% is not, yet.** Packaging for a stranger's PC (one download, no setup) is not on this
+roadmap: no issue exists for it. Rock Skipping solved most of it for its own installer
+(`deploy/installer.iss`, `deploy/setup-offline.ps1`), so it is a likely next roadmap, but adding
+it is a decision to make, not something to slip in here.
 
 ---
 
 ## The milestones
 
-| # | % | Milestone | One line |
-|---|---|---|---|
-| 1 | 10 | Infrastructure spike | The scaffolding exists and survives scene loads |
-| 2 | 20 | Motion pipeline | A phone's rotation reaches Unity intact |
-| 3 | 30 | Skip physics | A stone bounces, and the throw is what decides how well |
-| 4 | 40 | Turns, scoring, multiplayer | Eight people can play a match to a result |
-| 5 | 50 | Local hosting and secure context | The PC serves the controller page over HTTPS itself |
-| 6 | 60 | Offline hosting | A match runs with no internet and no router |
-| 7 | 70 | Frictionless join | Joining is a scan, and a returning phone is not asked twice |
-| 8 | 80 | Rock variety and selection | Six stones that play differently, and a way to pick one |
-| 9 | 90 | Presentation | It looks and sounds like a finished game |
-| 10 | 100 | Zero-setup distribution | A stranger installs and plays |
+| # | % | Milestone | Issue | One line |
+|---|---|---|---|---|
+| 1 | 15 | Raw motion stream | [#2](https://github.com/Ajw2003/AJ-s-motionControls/issues/2) | The phone sends raw gyro and accelerometer readings at its native rate |
+| 2 | 30 | Motion in emulators over DSU | [#3](https://github.com/Ajw2003/AJ-s-motionControls/issues/3) | Dolphin sees the phone's motion |
+| 3 | 45 | On-screen gamepad | [#4](https://github.com/Ajw2003/AJ-s-motionControls/issues/4) | Buttons, D-pad, sticks and triggers on the phone, with layouts |
+| 4 | 55 | Whole controller over DSU | [#5](https://github.com/Ajw2003/AJ-s-motionControls/issues/5) | Dolphin takes the phone as a full controller from one connection |
+| 5 | 70 | Virtual Xbox controller | [#6](https://github.com/Ajw2003/AJ-s-motionControls/issues/6) | Windows and any game see the phone as an Xbox controller |
+| 6 | 85 | Latency measured | [#8](https://github.com/Ajw2003/AJ-s-motionControls/issues/8) | Real touch-to-PC and motion-to-PC numbers per phone |
+| 7 | 100 | Low-latency channel | [#7](https://github.com/Ajw2003/AJ-s-motionControls/issues/7) | Input moves to a WebRTC data channel, gain measured |
+
+Milestone 6 comes before 7 on purpose: the WebRTC change is only worth keeping if it measurably
+beats the WebSocket, and that needs the measurement first.
 
 ---
 
-## 1 — Infrastructure spike (10%)
+### 1 — Raw motion stream (15%)
 
-The load-bearing scaffolding, before any of it is worth building on.
+**Contains.** A phone page mode that sends gyro (deg/s) and accelerometer (g) readings at the rate
+the browser delivers them, each with a phone-side timestamp, reusing the permission prompt and the
+iOS/Android normalisation in `controller/js/sensors.js`. A PC-side endpoint that receives it,
+separate from Rock Skipping's rate-limited game messages. Plan:
+[`plans/raw-motion-stream.md`](../plans/raw-motion-stream.md).
 
-**Contains:** the event system ported and made multi-scene safe; the four-scene structure
-(Bootstrap → Lobby → Game → Results) with persistent managers; the Node relay written and
-hardened with its own test suite.
+**Acceptance.** Node unit tests for the sample format pass, and a real iPhone and a real Android
+phone each show a steady stream at their native rate in a debug readout on the PC, with a
+screenshot of each.
 
-**Acceptance:** `RockSkipping/Verify/Run Event System Verification` proves publish/subscribe
-survives a scene load and that destroyed subscribers are dropped; `cd relay && npm test` passes.
+### 2 — Motion in emulators over DSU (30%)
 
-**Why first:** every later milestone assumes an event can cross a scene boundary and a phone can
-reach the PC. Both were ported from another project and neither worked unmodified.
+**Contains.** A DSU (CemuHook) server on UDP 26760 that answers version, controller-info and
+pad-data requests from the phone's motion. Up to four phones in the four DSU slots. Plan:
+[`plans/dsu-server.md`](../plans/dsu-server.md).
 
----
+**Acceptance.** A scripted DSU client in Node receives CRC-correct pad data driven by a fake phone,
+and on the Windows PC Dolphin's DSU client shows a real phone's motion moving (screenshot or
+video).
 
-## 2 — Motion pipeline (20%)
+### 3 — On-screen gamepad (45%)
 
-The phone's orientation arrives in Unity as the same rotation the player is holding.
+**Contains.** Touch controls on the phone page with layouts for a sideways Wii Remote, GameCube,
+Switch-style dual stick and a general Xbox layout. Fires on touch-down, multi-touch, state sent on
+change, motion keeps streaming. Plan: [`plans/onscreen-gamepad.md`](../plans/onscreen-gamepad.md).
 
-**Contains:** sensor normalization on the phone (iOS and Android differences resolved *before*
-sending, so Unity never sees a platform); permission gating for `DeviceOrientationEvent`; the
-grip-relative quaternion delta; one conversion into Unity space; the aim preview drawing a
-predicted arc.
+**Acceptance.** Every layout works on a real iPhone and a real Android phone, with simultaneous
+presses reaching the PC in a debug readout; screenshots of each layout.
 
-**Acceptance:** tilt the phone ten degrees, the on-screen stone tilts ten degrees, on both iOS
-and Android, in the pose the game is actually played in — phone upright, screen facing the
-player, aimed at a television.
+### 4 — Whole controller over DSU (55%)
 
-**Why it is its own milestone:** that pose sits exactly on a gimbal singularity, and the first
-two implementations broke there. See [`4-systems/MotionPipeline.md`](../4-systems/MotionPipeline.md).
+**Contains.** Buttons, sticks, triggers and touch filled into DSU pad data, with a mapping per
+layout, and a written record of which emulators read buttons from DSU and which take motion only.
+Plan: [`plans/dsu-buttons.md`](../plans/dsu-buttons.md).
 
----
+**Acceptance.** The scripted DSU client sees correct button bits and stick values, and Dolphin
+accepts the phone as a full controller on the Windows PC.
 
-## 3 — Skip physics (30%)
+### 5 — Virtual Xbox controller (70%)
 
-A stone thrown at water skips, sinks, or fails, and *the throw* is what decides which.
+**Contains.** One virtual Xbox 360 controller per phone through the free ViGEmBus driver, its
+install folded into a setup script, and a chosen way for Node to drive it. Motion stays on DSU.
+Plan: [`plans/virtual-xbox-controller.md`](../plans/virtual-xbox-controller.md).
 
-**Contains:** the custom bounce solver; the energy model derived from bounce geometry rather than
-an authored retention constant; spin as the stabiliser that holds attack angle through impact;
-the three forgiveness bands; the aim preview running the same solver speculatively.
+**Acceptance.** On the Windows PC, a phone appears in Windows' game controller settings as an Xbox
+controller and its buttons register (screenshot).
 
-**Acceptance:** `RockSkipping/Verify/Print Skip Curve` produces a speed/angle/roll sweep in which
-a better throw beats a worse throw, and every run satisfies the energy invariant. Two different
-throws produce visibly different results without any tuning edit between them.
+### 6 — Latency measured (85%)
 
-**Why it is not "physics works":** an earlier model had 25 tuning fields fighting each other, and
-a one-point tuning edit moved the result more than the player's own throw did. The milestone is
-the throw mattering, not the simulation running.
+**Contains.** Network round-trip measurement with clock-offset estimation, reported as median and
+95th percentile, plus a repeatable slow-motion-video method for the full touch-to-PC time. Plan:
+[`plans/latency-measurement.md`](../plans/latency-measurement.md).
 
----
+**Acceptance.** Numbers for at least one iPhone and one Android phone on the Windows PC's hotspot
+are in the docs, with the method beside them.
 
-## 4 — Turns, scoring, multiplayer (40%)
+### 7 — Low-latency channel (100%)
 
-A real match, with real people, to a real result.
+**Contains.** The live input stream moved to a WebRTC data channel set to unordered with no
+retransmits, sending full state each time so a lost packet is corrected by the next. The WebSocket
+stays for setup and as a fallback. Plan:
+[`plans/webrtc-input-channel.md`](../plans/webrtc-input-channel.md).
 
-**Contains:** the player roster; match phases (Lobby / Choosing / Playing / Results); turn
-rotation over a configurable number of rounds; push-based scoring; late join; player names and
-colours; the results screen.
-
-**Acceptance:** a cross-platform session with five or more phones (iOS and Android together)
-completes a full match — every player throws every round, scores are correct, someone wins, and a
-player who joins mid-lobby or drops and returns is handled without restarting.
-
----
-
-## 5 — Local hosting and secure context (50%)
-
-The PC hosts the game itself. No cloud service is involved in any way.
-
-**Contains:** the relay running as a child process of the game; HTTPS with a real certificate,
-obtained and renewed with no human involved; the controller page served from the host; the
-hosted-relay design removed rather than left as a fallback.
-
-**Acceptance:** press Play in Unity; a phone on the same network opens the join URL, gets a valid
-certificate, and its motion sensors unlock. Nothing was configured first and no cloud account
-exists.
-
-**Why this is half the project:** phone motion sensors are gated on a secure context. Without
-this milestone there is no game, only a demo that works on the developer's machine.
-
----
-
-## 6 — Offline hosting (60%)
-
-The living room has no internet. The game does not care.
-
-**Contains:** the PC raising its own Wi-Fi network via Windows Mobile Hotspot; DHCP for guests;
-the relay answering DNS for its own hostname on the hotspot subnet; the host resolving its own
-relay via a hosts entry; guest isolation verified rather than assumed; the certificate cached so
-no network is needed at play time; one-time elevated machine setup automated behind a single UAC
-prompt.
-
-**Acceptance:** unplug everything. Start the game. A phone that has never seen this network joins
-by QR and plays a full match.
-
-**Why it is separate from milestone 5:** milestone 5 needs a working network. This one needs the
-PC to *be* the network, which is a different problem with different failure modes — three of
-which were genuine blockers that each looked like a Windows limitation and were not.
-
----
-
-## 7 — Frictionless join (70%)
-
-Joining stops being a ritual.
-
-**Contains:** QR codes for the Wi-Fi payload and the game URL (never asking anyone to type or
-hunt for an address); a returning phone rejoining itself without repeating the sequence; the
-hotspot SSID, passphrase and room code surviving a restart; the device funnel telling the TV how
-many phones are stuck at each stage, so the host can help the person who is stuck.
-
-**Acceptance:** a guest who played last week arrives, scans once, and is in. A guest who is stuck
-is visible on the TV as stuck, at the stage they are stuck at.
-
----
-
-## 8 — Rock variety and selection (80%)
-
-Six stones that feel different, and a way to choose one that is worth doing.
-
-**Contains:** the rock catalog and per-rock definitions built from the mesh source; the strict
-split between what a rock owns (three bounded multipliers) and what is global; the selection
-state and its wire format; pointing the phone at the shore to highlight a stone and confirming
-it; a host settings panel; telemetry and an offline sweep to compare rocks against each other.
-
-**Acceptance:** six rocks are selectable, each is **visually distinct on the TV and named on the
-scoreboard**, a player picks one by pointing their phone at the shore, and the pick survives
-into their throw.
-
-**This acceptance criterion changed on 2026-09-08**, and the change is the point. It previously
-read "each plays measurably differently under `Print Skip Curve`". That is now unmeetable by
-design: [`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md) D5 settles that the rocks
-stay **mechanically identical** and differentiate visually only — distinct meshes and
-silhouettes, named on the scoreboard, with the player's colour always winning the tint, because
-identity in a five-phone party game outranks a cosmetic choice.
-
-**Mechanical differentiation is deliberately deferred, not abandoned.** Three multipliers across
-six rocks is a balance problem with no playtest budget behind it. `SkipTuning.cs:22` records why
-the physics is being judged bare first, and that reasoning still stands. When it is picked up,
-do it along **one** legible axis — flat-and-light skips more but travels less, heavy travels far
-but skips less — because one axis is explainable in a sentence on the phone's choose screen and
-three axes are noise.
-
----
-
-## 9 — Presentation (90%)
-
-It stops looking like a prototype.
-
-**Contains:** audio — the skip pitch ladder, sink, fail, score and win sounds, and the scheduler
-that stops same-frame sounds colliding; trails and water response; camera framing; music. Plus,
-as of 2026-09-08, the whole of [`plans/presentation-and-ui.md`](../plans/presentation-and-ui.md):
-the stylised-flat art direction and environment presets, the shore, the retirement of IMGUI in
-favour of UI Toolkit, and **the in-play HUD** — which does not currently exist in any form.
-
-**Acceptance:** someone watching a match from the couch, who has not been told what to look for,
-does not notice anything missing. Concretely, and this is new: they can see **whose turn it is
-and how many skips the throw is on, without asking anyone.**
-
-**Two known blockers, and neither is code:**
-
-- **Where source clips come from** — licensed, commissioned, or generated. Still unanswered. The
-  systems work without clips; the milestone does not close without them.
-- **Which typeface**, and under what licence. The project contains **no font asset at all** and
-  renders every screen in Unity's built-in Arial. Same class of blocker as the clips, found
-  2026-09-08. D10 of the plan settles the shape of the answer — a heavy-weight SIL-OFL face
-  committed to `Assets/Fonts/`, never fetched at runtime — but not the specific face.
-
----
-
-## 10 — Zero-setup distribution (100%)
-
-The sentence at the top of this document.
-
-**Contains:** bundling Node and the relay's dependencies inside the build; getting `relay/` and
-`controller/` into the build at all (they live outside `Assets/`, so Unity never copies them);
-the game's own defaults being correct with no override files; the installer, compiled and
-signed; a seed certificate shipped so a first launch works before it can reach anything.
-
-**Acceptance:** a person who has never seen the repository is handed one file. They install it,
-run it, and host a party. You are not in the room and they do not phone you.
-
-**The four blockers are known and unchanged** — see [`ZeroSetupPlan.md`](../ZeroSetupPlan.md). The
-third one, that `relay/` and `controller/` are not in the build, fails before any of the others
-are reached.
-
----
-
-## Keeping this honest
-
-- A milestone is done when its **acceptance criterion** has actually been checked, not when the
-  code exists. "Written but never run" is not done, and saying so is the whole value of writing
-  the criteria down.
-- When a milestone's status changes, update [`ProjectState.md`](../3-state/ProjectState.md) — not this file.
-  This file changes only when the *definition* changes.
-- If work is happening that fits no milestone here, that is worth noticing. Either it belongs to
-  a milestone and this file is missing it, or it is not on the way to 100% and should be
-  questioned.
+**Acceptance.** Milestone 6's measurement, rerun, shows the data channel against the WebSocket on
+the same phone and hotspot.

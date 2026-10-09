@@ -140,7 +140,7 @@ every difference between two throws is the throw.
 **As of 2026-09-08 it is also the settled design, not a gap.**
 [`../plans/presentation-and-ui.md`](../plans/presentation-and-ui.md) D5 keeps the rocks
 mechanically identical and differentiates them by mesh and silhouette, with the chosen rock
-**named on the scoreboard**. [`../Roadmap.md`](../2-roadmap/Roadmap.md) milestone 8's acceptance criterion
+**named on the scoreboard**. [`../Roadmap.md`](../archive/rock-skipping/Roadmap.md) milestone 8's acceptance criterion
 was rewritten to match. This document previously said the identical tunings were "the one thing
 standing between the project and milestone 8" — they are not, any more.
 
