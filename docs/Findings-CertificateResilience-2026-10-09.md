@@ -118,6 +118,61 @@ The fallbacks are worse:
   programme, a yearly fee, which breaks the no-running-cost rule. Android can be free to sideload,
   but that is still a download.
 
+## Revisited again: no new third party, so harden the shared certificate
+
+aj, later the same day: no DuckDNS, and no other new third party. The infrastructure already in
+use stays: the `skiprocking.ca` domain at Porkbun, Let's Encrypt, and GitHub (the weekly
+`.github/workflows/renew-cert.yml` job publishes to the `Ajw2003/rockskipping-cert` release).
+
+**What can't be done:**
+
+- **A published key can't be protected from revocation.** Under the Baseline Requirements a CA
+  must revoke within 24 hours of evidence that a key was disclosed
+  ([CA/B Forum ballot SC6](https://lists.cabforum.org/pipermail/public/2018-August/030334.html)).
+  Let's Encrypt also accepts a revocation signed with the certificate's own key, and then blocks
+  that key ([Let's Encrypt](https://community.letsencrypt.org/t/2024-03-28-cp-cps-deviation-regarding-keycompromise-key-blocking/215579)).
+  Publishing the key also breaks Let's Encrypt's subscriber agreement, which is a risk to the
+  account itself.
+- **Per-install keys under our own domain need a request channel.** The PC would have to send its
+  certificate request to the job that holds the Porkbun credentials. Without a service, nothing
+  can carry that request.
+
+**What revocation actually breaks offline (reported; not tested on our phones):**
+
+- A phone on the offline hotspot can't fetch revocation data at all.
+- iPhone Safari reportedly doesn't enforce ordinary revocation
+  ([Let's Encrypt forum](https://community.letsencrypt.org/t/are-revoked-certificates-detected-in-safari-and-chrome/42677),
+  [Apple forums](https://developer.apple.com/forums/thread/808875)).
+- Chrome's built-in revocation list holds only a small curated subset
+  ([LWN](https://lwn.net/Articles/1033809)).
+
+So a revoked certificate may keep working on phones. The real cost lands on new downloads and
+renewals.
+
+**The bigger hidden risk is a browser's built-in key blocklist.** It works offline. Chromium once
+blocked sslip.io's published key this way
+([blocklist README](https://cobalt.googlesource.com/cobalt.git/+/25902c6cb1ab9cfd8ae2ee6b0fb52953f73deda5/net/data/ssl/blocklist/README.md)).
+A blocked key fails everywhere until the certificate is reissued with a new one.
+
+**Hardening, using only what's already in place ($0):**
+
+| # | Change | Guards against |
+|---|---|---|
+| 1 | A name of its own for this product (e.g. `pad.skiprocking.ca`) with its own key | One product's revocation or blocking taking down the other |
+| 2 | A new key on every issue. **Already true**: no acme.sh state persists between runs (`renew-cert.yml:169-171`) | A blocklisted or revoked key outliving one certificate |
+| 3 | Spare names, each with its own key, issued in the same run. The launcher uses the first good one, and the QR code carries whichever name is in use, so users never see the switch | One revocation stopping play |
+| 4 | A daily check in the workflow that reissues as soon as a published certificate is revoked | A revocation lasting until the weekly run |
+| 5 | Ship the key inside the launcher download, not as a file named `server.key` on a public release | Automated scanners finding and reporting it. It doesn't stop a determined person |
+| 6 | If no valid certificate is left, the page falls back to plain HTTP: buttons and sticks keep working, motion turns off with a message | Total failure. The worst case becomes "no motion", not "no controller" |
+
+**What's left exposed:** someone determined can revoke every spare each time they're published.
+That denies motion until the next issue; nothing is stolen. Anyone holding the key could also
+impersonate the page to phones on the same hotspot.
+
+**Test that settles how much this matters:** issue a throwaway certificate on a test name with the
+existing pipeline, revoke it, then load it on an Android phone and an iPhone, offline on the hotspot
+and online a day later.
+
 ## To check before building
 
 1. Android Chrome trusts a user-installed authority for a page at `https://192.168.137.1` (aj's phone).
