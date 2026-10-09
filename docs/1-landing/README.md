@@ -51,6 +51,7 @@ when the definition of done changes. Tier 6 only grows.
 | Controller stream | [`4-systems/ControllerStream.md`](../4-systems/ControllerStream.md) | Raw motion from each phone to the PC, controller slots, the monitor |
 | DSU server | [`4-systems/DsuServer.md`](../4-systems/DsuServer.md) | DSU packets to emulators, the axis mapping |
 | On-screen gamepad | [`4-systems/OnscreenGamepad.md`](../4-systems/OnscreenGamepad.md) | Touch controls, the four layouts, the PAD message |
+| Certificate watch | [`4-systems/CertificateWatch.md`](../4-systems/CertificateWatch.md) | The shared `pad.skiprocking.ca` certificate: hourly revocation check, reissue, publish (runs in `rockskipping-cert`) |
 
 Planned systems and the game-only systems are listed in
 [`4-systems/README.md`](../4-systems/README.md).
