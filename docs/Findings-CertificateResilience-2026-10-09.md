@@ -212,6 +212,30 @@ The whole check is three downloads and one command, so an hourly run is cheap.
 - **Cost:** none in a public repo. A private repo bills each run as a whole minute, so an hourly
   job uses about 720 of the 2,000 free minutes a month.
 
+**Reuse from CannaScraper (`Ajw2003/CannaScraper`, read at `c4148a8`).** That repo already runs an
+hourly job without relying on GitHub's schedule, which it found unreliable: its hourly schedule
+fired once in about 12 hourly slots (`docs/4-systems/hourly-trigger.md`). It works in two parts:
+
+- **A self-chaining job.** Each run's last step dispatches the next run at least 60 minutes after
+  the current one started (`ci/scrape_chain_next.sh`).
+- **A watchdog.** One long job polls every 10 minutes and restarts the chain if it has gone quiet
+  for 70 minutes. It hands off to its own successor before GitHub's 6-hour job limit. The only
+  schedule left is a 5-minute wake-up that starts a watchdog if none is running
+  (`ci/scrape_watchdog.sh`).
+
+The plumbing is about 120 lines of shell plus tests (`ci/chain_lib.sh`, `ci/scrape_chain_next.sh`,
+`ci/scrape_watchdog.sh`); `ci/test_chain_scripts.sh` printed `ALL PASS` here. The revocation
+watch would swap the scrape for the CRL check. What this changes:
+
+- **Schedules failing silently stop mattering.** The chain runs by dispatch, not by schedule, and
+  only the watchdog's wake-up is a schedule. The 60-day inactivity rule applies to scheduled
+  workflows (*whether dispatch-chained runs count as activity is unconfirmed*).
+- **It has to live in a public repo.** The watchdog keeps one runner busy around the clock. That's
+  free in a public repo, but about 43,800 minutes a month would blow a private repo's 2,000 free
+  minutes many times over. The public `Ajw2003/rockskipping-cert` (or a new public cert repo for
+  this product) is the natural home. The Porkbun keys would move to that repo's secrets. Secrets
+  aren't given to pull requests from forks, but every log line is public, so nothing may echo them.
+
 **What the launcher does:** on every start with internet, download the current certificate and
 key, run the same revocation check, and cache them. Offline, use the cache until it expires.
 
