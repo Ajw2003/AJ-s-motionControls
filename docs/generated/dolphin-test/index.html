@@ -344,6 +344,9 @@
           <p class="untested">UNTESTED: not run on Windows; needs Git and your GitHub sign-in (the repo is private).</p>
           <div class="cmd"><pre><code>git clone https://github.com/Ajw2003/AJ-s-motionControls.git "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls"</code></pre><button class="copy" type="button">Copy</button></div>
           <p class="see"><b>You should see</b> <code>Cloning into 'C:\Users\aj\Desktop\GameDev\AJ-s-motionControls'...</code> then <code>done.</code> Already cloned? Run <code>git -C "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls" pull</code> instead.</p>
+          <p><b>Until PR #11 is merged</b>, switch to the branch that holds the code. Skip this once <code>main</code> has it.</p>
+          <div class="cmd"><pre><code>git -C "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls" checkout AjsAgent/controller-work-to-main</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="see"><b>You should see</b> <code>Switched to a new branch 'AjsAgent/controller-work-to-main'</code>. Without this, step 3 starts the old server and the <code>[dsu]</code> line never appears.</p>
         </div>
       </li>
 
