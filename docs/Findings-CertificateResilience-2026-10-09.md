@@ -173,6 +173,52 @@ impersonate the page to phones on the same hotspot.
 existing pipeline, revoke it, then load it on an Android phone and an iPhone, offline on the hotspot
 and online a day later.
 
+## Proposal: an hourly revocation watch, with the key downloaded at runtime
+
+aj's idea: a scheduled job, hourly or daily, that checks the published certificate hasn't been
+revoked and reissues it at once if it has. The key isn't shipped in any download; the launcher
+fetches it at runtime. First setup needs internet; play after that doesn't.
+
+**The check works today (run 2026-10-09 against the live Rock Skipping certificate):**
+
+- Each certificate names its own revocation list (CRL). For `play.skiprocking.ca`, serial
+  `0662714B…4961`, that's `http://ye1.c.lencr.org/98.crl`.
+- The list was 60 KB with 1,536 entries, last updated 28 minutes before the check (next scheduled
+  update 9 days later).
+- `openssl verify -crl_check` against the issuing YE1 certificate printed `c1.pem: OK`, meaning
+  not revoked. It also checks the list's signature.
+
+The whole check is three downloads and one command, so an hourly run is cheap.
+
+**What the job does each run:**
+
+1. Download the published certificate, its revocation list, and the issuer.
+2. If it's revoked, or close to expiry: issue a new certificate with a **new key**, rotating to
+   the next spare name, and publish it.
+3. Otherwise stop. Almost every run ends here.
+
+**Limits to design around:**
+
+- **Let's Encrypt issues at most 5 certificates per exact name per 7 days, with no overrides**
+  ([rate limits](https://letsencrypt.org/docs/rate-limits/)). Rotating across three names gives
+  15 a week.
+- **The whole domain is capped at 50 a week**, shared with Rock Skipping. Someone who revoked every
+  new certificate could exhaust that. Phones probably wouldn't notice offline (see above), but new
+  setups would.
+- **GitHub turns off schedules in a public repo after 60 days with no activity**
+  ([GitHub docs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)).
+  With 90-day certificates renewed at 30 days left, a quiet repo sits right on that edge. The job
+  needs its own keep-alive, such as a monthly heartbeat commit.
+- **Cost:** none in a public repo. A private repo bills each run as a whole minute, so an hourly
+  job uses about 720 of the 2,000 free minutes a month.
+
+**What the launcher does:** on every start with internet, download the current certificate and
+key, run the same revocation check, and cache them. Offline, use the cache until it expires.
+
+**Not shipping the key doesn't make it private.** It's still a public download. It only keeps it
+out of the installer and out of the git history, and makes it a little harder for automated
+scanners to find. Everything in the previous section about who can revoke it still holds.
+
 ## To check before building
 
 1. Android Chrome trusts a user-installed authority for a page at `https://192.168.137.1` (aj's phone).
