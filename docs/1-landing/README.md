@@ -77,6 +77,7 @@ The other files in `plans/` are Rock Skipping's, kept with the game.
 | [`DeviceMatrix.md`](../DeviceMatrix.md) | Which phones have been tested, and how; the model for the latency table |
 | [`SecurityReview.md`](../SecurityReview.md) | Gaps in the relay and controller; a UDP DSU port adds to this |
 | [`Findings-iPhoneWifiJoin-2026-10-02.md`](../Findings-iPhoneWifiJoin-2026-10-02.md) | How iPhones join and stay on the hotspot |
+| [`Findings-OnboardingReuse-2026-10-09.md`](../Findings-OnboardingReuse-2026-10-09.md) | What Rock Skipping already does for joining and testing, and which issue (#12-#15) reuses each piece |
 | [`Findings-HotspotForwardingAndInternet-2026-10-01.md`](../Findings-HotspotForwardingAndInternet-2026-10-01.md) | Why the hotspot shares the PC's internet |
 | [`plans/aim-preview-lag-on-shared-radio.md`](../plans/aim-preview-lag-on-shared-radio.md) | The radio contention behind milestone 7 |
 | [`6-decisions/Decision-OfflineHosting.md`](../6-decisions/Decision-OfflineHosting.md) | Why Mobile Hotspot beat Wi-Fi Direct |
