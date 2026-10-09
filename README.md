@@ -1,3 +1,18 @@
+# AJ's Motion Controls
+
+Use a phone as a motion controller for emulators (Dolphin, Cemu, Ryujinx and the Yuzu forks,
+the Citra forks) — no app install, iPhone and Android, over the offline hotspot connection.
+The phone streams raw gyro and accelerometer readings to the PC, which re-sends them over the
+DSU/CemuHook protocol the emulators already accept.
+
+**Status: just forked.** Everything below this section is still the Rock Skipping game this repo
+was branched from (Ajw2003/RockSkipping, `main` at `3c68ac2`, 2026-10-07). Its phone page,
+sensor normalisation, local HTTPS and hotspot setup are the starting point; nothing
+emulator-specific has been built yet. Why it is a separate repo:
+[docs/6-decisions/Decisions.md](docs/6-decisions/Decisions.md).
+
+---
+
 # Rock Skipping
 
 A couch party game: the game runs on a PC driving a TV, and players use their phones as

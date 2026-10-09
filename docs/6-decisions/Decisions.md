@@ -10,6 +10,26 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-08 — Phone-as-emulator-motion-controller is its own product, forked from Rock Skipping
+
+**Context.** Rock Skipping's phone controller already does the hard parts of a general motion
+controller: no-install phone page, iOS motion permission, cross-platform sensor normalisation
+(`controller/js/sensors.js`), local HTTPS and the offline hotspot. Emulators accept motion over
+the DSU/CemuHook UDP protocol (port 26760).
+
+**Decision.** Start a separate repo, Ajw2003/AJ-s-motionControls, with Rock Skipping's full
+history up to `main` at `3c68ac2`. Rock Skipping's own repo is unchanged.
+
+**Why.** A different product with different users; keeping it out of the game's code stops either
+one's needs leaking into the other. Keeping the history keeps the reasoning behind the reused
+phone code (`docs/4-systems/MotionPipeline.md`, `Networking.md`) traceable.
+
+**Not yet decided.** What of the game (Unity project, relay game rooms) gets removed, and when.
+Known gap for the new use: the game sends a processed 20 Hz aim value plus one throw event, while
+emulators need raw gyro and accelerometer at the browser's full motion rate.
+
+**Status.** Standing.
+
 ## 2026-10-03 — Long reasoning lives in the systems docs, not in code comments
 
 **Context.** 234 comment blocks of 500+ characters were spread over 94 source files, and the docs lived in an older five-tier layout.
