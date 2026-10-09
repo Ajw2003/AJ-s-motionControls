@@ -150,6 +150,14 @@ it first.
 
 ## Cross-cutting issues that belong to no milestone
 
+- **No offline launcher: a real phone only connects through a hotspot that shares the PC's one
+  radio.** First real-phone run, aj's Windows PC, 2026-10-09: an Android phone reached
+  `pad.html` only through the PC's Mobile hotspot while the PC stayed on its house Wi-Fi, which
+  blocks devices from reaching each other. With one radio serving both, lag was very bad. Rock
+  Skipping's `hotspot/hotspot-control.ps1` tethers with no uplink at all
+  ([`OfflineSetup.md`](../OfflineSetup.md), "Tethering with no uplink"), but nothing in this product
+  starts it, and the page runs over plain HTTP, so it needs a Chrome flag on Android and can't
+  work on iPhone. No issue covers this yet.
 - **The game is still in the repo.** The Unity project (`Assets/`, `Packages/`,
   `ProjectSettings/`), the game's relay rooms and the game-only systems docs. Whether and when to
   remove them is undecided; see [`6-decisions/Decisions.md`](../6-decisions/Decisions.md),
