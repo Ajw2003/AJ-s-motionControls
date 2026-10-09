@@ -89,7 +89,7 @@ aj, later the same day: the phone gets two QR codes and nothing else, with no ap
 no other setup. If an installed certificate can't be avoided, a downloadable app would be better,
 since aj sees the install as more friction than an app.
 
-That rules out A on the phone, and only **B** meets the rule. The phone sees a normal, trusted
+That rules out A on the phone, and only **B** meets the rule (flow for the PC and each phone, step by step: `generated/route-b-flow/index.html`). The phone sees a normal, trusted
 certificate, so scanning the two QR codes is all it does. The setup moves to the PC instead:
 
 - **One free sign-in on the PC, once.** Either provider works with an account the user may already
