@@ -79,7 +79,7 @@ The other files in `plans/` are Rock Skipping's, kept with the game.
 | [`SecurityReview.md`](../SecurityReview.md) | Gaps in the relay and controller; a UDP DSU port adds to this |
 | [`Findings-iPhoneWifiJoin-2026-10-02.md`](../Findings-iPhoneWifiJoin-2026-10-02.md) | How iPhones join and stay on the hotspot |
 | [`Findings-OnboardingReuse-2026-10-09.md`](../Findings-OnboardingReuse-2026-10-09.md) | What Rock Skipping already does for joining and testing, and which issue (#12-#15) reuses each piece |
-| [`Findings-CertificateResilience-2026-10-09.md`](../Findings-CertificateResilience-2026-10-09.md) | Options for HTTPS (#13) that a stranger can't revoke, with no service and no cost; research only |
+| [`Findings-CertificateResilience-2026-10-09.md`](../Findings-CertificateResilience-2026-10-09.md) | The HTTPS options for #13, the live checks behind the decision, and the hourly watch design |
 | [`Findings-HotspotForwardingAndInternet-2026-10-01.md`](../Findings-HotspotForwardingAndInternet-2026-10-01.md) | Why the hotspot shares the PC's internet |
 | [`plans/aim-preview-lag-on-shared-radio.md`](../plans/aim-preview-lag-on-shared-radio.md) | The radio contention behind milestone 7 |
 | [`6-decisions/Decision-OfflineHosting.md`](../6-decisions/Decision-OfflineHosting.md) | Why Mobile Hotspot beat Wi-Fi Direct |
@@ -87,6 +87,12 @@ The other files in `plans/` are Rock Skipping's, kept with the game.
 Everything else at the top of `docs/` (other `Findings-*`, `ZeroSetupPlan.md`, `SkipSchool.html`,
 `grant/`, `generated/`, `media/`, `mockups/`) belongs to the game. Rock Skipping's own index is
 archived at [`archive/rock-skipping/Landing.md`](../archive/rock-skipping/Landing.md).
+
+## Current handoff
+
+| Doc | What it is |
+|---|---|
+| [`Handoff-2026-10-10-PhoneTest.md`](../Handoff-2026-10-10-PhoneTest.md) | Where things stand, the 7-step phone test (`tools/test-pad.ps1`), what comes next, open items |
 
 ## Runbooks (outside `docs/`)
 

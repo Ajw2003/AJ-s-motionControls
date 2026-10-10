@@ -1,7 +1,7 @@
 # Project state
 
 **Tier 3.** Where AJ's Motion Controls stands right now, measured against
-[`Roadmap.md`](../2-roadmap/Roadmap.md). Last updated 2026-10-09.
+[`Roadmap.md`](../2-roadmap/Roadmap.md). Last updated 2026-10-10.
 
 ## Headline: 0%
 
@@ -150,14 +150,24 @@ it first.
 
 ## Cross-cutting issues that belong to no milestone
 
-- **No offline launcher: a real phone only connects through a hotspot that shares the PC's one
-  radio.** First real-phone run, aj's Windows PC, 2026-10-09: an Android phone reached
-  `pad.html` only through the PC's Mobile hotspot while the PC stayed on its house Wi-Fi, which
-  blocks devices from reaching each other. With one radio serving both, lag was very bad. Rock
-  Skipping's `hotspot/hotspot-control.ps1` tethers with no uplink at all
-  ([`OfflineSetup.md`](../OfflineSetup.md), "Tethering with no uplink"), but nothing in this product
-  starts it, and the page runs over plain HTTP, so it needs a Chrome flag on Android and can't
-  work on iPhone. No issue covers this yet.
+- **The phone path is built but not yet tried end to end.** First real-phone run, aj's Windows
+  PC, 2026-10-09:
+  - An Android phone reached `pad.html` only through the PC's Mobile hotspot, while the PC stayed
+    on its house Wi-Fi, which blocks devices from reaching each other.
+  - With one radio serving both, lag was very bad.
+  - On the offline hotspot (`hotspot/hotspot-control.ps1`), the phone joined but couldn't load the
+    page, most likely because it routed over mobile data.
+
+  Since then:
+  - **HTTPS is solved in code** (#13, #17-#20). A shared, publicly trusted certificate for
+    `pad.skiprocking.ca` is live and watched hourly (`4-systems/CertificateWatch.md`).
+  - `relay/start-pad.js` downloads and caches it, and starts the relay over HTTPS on 8443. The
+    relay's DNS answers the name, plus Android's and Apple's "is there internet?" checks
+    (`4-systems/HostingAndCertificates.md`).
+  - `tools/test-pad.ps1` starts all of it plus the hotspot in one command.
+
+  **Not yet run on Windows or with a phone:** see `Handoff-2026-10-10-PhoneTest.md`. The real
+  launcher is #12, and the QR join page is #14.
 - **The game is still in the repo.** The Unity project (`Assets/`, `Packages/`,
   `ProjectSettings/`), the game's relay rooms and the game-only systems docs. Whether and when to
   remove them is undecided; see [`6-decisions/Decisions.md`](../6-decisions/Decisions.md),
