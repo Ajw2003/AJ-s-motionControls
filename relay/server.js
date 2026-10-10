@@ -752,7 +752,14 @@ const padHub = createPadHub({ log });
 const DSU_PORT = process.env.DSU_PORT === undefined ? DSU_DEFAULT_PORT : Number(process.env.DSU_PORT);
 const dsuServer =
   DSU_PORT > 0
-    ? createDsuServer({ padHub, port: DSU_PORT, host: process.env.DSU_BIND_HOST || '127.0.0.1', log })
+    ? createDsuServer({
+        padHub,
+        port: DSU_PORT,
+        host: process.env.DSU_BIND_HOST || '127.0.0.1',
+        log,
+        // Motion pacing buffer (#29). 17 ms is one phone sample; 0 sends samples on arrival.
+        paceBufferMs: process.env.DSU_PACE_MS === undefined ? 17 : Number(process.env.DSU_PACE_MS),
+      })
     : null;
 
 wss.on('connection', (ws, req) => {

@@ -7,6 +7,7 @@
 
 const dgram = require('dgram');
 const crypto = require('crypto');
+const { createPacer } = require('./pacer');
 
 const PROTOCOL_VERSION = 1001;
 const HEADER_BYTES = 16;
@@ -288,6 +289,7 @@ function createDsuServer({
   host = '127.0.0.1',
   now = () => Date.now(),
   log = () => {},
+  paceBufferMs = 0,
 }) {
   const socket = dgram.createSocket('udp4');
   const serverId = crypto.randomBytes(4).readUInt32LE(0);
@@ -370,9 +372,17 @@ function createDsuServer({
     }
   });
 
-  // The newest motion per slot, so a button press can go out at once with current motion
-  // rather than waiting for the next sample.
+  // The newest motion already sent per slot, so a button press can go out at once with the
+  // current paced motion rather than waiting for the next sample (or jumping the pacer's queue).
   const latestSample = new Array(4).fill(null);
+  // Motion goes out at the phone's own spacing (#29); buttons are never delayed.
+  const pacer = createPacer({
+    bufferUs: paceBufferMs * 1000,
+    send: (slot, sample) => {
+      latestSample[slot] = sample;
+      broadcast(slot, sample, currentGamepad(slot));
+    },
+  });
 
   function currentGamepad(slot) {
     const pad = padHub.snapshot()[slot];
@@ -380,8 +390,7 @@ function createDsuServer({
   }
 
   function onSample(slot, sample) {
-    latestSample[slot] = sample;
-    broadcast(slot, sample, currentGamepad(slot));
+    pacer.push(slot, sample);
   }
 
   function onPad(slot, gamepad) {
@@ -392,6 +401,7 @@ function createDsuServer({
 
   function onDisconnect(slot) {
     latestSample[slot] = null;
+    pacer.clear(slot);
   }
 
   function broadcast(slot, sample, gamepad) {

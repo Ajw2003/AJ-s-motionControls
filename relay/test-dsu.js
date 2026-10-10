@@ -194,7 +194,9 @@ describe('relay with a scripted DSU client', () => {
 
   before(async () => {
     server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-      env: { ...process.env, PORT: String(PORT), DSU_PORT: String(DSU_PORT) },
+      // Pacing off here: these tests check the wire format with samples sent in a burst.
+      // Pacing has its own tests (test-pacer.js and the paced-relay test below).
+      env: { ...process.env, PORT: String(PORT), DSU_PORT: String(DSU_PORT), DSU_PACE_MS: '0' },
       stdio: ['ignore', 'ignore', 'inherit'],
     });
     await sleep(600);

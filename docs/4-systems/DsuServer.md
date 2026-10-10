@@ -63,6 +63,27 @@ accel `(x, −z, y)`, gyro `(pitch, roll, −yaw)`, and SDL as accel `(−x, z, 
 ([`dsu.js:125`](../../relay/dsu.js)). Not yet re-checked by eye in Sudachi or Dolphin. If a sign
 is still wrong, it is fixed in `phoneToDsuAxes` and nowhere else.
 
+### Pacing
+
+<!-- ref:938d -->
+
+Sudachi and Dolphin both time motion by when a DSU packet **arrives**, not by the sample
+timestamp it carries, so Wi-Fi jitter becomes rotation error: 17° (Sudachi) and 24° (Dolphin) on
+one 100 s session ([`Findings-MotionDrift-2026-10-10.md`](../Findings-MotionDrift-2026-10-10.md)).
+[`relay/pacer.js`](../../relay/pacer.js) sends each sample at
+
+    phone timestamp + fastest recent transit + buffer
+
+so the emulator sees the phone's own spacing. The buffer is `DSU_PACE_MS` (default 17, one
+sample; 0 turns pacing off). A sample that arrives after its slot goes out at once, in order. The
+transit estimate is the minimum of recent `arrival − timestamp`, rising 20 µs a sample so a phone
+clock slower than the PC's (up to ~1,200 ppm) is followed instead of piling up delay. Button
+presses are never paced: they go out at once with the last paced motion.
+
+Windows timers fire every 15.6 ms on aj's PC (`setTimeout(16)` measured at 31 ms), too coarse
+for 60 Hz, so the scheduler is a `setImmediate` loop that runs only while samples are queued: one
+core is busy while a phone streams, and idle otherwise.
+
 ## Invariants
 
 - **Every axis decision lives in `phoneToDsuAxes`.** The phone sends device axes; nothing else
