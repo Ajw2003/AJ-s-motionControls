@@ -357,6 +357,8 @@ function isAllowedRelativePath(relative) {
   if (relative === 'index.html') return true;
   // The controller page (#2) and the PC-side readout of what the controllers send.
   if (relative === 'pad.html' || relative === 'monitor.html') return true;
+  // The join page (#14) holds no secrets itself; its Wi-Fi details come from loopback-only /api/join.
+  if (relative === 'join.html') return true;
   if (/^js\/[^/]+\.js$/.test(relative)) return true;
   return false;
 }
@@ -623,6 +625,16 @@ function handleRequest(req, res) {
       return;
     }
 
+    if (url.pathname === '/api/join') {
+      serveJoinDetails(req, res);
+      return;
+    }
+
+    if (url.pathname === '/api/stop' && req.method === 'POST') {
+      stopFromJoinPage(req, res);
+      return;
+    }
+
     if (serveConnectivityProbe(req, res, url.pathname)) return;
 
     serveStatic(req, res);
@@ -639,14 +651,56 @@ function handleRequest(req, res) {
  * phone's address, and nothing on the hotspot needs it.
  */
 function servePadSnapshot(req, res) {
-  const from = req.socket ? req.socket.remoteAddress : null;
-  if (from !== '127.0.0.1' && from !== '::1' && from !== '::ffff:127.0.0.1') {
+  if (!isLoopback(req)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
     return;
   }
   res
     .writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     .end(JSON.stringify({ pads: padHub.snapshot(), dsu: dsuServer ? dsuServer.status() : null }));
+}
+
+/** True when the request came from this PC itself. */
+function isLoopback(req) {
+  const from = req.socket ? req.socket.remoteAddress : null;
+  return from === '127.0.0.1' || from === '::1' || from === '::ffff:127.0.0.1';
+}
+
+/**
+ * What the join page shows: the hotspot name and password (for the Wi-Fi QR code), the
+ * controller address, and what the launcher's emulator setup did. Loopback only, since it holds
+ * the Wi-Fi password.
+ */
+function serveJoinDetails(req, res) {
+  if (!isLoopback(req)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
+    return;
+  }
+  let emulators = [];
+  try {
+    emulators = JSON.parse(process.env.JOIN_EMULATORS || '[]');
+  } catch (err) {
+    log('JOIN_EMULATORS is not valid JSON, showing none:', err.message);
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(
+    JSON.stringify({
+      ssid: process.env.JOIN_SSID || '',
+      passphrase: process.env.JOIN_PASS || '',
+      padUrl: `https://${DNS_NAME}:${PORT}/pad.html`,
+      emulators,
+    }),
+  );
+}
+
+/** The join page's Stop button. The launcher sees the relay exit and turns the hotspot off. */
+function stopFromJoinPage(req, res) {
+  if (!isLoopback(req)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
+    return;
+  }
+  log('Stop requested from the join page.');
+  res.writeHead(204).end();
+  setTimeout(() => process.exit(0), 100);
 }
 
 /** Where a phone has to end up. Every address in it is a constant — see MagicDomain.cs. */
@@ -864,6 +918,16 @@ function shutdown() {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// The join page shows the Wi-Fi password, so it gets its own plain-HTTP listener on loopback
+// only (#14). Plain HTTP is fine here: nothing on it leaves this PC.
+const JOIN_PORT = Number(process.env.JOIN_PORT || 0);
+if (JOIN_PORT > 0) {
+  http
+    .createServer(handleRequest)
+    .on('error', (err) => log(`Join page listener on 127.0.0.1:${JOIN_PORT} FAILED: ${err.code || err.message}`))
+    .listen(JOIN_PORT, '127.0.0.1', () => log(`Join page on http://127.0.0.1:${JOIN_PORT}/join.html`));
+}
 
 httpServer.listen(PORT, BIND_HOST, () => {
   const scheme = useTls ? 'https' : 'http';

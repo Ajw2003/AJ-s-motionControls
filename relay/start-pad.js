@@ -22,6 +22,7 @@ async function main() {
   env.TLS_KEY = cert.keyPath;
   env.DNS_NAME = cert.name;
   env.PORT = env.PORT || '8443'; // 8443 is already open in the firewall by setup-offline.ps1
+  env.JOIN_PORT = env.JOIN_PORT || '8780'; // the join page, loopback only
   // PAD_NO_DNS=1 is for local tests where nothing should answer DNS.
   if (env.PAD_NO_DNS !== '1') {
     env.DNS_RESPOND_IP = env.DNS_RESPOND_IP || '192.168.137.1'; // the Windows hotspot address
