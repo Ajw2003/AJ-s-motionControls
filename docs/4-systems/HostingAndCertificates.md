@@ -15,6 +15,45 @@ Without this system there is no game — only a demo that works on the developer
 
 ## How it works
 
+### AJ's Motion Controls: the PC side of the shared certificate (#20)
+
+The sections below describe Rock Skipping's Unity path. This product doesn't run Unity, so its PC
+side is `relay/pad-cert.js` plus `relay/start-pad.js` (`npm --prefix relay run start:pad`).
+
+- **Download.** It fetches `pad-cert.json` from the `pad-current` release of
+  `Ajw2003/rockskipping-cert`, published by the certificate watch (`CertificateWatch.md`).
+- **Check, in plain Node** (no openssl on Windows):
+  - the key matches the certificate;
+  - the name is covered;
+  - the issuer signed the leaf;
+  - the certificate isn't expired;
+  - it isn't on the Let's Encrypt revocation list. The list's signature is verified; a failure to
+    fetch or verify gives `unknown`, never `good`.
+- **Cache.** A good bundle is written atomically to `%LOCALAPPDATA%\AJsMotionControls\cert` (or
+  `PAD_CERT_CACHE_DIR`). Offline, or when the newest one is bad, the cached copy is used if it's
+  still valid. A cached copy can't be revocation-checked, so it reports `unchecked`.
+- **Nudge.** A bad fresh bundle triggers a fire-and-forget download of the matching `nudge-*`
+  file (#19).
+- **Start.** `start-pad.js` starts the relay with:
+  - `TLS_CERT` and `TLS_KEY` set to the cached files;
+  - `DNS_NAME` set to the bundle's name;
+  - `PORT=8443`, the port `deploy/setup-offline.ps1` already opens;
+  - `DNS_RESPOND_IP=192.168.137.1` and `DNS_ALLOW=192.168.137.0/24`.
+
+  `PAD_NO_DNS=1` skips the DNS settings, for local tests.
+
+Checked 2026-10-09 in the sandbox:
+
+- **Relay suite:** 130 tests pass, 17 of them new in `relay/test-pad-cert.js`. They run against
+  committed fixtures, so they need no openssl.
+- **Live test** (`relay/test-pad-cert-live.js`, needs internet): the real bundle reads
+  `ok pad.skiprocking.ca`. Its CRL, `http://ye2.c.lencr.org/124.crl` with 1,462 entries,
+  verified, with status `good`.
+- **Smoke test:** an HTTPS GET of `/pad.html` as `pad.skiprocking.ca` returned 200, with the chain
+  validated against Node's trust store.
+
+**Not checked:** Windows itself, and the real hotspot DNS with a phone.
+
 ### The chain, end to end
 
 ```

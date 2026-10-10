@@ -1,7 +1,7 @@
 # Project state
 
 **Tier 3.** Where AJ's Motion Controls stands right now, measured against
-[`Roadmap.md`](../2-roadmap/Roadmap.md). Last updated 2026-10-09.
+[`Roadmap.md`](../2-roadmap/Roadmap.md). Last updated 2026-10-10.
 
 ## Headline: 0%
 
@@ -144,12 +144,30 @@ it first.
 
 | Assumption | Checked in |
 |---|---|
-| Dolphin and Cemu read buttons from DSU; Ryujinx takes only motion from it | Milestone 4 (code done; still unchecked) |
+| Dolphin and Cemu read buttons from DSU; Ryujinx takes only motion from it | Milestone 4: **Dolphin confirmed** on aj's PC, 2026-10-09 (its Default mapping filled buttons and sticks from the link; see `4-systems/DsuServer.md`). Cemu and Ryujinx unchecked |
 | ViGEmBus (maintenance-ended in 2023) still installs and works on current Windows | Milestone 5 |
 | Touch-to-PC latency is roughly 25-65 ms over the hotspot | Milestone 6 |
 
 ## Cross-cutting issues that belong to no milestone
 
+- **The phone path is built but not yet tried end to end.** First real-phone run, aj's Windows
+  PC, 2026-10-09:
+  - An Android phone reached `pad.html` only through the PC's Mobile hotspot, while the PC stayed
+    on its house Wi-Fi, which blocks devices from reaching each other.
+  - With one radio serving both, lag was very bad.
+  - On the offline hotspot (`hotspot/hotspot-control.ps1`), the phone joined but couldn't load the
+    page, most likely because it routed over mobile data.
+
+  Since then:
+  - **HTTPS is solved in code** (#13, #17-#20). A shared, publicly trusted certificate for
+    `pad.skiprocking.ca` is live and watched hourly (`4-systems/CertificateWatch.md`).
+  - `relay/start-pad.js` downloads and caches it, and starts the relay over HTTPS on 8443. The
+    relay's DNS answers the name, plus Android's and Apple's "is there internet?" checks
+    (`4-systems/HostingAndCertificates.md`).
+  - `tools/test-pad.ps1` starts all of it plus the hotspot in one command.
+
+  **Not yet run on Windows or with a phone:** see `Handoff-2026-10-10-PhoneTest.md`. The real
+  launcher is #12, and the QR join page is #14.
 - **The game is still in the repo.** The Unity project (`Assets/`, `Packages/`,
   `ProjectSettings/`), the game's relay rooms and the game-only systems docs. Whether and when to
   remove them is undecided; see [`6-decisions/Decisions.md`](../6-decisions/Decisions.md),

@@ -1,0 +1,503 @@
+<title>Dolphin Test Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap"
+/>
+<style>
+  /* Layout: one reading column of numbered step cards; each card pairs the action with what you
+     should see, and real screenshots sit inline where they prove the step. */
+  :root {
+    --bg: #f3f5f8;
+    --panel: #ffffff;
+    --ink: #17202e;
+    --muted: #5b6676;
+    --line: #d8dee8;
+    --accent: #1f7fb8;
+    --accent-ink: #ffffff;
+    --code-bg: #eaeff5;
+    --warn: #9a5b00;
+    --warn-bg: #fff4dc;
+    --ok: #1d7a4e;
+    --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+    --body: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #0f1520;
+      --panel: #172030;
+      --ink: #e6ebf2;
+      --muted: #97a3b4;
+      --line: #2a3648;
+      --accent: #4cb3ec;
+      --accent-ink: #08121c;
+      --code-bg: #0b1119;
+      --warn: #f2c26b;
+      --warn-bg: #2b2414;
+      --ok: #5fd39a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #0f1520;
+    --panel: #172030;
+    --ink: #e6ebf2;
+    --muted: #97a3b4;
+    --line: #2a3648;
+    --accent: #4cb3ec;
+    --accent-ink: #08121c;
+    --code-bg: #0b1119;
+    --warn: #f2c26b;
+    --warn-bg: #2b2414;
+    --ok: #5fd39a;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 var(--body);
+  }
+  .wrap {
+    max-width: 52rem;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 32px 64px;
+    display: grid;
+    gap: 28px;
+  }
+  /* Grid children default to min-width: auto, which lets the diagram and code blocks widen the
+     page instead of scrolling inside their own boxes. */
+  .wrap > *,
+  section.part > *,
+  ol.steps > li > *,
+  .step-body > * {
+    min-width: 0;
+  }
+  /* Windows paths have no spaces to break at. */
+  p code,
+  li code {
+    overflow-wrap: anywhere;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--display);
+    text-wrap: balance;
+    margin: 0;
+    line-height: 1.15;
+  }
+  h1 {
+    font-size: clamp(2rem, 5vw, 2.8rem);
+    font-weight: 800;
+  }
+  h2 {
+    font-size: 1.45rem;
+    font-weight: 800;
+  }
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+  p {
+    margin: 0;
+    max-width: 65ch;
+  }
+  .lede {
+    color: var(--muted);
+    font-size: 1.05rem;
+  }
+  .eyebrow {
+    font: 600 0.75rem/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  header {
+    display: grid;
+    gap: 12px;
+  }
+  .flow {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    overflow-x: auto;
+  }
+  .flow svg {
+    display: block;
+    min-width: 640px;
+    width: 100%;
+    height: auto;
+  }
+  .flow text {
+    font-family: var(--body);
+    fill: var(--ink);
+  }
+  .flow .sub {
+    fill: var(--muted);
+    font-size: 12px;
+  }
+  .note {
+    background: var(--warn-bg);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 6px;
+  }
+  .note strong {
+    color: var(--warn);
+  }
+  section.part {
+    display: grid;
+    gap: 16px;
+  }
+  .part-head {
+    display: grid;
+    gap: 6px;
+  }
+  ol.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 14px;
+    counter-reset: step;
+  }
+  ol.steps > li {
+    counter-increment: step;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    display: grid;
+    grid-template-columns: 2.4rem minmax(0, 1fr);
+    gap: 4px 14px;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    grid-row: 1;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font: 800 1.1rem/2.4rem var(--display);
+    text-align: center;
+  }
+  .step-body {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  .where {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .untested {
+    font: 600 0.8rem/1.3 var(--mono);
+    color: var(--warn);
+  }
+  pre {
+    margin: 0;
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font: 0.85rem/1.5 var(--mono);
+  }
+  .cmd {
+    position: relative;
+  }
+  .cmd pre {
+    padding-right: 5.5rem; /* room for the Copy button */
+  }
+  .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font: 600 0.75rem var(--mono);
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .copy:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .see {
+    border-left: 3px solid var(--ok);
+    padding-left: 12px;
+  }
+  .see b {
+    color: var(--ok);
+  }
+  code {
+    font: 0.9em var(--mono);
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 5px;
+  }
+  figure {
+    margin: 0;
+    display: grid;
+    gap: 6px;
+  }
+  figure img {
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    width: 100%;
+    max-width: 100%;
+  }
+  figcaption {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .path {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .path li {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+  }
+  .path li span {
+    display: block;
+    font: 600 0.7rem var(--mono);
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  a {
+    color: var(--accent);
+  }
+  footer {
+    color: var(--muted);
+    font-size: 0.9rem;
+    display: grid;
+    gap: 6px;
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">AJ's Motion Controls · first Dolphin test</div>
+    <h1>Dolphin test run</h1>
+    <p class="lede">
+      Part A checks the emulator link on your Windows PC alone: the PC server, the on-screen
+      gamepad in a browser, and Dolphin reading its buttons. Part B adds a real Android phone for
+      motion. About 15 minutes.
+    </p>
+  </header>
+
+  <div class="flow" role="img" aria-label="Phone or browser page sends input to the PC server, which passes it to Dolphin over the DSU link on UDP port 26760">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" style="fill: var(--accent)" />
+        </marker>
+      </defs>
+      <rect x="10" y="30" width="190" height="90" rx="12" style="fill: var(--code-bg); stroke: var(--line)" />
+      <text x="105" y="68" text-anchor="middle" font-size="16" font-weight="700">Controller page</text>
+      <text x="105" y="90" text-anchor="middle" class="sub">browser (Part A) or phone (Part B)</text>
+      <rect x="265" y="30" width="190" height="90" rx="12" style="fill: var(--code-bg); stroke: var(--line)" />
+      <text x="360" y="68" text-anchor="middle" font-size="16" font-weight="700">PC server</text>
+      <text x="360" y="90" text-anchor="middle" class="sub">node relay\server.js · port 3000</text>
+      <rect x="520" y="30" width="190" height="90" rx="12" style="fill: var(--code-bg); stroke: var(--line)" />
+      <text x="615" y="68" text-anchor="middle" font-size="16" font-weight="700">Dolphin</text>
+      <text x="615" y="90" text-anchor="middle" class="sub">DSU Client · 127.0.0.1:26760</text>
+      <line x1="200" y1="75" x2="262" y2="75" stroke-width="2.5" style="stroke: var(--accent)" marker-end="url(#arrow)" />
+      <line x1="455" y1="75" x2="517" y2="75" stroke-width="2.5" style="stroke: var(--accent)" marker-end="url(#arrow)" />
+      <text x="231" y="62" text-anchor="middle" class="sub">WebSocket</text>
+      <text x="486" y="62" text-anchor="middle" class="sub">DSU (UDP)</text>
+    </svg>
+  </div>
+
+  <div class="note">
+    <p><strong>Before you start.</strong> The code reached the docs branch, not <code>main</code>: PR #10 merged into its stacked base. Merge <a href="https://github.com/Ajw2003/AJ-s-motionControls/pull/11">PR #11</a> on GitHub first, and <code>main</code> will have it.</p>
+    <p><strong>Untested on Windows.</strong> Every command below ran only in a Linux sandbox, which has no Windows, PowerShell or Dolphin. The server, page and DSU link were checked there; the Windows commands and the Dolphin menus were not. The folder <code>C:\Users\aj\Desktop\GameDev</code> is inferred from Rock Skipping's scripts, not confirmed.</p>
+  </div>
+
+  <section class="part">
+    <div class="part-head">
+      <div class="eyebrow">Part A · PC only, no phone</div>
+      <h2>Buttons into Dolphin</h2>
+      <p class="where">Open <b>PowerShell</b>: Start menu → type <code>PowerShell</code> → Windows PowerShell. Every command works from any folder.</p>
+    </div>
+
+    <ol class="steps">
+      <li>
+        <div class="step-body">
+          <h3>Get the code</h3>
+          <p class="untested">UNTESTED: not run on Windows; needs Git and your GitHub sign-in (the repo is private).</p>
+          <div class="cmd"><pre><code>git clone https://github.com/Ajw2003/AJ-s-motionControls.git "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls"</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="see"><b>You should see</b> <code>Cloning into 'C:\Users\aj\Desktop\GameDev\AJ-s-motionControls'...</code> then <code>done.</code> Already cloned? Run <code>git -C "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls" pull</code> instead.</p>
+          <p><b>Until PR #11 is merged</b>, switch to the branch that holds the code. Skip this once <code>main</code> has it.</p>
+          <div class="cmd"><pre><code>git -C "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls" checkout AjsAgent/controller-work-to-main</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="see"><b>You should see</b> <code>Switched to a new branch 'AjsAgent/controller-work-to-main'</code>. Without this, step 3 starts the old server and the <code>[dsu]</code> line never appears.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Install the server's packages</h3>
+          <p class="untested">UNTESTED: not run on Windows; needs Node 20 or newer (<code>node --version</code>).</p>
+          <div class="cmd"><pre><code>npm --prefix "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls\relay" ci --omit=dev</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="see"><b>You should see</b> <code>added 2 packages</code> and <code>found 0 vulnerabilities</code> (the sandbox's output). <code>--omit=dev</code> skips the code-style tools, which the server doesn't need.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Start the PC server</h3>
+          <p class="untested">UNTESTED on Windows. The same command in the sandbox printed the lines below.</p>
+          <div class="cmd"><pre><code>node "C:\Users\aj\Desktop\GameDev\AJ-s-motionControls\relay\server.js"</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="see"><b>You should see</b> <code>[dsu] listening on udp 127.0.0.1:26760</code> and <code>Rock Skipping relay listening on 0.0.0.0:3000</code>. Leave this window open. If Windows Firewall asks about Node, choose <b>Private networks</b> and Allow (Part B needs it).</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Open the PC monitor</h3>
+          <p>In Chrome or Edge on the PC, go to <code>http://localhost:3000/monitor.html</code>.</p>
+          <p class="see"><b>You should see</b> <code>Emulator link (DSU): listening on udp 127.0.0.1:26760 · no emulator connected yet</code> and four empty slots.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Point Dolphin at the server</h3>
+          <p class="untested">UNTESTED: Dolphin's menus are from memory; names can differ slightly between versions.</p>
+          <ul class="path">
+            <li><span>Menu</span>Options → Controller Settings</li>
+            <li><span>Button</span>Alternate Input Sources</li>
+            <li><span>Tab</span>DSU Client → tick Enable</li>
+            <li><span>Add</span>Description <code>AJ phone</code>, address <code>127.0.0.1</code>, port <code>26760</code></li>
+          </ul>
+          <p class="see"><b>You should see</b> the monitor's top line change to <code>· 127.0.0.1:</code> followed by a port number: that's Dolphin subscribed.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Open the controller page on the PC</h3>
+          <p>Open a second tab at <code>http://localhost:3000/pad.html</code>, keep <b>Xbox</b> selected, click <b>Start controller</b>. Make the window wide; the gamepad is a landscape layout.</p>
+          <figure>
+            <img src="shots/browser-pad.png" alt="The controller page in a desktop browser with the A button highlighted while the mouse holds it" width="1280" height="720" loading="lazy" />
+            <figcaption>Captured in the sandbox: desktop browser, mouse held on A. A DSU client read this as <code>buttons [Cross]</code>.</figcaption>
+          </figure>
+          <p class="see"><b>You should see</b> <code>Slot 1 · connected</code> at the top, and Slot 1 filled on the monitor.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Map a button in Dolphin and press it</h3>
+          <p class="untested">UNTESTED: this is the check nothing in the sandbox could do.</p>
+          <ul class="path">
+            <li><span>Port 1</span>GameCube → Standard Controller → Configure</li>
+            <li><span>Device</span>the entry starting <code>DSUClient/</code></li>
+            <li><span>Map</span>click the <b>A</b> box, then click A in the browser within 5 s</li>
+            <li><span>Test</span>hold A in the browser</li>
+          </ul>
+          <p class="see"><b>You should see</b> the A box fill with a DSU name (likely <code>Cross</code>), then light up whenever you hold A. That proves Dolphin reads buttons from the link. Map the Main Stick the same way with the left stick.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="part">
+    <div class="part-head">
+      <div class="eyebrow">Part B · Android phone</div>
+      <h2>Motion into Dolphin</h2>
+      <p>Phones only hand out motion to secure pages. The quickest test route is a Chrome setting on Android that treats your PC's address as secure. The proper route, Rock Skipping's hotspot with HTTPS, works for iPhone too, but is a longer setup for another day.</p>
+    </div>
+
+    <ol class="steps">
+      <li>
+        <div class="step-body">
+          <h3>Find the PC's address</h3>
+          <p class="untested">UNTESTED: not run on Windows.</p>
+          <div class="cmd"><pre><code>Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -eq 'Dhcp' } | Select-Object InterfaceAlias, IPAddress</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="see"><b>You should see</b> your Wi-Fi line with an address like <code>192.168.1.23</code>. The phone must be on the same Wi-Fi.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Let Chrome treat that address as secure</h3>
+          <p>On the phone, open Chrome at <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>. Enable it, enter <code>http://192.168.1.23:3000</code> (your address), tap Relaunch.</p>
+          <p class="untested">UNTESTED: a standard Chrome developer setting, not tried with this page.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Start the controller on the phone</h3>
+          <p>Open <code>http://192.168.1.23:3000/pad.html</code> on the phone, tap <b>Start controller</b>, turn the phone sideways.</p>
+          <figure>
+            <img src="shots/phone-pad.png" alt="The controller page on an emulated Android phone in landscape, A pressed and the left stick pushed right" width="2265" height="945" loading="lazy" />
+            <figcaption>Captured in the sandbox on an emulated Pixel 7.</figcaption>
+          </figure>
+          <p class="see"><b>You should see</b> the monitor's Slot 1 jump to about <b>60 Hz</b> and its accel/gyro bars move as you tilt the phone.</p>
+          <figure>
+            <img src="shots/monitor.png" alt="The PC monitor page showing the DSU link listening with one emulator connected and slot 1 receiving about 63 samples a second" width="1100" height="640" loading="lazy" />
+            <figcaption>Captured in the sandbox with synthetic motion: slot 1 at 63 Hz, emulator link listening with a client reading.</figcaption>
+          </figure>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-body">
+          <h3>Check motion in Dolphin, and the axis directions</h3>
+          <p class="untested">UNTESTED: the axis directions are reasoned, not yet seen in an emulator.</p>
+          <ul class="path">
+            <li><span>Port 1</span>Wii Remotes → Emulated Wii Remote → Configure</li>
+            <li><span>Device</span>the <code>DSUClient/</code> entry</li>
+            <li><span>Tab</span>Motion Input: map Accelerometer and Gyroscope</li>
+            <li><span>Test</span>tilt forward, tilt sideways, turn flat</li>
+          </ul>
+          <p class="see"><b>You should see</b> the motion indicators move the same way the phone moves. Note any axis that moves the <b>opposite</b> way and tell me which one; it's a one-line fix.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <footer>
+    <p>Stop the PC server with <b>Ctrl+C</b> in its PowerShell window.</p>
+    <p>Background: the DSU link is described in <code>docs/4-systems/DsuServer.md</code>, the gamepad in <code>docs/4-systems/OnscreenGamepad.md</code>.</p>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('.copy').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const code = button.parentElement.querySelector('code');
+      try {
+        await navigator.clipboard.writeText(code.textContent);
+        button.textContent = 'Copied';
+      } catch {
+        // Clipboard refused (some app views): select the text so Ctrl+C works.
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = 'Selected';
+      }
+      setTimeout(() => (button.textContent = 'Copy'), 1500);
+    });
+  });
+</script>
