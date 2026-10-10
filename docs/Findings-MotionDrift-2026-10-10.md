@@ -91,6 +91,16 @@ below Sudachi's dead zone, and the replay drifted 0.00° in 55 s. Open question:
 Joy-Con's own frame explains Sudachi's picture, or whether Sudachi's signs differ from Eden's. Next
 test: the same moves with Player 1 as Pro Controller.
 
+**Resolved (#30).** As Pro Controller it was still wrong on several axes. The labels-free check
+(`tools/check-gyro-axes.js`: turn the starting gravity by the gyro, compare with measured gravity,
+score all 48 axis orderings) found the phone page's rotation mapping crossed: 76.7° disagreement
+as sent, 1.0° with `alpha` = x, `beta` = y, `gamma` = z. That is what browsers implement, confirmed
+in source, not recalled: the current W3C spec §6.3.2, Chromium `device_motion_event_pump.cc`
+(gyro x, y, z into `alpha`, `beta`, `gamma`), and WebKit `DeviceMotionClientIOS.mm` / `DeviceMotionData.h`
+(CoreMotion x, y, z, likewise). The page followed the older spec text (`beta` about x). The relay's
+DSU mapping was right: with the page corrected, the capture's tilts match gravity and Dolphin's
+axis names. The earlier direction test only looked right because two errors cancelled.
+
 ## The obstacle to pacing
 
 Pacing sends each packet to the emulator at the phone's own sample spacing, so arrival time

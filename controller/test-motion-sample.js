@@ -31,8 +31,11 @@ check('phone lying flat reads 1 g on z', () => {
   assert.deepEqual(m.accel, [0, 0, 1]);
 });
 
-check('rotation rates map by axis, not by name order: beta→x, gamma→y, alpha→z', () => {
-  const m = makeMotionMessage({ x: 0, y: 0, z: 0 }, { alpha: 30, beta: 10, gamma: 20 }, 0, 0);
+// W3C Device Orientation and Motion §6.3.2, Chromium's device_motion_event_pump.cc and WebKit's
+// DeviceMotionClientIOS.mm all give alpha = x, beta = y, gamma = z (the older spec text said
+// otherwise). aj's Android phone agreed against gravity, 2026-10-10 (#30).
+check('rotation rates map alpha→x, beta→y, gamma→z, as browsers implement them', () => {
+  const m = makeMotionMessage({ x: 0, y: 0, z: 0 }, { alpha: 10, beta: 20, gamma: 30 }, 0, 0);
   assert.deepEqual(m.gyro, [10, 20, 30]);
 });
 
@@ -56,7 +59,7 @@ check('carries type and seq', () => {
 check('rounds to 4 places for g and 2 for deg/s, keeping messages small', () => {
   const m = makeMotionMessage(
     { x: 1.23456789, y: 0, z: 0 },
-    { alpha: 0, beta: 12.34567, gamma: 0 },
+    { alpha: 12.34567, beta: 0, gamma: 0 },
     0,
     0,
   );

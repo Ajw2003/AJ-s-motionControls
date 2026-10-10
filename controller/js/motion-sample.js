@@ -31,8 +31,9 @@ function roundTo(value, places) {
  */
 export function makeMotionMessage(accelerationMs2, rotationRate, timestampMs, seq) {
   if (!accelerationMs2) return null;
-  // The spec names rotation rates for the Euler angle each drives: beta turns about x,
-  // gamma about y, alpha about z. Mapping them by name order instead is the classic slip.
+  // Browsers give alpha = x, beta = y, gamma = z rotation rates (right-hand rule), as the
+  // current W3C spec (§6.3.2), Chromium and WebKit all do. The older spec text (beta about x,
+  // gamma about y, alpha about z) is wrong for every browser; trusting it crossed the axes (#30).
   return {
     type: MOTION_MESSAGE_TYPE,
     seq,
@@ -43,9 +44,9 @@ export function makeMotionMessage(accelerationMs2, rotationRate, timestampMs, se
       roundTo(accelerationMs2.z / GRAVITY_MS2, 4),
     ],
     gyro: [
+      roundTo(rotationRate.alpha, 2),
       roundTo(rotationRate.beta, 2),
       roundTo(rotationRate.gamma, 2),
-      roundTo(rotationRate.alpha, 2),
     ],
   };
 }
