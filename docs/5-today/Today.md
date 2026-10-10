@@ -3,6 +3,13 @@
 **Tier 5.** Rewritten at the start of each working session. The session before this one is in
 git history (`git log -p docs/5-today/Today.md`).
 
+## Later on 2026-10-10: the installer (#23)
+
+First real-phone run worked with Sudachi (buttons, sticks, motion; negligible lag). Then built
+one installer and two QR codes: plan `plans/easy-install.md`, build steps
+`plans/easy-install-implementation.md`, result in `3-state/ProjectState.md`. Waiting on aj:
+install `AJ-Motion-Setup.exe` from v0.1.0-rc.1 and join a phone with the two QR codes.
+
 ## What this session was
 
 **Getting a phone onto the PC securely, offline, with nothing installed on the phone.** aj's first

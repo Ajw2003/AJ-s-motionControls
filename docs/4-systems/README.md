@@ -29,6 +29,7 @@ milestones build on. Their wording still talks about "the game" in places.
 |---|---|---|
 | Controller stream (#2) | [`ControllerStream.md`](ControllerStream.md) | `controller/js/pad.js`, `controller/js/motion-sample.js`, `relay/pad-hub.js` |
 | DSU server (#3; buttons #5) | [`DsuServer.md`](DsuServer.md) | `relay/dsu.js` |
+| Launcher, join page, installer (#23) | [`Launcher.md`](Launcher.md) | `tools/launch.ps1`, `installer/` |
 | On-screen gamepad (#4) | [`OnscreenGamepad.md`](OnscreenGamepad.md) | `controller/js/gamepad-state.js`, `layouts.js`, `gamepad-view.js` |
 
 ## Planned systems — no doc until built

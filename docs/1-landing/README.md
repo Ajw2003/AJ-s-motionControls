@@ -15,6 +15,13 @@ controller had already solved the hard parts: motion permission on iPhone, senso
 between platforms, local HTTPS, and offline hosting. Status: **0%** — see
 [`3-state/ProjectState.md`](../3-state/ProjectState.md).
 
+## Try it
+
+Download `AJ-Motion-Setup.exe` from the latest
+[Release](https://github.com/Ajw2003/AJ-s-motionControls/releases), install it, click **AJ Motion** on
+the desktop, and scan the two QR codes with your phone. How it works:
+[`4-systems/Launcher.md`](../4-systems/Launcher.md).
+
 ## The moving parts
 
 | Part | Where | State |

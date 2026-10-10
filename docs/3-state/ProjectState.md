@@ -68,7 +68,13 @@ motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
 (buttons, sticks and motion) in Mario Party Jamboree; motion worked and latency felt negligible.
 The sticks need tuning (#22). Dolphin motion is still unreported.
 
-**Next (approved 2026-10-10):** one installer, one icon, two QR codes (#23). Plan:
+**One installer, two QR codes (#23), built 2026-10-10:** `AJ-Motion-Setup.exe` (23 MB) is on the
+pre-release [v0.1.0-rc.1](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.1),
+built by `.github/workflows/release.yml`. Checked on aj's PC: the launcher ran twice from the
+checkout and once from the staged install layout (bundled Node), each time relay ready, hotspot
+on, join page with both QR codes (decoded and matching), Stop clean. **Not yet checked:** the
+installer itself (needs aj's admin prompt) and a phone joining by QR. System doc:
+[`4-systems/Launcher.md`](../4-systems/Launcher.md). Plan:
 [`plans/easy-install.md`](../plans/easy-install.md). Children: #12, #14, #24, #25, #26.
 
 ## Milestone 3 — on-screen gamepad
