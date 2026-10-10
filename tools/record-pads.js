@@ -3,7 +3,8 @@
 // can be lined up against other events (the relay's DNS log lines carry the same ISO times).
 // Usage: node tools/record-pads.js [seconds=120] > pads.log    (relay must be running)
 // Each line: ISO time, then per connected slot: samples received in the last 100 ms, total
-// sequence gaps (lost samples), the relay's rate, and the newest accel reading in g.
+// sequence gaps (lost samples), the relay's rate, the button bits held (a press is a handy
+// "it lagged now" marker), and the newest accel reading in g.
 
 const http = require('http');
 
@@ -29,7 +30,8 @@ function poll() {
           const prev = last.get(slot) || p.received;
           last.set(slot, p.received);
           const a = p.latest ? p.latest.accel.map((v) => v.toFixed(2)).join(',') : '-';
-          return `slot${slot} +${p.received - prev} dropped=${p.dropped} rate=${p.rateHz} accel=${a}`;
+          const buttons = p.gamepad ? p.gamepad.buttons : 0;
+          return `slot${slot} +${p.received - prev} dropped=${p.dropped} rate=${p.rateHz} buttons=${buttons} accel=${a}`;
         });
         console.log(`${new Date().toISOString()} ${parts.filter(Boolean).join(' | ') || 'no phone'}`);
       });
