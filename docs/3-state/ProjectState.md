@@ -77,6 +77,12 @@ installer itself (needs aj's admin prompt) and a phone joining by QR. System doc
 [`4-systems/Launcher.md`](../4-systems/Launcher.md). Plan:
 [`plans/easy-install.md`](../plans/easy-install.md). Children: #12, #14, #24, #25, #26.
 
+**Installed and joined by QR on aj's PC, 2026-10-10.** Lag and dropped input followed: the
+2.4 GHz hotspot stalled the motion stream; 5 GHz fixed it (`6-decisions/Decisions.md`). Now in
+[v0.1.0-rc.3](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.3). Open: the
+motion tilt in Sudachi after the axis fix, and the installed copy using a different hotspot name
+(79V7) than the saved one (M6P4), cause unknown.
+
 ## Milestone 3 — on-screen gamepad
 
 **Built** (see [`4-systems/OnscreenGamepad.md`](../4-systems/OnscreenGamepad.md)): Xbox, Switch,
