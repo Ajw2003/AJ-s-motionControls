@@ -53,9 +53,15 @@ of the face), DSU z = −phone y (towards the player). The gyro's pitch, yaw and
 about those same three axes, so `gyro = [x, z, −y]` too
 ([`dsu.js:125`](../../relay/dsu.js)).
 
-**Unverified.** These signs are reasoned, not checked in an emulator. Dolphin's DSU input view on
-the Windows PC is the check ([`plans/dsu-server.md`](../plans/dsu-server.md)). If a sign is wrong,
-it is fixed in `phoneToDsuAxes` and nowhere else.
+**Corrected 2026-10-10.** The first signs (above) were reasoned and wrong: a phone lying flat
+showed tilted in Sudachi. DSU reports gravity **as it pulls** (a level gamepad reads −1 g on y),
+the opposite of the phone's "as it pushes" reading, and DSU yaw and roll turn the other way. The
+evidence is two clients' source: Eden (a Yuzu fork, like Sudachi) maps DSU to Switch motion as
+accel `(x, −z, y)`, gyro `(pitch, roll, −yaw)`, and SDL as accel `(−x, z, −y)`, gyro
+`(x, −z, y)`; Dolphin's "Accel Up" is `−y`. So the relay now sends
+`accel = [−x, −z, y]` and `gyro = [x, −z, y]` from phone axes
+([`dsu.js:125`](../../relay/dsu.js)). Not yet re-checked by eye in Sudachi or Dolphin. If a sign
+is still wrong, it is fixed in `phoneToDsuAxes` and nowhere else.
 
 ## Invariants
 
