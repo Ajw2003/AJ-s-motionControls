@@ -81,10 +81,14 @@ it is fixed in `phoneToDsuAxes` and nowhere else.
   **Default** mapping filled buttons and sticks with the DualShock 4 names this server sends:
   Cross, Circle, Square, Triangle, Shoulder R, Start, Pad N/S/E/W, Left/Right X±/Y±, Trigger L/R.
   Its L-Analog and R-Analog stayed empty. Cemu taking a whole controller and Ryujinx taking only
-  motion are still beliefs. Sudachi (aj's Switch emulator, a Yuzu fork) ships pointed at
-  `127.0.0.1:26760` but with DSU input off (`enable_udp_controller=false` in
-  `%APPDATA%\sudachi\config\qt-config.ini`, seen 2026-10-10); whether it reads buttons as well as
-  motion is unconfirmed.
+  motion are still beliefs. **Sudachi** (aj's Switch emulator, a Yuzu fork) reads everything:
+  on 2026-10-10, with **Enable UDP controllers** ticked (Controls → Advanced), Player 1's Input
+  Device listed `UDP Controller 0`, which auto-mapped buttons (DualShock names), sticks and
+  `cemuhookudp` motion. In Super Mario Party Jamboree, played as a Joy-Con, motion and
+  acceleration worked, latency felt negligible, and some buttons needed remapping.
+- **Sticks feel off in Sudachi (open, 2026-10-10).** Likely a double deadzone: the phone applies
+  12% and rescales (`STICK_DEADZONE`, `controller/js/gamepad-state.js:37`), then Sudachi adds its
+  own 15%. Unconfirmed.
 - **Headless checks prove the protocol, not an emulator's reading of it.**
   `tools/verify-dsu.js` speaks DSU as documented. Whether Dolphin agrees, including the axis signs,
   is only known once Dolphin has been pointed at it.

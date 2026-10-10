@@ -64,6 +64,10 @@ shared misreading would pass them all.
 **Outstanding for acceptance:** Dolphin's DSU client on the Windows PC showing a real phone's
 motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
 
+**Real phone, 2026-10-10:** a phone on the offline hotspot, over HTTPS, drove **Sudachi**
+(buttons, sticks and motion) in Mario Party Jamboree; motion worked and latency felt negligible.
+The sticks need tuning. Dolphin motion is still unreported.
+
 ## Milestone 3 — on-screen gamepad
 
 **Built** (see [`4-systems/OnscreenGamepad.md`](../4-systems/OnscreenGamepad.md)): Xbox, Switch,
