@@ -43,7 +43,10 @@ async function startWithLayout(page, layoutId) {
       ['iphone13', devices['iPhone 13 landscape']],
       ['pixel7', devices['Pixel 7 landscape']],
     ]) {
-      const page = await (await browser.newContext({ ...device })).newPage();
+      // Chromium 156 answers the page's motion-permission request "denied" unless granted here.
+      const page = await (
+        await browser.newContext({ ...device, permissions: ['accelerometer', 'gyroscope'] })
+      ).newPage();
       page.on('pageerror', (e) => console.log(`${name} page error: ${e.message}`));
       await page.goto(`http://localhost:${PORT}/pad.html`);
       await page.screenshot({ path: path.join(outDir, `gamepad-${name}-picker.png`) });
@@ -71,7 +74,48 @@ async function startWithLayout(page, layoutId) {
         await startWithLayout(page, layoutId);
         await page.screenshot({ path: path.join(outDir, `gamepad-${name}-${layoutId}.png`) });
       }
+
+      // The upright Wii layout (#32), on the same phone held upright: it must show, and the
+      // "turn your phone" cover must not.
+      const upright = await (
+        await browser.newContext({
+          ...devices[name === 'iphone13' ? 'iPhone 13' : 'Pixel 7'],
+          permissions: ['accelerometer', 'gyroscope'],
+        })
+      ).newPage();
+      await upright.goto(`http://localhost:${PORT}/pad.html`);
+      await startWithLayout(upright, 'wiiUpright');
+      await upright.screenshot({ path: path.join(outDir, `gamepad-${name}-wiiUpright.png`) });
+      console.log(
+        `${name} upright: cover shown ${await upright.isVisible('#rotate')}, A shown ${await upright.isVisible('[data-button="east"]')}`,
+      );
+      await upright.close();
       if (name !== 'iphone13') {
+        // Wii Centre (#32): the PC must see exactly the centre bit while it is held.
+        await startWithLayout(page, 'wii');
+        const centre = await centreOf(page, '[data-button="centre"]');
+        const touch = await page.context().newCDPSession(page);
+        await touch.send('Input.dispatchTouchEvent', {
+          type: 'touchStart',
+          touchPoints: [{ x: centre.x, y: centre.y, id: 1 }],
+        });
+        await sleep(400);
+        const centreHeld = (await (await fetch(`http://127.0.0.1:${PORT}/api/pads`)).json()).pads.find(
+          Boolean,
+        ).gamepad.buttons;
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        console.log(`${name} centre held, PC sees buttons: ${centreHeld} (centre bit is ${1 << 17})`);
+        // Rotation lock (#32): headless Chromium cannot lock, so the page must say so, not fail silently.
+        await page.click('#lock');
+        await sleep(600);
+        console.log(
+          `${name} lock pressed: button "${await page.textContent('#lock')}", status "${await page.textContent('#chip-status')}"`,
+        );
+        await page.click('#lock');
+        await sleep(600);
+        console.log(
+          `${name} lock pressed again: button "${await page.textContent('#lock')}", fullscreen ${await page.evaluate(() => Boolean(document.fullscreenElement))}`,
+        );
         await page.close();
         continue;
       }

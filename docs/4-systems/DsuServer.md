@@ -53,9 +53,36 @@ of the face), DSU z = −phone y (towards the player). The gyro's pitch, yaw and
 about those same three axes, so `gyro = [x, z, −y]` too
 ([`dsu.js:125`](../../relay/dsu.js)).
 
-**Unverified.** These signs are reasoned, not checked in an emulator. Dolphin's DSU input view on
-the Windows PC is the check ([`plans/dsu-server.md`](../plans/dsu-server.md)). If a sign is wrong,
-it is fixed in `phoneToDsuAxes` and nowhere else.
+**Corrected 2026-10-10.** The first signs (above) were reasoned and wrong: a phone lying flat
+showed tilted in Sudachi. DSU reports gravity **as it pulls** (a level gamepad reads −1 g on y),
+the opposite of the phone's "as it pushes" reading, and DSU yaw and roll turn the other way. The
+evidence is two clients' source: Eden (a Yuzu fork, like Sudachi) maps DSU to Switch motion as
+accel `(x, −z, y)`, gyro `(pitch, roll, −yaw)`, and SDL as accel `(−x, z, −y)`, gyro
+`(x, −z, y)`; Dolphin's "Accel Up" is `−y`. So the relay now sends
+`accel = [−x, −z, y]` and `gyro = [x, −z, y]` from phone axes
+([`dsu.js:125`](../../relay/dsu.js)). Not yet re-checked by eye in Sudachi or Dolphin. If a sign
+is still wrong, it is fixed in `phoneToDsuAxes` and nowhere else.
+
+### Pacing
+
+<!-- ref:938d -->
+
+Sudachi and Dolphin both time motion by when a DSU packet **arrives**, not by the sample
+timestamp it carries, so Wi-Fi jitter becomes rotation error: 17° (Sudachi) and 24° (Dolphin) on
+one 100 s session ([`Findings-MotionDrift-2026-10-10.md`](../Findings-MotionDrift-2026-10-10.md)).
+[`relay/pacer.js`](../../relay/pacer.js) sends each sample at
+
+    phone timestamp + fastest recent transit + buffer
+
+so the emulator sees the phone's own spacing. The buffer is `DSU_PACE_MS` (default 17, one
+sample; 0 turns pacing off). A sample that arrives after its slot goes out at once, in order. The
+transit estimate is the minimum of recent `arrival − timestamp`, rising 20 µs a sample so a phone
+clock slower than the PC's (up to ~1,200 ppm) is followed instead of piling up delay. Button
+presses are never paced: they go out at once with the last paced motion.
+
+Windows timers fire every 15.6 ms on aj's PC (`setTimeout(16)` measured at 31 ms), too coarse
+for 60 Hz, so the scheduler is a `setImmediate` loop that runs only while samples are queued: one
+core is busy while a phone streams, and idle otherwise.
 
 ## Invariants
 
@@ -76,12 +103,29 @@ it is fixed in `phoneToDsuAxes` and nowhere else.
 
 - **Only one program can own UDP 26760.** DS4Windows, BetterJoy and other DSU servers use the same
   default port. If one is running, the relay's DSU server is disabled, and the monitor says so.
+- **Dolphin reads motion and pointing from DSU (confirmed 2026-10-10):** Mario Party 8 played with
+  the phone upright as a Wii Remote. Dolphin's gyro pointer is the Wii Remote's **Point** group
+  (`IMUCursor`, Dolphin `WiimoteEmu.cpp:233`); its **Recenter** input (`IMUCursor.cpp:26`) maps
+  to `Touch Button`, which the relay sends for the Wii layout's ⊙ Centre (`centre` bit, #32).
 - **Which emulators read buttons from DSU: Dolphin does; the rest are unconfirmed.** On aj's
   Windows PC (2026-10-09) Dolphin listed the server as `DSUClient/0/<description>`, and its GameCube
   **Default** mapping filled buttons and sticks with the DualShock 4 names this server sends:
   Cross, Circle, Square, Triangle, Shoulder R, Start, Pad N/S/E/W, Left/Right X±/Y±, Trigger L/R.
   Its L-Analog and R-Analog stayed empty. Cemu taking a whole controller and Ryujinx taking only
-  motion are still beliefs.
+  motion are still beliefs. **Sudachi** (aj's Switch emulator, a Yuzu fork) reads everything:
+  on 2026-10-10, with **Enable UDP controllers** ticked (Controls → Advanced), Player 1's Input
+  Device listed `UDP Controller 0`, which auto-mapped buttons (DualShock names), sticks and
+  `cemuhookudp` motion. In Super Mario Party Jamboree, played as a Joy-Con, motion and
+  acceleration worked, latency felt negligible, and some buttons needed remapping.
+- **Dolphin reads the gyro too (2026-10-10).** On the emulated Wii Remote's Motion Input tab, the
+  Gyroscope preview dots moved as aj rotated the phone. For Wii pointing, use the **Point** group
+  (Dolphin's gyro cursor: Total Yaw, Accelerometer Influence, Recenter), not **Point
+  (Passthrough)**. Passthrough wants a real Wii Remote's IR camera data, which DSU doesn't carry,
+  and when it's enabled with inputs bound Dolphin uses it first (`BuildDesiredWiimoteState` in
+  Dolphin's `WiimoteEmu.cpp`). Whether the cursor then tracks well is still untested.
+- **Sticks feel off in Sudachi (open, 2026-10-10).** Likely a double deadzone: the phone applies
+  12% and rescales (`STICK_DEADZONE`, `controller/js/gamepad-state.js:37`), then Sudachi adds its
+  own 15%. Unconfirmed.
 - **Headless checks prove the protocol, not an emulator's reading of it.**
   `tools/verify-dsu.js` speaks DSU as documented. Whether Dolphin agrees, including the axis signs,
   is only known once Dolphin has been pointed at it.

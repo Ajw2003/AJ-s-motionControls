@@ -1,0 +1,44 @@
+# Builds AJ-Motion-Setup.exe and attaches it to a GitHub Release (#26).
+# Push a tag like v0.1.0 for a release, or v0.1.0-rc.1 for a pre-release.
+name: Release installer
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.19.0
+      - name: Stage files
+        shell: powershell
+        run: .\installer\stage.ps1 -NodeVersion 22.19.0
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Compile installer
+        shell: powershell
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0-dev' }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" installer\ajmotion.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AJ-Motion-Setup
+          path: installer/Output/AJ-Motion-Setup.exe
+      - name: Attach to Release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" installer/Output/AJ-Motion-Setup.exe $prerelease \
+            --title "AJ Motion $TAG" \
+            --notes "Download **AJ-Motion-Setup.exe** and run it. Windows may say it protected your PC: click **More info**, then **Run anyway** (the installer isn't signed yet). After installing, click **AJ Motion** on the desktop and scan the two QR codes with your phone."

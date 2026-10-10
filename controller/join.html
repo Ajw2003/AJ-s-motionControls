@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AJ Motion</title>
+    <style>
+      :root {
+        --bg: #f3f5f8;
+        --panel: #fff;
+        --ink: #17202e;
+        --muted: #5b6676;
+        --accent: #1f7fb8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1520;
+          --panel: #172030;
+          --ink: #e6ebf2;
+          --muted: #97a3b4;
+          --accent: #4cb3ec;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 18px/1.5 system-ui, sans-serif;
+      }
+      main {
+        max-width: 64rem;
+        margin: 0 auto;
+        padding: 24px 16px;
+        display: grid;
+        gap: 24px;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+        gap: 24px;
+      }
+      .step {
+        background: var(--panel);
+        border-radius: 16px;
+        padding: 20px;
+        display: grid;
+        gap: 10px;
+        justify-items: center;
+        text-align: center;
+      }
+      .step canvas {
+        width: min(100%, 22rem);
+        aspect-ratio: 1;
+        image-rendering: pixelated;
+        background: #fff;
+        padding: 12px;
+        border-radius: 8px;
+        box-sizing: border-box;
+      }
+      .muted {
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      #pads {
+        font-weight: 700;
+        color: var(--accent);
+      }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border-radius: 8px;
+        justify-self: start;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>AJ Motion</h1>
+      <div class="steps">
+        <section class="step">
+          <h2>1. Join the Wi-Fi</h2>
+          <canvas id="wifi-qr" role="img" aria-label="QR code to join the Wi-Fi"></canvas>
+          <p class="muted">Or join <b id="ssid"></b>, password <b id="pass"></b></p>
+        </section>
+        <section class="step">
+          <h2>2. Open the controller</h2>
+          <canvas id="pad-qr" role="img" aria-label="QR code to open the controller"></canvas>
+          <p class="muted" id="pad-url"></p>
+        </section>
+      </div>
+      <p id="pads">No phone yet</p>
+      <section>
+        <h2>Emulators</h2>
+        <ul id="emulators"></ul>
+        <p class="muted">
+          Sudachi: Controls → Player 1 → Input Device → <b>UDP Controller 0</b>. Dolphin: Controllers →
+          Configure → Device <b>DSUClient/…</b> → <b>Default</b>. Wii Remote pointing: map
+          <b>Point → Recenter</b> to <b>Touch Button</b>, the phone's ⊙ button.
+        </p>
+      </section>
+      <button id="stop">Stop AJ Motion</button>
+    </main>
+    <script type="module" src="js/join.js"></script>
+  </body>
+</html>

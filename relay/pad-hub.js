@@ -34,7 +34,7 @@ function parseMotionMessage(data) {
 }
 
 // One bit per button in controller/js/gamepad-state.js; anything above is not a button.
-const PAD_BUTTON_MASK = (1 << 17) - 1;
+const PAD_BUTTON_MASK = (1 << 18) - 1; // 18 buttons, centre (#32) the last
 
 /**
  * Validate one PAD message (the on-screen gamepad, #4). Returns a clean state or null.

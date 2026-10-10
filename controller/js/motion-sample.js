@@ -31,8 +31,9 @@ function roundTo(value, places) {
  */
 export function makeMotionMessage(accelerationMs2, rotationRate, timestampMs, seq) {
   if (!accelerationMs2) return null;
-  // The spec names rotation rates for the Euler angle each drives: beta turns about x,
-  // gamma about y, alpha about z. Mapping them by name order instead is the classic slip.
+  // Browsers give alpha = x, beta = y, gamma = z rotation rates (right-hand rule), as the
+  // current W3C spec (§6.3.2), Chromium and WebKit all do. The older spec text (beta about x,
+  // gamma about y, alpha about z) is wrong for every browser; trusting it crossed the axes (#30).
   return {
     type: MOTION_MESSAGE_TYPE,
     seq,
@@ -43,11 +44,43 @@ export function makeMotionMessage(accelerationMs2, rotationRate, timestampMs, se
       roundTo(accelerationMs2.z / GRAVITY_MS2, 4),
     ],
     gyro: [
+      roundTo(rotationRate.alpha, 2),
       roundTo(rotationRate.beta, 2),
       roundTo(rotationRate.gamma, 2),
-      roundTo(rotationRate.alpha, 2),
     ],
   };
+}
+
+/**
+ * Which way up `accelerationIncludingGravity` is on this browser (#34): +1 as the spec and
+ * Android give it, -1 when mirrored, as Safari on iPhone gives it (WebKit passes CoreMotion
+ * through; W3C public-geolocation, 2014). As in Rock Skipping, the orientation angles are the
+ * ground truth for "up" (`gravityInDeviceFrame`, sensors.js), so no browser is named here.
+ * Only near-still readings vote, and the decision needs a steady run, so a shake cannot flip it.
+ */
+export class GravitySign {
+  constructor() {
+    this.sign = 1;
+    this._votes = 0;
+  }
+
+  /**
+   * @param {{x:number,y:number,z:number}} accel raw accelerationIncludingGravity, m/s²
+   * @param {{x:number,y:number,z:number}|null} up gravity in the device frame from the
+   *   orientation angles, m/s² (null before the first orientation reading)
+   */
+  update(accel, up) {
+    if (!up) return this.sign;
+    const a = Math.hypot(accel.x, accel.y, accel.z);
+    const u = Math.hypot(up.x, up.y, up.z);
+    if (u === 0 || a < 0.8 * GRAVITY_MS2 || a > 1.2 * GRAVITY_MS2) return this.sign;
+    const cos = (accel.x * up.x + accel.y * up.y + accel.z * up.z) / (a * u);
+    if (cos > 0.8) this._votes = Math.min(this._votes + 1, 30);
+    else if (cos < -0.8) this._votes = Math.max(this._votes - 1, -30);
+    if (this._votes <= -20) this.sign = -1;
+    else if (this._votes >= 20) this.sign = 1;
+    return this.sign;
+  }
 }
 
 /**

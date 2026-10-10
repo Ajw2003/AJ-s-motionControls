@@ -235,6 +235,13 @@ strength.
 
 ## Traps
 
+- **Running the phone checks on Windows (2026-10-10).** Playwright is pinned in `tools/package.json`
+  (`npm ci --prefix tools`, then `npx --prefix tools playwright install chromium`). Chromium 156
+  answers the page's motion-permission request "denied" unless the context grants
+  `accelerometer` and `gyroscope`; `tools/verify-gamepad.js` does. It also presses the Wii
+  layout's Centre (the PC must see exactly bit 17) and Lock rotation twice (lock, then unlock).
+  Emulated mobile Chrome really locks; Safari on iPhone cannot be emulated here.
+
 ### `Assets/Editor/SceneCaptureRunner.cs` — Same shape as RunVerification but leaves Bootstrap enabled and must run without -nographics
 <!-- ref:94d2 -->
 

@@ -45,10 +45,20 @@ devicemotion ──▶ makeMotionMessage ──▶ WebSocket /pad ──▶ pad 
 
 - **Units are converted on the phone, once.** Nothing on the PC rescales accel or gyro. The DSU
   server can copy the numbers straight into packets.
-- **Rotation axes map by axis, not by name order:** `beta` turns about x, `gamma` about y, `alpha`
-  about z, so `gyro = [beta, gamma, alpha]`
-  ([`motion-sample.js:46`](../../controller/js/motion-sample.js)). The test
-  "rotation rates map by axis" guards it.
+- **Rotation rates: `alpha` is x, `beta` is y, `gamma` is z,** right-hand rule, so
+  `gyro = [alpha, beta, gamma]` ([`motion-sample.js:45`](../../controller/js/motion-sample.js)).
+  This is what browsers implement: the current W3C spec (§6.3.2), Chromium's
+  `device_motion_event_pump.cc` (gyro x, y, z into `alpha`, `beta`, `gamma`) and WebKit's
+  `DeviceMotionClientIOS.mm` (CoreMotion x, y, z, likewise). The older spec text and MDN say
+  `beta` about x, `gamma` about y, `alpha` about z, and the page followed that until 2026-10-10;
+  every axis came out crossed (#30). `tools/check-gyro-axes.js` checks a capture against gravity,
+  and the test "rotation rates map alpha→x" guards the mapping.
+- **Gravity's sign comes from the orientation angles, not the browser (#34).** Safari on iPhone
+  mirrors `accelerationIncludingGravity` (WebKit passes CoreMotion's `userAcceleration + gravity`
+  through, `WebCoreMotionManager.mm`; W3C public-geolocation, 2014). As Rock Skipping does, the
+  page takes "up" from `deviceorientation` (`gravityInDeviceFrame`, `sensors.js`) and
+  `GravitySign` (`motion-sample.js`) flips the reading after a steady run of near-still readings
+  point the other way. No browser is named. The phone's status panel shows "Gravity: flipped".
 - **`/pad` sockets never join game rooms,** and game sockets never reach the pad hub. The rate
   budgets differ: the game's AIM cap is 60 messages a second, the pad cap is 400
   ([`pad-hub.js:13`](../../relay/pad-hub.js)).

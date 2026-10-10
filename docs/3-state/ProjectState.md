@@ -64,6 +64,43 @@ shared misreading would pass them all.
 **Outstanding for acceptance:** Dolphin's DSU client on the Windows PC showing a real phone's
 motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
 
+**Real phone, 2026-10-10:** a phone on the offline hotspot, over HTTPS, drove **Sudachi**
+(buttons, sticks and motion) in Mario Party Jamboree; motion worked and latency felt negligible.
+The sticks need tuning (#22).
+
+**Dolphin, upright Wii Remote, 2026-10-10:** aj played several turns and minigames of **Mario Party 8**
+in Dolphin with the phone held upright and pointed at the screen like a Wii Remote (phone rotation
+lock off): pointing worked. That was on rc.6, after the rotation-axis fix (#30). Follow-up (#32):
+a dedicated **⊙ Centre** button on the Wii layout, sent as DSU's touchpad button (Dolphin
+`Touch Button`, mapped to Point → Recenter, so Home no longer has to double as Recenter and open
+the Wii Home menu), and a **Lock rotation** button on the controller page (fullscreen +
+`screen.orientation.lock` on Android; iPhone Safari cannot lock).
+**Confirmed by aj on rc.7 (2026-10-10):** the lock holds and ⊙ Centre re-centres the pointer in
+Dolphin. iPhone fallback still untested.
+
+**iPhone, 2026-10-10:** works, but motion came through upside down, and iPhone can only lock
+portrait. Fixed for rc.8, not yet tried on the iPhone: gravity's sign now comes from the
+orientation angles, as Rock Skipping does (#34); a **Wii Remote (upright)** layout for portrait
+(#32); Lock rotation moved under the status chip (its top-left spot overlapped LT and ZL).
+
+**Confirmed by aj on rc.8 (2026-10-10):** the iPhone works, motion included. A **two-player** test
+worked too: an iPhone and a Samsung phone at once, playing **Wii Sports** in Dolphin.
+
+**One installer, two QR codes (#23), built 2026-10-10:** `AJ-Motion-Setup.exe` (23 MB) is on the
+pre-release [v0.1.0-rc.1](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.1),
+built by `.github/workflows/release.yml`. Checked on aj's PC: the launcher ran twice from the
+checkout and once from the staged install layout (bundled Node), each time relay ready, hotspot
+on, join page with both QR codes (decoded and matching), Stop clean. **Not yet checked:** the
+installer itself (needs aj's admin prompt) and a phone joining by QR. System doc:
+[`4-systems/Launcher.md`](../4-systems/Launcher.md). Plan:
+[`plans/easy-install.md`](../plans/easy-install.md). Children: #12, #14, #24, #25, #26.
+
+**Installed and joined by QR on aj's PC, 2026-10-10.** Lag and dropped input followed: the
+2.4 GHz hotspot stalled the motion stream; 5 GHz fixed it (`6-decisions/Decisions.md`). Now in
+[v0.1.0-rc.3](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.3). Open: the
+motion tilt in Sudachi after the axis fix, and the installed copy using a different hotspot name
+(79V7) than the saved one (M6P4), cause unknown.
+
 ## Milestone 3 — on-screen gamepad
 
 **Built** (see [`4-systems/OnscreenGamepad.md`](../4-systems/OnscreenGamepad.md)): Xbox, Switch,

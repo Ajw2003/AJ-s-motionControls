@@ -5,7 +5,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { makeMotionMessage, RateMeter, MOTION_MESSAGE_TYPE } from './js/motion-sample.js';
+import { makeMotionMessage, RateMeter, MOTION_MESSAGE_TYPE, GravitySign } from './js/motion-sample.js';
 import { GRAVITY_MS2 } from './js/sensors.js';
 
 let failures = 0;
@@ -31,8 +31,11 @@ check('phone lying flat reads 1 g on z', () => {
   assert.deepEqual(m.accel, [0, 0, 1]);
 });
 
-check('rotation rates map by axis, not by name order: beta→x, gamma→y, alpha→z', () => {
-  const m = makeMotionMessage({ x: 0, y: 0, z: 0 }, { alpha: 30, beta: 10, gamma: 20 }, 0, 0);
+// W3C Device Orientation and Motion §6.3.2, Chromium's device_motion_event_pump.cc and WebKit's
+// DeviceMotionClientIOS.mm all give alpha = x, beta = y, gamma = z (the older spec text said
+// otherwise). aj's Android phone agreed against gravity, 2026-10-10 (#30).
+check('rotation rates map alpha→x, beta→y, gamma→z, as browsers implement them', () => {
+  const m = makeMotionMessage({ x: 0, y: 0, z: 0 }, { alpha: 10, beta: 20, gamma: 30 }, 0, 0);
   assert.deepEqual(m.gyro, [10, 20, 30]);
 });
 
@@ -56,7 +59,7 @@ check('carries type and seq', () => {
 check('rounds to 4 places for g and 2 for deg/s, keeping messages small', () => {
   const m = makeMotionMessage(
     { x: 1.23456789, y: 0, z: 0 },
-    { alpha: 0, beta: 12.34567, gamma: 0 },
+    { alpha: 12.34567, beta: 0, gamma: 0 },
     0,
     0,
   );
@@ -89,6 +92,36 @@ check('RateMeter falls to 0 once samples stop', () => {
   const meter = new RateMeter();
   for (let i = 0; i < 60; i++) meter.record(i * 16);
   assert.equal(meter.ratePerSecond(5000), 0);
+});
+
+// iPhone Safari reports accelerationIncludingGravity mirrored (WebKit passes CoreMotion through;
+// W3C public-geolocation, 2014). As in Rock Skipping, the orientation angles are the ground truth
+// for "up"; the reading is flipped when it keeps pointing the other way (#34).
+const G = GRAVITY_MS2;
+check('gravity agreeing with orientation is left alone', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: G }, { x: 0, y: 0, z: G });
+  assert.equal(s.sign, 1);
+});
+
+check('gravity opposite to orientation is flipped after a steady run (iPhone)', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: -G }, { x: 0, y: 0, z: G });
+  assert.equal(s.sign, -1);
+});
+
+check('a few shaken or opposite readings do not flip it', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: G }, { x: 0, y: 0, z: G });
+  for (let i = 0; i < 5; i++) s.update({ x: 0, y: 0, z: -G }, { x: 0, y: 0, z: G });
+  for (let i = 0; i < 20; i++) s.update({ x: 3 * G, y: 0, z: -G }, { x: 0, y: 0, z: G }); // a hard shake
+  assert.equal(s.sign, 1);
+});
+
+check('no orientation reading yet means no decision', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: -G }, null);
+  assert.equal(s.sign, 1);
 });
 
 if (failures) {

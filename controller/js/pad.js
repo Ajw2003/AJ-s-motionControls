@@ -8,8 +8,10 @@ import {
   isSecureContextOk,
   readAcceleration,
   readRotationRate,
+  orientationToQuaternion,
+  gravityInDeviceFrame,
 } from './sensors.js';
-import { makeMotionMessage, RateMeter } from './motion-sample.js';
+import { makeMotionMessage, RateMeter, GravitySign } from './motion-sample.js';
 import { GamepadState, makePadMessage } from './gamepad-state.js';
 import { LAYOUTS, DEFAULT_LAYOUT } from './layouts.js';
 import { mountGamepad } from './gamepad-view.js';
@@ -92,6 +94,11 @@ function sendPad() {
 function showGamepad() {
   if (unmountGamepad) unmountGamepad();
   unmountGamepad = mountGamepad(el('controls'), LAYOUTS[layoutId], gamepad, sendPad);
+  const upright = LAYOUTS[layoutId].orientation === 'portrait';
+  document.body.classList.toggle('layout-portrait', upright);
+  el('rotate').textContent = upright
+    ? 'Hold your phone upright to use this controller.'
+    : 'Turn your phone sideways to use the controller.';
   document.body.classList.add('playing');
 }
 
@@ -127,9 +134,21 @@ function connect() {
   });
 }
 
+// "Up" from the orientation angles, the ground truth Rock Skipping uses (iPhone and Android agree
+// on them); GravitySign flips the raw gravity reading when it points the other way (#34).
+let orientationUp = null;
+const gravitySign = new GravitySign();
+
+function onOrientation(event) {
+  if (event.beta === null || event.gamma === null) return;
+  orientationUp = gravityInDeviceFrame(orientationToQuaternion(event.alpha ?? 0, event.beta, event.gamma));
+}
+
 function onMotion(event) {
+  const raw = readAcceleration(event);
+  const sign = raw ? gravitySign.update(raw, orientationUp) : 1;
   const message = makeMotionMessage(
-    readAcceleration(event),
+    raw && sign < 0 ? { x: -raw.x, y: -raw.y, z: -raw.z } : raw,
     readRotationRate(event),
     performance.timeOrigin + event.timeStamp,
     seq,
@@ -147,6 +166,7 @@ function onMotion(event) {
 function renderReadout() {
   el('rate').textContent = rate.ratePerSecond(performance.now()).toFixed(0);
   el('sent').textContent = String(sent);
+  el('gravity').textContent = gravitySign.sign < 0 ? 'flipped' : 'as reported';
   if (latest) {
     el('accel').textContent = latest.accel.map((n) => n.toFixed(2)).join('  ');
     el('gyro').textContent = latest.gyro.map((n) => n.toFixed(0)).join('  ');
@@ -170,6 +190,7 @@ startButton.addEventListener('click', async () => {
     return;
   }
   if (!socket) {
+    window.addEventListener('deviceorientation', onOrientation);
     window.addEventListener('devicemotion', onMotion);
     connect();
     setInterval(renderReadout, READOUT_INTERVAL_MS);
@@ -177,6 +198,49 @@ startButton.addEventListener('click', async () => {
   }
   startButton.textContent = 'Back to the controller';
   showGamepad();
+});
+
+// Rotation lock (#32), so pointing the phone at the screen never flips the layout. Chrome and
+// Samsung Internet on Android lock only in fullscreen; Safari on iPhone cannot lock at all
+// (MDN browser-compat-data, ScreenOrientation.lock), so it points to the phone's own lock.
+let rotationLocked = false;
+
+function showLock(locked) {
+  rotationLocked = locked;
+  el('lock').setAttribute('aria-pressed', String(locked));
+  el('lock').textContent = locked ? 'Rotation locked' : 'Lock rotation';
+}
+
+async function toggleRotationLock() {
+  if (rotationLocked) {
+    try {
+      screen.orientation.unlock();
+      if (document.fullscreenElement) await document.exitFullscreen();
+    } catch (err) {
+      console.warn('Rotation unlock:', err);
+    }
+    showLock(false);
+    return;
+  }
+  if (!screen.orientation || !screen.orientation.lock || !document.documentElement.requestFullscreen) {
+    setStatus('This browser cannot lock rotation; use the phone rotation lock', 'bad');
+    return;
+  }
+  try {
+    await document.documentElement.requestFullscreen();
+    await screen.orientation.lock(screen.orientation.type);
+    showLock(true);
+  } catch (err) {
+    console.warn('Rotation lock:', err);
+    if (document.fullscreenElement) await document.exitFullscreen().catch((e) => console.warn('Exit fullscreen:', e));
+    setStatus(`Cannot lock rotation here (${err.name}); use the phone rotation lock`, 'bad');
+  }
+}
+
+el('lock').addEventListener('click', toggleRotationLock);
+// Leaving fullscreen (back gesture, swipe) releases the lock; show that.
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && rotationLocked) showLock(false);
 });
 
 el('chip').addEventListener('click', () => {

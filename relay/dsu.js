@@ -7,6 +7,7 @@
 
 const dgram = require('dgram');
 const crypto = require('crypto');
+const { createPacer } = require('./pacer');
 
 const PROTOCOL_VERSION = 1001;
 const HEADER_BYTES = 16;
@@ -118,14 +119,14 @@ function portInfoPayload(slot, connected) {
 }
 
 /**
- * Phone axes to DSU axes: the one place every axis decision lives. The signs are reasoned,
- * not yet checked in an emulator.
+ * Phone axes to DSU axes: the one place every axis decision lives. Signs taken from the
+ * Yuzu-family and Dolphin DSU clients on 2026-10-10, after Sudachi showed a flat phone tilted.
  * doc-ref 46ec docs/4-systems/DsuServer.md
  */
 function phoneToDsuAxes(accel, gyro) {
   return {
-    accel: [accel[0], accel[2], -accel[1]],
-    gyro: [gyro[0], gyro[2], -gyro[1]],
+    accel: [-accel[0], -accel[2], accel[1]],
+    gyro: [gyro[0], -gyro[2], gyro[1]],
   };
 }
 
@@ -152,6 +153,7 @@ const PadBit = Object.freeze({
   right: 1 << 14,
   lt: 1 << 15,
   rt: 1 << 16,
+  centre: 1 << 17,
 });
 
 // DSU uses the DualShock 4's buttons, by position: Square is west, Cross south, Circle east,
@@ -221,7 +223,7 @@ function padDataPayload(slot, packetNumber, sample, gamepad = null) {
   payload.writeUInt8(byte1, o++);
   payload.writeUInt8(byte2, o++);
   payload.writeUInt8(isDown('home') ? 1 : 0, o++);
-  o += 1; // touchpad button: no touchpad
+  payload.writeUInt8(isDown('centre') ? 1 : 0, o++); // touchpad button: the Wii layout's Centre (#32)
   for (const value of sticks) payload.writeUInt8(stickByte(value), o++); // LX, LY, RX, RY
   for (const name of DSU_ANALOG_ORDER) payload.writeUInt8(isDown(name) ? 255 : 0, o++);
   o += 12; // two touch points, inactive
@@ -256,6 +258,7 @@ function parsePadData(body) {
     buttons1: body.readUInt8(at(20)),
     buttons2: body.readUInt8(at(21)),
     home: body.readUInt8(at(22)),
+    touch: body.readUInt8(at(23)),
     analog: [...body.subarray(at(28), at(40))],
     sticks: [
       body.readUInt8(at(24)),
@@ -288,6 +291,7 @@ function createDsuServer({
   host = '127.0.0.1',
   now = () => Date.now(),
   log = () => {},
+  paceBufferMs = 0,
 }) {
   const socket = dgram.createSocket('udp4');
   const serverId = crypto.randomBytes(4).readUInt32LE(0);
@@ -370,9 +374,17 @@ function createDsuServer({
     }
   });
 
-  // The newest motion per slot, so a button press can go out at once with current motion
-  // rather than waiting for the next sample.
+  // The newest motion already sent per slot, so a button press can go out at once with the
+  // current paced motion rather than waiting for the next sample (or jumping the pacer's queue).
   const latestSample = new Array(4).fill(null);
+  // Motion goes out at the phone's own spacing (#29); buttons are never delayed.
+  const pacer = createPacer({
+    bufferUs: paceBufferMs * 1000,
+    send: (slot, sample) => {
+      latestSample[slot] = sample;
+      broadcast(slot, sample, currentGamepad(slot));
+    },
+  });
 
   function currentGamepad(slot) {
     const pad = padHub.snapshot()[slot];
@@ -380,11 +392,18 @@ function createDsuServer({
   }
 
   function onSample(slot, sample) {
-    latestSample[slot] = sample;
-    broadcast(slot, sample, currentGamepad(slot));
+    pacer.push(slot, sample);
   }
 
+  // The phone repeats its controller state every 250 ms. A repeat with nothing changed is
+  // already in every motion packet, and an extra packet splits an interval in Sudachi's
+  // arrival-timed maths (docs/Findings-MotionDrift-2026-10-10.md), so only changes go out.
+  const lastGamepadKey = new Array(4).fill(null);
+
   function onPad(slot, gamepad) {
+    const key = `${gamepad.buttons}|${gamepad.sticks.join(',')}`;
+    if (key === lastGamepadKey[slot]) return;
+    lastGamepadKey[slot] = key;
     // Before the first motion sample, report the phone at rest: flat, gravity down its back.
     const sample = latestSample[slot] || { ts: now() * 1000, accel: [0, 0, 1], gyro: [0, 0, 0] };
     broadcast(slot, sample, gamepad);
@@ -392,6 +411,8 @@ function createDsuServer({
 
   function onDisconnect(slot) {
     latestSample[slot] = null;
+    lastGamepadKey[slot] = null;
+    pacer.clear(slot);
   }
 
   function broadcast(slot, sample, gamepad) {

@@ -156,6 +156,20 @@ ended, and you can close it.
 
 ---
 
+## Results, 2026-10-10 (run on aj's PC)
+
+- Steps 1-2 were not needed: PR #21 had already merged the branch into `main`. The repo is at
+  `C:\Users\aj\AJ-s-motionControls`, not the Desktop path above.
+- Step 3 failed twice on Windows PowerShell 5.1: `npm.ps1` under strict mode, then the hotspot
+  helper's stderr. Both are fixed on `AjsAgent/pad-cert-fixtures`, and it then started the relay
+  and hotspot end to end. Running `test-pad-cert.js` on a fresh clone also failed: `*.pem` in
+  `.gitignore` hid its fixtures. That's fixed on the same branch.
+- A phone on the hotspot loaded `https://pad.skiprocking.ca:8443/pad.html` (the old guide's
+  `http://<pc>:3000` address no longer applies). **Sudachi** auto-mapped it as
+  `UDP Controller 0`. In Mario Party Jamboree, motion and acceleration worked and latency felt
+  negligible. The sticks feel off and need tuning (see `4-systems/DsuServer.md`, Traps).
+- Not yet reported: Dolphin motion, padlock on iPhone, whether mobile data stayed off the hotspot.
+
 ## What to report back
 
 | Question | Where you'll see the answer |

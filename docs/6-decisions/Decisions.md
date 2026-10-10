@@ -10,6 +10,35 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-10 — The hotspot runs on 5 GHz, not 2.4 GHz
+
+**Context.** After the first install (#23), aj saw lag and dropped input, along with bursts of
+DNS "doesn't exist" lines in the relay window. Measured on aj's PC, which has no Wi-Fi station
+link (it's on Ethernet), with a phone streaming motion at 60 Hz:
+
+| Hotspot band | Ping to phone, mean / worst | Motion stalls ≥ 300 ms |
+|---|---|---|
+| 2.4 GHz, phone mobile data on | 118 / 1,079 ms | about 7.6 a minute, 0.6–0.9 s each |
+| 2.4 GHz, mobile data off | 36 / 777 ms | about 6 a minute |
+| 5 GHz (channel 36), mobile data off | 3 / 47 ms | none in 54 s |
+
+Pings come from `tools/measure-hotspot-jitter.ps1`, stalls from `tools/record-pads.js`. Samples
+were never lost, only held back and sent in bursts. The DNS lines were the phone's apps looking
+for the internet, and lined up with stalls no more often than chance (67% against 65%).
+
+**Decision.** `tools/launch.ps1` starts the hotspot with `-Band FiveGigahertz`, a new override
+in `hotspot/hotspot-control.ps1` (the default there stays `Auto`). An adapter that refuses the
+band is reported, and Windows picks.
+
+**Supersedes** Rock Skipping's "2.4 GHz with no station link, for compatibility and range"
+(`docs/plans/aim-preview-lag-on-shared-radio.md`, open question), for this product. That
+document already found 2.4 GHz jittery in a busy building.
+
+**Risk.** A phone that can't see 5 GHz networks can't join. Most phones from the last several
+years can; if one can't, a `-Band` choice in the launcher is the follow-up.
+
+---
+
 ## 2026-10-09 — HTTPS on the hotspot: a shared, hardened certificate for `pad.skiprocking.ca`
 
 **Context.** #13. Phones only give motion sensors to HTTPS pages. aj's constraints:

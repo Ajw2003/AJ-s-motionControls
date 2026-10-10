@@ -1,6 +1,8 @@
 #!/bin/sh
 # Regenerates the committed test fixtures for test-pad-cert.js. Needs openssl; the tests
 # themselves do not (so they run on Windows). CA private keys are thrown away on purpose.
+# In Git Bash on Windows, run it as:
+#   TMPDIR=$(cygpath -m "$LOCALAPPDATA/Temp") MSYS2_ARG_CONV_EXCL="/CN=" sh make-fixtures.sh
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)

@@ -129,6 +129,16 @@ describe('buttons and sticks', () => {
     assert.equal(padWith(0).home, 0);
   });
 
+  // The Wii layout's Centre button (#32): Dolphin maps Recenter to it as "Touch Button", so it
+  // must set the touchpad-button byte and nothing else (Home opens the Wii Home menu).
+  test('centre is the touchpad button and nothing else', () => {
+    const pad = padWith(PadBit.centre);
+    assert.equal(pad.touch, 1);
+    assert.equal(pad.home, 0);
+    assert.equal(pad.buttons1 | pad.buttons2, 0);
+    assert.equal(padWith(0).touch, 0);
+  });
+
   test('analog bytes are 255 for held buttons, in DSU order', () => {
     const pad = padWith(PadBit.up | PadBit.south | PadBit.rt);
     // left, down, right, up, Square, Cross, Circle, Triangle, R1, L1, R2, L2
@@ -149,14 +159,21 @@ describe('buttons and sticks', () => {
 });
 
 describe('axes', () => {
-  test('phone flat on its back reads as a gamepad held level: gravity on DSU y', () => {
+  // DSU reports gravity as it pulls, so a level gamepad reads -1 g on y. Checked against the
+  // Yuzu-family (Eden) and Dolphin clients on 2026-10-10: see docs/4-systems/DsuServer.md.
+  test('phone flat on its back reads as a gamepad held level: -1 g on DSU y', () => {
     const { accel } = phoneToDsuAxes([0, 0, 1], [0, 0, 0]);
-    assert.deepEqual(accel, [0, 1, -0]);
+    assert.deepEqual(accel, [-0, -1, 0]);
   });
 
-  test('gyro follows the same axes as acceleration', () => {
+  test('phone tipped right (x up) reads as the gamepad tipped right', () => {
+    const { accel } = phoneToDsuAxes([1, 0, 0], [0, 0, 0]);
+    assert.deepEqual(accel, [-1, -0, 0]);
+  });
+
+  test('gyro: pitch as is, yaw and roll flipped for DSU', () => {
     const { gyro } = phoneToDsuAxes([0, 0, 0], [1, 2, 3]);
-    assert.deepEqual(gyro, [1, 3, -2]);
+    assert.deepEqual(gyro, [1, -3, 2]);
   });
 });
 
@@ -187,7 +204,9 @@ describe('relay with a scripted DSU client', () => {
 
   before(async () => {
     server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-      env: { ...process.env, PORT: String(PORT), DSU_PORT: String(DSU_PORT) },
+      // Pacing off here: these tests check the wire format with samples sent in a burst.
+      // Pacing has its own tests (test-pacer.js and the paced-relay test below).
+      env: { ...process.env, PORT: String(PORT), DSU_PORT: String(DSU_PORT), DSU_PACE_MS: '0' },
       stdio: ['ignore', 'ignore', 'inherit'],
     });
     await sleep(600);
@@ -257,7 +276,7 @@ describe('relay with a scripted DSU client', () => {
     const last = data.at(-1);
     assert.equal(last.slot, 0);
     assert.equal(last.timestampUs, BigInt(5_000_000 + 59 * 16_667));
-    assert.ok(Math.abs(last.accel[1] - 1) < 1e-6, `gravity on DSU y, got ${last.accel}`);
+    assert.ok(Math.abs(last.accel[1] + 1) < 1e-6, `gravity on DSU y, got ${last.accel}`);
     assert.ok(Math.abs(last.gyro[0] - 90) < 1e-6, `pitch 90 deg/s, got ${last.gyro}`);
 
     request(MessageType.PORT_INFO, Buffer.from([1, 0, 0, 0, 0]));
@@ -298,5 +317,37 @@ describe('relay with a scripted DSU client', () => {
     request(MessageType.VERSION);
     await waitFor((p) => p.type === MessageType.VERSION);
     assert.equal(received.length, 1);
+  });
+});
+
+describe('controller-state repeats', () => {
+  test('an unchanged repeat sends nothing; a change goes out at once', async () => {
+    const dgram = require('dgram');
+    const { EventEmitter } = require('events');
+    const { createDsuServer } = require('./dsu');
+    const events = new EventEmitter();
+    const padHub = { events, snapshot: () => [{ gamepad: null }, null, null, null] };
+    const port = 26988;
+    const server = createDsuServer({ padHub, port });
+    const client = dgram.createSocket('udp4');
+    let padPackets = 0;
+    client.on('message', (packet) => {
+      const parsed = parsePacket(packet, 'DSUS');
+      if (parsed && parsed.type === MessageType.PAD_DATA) padPackets++;
+    });
+    await new Promise((resolve) => client.bind(0, '127.0.0.1', resolve));
+    const body = Buffer.alloc(12);
+    body.writeUInt32LE(MessageType.PAD_DATA, 0);
+    client.send(buildPacket('DSUC', 1, body), port, '127.0.0.1');
+    await sleep(100);
+
+    events.emit('pad', 0, { seq: 1, buttons: 0, sticks: [0, 0, 0, 0] });
+    events.emit('pad', 0, { seq: 2, buttons: 0, sticks: [0, 0, 0, 0] }); // the 250 ms repeat
+    events.emit('pad', 0, { seq: 3, buttons: 1, sticks: [0, 0, 0, 0] }); // A pressed
+    events.emit('pad', 0, { seq: 4, buttons: 1, sticks: [0, 0.5, 0, 0] }); // stick moved
+    await sleep(100);
+    client.close();
+    server.close();
+    assert.equal(padPackets, 3);
   });
 });

@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test-relay.js test-dns.js test-funnel.js test-probe.js test-pad-hub.js test-dsu.js test-pad-cert.js",
+    "test": "node --test test-relay.js test-dns.js test-funnel.js test-probe.js test-pad-hub.js test-dsu.js test-pad-cert.js test-join.js test-pacer.js",
     "start:pad": "node start-pad.js",
     "loadtest": "node loadtest.js",
     "lint": "eslint .",
