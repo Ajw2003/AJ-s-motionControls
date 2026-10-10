@@ -80,6 +80,17 @@ interval. On capture 2, Sudachi-style error was 4.3 / −0.9 / 7.5° with the re
 had heavier roll, peaking at 1,770°/s, and the remainder is its own 200 Hz ticks). Since then the
 relay forwards controller state only when a button or stick changed (`relay/dsu.js`, `onPad`).
 
+## Direction check on rc.5 (open)
+
+aj reported the Sudachi picture turning opposite to the phone on all three axes, with the phone
+on the table and Player 1 set to **Right Joycon**. A capture of the same three moves showed the
+relay sending each in the direction Dolphin's DSU client names it: turn right gave yaw +68°
+("Gyro Yaw Right"), lifting the top edge gave pitch +79° ("Gyro Pitch Up"), and lifting the left
+edge gave roll +95° ("Gyro Roll Right"). On the table at rest, the gyro read about 0.005°/s,
+below Sudachi's dead zone, and the replay drifted 0.00° in 55 s. Open question: whether a single
+Joy-Con's own frame explains Sudachi's picture, or whether Sudachi's signs differ from Eden's. Next
+test: the same moves with Player 1 as Pro Controller.
+
 ## The obstacle to pacing
 
 Pacing sends each packet to the emulator at the phone's own sample spacing, so arrival time
