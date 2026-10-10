@@ -280,8 +280,8 @@ describe('Relay integration', () => {
     const testSensors = await httpGet('/test-sensors.js');
     check('/test-sensors.js is not served', testSensors.status === 404, String(testSensors.status));
 
-    const appJs = await httpGet('/js/app.js');
-    check('/js/app.js is served', appJs.status === 200, String(appJs.status));
+    const padJs = await httpGet('/js/pad.js');
+    check('/js/pad.js is served', padJs.status === 200, String(padJs.status));
 
     const index = await httpGet('/');
     check('/ is served', index.status === 200, String(index.status));

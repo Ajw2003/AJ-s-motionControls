@@ -10,6 +10,29 @@ document rather than duplicating it.
 
 ---
 
+## 2026-10-10 — The Rock Skipping game is removed from this repo
+
+**Context.** The fork (2026-10-08) kept the whole Rock Skipping game: the Unity project
+(`Assets/`, `Packages/`, `ProjectSettings/`), its art and physics tools, and its phone page
+(`controller/index.html` with `app.js`, `throw.js`, `net.js`, `ranking.js`, `rock-art.js`,
+`identity.js`). The landing page listed its removal as undecided. None of it runs in the motion
+controller: `pad.html`, the pad hub and the DSU server import nothing from it.
+
+**Decision.** aj asked for the repo to be leaner. Removed: the Unity project, `tools/physics/`,
+`tools/art/`, `tools/audio/`, `tools/capture-scene.ps1`, the game phone page and its tests in
+`controller/test-sensors.js`, `relay/fake-host.js`, `relay/loadtest.js`, two Samsung logcat dumps,
+`transcripts/`, and root game data files. The relay now serves `pad.html` at `/`, and
+`tools/verify.ps1` lost its Unity stage. `deploy/spike/` stays because `deploy/verify-stack.ps1`
+still runs its `dns-query.js`.
+
+**Not done.** The relay's room/host protocol (`CREATE_ROOM`, `JOIN_ROOM`, `AIM`, `THROW`) in
+`relay/server.js` only ever served the Unity host, and stays for a separate change. The
+`docs/4-systems/` pages for the game (skip physics, scoring, audio, presentation, rock catalog,
+event system) and comments that point at deleted C# files are not yet cleaned up. Everything
+removed is recoverable from git history and from Ajw2003/RockSkipping.
+
+---
+
 ## 2026-10-10 — The hotspot runs on 5 GHz, not 2.4 GHz
 
 **Context.** After the first install (#23), aj saw lag and dropped input, along with bursts of

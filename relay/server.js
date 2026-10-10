@@ -347,14 +347,13 @@ const CONTENT_TYPES = {
   '.ico': 'image/x-icon',
 };
 
-// Only these are ever handed back: `/`, `index.html`, and `js/<name>.js`. This is an
+// Only these are ever handed back: `/` (the controller page), the pages below, and `js/<name>.js`. This is an
 // allowlist rather than "serve anything under controller/" (C4) — the old prefix check
 // let a phone read package.json, eslint.config.js, test-sensors.js, anything else
 // checked into the folder, since nothing distinguished "the app" from "the repo the
 // app happens to live in". Naming exactly what the phone needs keeps that from
 // silently growing back the next time a file gets added next to js/.
 function isAllowedRelativePath(relative) {
-  if (relative === 'index.html') return true;
   // The controller page (#2) and the PC-side readout of what the controllers send.
   if (relative === 'pad.html' || relative === 'monitor.html') return true;
   // The join page (#14) holds no secrets itself; its Wi-Fi details come from loopback-only /api/join.
@@ -381,7 +380,7 @@ function serveStatic(req, res) {
     throw err;
   }
 
-  const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
+  const relative = requested === '/' ? 'pad.html' : requested.replace(/^\/+/, '');
 
   if (!isAllowedRelativePath(relative)) {
     res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
@@ -409,7 +408,7 @@ function serveStatic(req, res) {
     // The controller document itself, not its assets: a phone that fetched only a stylesheet
     // has not opened the game, and counting that as PAGE_OPEN would report a phone as ready
     // to play before it has loaded the page.
-    if (funnel && relative === 'index.html') {
+    if (funnel && relative === 'pad.html') {
       funnel.record(req.socket.remoteAddress, Stage.PAGE_OPEN);
     }
 
