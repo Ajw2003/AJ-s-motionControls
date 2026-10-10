@@ -46,6 +46,8 @@ function Write-Good { param([string] $Message) Write-Host "    $Message" -Foregr
 # hotspot-control.ps1 prints exactly one JSON line as its last line of output.
 function Invoke-Hotspot {
     param([string[]] $Arguments)
+    # Its progress text goes to stderr, which 5.1 turns into a terminating error under Stop.
+    $ErrorActionPreference = 'Continue'
     $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $HotspotScript @Arguments 2>&1
     $last = ($output | Where-Object { "$_".Trim().StartsWith('{') } | Select-Object -Last 1)
     if (-not $last) { return [pscustomobject]@{ ok = $false; error = ($output -join ' ') } }
@@ -87,7 +89,8 @@ if (-not $nodeVersion) { throw 'Node is not installed. Install the LTS version f
 Write-Good "Node $nodeVersion"
 
 Write-Step 'Installing the relay packages'
-& npm --prefix $RelayDir ci --omit=dev --no-audit --no-fund
+# npm.cmd, not npm: npm.ps1 breaks under Set-StrictMode Latest.
+& npm.cmd --prefix $RelayDir ci --omit=dev --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { throw 'npm could not install the relay packages. The lines above say why.' }
 
 Write-Step 'Making sure nothing old is in the way'
