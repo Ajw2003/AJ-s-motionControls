@@ -46,4 +46,6 @@ Unity), so the join page draws it on a canvas with a 4-module quiet border.
 - **Closing the launcher window can leave the hotspot on.** The relay dies with the console, but
   the `finally` block may not run. The next launch turns the hotspot off first; the join page's
   Stop button, or the Start-menu **Stop AJ Motion** shortcut, is the clean way out.
+- **2.4 GHz stalls the motion stream near busy Wi-Fi.** The launcher forces 5 GHz; see
+  `6-decisions/Decisions.md`, 2026-10-10. A phone that can't see 5 GHz can't join.
 - **The repo is private,** so only aj can download Release assets while it stays private.

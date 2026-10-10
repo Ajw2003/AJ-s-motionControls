@@ -161,7 +161,10 @@ try {
     Write-Good "Relay listening on $RelayPort and answering DNS."
 
     Write-Step 'Starting the offline hotspot'
-    $result = Invoke-Hotspot @('-Action', 'Start', '-Ssid', $credentials.ssid, '-Passphrase', $credentials.passphrase)
+    # 5 GHz, not the script's 2.4 GHz default: on aj's PC 2.4 GHz stalled the motion stream
+    # for 0.6-0.8 s about every 10 s, 5 GHz none (docs/6-decisions/Decisions.md, 2026-10-10).
+    # An adapter that refuses the band is reported by hotspot-control and left to Windows.
+    $result = Invoke-Hotspot @('-Action', 'Start', '-Ssid', $credentials.ssid, '-Passphrase', $credentials.passphrase, '-Band', 'FiveGigahertz')
     if (-not $result.ok) { throw "The hotspot did not start: $($result | ConvertTo-Json -Compress)" }
     Write-Good 'Hotspot on.'
 

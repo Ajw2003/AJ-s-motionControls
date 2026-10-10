@@ -40,7 +40,10 @@ param(
     [Parameter(Mandatory)] [ValidateSet('Start', 'Stop')] [string] $Action,
     [string] $Ssid,
     [string] $Passphrase,
-    [switch] $ShareInternet
+    [switch] $ShareInternet,
+    # Auto follows the station link (Get-StationBandName). The others force a band, for
+    # measuring whether 2.4 GHz is what makes the link stall (#23 follow-up, 2026-10-10).
+    [ValidateSet('Auto', 'TwoPointFourGigahertz', 'FiveGigahertz')] [string] $Band = 'Auto'
 )
 
 Set-StrictMode -Version Latest
@@ -271,8 +274,10 @@ if ($Action -eq 'Start') {
         # this radio is already holding a 5 GHz station link, because then it costs a
         # channel switch on every slot and the aim preview is what pays. See
         # Get-StationBandName.
-        $bandChoice = Get-StationBandName
-        if ($bandChoice.Station) {
+        $bandChoice = if ($Band -eq 'Auto') { Get-StationBandName } else { @{ Band = $Band; Station = $null; Matched = $true } }
+        if ($Band -ne 'Auto') {
+            Write-Progress2 ("  band forced; asking for {0}" -f $bandChoice.Band)
+        } elseif ($bandChoice.Station) {
             Write-Progress2 ("  station link is on {0}; asking for {1}" -f $bandChoice.Station, $bandChoice.Band)
         } else {
             Write-Progress2 ("  no station link; asking for {0}" -f $bandChoice.Band)
