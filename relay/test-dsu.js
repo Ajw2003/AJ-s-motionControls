@@ -149,14 +149,21 @@ describe('buttons and sticks', () => {
 });
 
 describe('axes', () => {
-  test('phone flat on its back reads as a gamepad held level: gravity on DSU y', () => {
+  // DSU reports gravity as it pulls, so a level gamepad reads -1 g on y. Checked against the
+  // Yuzu-family (Eden) and Dolphin clients on 2026-10-10: see docs/4-systems/DsuServer.md.
+  test('phone flat on its back reads as a gamepad held level: -1 g on DSU y', () => {
     const { accel } = phoneToDsuAxes([0, 0, 1], [0, 0, 0]);
-    assert.deepEqual(accel, [0, 1, -0]);
+    assert.deepEqual(accel, [-0, -1, 0]);
   });
 
-  test('gyro follows the same axes as acceleration', () => {
+  test('phone tipped right (x up) reads as the gamepad tipped right', () => {
+    const { accel } = phoneToDsuAxes([1, 0, 0], [0, 0, 0]);
+    assert.deepEqual(accel, [-1, -0, 0]);
+  });
+
+  test('gyro: pitch as is, yaw and roll flipped for DSU', () => {
     const { gyro } = phoneToDsuAxes([0, 0, 0], [1, 2, 3]);
-    assert.deepEqual(gyro, [1, 3, -2]);
+    assert.deepEqual(gyro, [1, -3, 2]);
   });
 });
 
@@ -257,7 +264,7 @@ describe('relay with a scripted DSU client', () => {
     const last = data.at(-1);
     assert.equal(last.slot, 0);
     assert.equal(last.timestampUs, BigInt(5_000_000 + 59 * 16_667));
-    assert.ok(Math.abs(last.accel[1] - 1) < 1e-6, `gravity on DSU y, got ${last.accel}`);
+    assert.ok(Math.abs(last.accel[1] + 1) < 1e-6, `gravity on DSU y, got ${last.accel}`);
     assert.ok(Math.abs(last.gyro[0] - 90) < 1e-6, `pitch 90 deg/s, got ${last.gyro}`);
 
     request(MessageType.PORT_INFO, Buffer.from([1, 0, 0, 0, 0]));

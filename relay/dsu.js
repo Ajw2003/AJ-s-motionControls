@@ -118,14 +118,14 @@ function portInfoPayload(slot, connected) {
 }
 
 /**
- * Phone axes to DSU axes: the one place every axis decision lives. The signs are reasoned,
- * not yet checked in an emulator.
+ * Phone axes to DSU axes: the one place every axis decision lives. Signs taken from the
+ * Yuzu-family and Dolphin DSU clients on 2026-10-10, after Sudachi showed a flat phone tilted.
  * doc-ref 46ec docs/4-systems/DsuServer.md
  */
 function phoneToDsuAxes(accel, gyro) {
   return {
-    accel: [accel[0], accel[2], -accel[1]],
-    gyro: [gyro[0], gyro[2], -gyro[1]],
+    accel: [-accel[0], -accel[2], accel[1]],
+    gyro: [gyro[0], -gyro[2], gyro[1]],
   };
 }
 
