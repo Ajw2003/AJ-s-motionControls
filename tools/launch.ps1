@@ -166,7 +166,7 @@ try {
     # An adapter that refuses the band is reported by hotspot-control and left to Windows.
     $result = Invoke-Hotspot @('-Action', 'Start', '-Ssid', $credentials.ssid, '-Passphrase', $credentials.passphrase, '-Band', 'FiveGigahertz')
     if (-not $result.ok) { throw "The hotspot did not start: $($result | ConvertTo-Json -Compress)" }
-    Write-Good 'Hotspot on.'
+    Write-Good "Hotspot on ($($result.band))."
 
     $joinUrl = "http://127.0.0.1:$JoinPort/join.html"
     Start-Process $joinUrl
