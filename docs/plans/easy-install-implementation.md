@@ -642,7 +642,9 @@ Behaviour, in order:
    common cause is no certificate yet; the fix is to connect to the internet once.
 8. **Hotspot.** Start it with the saved credentials. If that fails, stop the relay and print the
    hotspot's error.
-9. **Join page.** `Start-Process 'http://127.0.0.1:8780/join.html'`.
+9. **Join page.** `Start-Process 'http://127.0.0.1:8780/join.html'`. Also print the Wi-Fi name,
+   password and controller address to the console, as `test-pad.ps1:127-131` did, for when the
+   browser doesn't open.
 10. **Wait** for the relay to exit (the join page's Stop button, or Ctrl+C). In `finally`, stop
     the hotspot and the relay.
 
