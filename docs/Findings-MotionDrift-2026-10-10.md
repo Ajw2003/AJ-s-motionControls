@@ -101,6 +101,12 @@ in source, not recalled: the current W3C spec §6.3.2, Chromium `device_motion_e
 DSU mapping was right: with the page corrected, the capture's tilts match gravity and Dolphin's
 axis names. The earlier direction test only looked right because two errors cancelled.
 
+**rc.6 on aj's phone:** `tools/check-gyro-axes.js` gives OK, 1.2° (3 tilts). **Sudachi's controller
+preview box cannot show tilt direction:** `Draw3dCube` (`configure_input_player_widget.cpp`) draws
+a see-through 1.4 × 2 box, both faces alike, from above, so lifting the top edge and lifting the
+bottom edge draw the same picture, and so do left and right. A flat, level controller draws as a
+tall rectangle. Check direction in a game, or against gravity with the tool, not with that box.
+
 ## The obstacle to pacing
 
 Pacing sends each packet to the emulator at the phone's own sample spacing, so arrival time
