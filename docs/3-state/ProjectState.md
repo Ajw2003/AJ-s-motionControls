@@ -169,7 +169,7 @@ has been checked in its new role yet.
 
 **The phone already "sends motion", but not motion an emulator can use.** Rock Skipping's phone
 sends a processed attitude at 20 Hz
-([`controller/js/app.js:388`](../../controller/js/app.js)) plus one summarised THROW event, and
+(the game page's `controller/js/app.js`, removed 2026-10-10) plus one summarised THROW event, and
 the relay caps those messages at 60 a second
 ([`relay/server.js:41`](../../relay/server.js)). Emulators need raw gyro and accelerometer at the
 phone's full rate. Milestone 1 exists because of this gap; it is new output, not a settings change.
@@ -205,9 +205,8 @@ it first.
 
   **Not yet run on Windows or with a phone:** see `Handoff-2026-10-10-PhoneTest.md`. The real
   launcher is #12, and the QR join page is #14.
-- **The game is still in the repo.** The Unity project (`Assets/`, `Packages/`,
-  `ProjectSettings/`), the game's relay rooms and the game-only systems docs. Whether and when to
-  remove them is undecided; see [`6-decisions/Decisions.md`](../6-decisions/Decisions.md),
-  2026-10-08.
+- **Game leftovers.** The Unity project and the game's phone page were removed on 2026-10-10.
+  Still here: the game's relay rooms in `relay/server.js` and the game-only systems docs; see
+  [`6-decisions/Decisions.md`](../6-decisions/Decisions.md), 2026-10-10.
 - **Packaging for a stranger's PC** is not on the roadmap. See the roadmap's "What 100% is not,
   yet".
