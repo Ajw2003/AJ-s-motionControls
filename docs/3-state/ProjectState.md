@@ -66,7 +66,10 @@ motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
 
 **Real phone, 2026-10-10:** a phone on the offline hotspot, over HTTPS, drove **Sudachi**
 (buttons, sticks and motion) in Mario Party Jamboree; motion worked and latency felt negligible.
-The sticks need tuning. Dolphin motion is still unreported.
+The sticks need tuning (#22). Dolphin motion is still unreported.
+
+**Next (approved 2026-10-10):** one installer, one icon, two QR codes (#23). Plan:
+[`plans/easy-install.md`](../plans/easy-install.md). Children: #12, #14, #24, #25, #26.
 
 ## Milestone 3 — on-screen gamepad
 
