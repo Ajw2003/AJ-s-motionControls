@@ -94,6 +94,8 @@ deploy/spike/*.log
 *.pem
 *.key
 deploy/seed-cert/
+# Throwaway test-CA fixtures for relay/test-pad-cert.js; nothing real, and the tests need them.
+!relay/fixtures/pad-cert/*.pem
 Assets/Audio/ui_confirm_01.wav.meta
 Assets/Audio.meta
 Assets/Audio/match_start_01.wav
