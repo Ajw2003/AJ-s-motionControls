@@ -8,8 +8,10 @@ import {
   isSecureContextOk,
   readAcceleration,
   readRotationRate,
+  orientationToQuaternion,
+  gravityInDeviceFrame,
 } from './sensors.js';
-import { makeMotionMessage, RateMeter } from './motion-sample.js';
+import { makeMotionMessage, RateMeter, GravitySign } from './motion-sample.js';
 import { GamepadState, makePadMessage } from './gamepad-state.js';
 import { LAYOUTS, DEFAULT_LAYOUT } from './layouts.js';
 import { mountGamepad } from './gamepad-view.js';
@@ -127,9 +129,21 @@ function connect() {
   });
 }
 
+// "Up" from the orientation angles, the ground truth Rock Skipping uses (iPhone and Android agree
+// on them); GravitySign flips the raw gravity reading when it points the other way (#34).
+let orientationUp = null;
+const gravitySign = new GravitySign();
+
+function onOrientation(event) {
+  if (event.beta === null || event.gamma === null) return;
+  orientationUp = gravityInDeviceFrame(orientationToQuaternion(event.alpha ?? 0, event.beta, event.gamma));
+}
+
 function onMotion(event) {
+  const raw = readAcceleration(event);
+  const sign = raw ? gravitySign.update(raw, orientationUp) : 1;
   const message = makeMotionMessage(
-    readAcceleration(event),
+    raw && sign < 0 ? { x: -raw.x, y: -raw.y, z: -raw.z } : raw,
     readRotationRate(event),
     performance.timeOrigin + event.timeStamp,
     seq,
@@ -147,6 +161,7 @@ function onMotion(event) {
 function renderReadout() {
   el('rate').textContent = rate.ratePerSecond(performance.now()).toFixed(0);
   el('sent').textContent = String(sent);
+  el('gravity').textContent = gravitySign.sign < 0 ? 'flipped' : 'as reported';
   if (latest) {
     el('accel').textContent = latest.accel.map((n) => n.toFixed(2)).join('  ');
     el('gyro').textContent = latest.gyro.map((n) => n.toFixed(0)).join('  ');
@@ -170,6 +185,7 @@ startButton.addEventListener('click', async () => {
     return;
   }
   if (!socket) {
+    window.addEventListener('deviceorientation', onOrientation);
     window.addEventListener('devicemotion', onMotion);
     connect();
     setInterval(renderReadout, READOUT_INTERVAL_MS);

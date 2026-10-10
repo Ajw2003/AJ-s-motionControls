@@ -53,6 +53,12 @@ devicemotion ──▶ makeMotionMessage ──▶ WebSocket /pad ──▶ pad 
   `beta` about x, `gamma` about y, `alpha` about z, and the page followed that until 2026-10-10;
   every axis came out crossed (#30). `tools/check-gyro-axes.js` checks a capture against gravity,
   and the test "rotation rates map alpha→x" guards the mapping.
+- **Gravity's sign comes from the orientation angles, not the browser (#34).** Safari on iPhone
+  mirrors `accelerationIncludingGravity` (WebKit passes CoreMotion's `userAcceleration + gravity`
+  through, `WebCoreMotionManager.mm`; W3C public-geolocation, 2014). As Rock Skipping does, the
+  page takes "up" from `deviceorientation` (`gravityInDeviceFrame`, `sensors.js`) and
+  `GravitySign` (`motion-sample.js`) flips the reading after a steady run of near-still readings
+  point the other way. No browser is named. The phone's status panel shows "Gravity: flipped".
 - **`/pad` sockets never join game rooms,** and game sockets never reach the pad hub. The rate
   budgets differ: the game's AIM cap is 60 messages a second, the pad cap is 400
   ([`pad-hub.js:13`](../../relay/pad-hub.js)).

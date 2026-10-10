@@ -5,7 +5,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { makeMotionMessage, RateMeter, MOTION_MESSAGE_TYPE } from './js/motion-sample.js';
+import { makeMotionMessage, RateMeter, MOTION_MESSAGE_TYPE, GravitySign } from './js/motion-sample.js';
 import { GRAVITY_MS2 } from './js/sensors.js';
 
 let failures = 0;
@@ -92,6 +92,36 @@ check('RateMeter falls to 0 once samples stop', () => {
   const meter = new RateMeter();
   for (let i = 0; i < 60; i++) meter.record(i * 16);
   assert.equal(meter.ratePerSecond(5000), 0);
+});
+
+// iPhone Safari reports accelerationIncludingGravity mirrored (WebKit passes CoreMotion through;
+// W3C public-geolocation, 2014). As in Rock Skipping, the orientation angles are the ground truth
+// for "up"; the reading is flipped when it keeps pointing the other way (#34).
+const G = GRAVITY_MS2;
+check('gravity agreeing with orientation is left alone', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: G }, { x: 0, y: 0, z: G });
+  assert.equal(s.sign, 1);
+});
+
+check('gravity opposite to orientation is flipped after a steady run (iPhone)', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: -G }, { x: 0, y: 0, z: G });
+  assert.equal(s.sign, -1);
+});
+
+check('a few shaken or opposite readings do not flip it', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: G }, { x: 0, y: 0, z: G });
+  for (let i = 0; i < 5; i++) s.update({ x: 0, y: 0, z: -G }, { x: 0, y: 0, z: G });
+  for (let i = 0; i < 20; i++) s.update({ x: 3 * G, y: 0, z: -G }, { x: 0, y: 0, z: G }); // a hard shake
+  assert.equal(s.sign, 1);
+});
+
+check('no orientation reading yet means no decision', () => {
+  const s = new GravitySign();
+  for (let i = 0; i < 60; i++) s.update({ x: 0, y: 0, z: -G }, null);
+  assert.equal(s.sign, 1);
 });
 
 if (failures) {
