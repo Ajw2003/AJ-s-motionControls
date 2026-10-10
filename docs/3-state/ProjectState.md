@@ -83,6 +83,9 @@ portrait. Fixed for rc.8, not yet tried on the iPhone: gravity's sign now comes 
 orientation angles, as Rock Skipping does (#34); a **Wii Remote (upright)** layout for portrait
 (#32); Lock rotation moved under the status chip (its top-left spot overlapped LT and ZL).
 
+**Confirmed by aj on rc.8 (2026-10-10):** the iPhone works, motion included. A **two-player** test
+worked too: an iPhone and a Samsung phone at once, playing **Wii Sports** in Dolphin.
+
 **One installer, two QR codes (#23), built 2026-10-10:** `AJ-Motion-Setup.exe` (23 MB) is on the
 pre-release [v0.1.0-rc.1](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.1),
 built by `.github/workflows/release.yml`. Checked on aj's PC: the launcher ran twice from the
