@@ -75,6 +75,8 @@ a dedicated **⊙ Centre** button on the Wii layout, sent as DSU's touchpad butt
 `Touch Button`, mapped to Point → Recenter, so Home no longer has to double as Recenter and open
 the Wii Home menu), and a **Lock rotation** button on the controller page (fullscreen +
 `screen.orientation.lock` on Android; iPhone Safari cannot lock).
+**Confirmed by aj on rc.7 (2026-10-10):** the lock holds and ⊙ Centre re-centres the pointer in
+Dolphin. iPhone fallback still untested.
 
 **One installer, two QR codes (#23), built 2026-10-10:** `AJ-Motion-Setup.exe` (23 MB) is on the
 pre-release [v0.1.0-rc.1](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.1),
