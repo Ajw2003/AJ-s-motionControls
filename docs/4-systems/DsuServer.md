@@ -81,7 +81,10 @@ it is fixed in `phoneToDsuAxes` and nowhere else.
   **Default** mapping filled buttons and sticks with the DualShock 4 names this server sends:
   Cross, Circle, Square, Triangle, Shoulder R, Start, Pad N/S/E/W, Left/Right X±/Y±, Trigger L/R.
   Its L-Analog and R-Analog stayed empty. Cemu taking a whole controller and Ryujinx taking only
-  motion are still beliefs.
+  motion are still beliefs. Sudachi (aj's Switch emulator, a Yuzu fork) ships pointed at
+  `127.0.0.1:26760` but with DSU input off (`enable_udp_controller=false` in
+  `%APPDATA%\sudachi\config\qt-config.ini`, seen 2026-10-10); whether it reads buttons as well as
+  motion is unconfirmed.
 - **Headless checks prove the protocol, not an emulator's reading of it.**
   `tools/verify-dsu.js` speaks DSU as documented. Whether Dolphin agrees, including the axis signs,
   is only known once Dolphin has been pointed at it.
