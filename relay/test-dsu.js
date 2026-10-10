@@ -129,6 +129,16 @@ describe('buttons and sticks', () => {
     assert.equal(padWith(0).home, 0);
   });
 
+  // The Wii layout's Centre button (#32): Dolphin maps Recenter to it as "Touch Button", so it
+  // must set the touchpad-button byte and nothing else (Home opens the Wii Home menu).
+  test('centre is the touchpad button and nothing else', () => {
+    const pad = padWith(PadBit.centre);
+    assert.equal(pad.touch, 1);
+    assert.equal(pad.home, 0);
+    assert.equal(pad.buttons1 | pad.buttons2, 0);
+    assert.equal(padWith(0).touch, 0);
+  });
+
   test('analog bytes are 255 for held buttons, in DSU order', () => {
     const pad = padWith(PadBit.up | PadBit.south | PadBit.rt);
     // left, down, right, up, Square, Cross, Circle, Triangle, R1, L1, R2, L2

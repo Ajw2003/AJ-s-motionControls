@@ -66,7 +66,15 @@ motion, and the axis signs confirmed or corrected in `phoneToDsuAxes`.
 
 **Real phone, 2026-10-10:** a phone on the offline hotspot, over HTTPS, drove **Sudachi**
 (buttons, sticks and motion) in Mario Party Jamboree; motion worked and latency felt negligible.
-The sticks need tuning (#22). Dolphin motion is still unreported.
+The sticks need tuning (#22).
+
+**Dolphin, upright Wii Remote, 2026-10-10:** aj played several turns and minigames of **Mario Party 8**
+in Dolphin with the phone held upright and pointed at the screen like a Wii Remote (phone rotation
+lock off): pointing worked. That was on rc.6, after the rotation-axis fix (#30). Follow-up (#32):
+a dedicated **⊙ Centre** button on the Wii layout, sent as DSU's touchpad button (Dolphin
+`Touch Button`, mapped to Point → Recenter, so Home no longer has to double as Recenter and open
+the Wii Home menu), and a **Lock rotation** button on the controller page (fullscreen +
+`screen.orientation.lock` on Android; iPhone Safari cannot lock).
 
 **One installer, two QR codes (#23), built 2026-10-10:** `AJ-Motion-Setup.exe` (23 MB) is on the
 pre-release [v0.1.0-rc.1](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.1),

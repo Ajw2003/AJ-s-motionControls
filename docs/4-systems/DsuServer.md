@@ -103,6 +103,10 @@ core is busy while a phone streams, and idle otherwise.
 
 - **Only one program can own UDP 26760.** DS4Windows, BetterJoy and other DSU servers use the same
   default port. If one is running, the relay's DSU server is disabled, and the monitor says so.
+- **Dolphin reads motion and pointing from DSU (confirmed 2026-10-10):** Mario Party 8 played with
+  the phone upright as a Wii Remote. Dolphin's gyro pointer is the Wii Remote's **Point** group
+  (`IMUCursor`, Dolphin `WiimoteEmu.cpp:233`); its **Recenter** input (`IMUCursor.cpp:26`) maps
+  to `Touch Button`, which the relay sends for the Wii layout's ⊙ Centre (`centre` bit, #32).
 - **Which emulators read buttons from DSU: Dolphin does; the rest are unconfirmed.** On aj's
   Windows PC (2026-10-09) Dolphin listed the server as `DSUClient/0/<description>`, and its GameCube
   **Default** mapping filled buttons and sticks with the DualShock 4 names this server sends:

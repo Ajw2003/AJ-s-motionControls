@@ -153,6 +153,7 @@ const PadBit = Object.freeze({
   right: 1 << 14,
   lt: 1 << 15,
   rt: 1 << 16,
+  centre: 1 << 17,
 });
 
 // DSU uses the DualShock 4's buttons, by position: Square is west, Cross south, Circle east,
@@ -222,7 +223,7 @@ function padDataPayload(slot, packetNumber, sample, gamepad = null) {
   payload.writeUInt8(byte1, o++);
   payload.writeUInt8(byte2, o++);
   payload.writeUInt8(isDown('home') ? 1 : 0, o++);
-  o += 1; // touchpad button: no touchpad
+  payload.writeUInt8(isDown('centre') ? 1 : 0, o++); // touchpad button: the Wii layout's Centre (#32)
   for (const value of sticks) payload.writeUInt8(stickByte(value), o++); // LX, LY, RX, RY
   for (const name of DSU_ANALOG_ORDER) payload.writeUInt8(isDown(name) ? 255 : 0, o++);
   o += 12; // two touch points, inactive
@@ -257,6 +258,7 @@ function parsePadData(body) {
     buttons1: body.readUInt8(at(20)),
     buttons2: body.readUInt8(at(21)),
     home: body.readUInt8(at(22)),
+    touch: body.readUInt8(at(23)),
     analog: [...body.subarray(at(28), at(40))],
     sticks: [
       body.readUInt8(at(24)),

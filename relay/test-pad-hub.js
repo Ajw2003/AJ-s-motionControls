@@ -176,13 +176,18 @@ describe('gamepad (PAD) messages', () => {
   });
 
   for (const [label, bad] of [
-    ['a bit beyond the last button', pad(1, { buttons: 1 << 17 })],
+    ['a bit beyond the last button', pad(1, { buttons: 1 << 18 })],
     ['negative buttons', pad(1, { buttons: -1 })],
     ['three sticks', pad(1, { sticks: [0, 0, 0] })],
     ['NaN stick', pad(1, { sticks: [0, NaN, 0, 0] })],
     ['missing seq', { type: 'PAD', buttons: 0, sticks: [0, 0, 0, 0] }],
   ]) {
     test(`rejects ${label}`, () => assert.equal(parsePadMessage(bad), null));
+  }
+
+  // Each button the phone has must get through; the Centre bit (#32) was once above the mask.
+  for (const bit of [1 << 0, 1 << 16, 1 << 17]) {
+    test(`accepts button bit ${Math.log2(bit)}`, () => assert.equal(parsePadMessage(pad(1, { buttons: bit })).buttons, bit));
   }
 
   test('keeps the newest state, ignores a late older one, publishes accepted ones', () => {

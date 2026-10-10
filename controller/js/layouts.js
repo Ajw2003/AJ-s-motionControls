@@ -94,6 +94,8 @@ export const LAYOUTS = Object.freeze({
       small('back', '−', 38.5, 26),
       small('home', '⌂', 53, 26),
       small('start', '+', 67.5, 26),
+      // Recenter for Dolphin's pointer (#32); Home stays Home.
+      small('centre', '⊙', 53, 88),
       face('west', '1', 70, 64, 22),
       face('south', '2', 88, 64, 22),
       face('east', 'A', 50, 66, 20, 'blue'),

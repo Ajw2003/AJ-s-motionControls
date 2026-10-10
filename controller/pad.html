@@ -155,6 +155,23 @@
         white-space: nowrap;
         z-index: 2;
       }
+      #lock {
+        position: absolute;
+        top: max(6px, env(safe-area-inset-top));
+        left: max(8px, env(safe-area-inset-left));
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 0;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        z-index: 2;
+      }
+      #lock[aria-pressed='true'] {
+        color: var(--good);
+      }
       #chip .menu-hint {
         color: var(--muted);
       }
@@ -297,6 +314,7 @@
       <button id="chip" type="button">
         <span id="chip-status">Connecting…</span><span class="menu-hint"> · Layout ▾</span>
       </button>
+      <button id="lock" type="button" aria-pressed="false">Lock rotation</button>
       <div id="controls"></div>
     </div>
 

@@ -179,6 +179,49 @@ startButton.addEventListener('click', async () => {
   showGamepad();
 });
 
+// Rotation lock (#32), so pointing the phone at the screen never flips the layout. Chrome and
+// Samsung Internet on Android lock only in fullscreen; Safari on iPhone cannot lock at all
+// (MDN browser-compat-data, ScreenOrientation.lock), so it points to the phone's own lock.
+let rotationLocked = false;
+
+function showLock(locked) {
+  rotationLocked = locked;
+  el('lock').setAttribute('aria-pressed', String(locked));
+  el('lock').textContent = locked ? 'Rotation locked' : 'Lock rotation';
+}
+
+async function toggleRotationLock() {
+  if (rotationLocked) {
+    try {
+      screen.orientation.unlock();
+      if (document.fullscreenElement) await document.exitFullscreen();
+    } catch (err) {
+      console.warn('Rotation unlock:', err);
+    }
+    showLock(false);
+    return;
+  }
+  if (!screen.orientation || !screen.orientation.lock || !document.documentElement.requestFullscreen) {
+    setStatus('This browser cannot lock rotation; use the phone rotation lock', 'bad');
+    return;
+  }
+  try {
+    await document.documentElement.requestFullscreen();
+    await screen.orientation.lock(screen.orientation.type);
+    showLock(true);
+  } catch (err) {
+    console.warn('Rotation lock:', err);
+    if (document.fullscreenElement) await document.exitFullscreen().catch((e) => console.warn('Exit fullscreen:', e));
+    setStatus(`Cannot lock rotation here (${err.name}); use the phone rotation lock`, 'bad');
+  }
+}
+
+el('lock').addEventListener('click', toggleRotationLock);
+// Leaving fullscreen (back gesture, swipe) releases the lock; show that.
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && rotationLocked) showLock(false);
+});
+
 el('chip').addEventListener('click', () => {
   // Back to the layout picker. Motion keeps streaming; the pad releases everything.
   if (unmountGamepad) unmountGamepad();

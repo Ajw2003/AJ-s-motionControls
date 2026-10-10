@@ -28,6 +28,8 @@ export const Button = Object.freeze({
   right: 1 << 14,
   lt: 1 << 15,
   rt: 1 << 16,
+  // Wii layout's Centre: Dolphin maps Recenter to it (#32). Sent as DSU's touchpad button.
+  centre: 1 << 17,
 });
 
 export const BUTTON_NAMES = Object.freeze(Object.keys(Button));
