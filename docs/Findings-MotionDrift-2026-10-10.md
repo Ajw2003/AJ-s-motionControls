@@ -62,6 +62,24 @@ With a 17 ms buffer, 118 of 11,519 readings (1%) would still arrive after their 
 late. **Rescaling the gyro cannot serve both clients** (one needs the gap before, the other the
 gap after); pacing serves both.
 
+## Result with pacing (rc.4, 17 ms buffer), measured live
+
+A second 180 s capture through the installed rc.4, same routine. "Motion spacing error" compares
+each motion packet's arrival gap with the phone's own gap.
+
+| | Spacing error median / 95% / 99% / worst | Relay CPU |
+|---|---|---|
+| capture 1, unpaced | 0.38 / 2.81 / 7.46 / 69.8 ms | — |
+| capture 2, paced | **0.02 / 0.15 / 0.46** / 22.2 ms | 97.7% of one core (8.1% of 12) |
+
+Both captures also held 720 extra packets (exactly 4 a second): the phone repeats its controller
+state every 250 ms (`PAD_REPEAT_MS`, `controller/js/pad.js:20`), and the relay forwarded each as
+a packet carrying the last motion again. In Sudachi's arrival-timed maths each one splits an
+interval. On capture 2, Sudachi-style error was 4.3 / −0.9 / 7.5° with the repeats and
+−0.3 / 0.9 / 2.6° without. Dolphin was unaffected (−3.8 / 2.4 / 13.0° either way; that capture
+had heavier roll, peaking at 1,770°/s, and the remainder is its own 200 Hz ticks). Since then the
+relay forwards controller state only when a button or stick changed (`relay/dsu.js`, `onPad`).
+
 ## The obstacle to pacing
 
 Pacing sends each packet to the emulator at the phone's own sample spacing, so arrival time

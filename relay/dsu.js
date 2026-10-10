@@ -393,7 +393,15 @@ function createDsuServer({
     pacer.push(slot, sample);
   }
 
+  // The phone repeats its controller state every 250 ms. A repeat with nothing changed is
+  // already in every motion packet, and an extra packet splits an interval in Sudachi's
+  // arrival-timed maths (docs/Findings-MotionDrift-2026-10-10.md), so only changes go out.
+  const lastGamepadKey = new Array(4).fill(null);
+
   function onPad(slot, gamepad) {
+    const key = `${gamepad.buttons}|${gamepad.sticks.join(',')}`;
+    if (key === lastGamepadKey[slot]) return;
+    lastGamepadKey[slot] = key;
     // Before the first motion sample, report the phone at rest: flat, gravity down its back.
     const sample = latestSample[slot] || { ts: now() * 1000, accel: [0, 0, 1], gyro: [0, 0, 0] };
     broadcast(slot, sample, gamepad);
@@ -401,6 +409,7 @@ function createDsuServer({
 
   function onDisconnect(slot) {
     latestSample[slot] = null;
+    lastGamepadKey[slot] = null;
     pacer.clear(slot);
   }
 

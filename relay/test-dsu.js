@@ -309,3 +309,35 @@ describe('relay with a scripted DSU client', () => {
     assert.equal(received.length, 1);
   });
 });
+
+describe('controller-state repeats', () => {
+  test('an unchanged repeat sends nothing; a change goes out at once', async () => {
+    const dgram = require('dgram');
+    const { EventEmitter } = require('events');
+    const { createDsuServer } = require('./dsu');
+    const events = new EventEmitter();
+    const padHub = { events, snapshot: () => [{ gamepad: null }, null, null, null] };
+    const port = 26988;
+    const server = createDsuServer({ padHub, port });
+    const client = dgram.createSocket('udp4');
+    let padPackets = 0;
+    client.on('message', (packet) => {
+      const parsed = parsePacket(packet, 'DSUS');
+      if (parsed && parsed.type === MessageType.PAD_DATA) padPackets++;
+    });
+    await new Promise((resolve) => client.bind(0, '127.0.0.1', resolve));
+    const body = Buffer.alloc(12);
+    body.writeUInt32LE(MessageType.PAD_DATA, 0);
+    client.send(buildPacket('DSUC', 1, body), port, '127.0.0.1');
+    await sleep(100);
+
+    events.emit('pad', 0, { seq: 1, buttons: 0, sticks: [0, 0, 0, 0] });
+    events.emit('pad', 0, { seq: 2, buttons: 0, sticks: [0, 0, 0, 0] }); // the 250 ms repeat
+    events.emit('pad', 0, { seq: 3, buttons: 1, sticks: [0, 0, 0, 0] }); // A pressed
+    events.emit('pad', 0, { seq: 4, buttons: 1, sticks: [0, 0.5, 0, 0] }); // stick moved
+    await sleep(100);
+    client.close();
+    server.close();
+    assert.equal(padPackets, 3);
+  });
+});
