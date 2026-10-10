@@ -36,6 +36,32 @@ The dead zone barely mattered here. The −11.7° that remains with perfect timi
 own gyro error, the 4 samples above the clamp, and how exactly the phone was put back (the true
 end heading was not measured).
 
+## Dolphin has the same weakness, mirrored
+
+From Dolphin's source (2026-10-10):
+
+- `InputCommon/ControllerInterface/DualShockUDPClient/DualShockUDPClient.cpp` keeps only the
+  latest packet and ignores its timestamp. Gyro scale is `360/τ` (correct degrees to radians), so
+  there's no 15% over-rotation.
+- `Core/HW/WiimoteEmu/Dynamics.cpp` (`EmulateIMUCursor`) runs at a fixed 200 Hz and applies the
+  latest reading for 5 ms per tick. So a reading counts for as long as it is **held**: the gap
+  **after** it. Sudachi counts the gap **before** it.
+- Dolphin has a mappable **Recenter** button and clamps the pointer's yaw to a configured range,
+  so its heading drift cannot run away.
+
+Total rotation integrated from the same capture (degrees, pitch / yaw / roll):
+
+| | Error against phone timing |
+|---|---|
+| Sudachi-style, as received | +6.8 / +5.9 / +16.6 |
+| Dolphin-style, as received | −23.9 / +2.4 / −3.0 |
+| Sudachi-style, paced (17 ms buffer) | 0.0 / 0.0 / 0.0 |
+| Dolphin-style, paced (17 ms buffer) | +5.4 / −0.8 / −1.1 (its 5 ms ticks) |
+
+With a 17 ms buffer, 118 of 11,519 readings (1%) would still arrive after their slot and go out
+late. **Rescaling the gyro cannot serve both clients** (one needs the gap before, the other the
+gap after); pacing serves both.
+
 ## The obstacle to pacing
 
 Pacing sends each packet to the emulator at the phone's own sample spacing, so arrival time
