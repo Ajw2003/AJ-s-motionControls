@@ -3,8 +3,11 @@
  * it drives (gamepad-state.js) and where it sits on a landscape screen.
  *
  * x and y are the control's centre as a percentage of the screen's width and height; size is
- * its diameter (or width, for pills) as a percentage of the screen's height, so controls
- * keep their shape on any aspect ratio. Thumbs need big targets: nothing here is under 13.
+ * its diameter (or width, for pills) as a percentage of the screen's short side (its height in
+ * landscape, its width in portrait), so controls keep their shape on any aspect ratio. Thumbs
+ * need big targets: nothing here is under 13. A layout marked `orientation: 'portrait'` is
+ * held upright; every other layout is landscape. The top centre is kept clear on every layout
+ * for the status chip and, under it, the Lock rotation button.
  */
 
 const face = (id, label, x, y, size = 17, color) => ({
@@ -91,15 +94,33 @@ export const LAYOUTS = Object.freeze({
     hint: 'Hold the phone sideways like a Wii Remote: D-pad left, 1 and 2 right',
     controls: [
       { kind: 'dpad', x: 18, y: 50, size: 44 },
-      small('back', '−', 38.5, 26),
-      small('home', '⌂', 53, 26),
-      small('start', '+', 67.5, 26),
+      small('back', '−', 38.5, 29),
+      small('home', '⌂', 53, 29),
+      small('start', '+', 67.5, 29),
       // Recenter for Dolphin's pointer (#32); Home stays Home.
       small('centre', '⊙', 53, 88),
       face('west', '1', 70, 64, 22),
       face('south', '2', 88, 64, 22),
       face('east', 'A', 50, 66, 20, 'blue'),
       pill('rt', 'B', 88, 16, 20),
+    ],
+  },
+  // Held upright like a real Wii Remote (#32): iPhone can only lock portrait. Same buttons as
+  // the sideways layout, so emulator mappings carry over.
+  wiiUpright: {
+    name: 'Wii Remote (upright)',
+    orientation: 'portrait',
+    hint: 'Hold the phone upright like a Wii Remote and point it at the screen',
+    controls: [
+      { kind: 'dpad', x: 50, y: 23.6, size: 40 },
+      face('east', 'A', 50, 43.8, 28, 'blue'),
+      pill('rt', 'B', 50, 58.2, 24),
+      small('back', '−', 20, 67.5),
+      small('home', '⌂', 50, 67.5),
+      small('start', '+', 80, 67.5),
+      face('west', '1', 30, 78.7, 26),
+      face('south', '2', 70, 78.7, 26),
+      small('centre', '⊙', 50, 90),
     ],
   },
 });
@@ -120,16 +141,20 @@ export function controlSize(control) {
 }
 
 /**
- * A control's box on a screen `aspect` times wider than tall, in units of 1% of the screen
- * height. The overlap test uses it; the page sizes controls with the same controlSize.
+ * A control's box on a screen `aspect` times wider than tall (below 1 for portrait), in units
+ * of 1% of the screen's short side. The overlap test uses it; the page sizes controls with the
+ * same controlSize, in vmin.
  */
 export function controlBox(control, aspect) {
   const { width, height } = controlSize(control);
-  const cx = (control.x / 100) * 100 * aspect;
+  const screenWidth = aspect >= 1 ? 100 * aspect : 100;
+  const screenHeight = aspect >= 1 ? 100 : 100 / aspect;
+  const cx = (control.x * screenWidth) / 100;
+  const cy = (control.y * screenHeight) / 100;
   return {
     left: cx - width / 2,
     right: cx + width / 2,
-    top: control.y - height / 2,
-    bottom: control.y + height / 2,
+    top: cy - height / 2,
+    bottom: cy + height / 2,
   };
 }

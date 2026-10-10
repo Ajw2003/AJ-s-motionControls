@@ -8,7 +8,7 @@ side is `parsePadMessage` in `relay/pad-hub.js`. Checked by `controller/test-gam
 ## What it owns
 
 Turning thumbs on a touchscreen into gamepad state: which buttons are down and where the two
-sticks are. It also owns the four layouts and the `PAD` message that carries the state to the PC.
+sticks are. It also owns the five layouts (four landscape, plus the upright Wii Remote) and the `PAD` message that carries the state to the PC.
 Motion is [`ControllerStream.md`](ControllerStream.md). Handing buttons to emulators is #5 (DSU)
 and #6 (virtual Xbox controller).
 
@@ -42,8 +42,13 @@ layouts.js (data) ──▶ gamepad-view.js (draws, owns pointers) ──▶ Gam
   emits `pad` events. `/api/pads` carries it, and the monitor shows the buttons held and both
   sticks.
 - **Screen.** The setup screen picks a layout (remembered when storage allows) and scrolls. The
-  gamepad screen is full screen and landscape, with the status chip at the top doubling as the
-  way back to the picker.
+  gamepad screen fills the screen in the layout's orientation (landscape, or portrait for
+  `orientation: 'portrait'` layouts such as `wiiUpright`); held the other way, a cover asks the
+  player to turn the phone. Controls are sized in `vmin` (the short side), so landscape sizes
+  are unchanged and upright ones stay thumb-sized. The status chip at the top doubles as the way
+  back to the picker, and **Lock rotation** sits under it, the one top spot free on every layout;
+  the layout test treats both as obstacles (2026-10-10: the lock's first spot, top left,
+  overlapped LT and ZL).
 
 ## Invariants
 

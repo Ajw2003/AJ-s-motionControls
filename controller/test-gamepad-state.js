@@ -135,23 +135,32 @@ for (const [id, layout] of Object.entries(LAYOUTS)) {
   });
 }
 
-// From a 16:9 phone to a tall modern one (iPhone 13 is 844x390, about 2.16).
+// From a 16:9 phone to a tall modern one (iPhone 13 is 844x390, about 2.16). Aspect is width over
+// height, so portrait layouts are checked at the same phones held upright.
 const ASPECTS = [1.78, 2.0, 2.17];
-const GAP = 1; // 1% of screen height between controls, so a thumb on one is not on another
+const PORTRAIT_ASPECTS = ASPECTS.map((a) => 1 / a);
+const GAP = 1; // 1% of the screen's short side between controls, so a thumb on one is not on another
 
 for (const [id, layout] of Object.entries(LAYOUTS)) {
-  for (const aspect of ASPECTS) {
-    check(`${id} at ${aspect}:1: no two controls overlap and none leaves the screen`, () => {
+  for (const aspect of layout.orientation === 'portrait' ? PORTRAIT_ASPECTS : ASPECTS) {
+    check(`${id} at ${aspect.toFixed(2)}:1: no two controls overlap and none leaves the screen`, () => {
       const boxes = layout.controls.map((c) => ({ c, b: controlBox(c, aspect) }));
-      // The status chip (also the layout menu) sits top centre on every layout.
-      const width = 100 * aspect;
+      // In units of 1% of the short side, like controlBox.
+      const width = aspect >= 1 ? 100 * aspect : 100;
+      const height = aspect >= 1 ? 100 : 100 / aspect;
+      // The status chip (also the layout menu) sits top centre and Lock rotation just under it
+      // on every layout.
       boxes.push({
         c: { label: 'status chip' },
         b: { left: width / 2 - 28, right: width / 2 + 28, top: 0, bottom: 10 },
       });
+      boxes.push({
+        c: { label: 'lock button' },
+        b: { left: width / 2 - 15, right: width / 2 + 15, top: 11, bottom: 20 },
+      });
       const problems = [];
       for (const { c, b } of boxes) {
-        if (b.left < 0 || b.top < 0 || b.right > 100 * aspect || b.bottom > 100) {
+        if (b.left < 0 || b.top < 0 || b.right > width || b.bottom > height) {
           problems.push(`${c.label ?? c.kind} off screen`);
         }
       }
@@ -174,6 +183,12 @@ for (const [id, layout] of Object.entries(LAYOUTS)) {
     });
   }
 }
+
+check('wiiUpright: an upright layout with the same Wii buttons as the sideways one', () => {
+  assert.equal(LAYOUTS.wiiUpright.orientation, 'portrait');
+  const ids = (l) => l.controls.filter((c) => c.kind === 'button').map((c) => c.id).sort();
+  assert.deepEqual(ids(LAYOUTS.wiiUpright), ids(LAYOUTS.wii));
+});
 
 check('switch: Nintendo A sits on the east position, B on south', () => {
   const byLabel = Object.fromEntries(

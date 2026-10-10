@@ -21,8 +21,9 @@ function place(el, control) {
   const { width, height } = controlSize(control);
   el.style.left = `${control.x}%`;
   el.style.top = `${control.y}%`;
-  el.style.width = `${width}vh`;
-  el.style.height = `${height}vh`;
+  // vmin: the short side, which is the height in landscape (as before) and the width upright.
+  el.style.width = `${width}vmin`;
+  el.style.height = `${height}vmin`;
 }
 
 /**

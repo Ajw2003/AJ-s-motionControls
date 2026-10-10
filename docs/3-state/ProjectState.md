@@ -78,6 +78,11 @@ the Wii Home menu), and a **Lock rotation** button on the controller page (fulls
 **Confirmed by aj on rc.7 (2026-10-10):** the lock holds and ⊙ Centre re-centres the pointer in
 Dolphin. iPhone fallback still untested.
 
+**iPhone, 2026-10-10:** works, but motion came through upside down, and iPhone can only lock
+portrait. Fixed for rc.8, not yet tried on the iPhone: gravity's sign now comes from the
+orientation angles, as Rock Skipping does (#34); a **Wii Remote (upright)** layout for portrait
+(#32); Lock rotation moved under the status chip (its top-left spot overlapped LT and ZL).
+
 **One installer, two QR codes (#23), built 2026-10-10:** `AJ-Motion-Setup.exe` (23 MB) is on the
 pre-release [v0.1.0-rc.1](https://github.com/Ajw2003/AJ-s-motionControls/releases/tag/v0.1.0-rc.1),
 built by `.github/workflows/release.yml`. Checked on aj's PC: the launcher ran twice from the

@@ -155,10 +155,12 @@
         white-space: nowrap;
         z-index: 2;
       }
+      /* Under the status chip: the only top spot free on every layout (layouts.js keeps it clear). */
       #lock {
         position: absolute;
-        top: max(6px, env(safe-area-inset-top));
-        left: max(8px, env(safe-area-inset-left));
+        top: calc(max(6px, env(safe-area-inset-top)) + 34px);
+        left: 50%;
+        transform: translateX(-50%);
         padding: 6px 12px;
         border-radius: 999px;
         border: 0;
@@ -266,8 +268,23 @@
       #rotate {
         display: none;
       }
+      /* Shown when the phone is held the other way from the chosen layout. */
+      @media (orientation: landscape) {
+        body.playing.layout-portrait #rotate {
+          display: flex;
+          position: fixed;
+          inset: 0;
+          z-index: 5;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 24px;
+          background: var(--bg);
+          font-size: 1.3rem;
+        }
+      }
       @media (orientation: portrait) {
-        body.playing #rotate {
+        body.playing:not(.layout-portrait) #rotate {
           display: flex;
           position: fixed;
           inset: 0;

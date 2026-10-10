@@ -94,6 +94,11 @@ function sendPad() {
 function showGamepad() {
   if (unmountGamepad) unmountGamepad();
   unmountGamepad = mountGamepad(el('controls'), LAYOUTS[layoutId], gamepad, sendPad);
+  const upright = LAYOUTS[layoutId].orientation === 'portrait';
+  document.body.classList.toggle('layout-portrait', upright);
+  el('rotate').textContent = upright
+    ? 'Hold your phone upright to use this controller.'
+    : 'Turn your phone sideways to use the controller.';
   document.body.classList.add('playing');
 }
 
