@@ -86,6 +86,12 @@ it is fixed in `phoneToDsuAxes` and nowhere else.
   Device listed `UDP Controller 0`, which auto-mapped buttons (DualShock names), sticks and
   `cemuhookudp` motion. In Super Mario Party Jamboree, played as a Joy-Con, motion and
   acceleration worked, latency felt negligible, and some buttons needed remapping.
+- **Dolphin reads the gyro too (2026-10-10).** On the emulated Wii Remote's Motion Input tab, the
+  Gyroscope preview dots moved as aj rotated the phone. For Wii pointing, use the **Point** group
+  (Dolphin's gyro cursor: Total Yaw, Accelerometer Influence, Recenter), not **Point
+  (Passthrough)**. Passthrough wants a real Wii Remote's IR camera data, which DSU doesn't carry,
+  and when it's enabled with inputs bound Dolphin uses it first (`BuildDesiredWiimoteState` in
+  Dolphin's `WiimoteEmu.cpp`). Whether the cursor then tracks well is still untested.
 - **Sticks feel off in Sudachi (open, 2026-10-10).** Likely a double deadzone: the phone applies
   12% and rescales (`STICK_DEADZONE`, `controller/js/gamepad-state.js:37`), then Sudachi adds its
   own 15%. Unconfirmed.
